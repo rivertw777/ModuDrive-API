@@ -9,15 +9,3 @@ dependencies {
 
     implementation project(':common:core')
 }
-
-bootRun {
-    enabled = false
-}
-
-bootJar {
-    enabled = false
-}
-
-bootBuildImage{
-    enabled = false
-}
