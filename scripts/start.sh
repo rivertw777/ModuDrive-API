@@ -1,18 +1,23 @@
 #!/bin/bash
 
-# Exit immediately if a command exits with a non-zero status.
 set -e
 
+SERVICE_COMPOSE_FILE="docker/docker-compose.service.yml"
+INFRA_COMPOSE_FILE="docker/docker-compose.infra.yml"
+
+echo "➡️ Ensuring infrastructure is running..."
+docker-compose -f "$INFRA_COMPOSE_FILE" up -d
+
 echo "➡️ Stopping and removing existing containers..."
-docker-compose -f infrastructure/docker/docker-compose.yml down
+docker-compose -f "$SERVICE_COMPOSE_FILE" down
 
 echo "➡️ Running tests..."
 ./gradlew test
 
-echo "➡️ Starting Docker image build..."
+echo "➡️ Building Docker images..."
 ./gradlew docker
 
-echo "➡️ Starting Docker Compose services..."
-docker-compose -f infrastructure/docker/docker-compose.yml up -d
+echo "➡️ Starting app services..."
+docker-compose -f "$SERVICE_COMPOSE_FILE" up -d
 
 echo "✅ Deployment complete!"

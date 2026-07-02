@@ -4,17 +4,10 @@ repositories {
     mavenCentral()
 }
 
-ext {
-    set('springCloudVersion', "2025.1.1")
-}
-
 dependencies {
-    implementation platform("org.springframework.cloud:spring-cloud-dependencies:${springCloudVersion}")
-
     api 'org.springframework.cloud:spring-cloud-starter-circuitbreaker-resilience4j'
 
     implementation project(':common:core')
-    implementation 'org.springframework.cloud:spring-cloud-starter-openfeign'
 }
 
 bootRun {

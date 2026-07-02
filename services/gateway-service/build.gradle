@@ -7,13 +7,7 @@ plugins {
 group = 'com.modudrive.gateway'
 version = '0.0.1-SNAPSHOT'
 
-ext {
-    set('springCloudVersion', "2025.1.1")
-}
-
 dependencies {
-    implementation platform("org.springframework.cloud:spring-cloud-dependencies:${springCloudVersion}")
-
     implementation project(':common:core')
     implementation project(':common:api')
     implementation project(':common:infrastructure:resilience4j')
@@ -31,7 +25,7 @@ dependencies {
 task prepareDockerContext(type: Copy) {
     dependsOn bootJar
     from bootJar
-    from rootProject.file('infrastructure/docker/Dockerfile')
+    from rootProject.file('docker/Dockerfile')
     into layout.buildDirectory.dir('docker')
 }
 
