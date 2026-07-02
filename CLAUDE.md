@@ -21,20 +21,19 @@ ModuDrive is a cloud-drive microservices backend built with **Spring Boot 3.3.4*
 # Run tests for a single service
 ./gradlew :services:member-service:test
 
-# Build all Docker images
-./gradlew docker
+# Start infra (Postgres)
+make infra
 
-# Full deploy: run tests → build images → start all containers
-make start
+# Test + build image + start all services
+make service
 
-# Stop all containers
-make stop
-
-# Build + deploy a single service
-make member   # or: make gateway, make auth, make file
+# Test + build image + start a single service
+make member   # or: make gateway, make auth
 ```
 
-Docker Compose is at `infrastructure/docker/docker-compose.yml`. The shared `Dockerfile` lives at `infrastructure/docker/Dockerfile` and is referenced by every service's `build.gradle`.
+Docker Compose files are at `.docker/docker-compose.service.yml` (services) and `.docker/docker-compose.infra.yml` (Postgres). The shared `Dockerfile` lives at `.docker/Dockerfile`, referenced by every service's `build.gradle` via its `docker` task.
+
+The active Spring profile (`dev`) is injected via `SPRING_PROFILES_ACTIVE` in `docker-compose.service.yml`, not hardcoded in `application.yml`.
 
 ## Service Port Map
 
@@ -90,6 +89,8 @@ Domain models use **inner records** as value objects, e.g. `Member.MemberEmail`,
 | `common:infrastructure:resilience4j`| `CircuitBreakerEventConfig`, `RetryEventConfig`, `FeignFallbackUtils` |
 
 All services depend on `common:core` and `common:api`. JPA services also depend on `common:infrastructure:jpa`.
+
+Root `build.gradle`'s `subprojects {}` block applies the Spring Boot plugin (and disables `bootJar`/`bootRun`/`bootBuildImage`) to every module — including implicit intermediate directories like `common` and `services`, which Gradle creates automatically from nested `include(...)` paths in `settings.gradle` even without their own `build.gradle` file. Only the 4 runnable services re-enable those tasks in their own `build.gradle`.
 
 ## Auth Flow
 
