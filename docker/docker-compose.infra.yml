@@ -1,0 +1,31 @@
+name: modudrive-infra
+
+services:
+
+  postgres:
+    image: postgres:latest
+    networks:
+      - modudrive_network
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=modu_drive
+      - POSTGRES_USER=modudrive
+      - POSTGRES_PASSWORD=1234
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      - ./init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U modudrive -d modu_drive"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+networks:
+  modudrive_network:
+    name: modudrive_network
+    driver: bridge
+
+volumes:
+  postgres_data:
