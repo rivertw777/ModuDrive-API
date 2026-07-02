@@ -14,7 +14,7 @@ dependencies {
 task prepareDockerContext(type: Copy) {
     dependsOn bootJar
     from bootJar
-    from rootProject.file('docker/Dockerfile')
+    from rootProject.file('.docker/Dockerfile')
     into layout.buildDirectory.dir('docker')
 }
 

@@ -2,14 +2,15 @@
 
 set -e
 
-SERVICE_COMPOSE_FILE="docker/docker-compose.service.yml"
-INFRA_COMPOSE_FILE="docker/docker-compose.infra.yml"
+SERVICE_COMPOSE_FILE=".docker/docker-compose.service.yml"
+INFRA_COMPOSE_FILE=".docker/docker-compose.infra.yml"
 
 echo "➡️ Ensuring infrastructure is running..."
 docker-compose -f "$INFRA_COMPOSE_FILE" up -d
 
-echo "➡️ Stopping and removing existing containers..."
-docker-compose -f "$SERVICE_COMPOSE_FILE" down
+echo "➡️ Stopping existing app containers..."
+docker ps -q --filter name=modudrive-service | xargs -r docker rm -f
+docker-compose -f "$SERVICE_COMPOSE_FILE" down 2>/dev/null || true
 
 echo "➡️ Running tests..."
 ./gradlew test

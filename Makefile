@@ -7,13 +7,13 @@ YELLOW := \033[0;33m
 RED := \033[0;31m
 NC := \033[0m
 
-SERVICE_COMPOSE_FILE := docker/docker-compose.service.yml
-INFRA_COMPOSE_FILE := docker/docker-compose.infra.yml
+SERVICE_COMPOSE_FILE := .docker/docker-compose.service.yml
+INFRA_COMPOSE_FILE := .docker/docker-compose.infra.yml
 
 service:
 	@echo "$(BLUE)🚀 Starting all services...$(NC)"
-	@chmod +x scripts/start.sh
-	@./scripts/start.sh
+	@chmod +x .scripts/start.sh
+	@./.scripts/start.sh
 
 infra:
 	@echo "$(GREEN)🗄️  Starting infrastructure...$(NC)"
