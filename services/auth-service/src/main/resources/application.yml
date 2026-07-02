@@ -1,10 +1,6 @@
 spring:
   application:
     name: auth-service
-  profiles:
-    active: dev
-  main:
-    web-application-type: SERVLET
   config:
     import:
       - "classpath:application-resilience4j.yml"
