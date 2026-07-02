@@ -14,15 +14,3 @@ dependencies {
     implementation 'com.fasterxml.jackson.core:jackson-databind'
     implementation 'jakarta.servlet:jakarta.servlet-api'
 }
-
-bootRun {
-    enabled = false
-}
-
-bootJar {
-    enabled = false
-}
-
-bootBuildImage{
-    enabled = false
-}

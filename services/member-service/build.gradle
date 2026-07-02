@@ -7,6 +7,18 @@ plugins {
 group = 'com.modudrive.member'
 version = '0.0.1-SNAPSHOT'
 
+bootRun {
+    enabled = true
+}
+
+bootJar {
+    enabled = true
+}
+
+bootBuildImage {
+    enabled = true
+}
+
 dependencies {
     implementation project(':common:core')
     implementation project(':common:api')

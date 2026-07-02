@@ -39,6 +39,18 @@ subprojects {
 		useJUnitPlatform()
 		maxHeapSize = "1024m"
 	}
+
+	bootRun {
+		enabled = false
+	}
+
+	bootJar {
+		enabled = false
+	}
+
+	bootBuildImage {
+		enabled = false
+	}
 }
 
 bootRun {
@@ -49,6 +61,6 @@ bootJar {
 	enabled = false
 }
 
-bootBuildImage{
+bootBuildImage {
 	enabled = false
 }
