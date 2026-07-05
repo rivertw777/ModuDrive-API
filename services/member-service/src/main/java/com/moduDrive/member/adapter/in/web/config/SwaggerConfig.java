@@ -1,4 +1,4 @@
-package com.moduDrive.member.adapter.config;
+package com.moduDrive.member.adapter.in.web.config;
 
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Info;

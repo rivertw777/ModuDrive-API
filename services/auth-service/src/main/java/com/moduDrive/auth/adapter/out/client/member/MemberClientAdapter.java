@@ -1,7 +1,7 @@
 package com.moduDrive.auth.adapter.out.client.member;
 
 import com.moduDrive.auth.application.port.out.AuthenticateMemberPort;
-import com.moduDrive.auth.common.AuthExceptionCase;
+import com.moduDrive.auth.exception.AuthExceptionCase;
 import com.moduDrive.auth.domain.model.MemberAuthData;
 import com.moduDrive.auth.domain.model.MemberAuthData.MemberId;
 import com.moduDrive.auth.domain.model.MemberAuthData.MemberRoles;

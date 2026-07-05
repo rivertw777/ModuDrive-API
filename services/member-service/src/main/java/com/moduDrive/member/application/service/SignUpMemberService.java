@@ -7,7 +7,7 @@ import com.moduDrive.member.application.port.in.usecase.SignUpMemberUseCase;
 import com.moduDrive.member.application.port.out.CheckEmailExistsPort;
 import com.moduDrive.member.application.port.out.EncodePasswordPort;
 import com.moduDrive.member.application.port.out.SignUpMemberPort;
-import com.moduDrive.member.common.MemberExceptionCase;
+import com.moduDrive.member.exception.MemberExceptionCase;
 import com.moduDrive.member.domain.model.Member;
 import com.moduDrive.member.domain.model.Member.MemberEmail;
 import com.moduDrive.member.domain.model.Member.MemberIsValid;

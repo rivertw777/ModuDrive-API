@@ -1,4 +1,4 @@
-package com.moduDrive.member.adapter.config;
+package com.moduDrive.member.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
