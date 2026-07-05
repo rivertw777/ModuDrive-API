@@ -84,6 +84,8 @@ Each service defines a `<Domain>ExceptionCase` enum implementing `ExceptionCase`
 
 Tests use **JUnit 5** (`useJUnitPlatform()`) with H2 in-memory database for JPA services (no MySQL required for tests). Test heap is capped at 1 GB. Test classes live in `src/test/java` mirroring the main package structure.
 
+For which classes require tests, which test type per layer, the given-when-then/BDDMockito/AssertJ conventions, and the 70% coverage policy, use the `test-writing` skill.
+
 ## Answer Logging Rule
 
 Every response must be saved as a Markdown file under `.claude/answer/` in the project root.
