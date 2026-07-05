@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ModuDrive is a cloud-drive microservices backend built with **Spring Boot 3.3.4**, **Java 17**, and **Spring Cloud 2023.0.3**, organized as a Gradle multi-module project. Services communicate via Netflix Eureka (service discovery) and OpenFeign (inter-service HTTP calls), with Resilience4j providing circuit breaking and retry.
+ModuDrive is a cloud-drive microservices backend built with **Spring Boot 4.0.0**, **Java 25**, and **Spring Cloud 2025.1.1**, organized as a Gradle multi-module project. Services register with Netflix Eureka for service discovery. Inter-service calls use OpenFeign (`auth-service` → `member-service`) or `WebClient` (`gateway-service` → `auth-service`), with Resilience4j providing circuit breaking and retry.
 
 ## Build & Run Commands
 
@@ -48,43 +48,16 @@ Swagger UI for all services is aggregated at the gateway: `http://localhost:1000
 
 ## Architecture: Hexagonal (Ports & Adapters)
 
-Every service follows strict hexagonal architecture. The layer structure inside each service is:
+Every service follows strict hexagonal architecture (`domain/` → `application/` → `adapter/`). Key annotations from `common:core`: `@UseCase` (service implementations), `@WebAdapter` (REST controllers), `@PersistenceAdapter` (JPA adapters) — all package-private by default; only interfaces are public.
 
-```
-domain/
-  model/          ← Pure business objects; value objects as inner records
-  vo/             ← Standalone value objects (e.g. MemberId)
-application/
-  port/in/
-    usecase/      ← UseCase interfaces (entry-point contracts)
-    command/      ← Immutable command objects passed to use cases
-  port/out/       ← Output port interfaces (persistence, external calls)
-  service/        ← @UseCase-annotated implementations (package-private)
-adapter/
-  in/web/
-    controller/   ← @WebAdapter REST controllers (package-private)
-    dto/          ← Request/response DTOs
-    mapper/       ← Domain ↔ DTO mapping
-  out/
-    persistence/  ← @PersistenceAdapter JPA adapters + JpaEntity + Mapper
-    <other>/      ← Other outbound adapters (e.g. security, Feign)
-common/
-  <ServiceName>ExceptionCase.java  ← Service-specific error enum
-```
-
-Key annotations from `common:core` (all are Spring `@Component` aliases):
-- `@UseCase` — marks application service implementations
-- `@WebAdapter` — marks inbound REST controllers
-- `@PersistenceAdapter` — marks outbound JPA adapters
-
-Domain models use **inner records** as value objects, e.g. `Member.MemberEmail`, `Member.MemberId`. Commands wrap these value objects. Services and controllers are **package-private** by default; only interfaces are public.
+For the full layer breakdown, naming conventions, dependency-direction rules, and the step-by-step workflow for adding a new use case, use the `hexagonal-architecture` skill.
 
 ## Common Modules
 
 | Module                              | Purpose                                                      |
 |-------------------------------------|--------------------------------------------------------------|
 | `common:core`                       | `@UseCase`/`@WebAdapter`/`@PersistenceAdapter`, `ApiResponse<T>`, `BusinessException`, `ExceptionCase` interface, `SelfValidating`, `LoggingAspect`, Eureka client |
-| `common:api`                        | Shared Feign DTOs for cross-service calls (auth, member)     |
+| `common:api`                        | Shared DTOs for cross-service calls (auth, member)           |
 | `common:infrastructure:jpa`         | `BaseTimeEntity` (JPA auditing), `AuditingConfig`            |
 | `common:infrastructure:resilience4j`| `CircuitBreakerEventConfig`, `RetryEventConfig`, `FeignFallbackUtils` |
 
@@ -97,7 +70,7 @@ Root `build.gradle`'s `subprojects {}` block applies the Spring Boot plugin (and
 1. Client sends credentials to `POST /api/v1/auth/login` via the gateway.
 2. `auth-service` calls `member-service` via Feign (`POST /api/v1/member/authenticate`) to verify credentials.
 3. On success, `auth-service` returns a `TokenPair` (access + refresh JWT).
-4. For protected routes, the gateway's `CustomServerSecurityContextRepository` calls `auth-service` (`POST /api/v1/auth/validate`) via reactive Feign to validate the Bearer token and inject the `SecurityContext`.
+4. For protected routes, the gateway's `CustomServerSecurityContextRepository` calls `auth-service` (`POST /api/v1/auth/validate-token`) via `WebClient` to validate the Bearer token and inject the `SecurityContext`.
 
 ## Error Handling
 
