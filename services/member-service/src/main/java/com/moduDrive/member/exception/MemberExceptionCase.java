@@ -1,4 +1,4 @@
-package com.moduDrive.member.common;
+package com.moduDrive.member.exception;
 
 import com.moduDrive.common.core.exception.ExceptionCase;
 import lombok.AllArgsConstructor;

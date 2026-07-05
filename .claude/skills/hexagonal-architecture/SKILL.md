@@ -47,6 +47,10 @@ or `adapter`. `application` never imports `adapter`.
 ## Layer map
 
 ```
+config/
+  <Concern>Config.java        Root-level, sibling to domain/application/adapter.
+                               Composition-root bean wiring not owned by one
+                               adapter (security beans, encoders, JWT props).
 domain/
   model/<Entity>.java        Pure business object, no framework deps
   vo/<Vo>.java                Standalone value object (only when shared across
@@ -56,10 +60,11 @@ application/
   port/in/usecase/<Verb><Entity>UseCase.java   Public interface, entry contract
   port/out/<Capability>Port.java               Public interface, one capability
   service/<Verb><Entity>Service.java           Package-private, @UseCase impl
-common/
+exception/
   <Domain>ExceptionCase.java  enum implements ExceptionCase (from common:core)
 adapter/
   in/web/controller/<Verb><Entity>Controller.java   Package-private, @WebAdapter
+  in/web/config/<Concern>Config.java                 Adapter-scoped config (Swagger, etc.)
   in/web/dto/<Verb><Entity>Request.java              Request/response records
   in/web/mapper/<Entity>ResponseMapper.java          Domain -> response DTO
   out/persistence/<Entity>PersistenceAdapter.java    @PersistenceAdapter
@@ -234,19 +239,48 @@ For calls made via `WebClient` (e.g. gateway → auth-service), the calling
 class plays the same translation role directly — see
 `gateway-service`'s `AuthClient` + `CustomServerSecurityContextRepository`.
 
+## Configuration classes
+
+Two places, chosen by scope — modeled on `buckpal`'s split between
+`BuckPalConfiguration` (root, wires cross-cutting beans) and adapter-internal
+specifics (see the [wikibook/clean-architecture](https://github.com/wikibook/clean-architecture)
+reference implementation this convention is based on):
+
+- **`config/<Concern>Config.java`** (root, sibling to `domain/application/adapter`) —
+  a bean is used across layers or isn't owned by any single adapter: password
+  encoders, JWT signing properties, security beans. Package-private
+  `@Configuration` classes; Spring wires them via component scanning like any
+  other stereotype.
+- **`adapter/in/web/config/<Concern>Config.java`** (or `adapter/out/.../config/`) —
+  a bean only configures that one adapter's concern and would disappear if the
+  adapter did: Swagger/OpenAPI docs for the REST layer, a Feign client
+  customizer for an out adapter. Never put these at the root — they're not
+  cross-cutting, they're adapter detail.
+
+Don't dump both kinds into a single flat `adapter/config/` bucket — that's
+what erases the distinction and makes every config class look equally
+foundational.
+
 ## Error handling
 
-Each service has exactly one `<Domain>ExceptionCase` enum in `common/`,
+Each service has exactly one `<Domain>ExceptionCase` enum in `exception/`
+(a name distinct from the `common:*` Gradle modules — this is a per-service
+package, not the cross-service `common:core`/`common:api` shared code),
 implementing `ExceptionCase` (`getHttpStatus()`, `getMessage()`) from
-`common:core`. Throw `new BusinessException(<Domain>ExceptionCase.X)` from
-domain/service code — never build `ApiResponse.error(...)` manually;
-`GlobalExceptionHandler` in `common:core` does that translation.
+`common:core`. It's `public` and referenced from both `application/service`
+and `adapter/out/persistence`, so it can't live package-private next to a
+single service the way `buckpal`'s `ThresholdExceededException` sits next to
+`SendMoneyService` — but keep it to exactly this one enum per service, not a
+dumping ground for unrelated helpers. Throw `new
+BusinessException(<Domain>ExceptionCase.X)` from domain/service code — never
+build `ApiResponse.error(...)` manually; `GlobalExceptionHandler` in
+`common:core` does that translation.
 
 ## Checklist: adding a new use case end to end
 
 1. Add/extend the domain model in `domain/model/` (value objects as inner
    records unless shared — then `domain/vo/`).
-2. Add `<Domain>ExceptionCase` entries in `common/` for any new failure modes.
+2. Add `<Domain>ExceptionCase` entries in `exception/` for any new failure modes.
 3. Add `port/in/command/<Verb><Entity>Command.java` extending `SelfValidating`.
 4. Add `port/in/usecase/<Verb><Entity>UseCase.java` (public interface).
 5. Add the `port/out/<Capability>Port.java` interfaces the use case needs.

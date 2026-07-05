@@ -1,4 +1,4 @@
-package com.moduDrive.auth.common;
+package com.moduDrive.auth.exception;
 
 import com.moduDrive.common.core.exception.ExceptionCase;
 import lombok.AllArgsConstructor;

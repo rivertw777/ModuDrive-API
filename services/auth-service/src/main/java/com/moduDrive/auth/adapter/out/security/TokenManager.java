@@ -2,7 +2,7 @@ package com.moduDrive.auth.adapter.out.security;
 
 import com.moduDrive.auth.application.port.out.GenerateTokenPort;
 import com.moduDrive.auth.application.port.out.ValidateTokenPort;
-import com.moduDrive.auth.common.AuthExceptionCase;
+import com.moduDrive.auth.exception.AuthExceptionCase;
 import com.moduDrive.auth.domain.model.MemberAuthData;
 import com.moduDrive.auth.domain.model.MemberAuthData.MemberId;
 import com.moduDrive.auth.domain.model.MemberAuthData.MemberRoles;

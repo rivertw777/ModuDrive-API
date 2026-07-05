@@ -6,7 +6,7 @@ import com.moduDrive.member.application.port.in.command.AuthenticateMemberComman
 import com.moduDrive.member.application.port.in.usecase.AuthenticateMemberUseCase;
 import com.moduDrive.member.application.port.out.FindMemberPort;
 import com.moduDrive.member.application.port.out.MatchesPasswordPort;
-import com.moduDrive.member.common.MemberExceptionCase;
+import com.moduDrive.member.exception.MemberExceptionCase;
 import com.moduDrive.member.domain.model.Member;
 import com.moduDrive.member.domain.model.Member.*;
 import lombok.RequiredArgsConstructor;
