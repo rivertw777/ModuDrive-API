@@ -42,7 +42,7 @@ what needs the test.
 | `application/service/*Service` | Mockito unit test | No | Mock every injected out `Port` interface |
 | `adapter/in/web/controller/*Controller` | `@WebMvcTest` slice | Web layer only | Mock the `UseCase` interface with `@MockitoBean` |
 | `adapter/out/persistence/*PersistenceAdapter` | `@DataJpaTest` (H2 by default, Testcontainers when Postgres-specific — see below) | JPA layer only | None — hits a real DB |
-| `adapter/out/security/*`, `adapter/out/client/*ClientAdapter` | Mockito unit test | No | Mock the raw collaborator (Feign client, JJWT, `PasswordEncoder`, etc.) |
+| `adapter/out/security/*`, `adapter/out/client/*ClientAdapter` | Mockito unit test | No | Mock the raw collaborator when it's an injected interface (Feign client, `PasswordEncoder`) |
 | every service module | ArchUnit test (once per service) | No | Imports the service's own compiled classes |
 | `config/*`, `adapter/in/web/dto/*` | none required | — | — |
 
@@ -50,6 +50,18 @@ what needs the test.
 because the service only depends on out-port *interfaces*, you get full
 business-rule coverage with zero Spring context and millisecond-fast tests.
 Write these first.
+
+**Exception: static-API wrappers like JJWT.** "Mock the raw collaborator"
+only applies when the collaborator is an injected interface with a real
+substitution seam (`PasswordEncoder`, a Feign client). JJWT's `Jwts.builder()`/
+`Jwts.parserBuilder()` are static fluent factories with no such seam — mocking
+them would require `mockStatic` (not a project dependency) and would only
+assert that the adapter calls specific builder methods, not that encode/decode
+actually round-trips correctly, which is the entire behavior the adapter
+exists to provide. For these, test against the real library end-to-end
+(generate a token, then parse it back) as `TokenManagerTest` does — this is
+the one `adapter/out/security` case where an integration-style test is
+correct, not a gap to fix.
 
 ## Tools
 
@@ -68,10 +80,36 @@ needed:
 Need to be added to a service's `build.gradle` `dependencies {}` the first
 time they're used (not present in any service yet):
 
-- **ArchUnit** — `testImplementation 'com.tngtech.archunit:archunit-junit5:1.3.0'`
+- **ArchUnit** — `testImplementation 'com.tngtech.archunit:archunit-junit5:1.4.2'`.
+  Must be `1.4.x`+, not `1.3.0` — `1.3.0` bundles an ASM version that cannot
+  parse Java 25 class files (this project's `sourceCompatibility`). Symptom:
+  `ClassFileImporter().importPackages(...)` silently returns **zero** classes
+  (no exception), so every ArchUnit rule fails with "failed to check any
+  classes" instead of an ASM/bytecode error. If you ever see that message,
+  suspect the ArchUnit/JDK version mismatch first, not the rule itself.
 - **Testcontainers** (only for the Postgres-specific persistence tests
   described below) — `testImplementation 'org.testcontainers:junit-jupiter:1.20.4'`
   and `testImplementation 'org.testcontainers:postgresql:1.20.4'`
+
+**Spring Boot 4.0 test-slice annotations are no longer bundled in
+`spring-boot-starter-test`.** `@WebMvcTest`, `@DataJpaTest`, etc. moved to
+per-technology artifacts with new package names. Add the ones a service
+needs explicitly:
+
+- `@WebMvcTest` → `testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'`,
+  import from `org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest`
+  (not `org.springframework.boot.test.autoconfigure.web.servlet`, which no
+  longer exists).
+- `@DataJpaTest` → `testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'`,
+  import from `org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest`
+  (not `org.springframework.boot.test.autoconfigure.orm.jpa`).
+- `@MockitoBean` (replaces the deprecated `@MockBean`) is still in
+  `org.springframework.test.context.bean.override.mockito.MockitoBean` — no
+  extra dependency needed, it ships with `spring-boot-starter-test`.
+- `@DataJpaTest` no longer auto-registers plain `@Component`/custom
+  stereotype beans (like `@PersistenceAdapter` classes or a `Component`
+  mapper) into the slice context — add `@Import({YourPersistenceAdapter.class,
+  YourMapper.class})` on the test class explicitly.
 
 ## Given-When-Then structure
 
