@@ -1,0 +1,10 @@
+group = 'com.modudrive.common.infrastructure.spring-cloud'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    api 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'
+    api 'org.springframework.cloud:spring-cloud-starter-openfeign'
+}

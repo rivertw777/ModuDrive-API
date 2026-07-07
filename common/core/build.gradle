@@ -5,8 +5,7 @@ repositories {
 }
 
 dependencies {
-    api 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'
-    api 'org.springframework.cloud:spring-cloud-starter-openfeign'
+    implementation project(':common:infrastructure:spring-cloud')
 
     implementation 'org.springframework.boot:spring-boot-starter-aspectj'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
