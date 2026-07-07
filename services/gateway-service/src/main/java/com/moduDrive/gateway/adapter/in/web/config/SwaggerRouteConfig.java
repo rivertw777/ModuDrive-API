@@ -1,4 +1,4 @@
-package com.moduDrive.gateway.config;
+package com.moduDrive.gateway.adapter.in.web.config;
 
 import org.springframework.cloud.gateway.route.RouteLocator;
 import org.springframework.cloud.gateway.route.builder.RouteLocatorBuilder;
@@ -25,5 +25,4 @@ class SwaggerRouteConfig {
                         .uri("lb://auth-service"))
                 .build();
     }
-
 }

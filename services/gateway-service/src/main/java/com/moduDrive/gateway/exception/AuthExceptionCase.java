@@ -1,4 +1,4 @@
-package com.moduDrive.gateway.common;
+package com.moduDrive.gateway.exception;
 
 import com.moduDrive.common.core.exception.ExceptionCase;
 import lombok.Getter;

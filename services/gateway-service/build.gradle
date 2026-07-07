@@ -32,6 +32,8 @@ dependencies {
     implementation 'com.fasterxml.jackson.core:jackson-databind'
     implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jdk8'
     implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310'
+    testImplementation 'com.tngtech.archunit:archunit-junit5:1.4.2'
+    testImplementation 'io.projectreactor:reactor-test'
 }
 
 task prepareDockerContext(type: Copy) {

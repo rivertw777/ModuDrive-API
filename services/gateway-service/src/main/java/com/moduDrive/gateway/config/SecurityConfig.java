@@ -7,14 +7,16 @@ import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.web.server.SecurityWebFilterChain;
+import org.springframework.security.web.server.ServerAuthenticationEntryPoint;
+import org.springframework.security.web.server.context.ServerSecurityContextRepository;
 
 @RequiredArgsConstructor
 @EnableWebFluxSecurity
 @Configuration
 class SecurityConfig {
 
-    private final CustomServerSecurityContextRepository securityContextRepository;
-    private final CustomAuthenticationEntryPoint authenticationEntryPoint;
+    private final ServerSecurityContextRepository securityContextRepository;
+    private final ServerAuthenticationEntryPoint authenticationEntryPoint;
 
     @Bean
     public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
@@ -26,7 +28,6 @@ class SecurityConfig {
                         .pathMatchers(HttpMethod.OPTIONS).permitAll()
                         .pathMatchers("/api/v1/member/sign-up").permitAll()
                         .pathMatchers("/api/v1/auth/login").permitAll()
-                        .pathMatchers("/api/v1/auth/validate-token").permitAll()
                         .pathMatchers("/swagger-ui/**", "/v3/api-docs/**", "/webjars/**",
                                 "/*/v3/api-docs", "/*/v3/api-docs/**").permitAll()
                         .anyExchange().authenticated()
@@ -37,5 +38,4 @@ class SecurityConfig {
                 )
                 .build();
     }
-
 }
