@@ -8,6 +8,7 @@ include ("common:core")
 include ("common:api")
 include ("common:infrastructure:jpa")
 include ("common:infrastructure:resilience4j")
+include ("common:infrastructure:spring-cloud")
 
 include ("services:eureka-server")
 include ("services:gateway-service")

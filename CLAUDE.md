@@ -56,12 +56,13 @@ For the full layer breakdown, naming conventions, dependency-direction rules, an
 
 | Module                              | Purpose                                                      |
 |-------------------------------------|--------------------------------------------------------------|
-| `common:core`                       | `@UseCase`/`@WebAdapter`/`@PersistenceAdapter`, `ApiResponse<T>`, `BusinessException`, `ExceptionCase` interface, `SelfValidating`, `LoggingAspect`, Eureka client |
+| `common:core`                       | `@UseCase`/`@WebAdapter`/`@PersistenceAdapter`, `ApiResponse<T>`, `BusinessException`, `ExceptionCase` interface, `SelfValidating`, `LoggingAspect` |
 | `common:api`                        | Shared DTOs for cross-service calls (auth, member)           |
 | `common:infrastructure:jpa`         | `BaseTimeEntity` (JPA auditing), `AuditingConfig`            |
 | `common:infrastructure:resilience4j`| `CircuitBreakerEventConfig`, `RetryEventConfig`, `FeignFallbackUtils` |
+| `common:infrastructure:spring-cloud`| `spring-cloud-starter-netflix-eureka-client`, `spring-cloud-starter-openfeign` — all services that register with Eureka or use Feign depend on this module |
 
-All services depend on `common:core` and `common:api`. JPA services also depend on `common:infrastructure:jpa`.
+Application services (auth, member, gateway) depend on `common:core`, `common:api`, and `common:infrastructure:spring-cloud`. JPA services also depend on `common:infrastructure:jpa`. `eureka-server` is a standalone registry and does not depend on any common module.
 
 Root `build.gradle`'s `subprojects {}` block applies the Spring Boot plugin (and disables `bootJar`/`bootRun`/`bootBuildImage`) to every module — including implicit intermediate directories like `common` and `services`, which Gradle creates automatically from nested `include(...)` paths in `settings.gradle` even without their own `build.gradle` file. Only the 4 runnable services re-enable those tasks in their own `build.gradle`.
 

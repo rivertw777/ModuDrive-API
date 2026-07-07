@@ -3,7 +3,7 @@ name: modudrive-infra
 services:
 
   postgres:
-    image: postgres:latest
+    image: postgres:18-alpine
     networks:
       - modudrive_network
     ports:
