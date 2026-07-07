@@ -8,4 +8,5 @@ dependencies {
     api 'org.springframework.cloud:spring-cloud-starter-circuitbreaker-resilience4j'
 
     implementation project(':common:core')
+    api 'org.springframework.cloud:spring-cloud-starter-openfeign'
 }
