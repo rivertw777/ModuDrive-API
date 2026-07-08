@@ -1,11 +1,11 @@
-package com.moduDrive.gateway.config;
+package com.moduDrive.gateway.adapter.in.web.security;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.moduDrive.common.api.dto.auth.ValidateTokenRequest;
 import com.moduDrive.common.api.dto.auth.ValidateTokenResponse;
-import com.moduDrive.gateway.client.AuthClient;
-import com.moduDrive.gateway.common.AuthErrorAttributeUtils;
-import com.moduDrive.gateway.common.AuthExceptionCase;
+import com.moduDrive.gateway.adapter.out.auth.AuthClient;
+import com.moduDrive.gateway.exception.AuthExceptionCase;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
@@ -22,6 +22,7 @@ import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -29,10 +30,11 @@ import java.util.List;
 class CustomServerSecurityContextRepository implements ServerSecurityContextRepository {
 
     private final AuthClient authClient;
+    private final ObjectMapper objectMapper;
 
     @Override
     public Mono<Void> save(ServerWebExchange exchange, SecurityContext context) {
-        return null;
+        return Mono.empty();
     }
 
     @Override
@@ -47,43 +49,39 @@ class CustomServerSecurityContextRepository implements ServerSecurityContextRepo
         ValidateTokenRequest validateTokenRequest = new ValidateTokenRequest(authHeader.substring(7));
 
         return authClient.validateToken(validateTokenRequest)
-                .map(apiResponse -> {
+                .flatMap(apiResponse -> {
                     ValidateTokenResponse authData = apiResponse.getData();
-                    String roles = String.join(",", authData.memberRoles());
-
-                    exchange.mutate()
-                            .request(r -> r.headers(headers -> {
-                                headers.add("X_USER_ID", authData.memberId());
-                                headers.add("X_USER_ROLE", roles);
-                            }))
-                            .build();
-
-                    Authentication authentication = createAuthenticationToken(authData.memberId(), roles);
-                    return new SecurityContextImpl(authentication);
+                    if (authData == null) {
+                        return Mono.empty();
+                    }
+                    Authentication authentication = createAuthenticationToken(
+                            authData.memberId(), authData.memberRoles());
+                    return Mono.just((SecurityContext) new SecurityContextImpl(authentication));
                 })
-                .cast(SecurityContext.class)
                 .onErrorResume(WebClientResponseException.class, e -> handleWebClientException(exchange, e))
-                .onErrorResume(Exception.class, e -> Mono.empty());
+                .onErrorResume(Exception.class, e -> {
+                    log.error("토큰 검증 중 예상치 못한 오류 발생", e);
+                    return Mono.empty();
+                });
     }
 
-    private static Authentication createAuthenticationToken(String memberId, String roles) {
-        List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority(roles));
-        return new UsernamePasswordAuthenticationToken(
-                memberId, null, authorities
-        );
+    private static Authentication createAuthenticationToken(String memberId, List<String> memberRoles) {
+        List<GrantedAuthority> authorities = memberRoles.stream()
+                .map(SimpleGrantedAuthority::new)
+                .collect(Collectors.toList());
+        return new UsernamePasswordAuthenticationToken(memberId, null, authorities);
     }
 
     private Mono<SecurityContext> handleWebClientException(ServerWebExchange exchange, WebClientResponseException e) {
         try {
             String responseJson = e.getResponseBodyAsString();
-            ObjectMapper objectMapper = new ObjectMapper();
-            String status = objectMapper.readTree(responseJson).get("status").asText();
-            String message = objectMapper.readTree(responseJson).get("message").asText();
+            JsonNode jsonNode = objectMapper.readTree(responseJson);
+            String status = jsonNode.path("status").asText(AuthExceptionCase.UNAUTHORIZED.getHttpStatus().name());
+            String message = jsonNode.path("message").asText(AuthExceptionCase.UNAUTHORIZED.getMessage());
             AuthErrorAttributeUtils.setAuthErrorAttribute(exchange, status, message);
         } catch (Exception jsonProcessingException) {
             log.error("Content 파싱 실패: {}", jsonProcessingException.getMessage());
         }
         return Mono.empty();
     }
-
 }

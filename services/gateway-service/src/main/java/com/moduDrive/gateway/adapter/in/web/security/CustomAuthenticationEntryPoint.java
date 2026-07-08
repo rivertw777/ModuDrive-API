@@ -1,8 +1,7 @@
-package com.moduDrive.gateway.config;
+package com.moduDrive.gateway.adapter.in.web.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.moduDrive.gateway.common.AuthErrorAttributeUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.core.io.buffer.DataBufferFactory;
@@ -49,5 +48,4 @@ class CustomAuthenticationEntryPoint implements ServerAuthenticationEntryPoint {
         DataBufferFactory bufferFactory = response.bufferFactory();
         return bufferFactory.wrap(responseBody.getBytes(StandardCharsets.UTF_8));
     }
-
 }

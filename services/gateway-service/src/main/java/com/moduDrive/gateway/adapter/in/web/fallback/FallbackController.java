@@ -1,4 +1,4 @@
-package com.moduDrive.gateway.fallback;
+package com.moduDrive.gateway.adapter.in.web.fallback;
 
 import com.moduDrive.common.core.web.ApiResponse;
 import com.moduDrive.common.infrastructure.resilience4j.CircuitBreakerExceptionCase;
@@ -29,17 +29,16 @@ class FallbackController {
 
     private ResponseEntity<ApiResponse<Object>> handleCircuitBreakerException(Throwable ex) {
         if (ex instanceof TimeoutException) {
-            return createServiceUnavailableResponse(CircuitBreakerExceptionCase.CONNECTION_TIMEOUT);
+            return createErrorResponse(CircuitBreakerExceptionCase.CONNECTION_TIMEOUT);
         } else if (ex instanceof CallNotPermittedException) {
-            return createServiceUnavailableResponse(CircuitBreakerExceptionCase.SERVICE_IS_OPEN);
+            return createErrorResponse(CircuitBreakerExceptionCase.SERVICE_IS_OPEN);
         } else {
-            return createServiceUnavailableResponse(CircuitBreakerExceptionCase.SERVICE_UNAVAILABLE);
+            return createErrorResponse(CircuitBreakerExceptionCase.SERVICE_UNAVAILABLE);
         }
     }
 
-    private ResponseEntity<ApiResponse<Object>> createServiceUnavailableResponse(CircuitBreakerExceptionCase exceptionCase) {
+    private ResponseEntity<ApiResponse<Object>> createErrorResponse(CircuitBreakerExceptionCase exceptionCase) {
         return ResponseEntity.status(exceptionCase.getHttpStatus())
                 .body(ApiResponse.error(exceptionCase));
     }
-
 }
