@@ -9,7 +9,7 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
 class GatewayArchitectureTest {
 
-    private final JavaClasses classes = new ClassFileImporter()
+    private static final JavaClasses classes = new ClassFileImporter()
             .importPackages("com.moduDrive.gateway");
 
     @Test
@@ -30,6 +30,13 @@ class GatewayArchitectureTest {
     void configDoesNotDependOnAdapterOut() {
         ArchRule rule = noClasses().that().resideInAPackage("..gateway.config..")
                 .should().dependOnClassesThat().resideInAPackage("..adapter.out..");
+        rule.check(classes);
+    }
+
+    @Test
+    void configDoesNotDependOnAdapterIn() {
+        ArchRule rule = noClasses().that().resideInAPackage("..gateway.config..")
+                .should().dependOnClassesThat().resideInAPackage("..adapter.in..");
         rule.check(classes);
     }
 }
