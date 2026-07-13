@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.stereotype.Component;
@@ -32,11 +33,12 @@ class UserContextFilter implements GlobalFilter, Ordered {
 
         return ReactiveSecurityContextHolder.getContext()
                 .map(ctx -> ctx.getAuthentication())
-                .filter(auth -> auth != null && auth.isAuthenticated())
+                .filter(auth -> auth != null && auth.isAuthenticated() && !(auth instanceof AnonymousAuthenticationToken))
                 .map(auth -> {
-                    String userId = (String) auth.getPrincipal();
+                    String userId = sanitizeHeaderValue((String) auth.getPrincipal());
                     String roles = auth.getAuthorities().stream()
                             .map(GrantedAuthority::getAuthority)
+                            .map(UserContextFilter::sanitizeHeaderValue)
                             .collect(Collectors.joining(","));
                     return (ServerWebExchange) sanitized.mutate()
                             .request(r -> r.headers(headers -> {
@@ -52,5 +54,9 @@ class UserContextFilter implements GlobalFilter, Ordered {
     @Override
     public int getOrder() {
         return Ordered.LOWEST_PRECEDENCE - 1;
+    }
+
+    private static String sanitizeHeaderValue(String value) {
+        return value.replaceAll("[\r\n]", "");
     }
 }

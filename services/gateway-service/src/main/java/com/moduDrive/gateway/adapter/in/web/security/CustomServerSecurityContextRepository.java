@@ -22,7 +22,6 @@ import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -52,6 +51,7 @@ class CustomServerSecurityContextRepository implements ServerSecurityContextRepo
                 .flatMap(apiResponse -> {
                     ValidateTokenResponse authData = apiResponse.getData();
                     if (authData == null) {
+                        AuthErrorAttributeUtils.setAuthErrorAttribute(exchange, AuthExceptionCase.UNAUTHORIZED);
                         return Mono.empty();
                     }
                     Authentication authentication = createAuthenticationToken(
@@ -61,14 +61,16 @@ class CustomServerSecurityContextRepository implements ServerSecurityContextRepo
                 .onErrorResume(WebClientResponseException.class, e -> handleWebClientException(exchange, e))
                 .onErrorResume(Exception.class, e -> {
                     log.error("토큰 검증 중 예상치 못한 오류 발생", e);
+                    AuthErrorAttributeUtils.setAuthErrorAttribute(exchange, AuthExceptionCase.UNAUTHORIZED);
                     return Mono.empty();
                 });
     }
 
     private static Authentication createAuthenticationToken(String memberId, List<String> memberRoles) {
         List<GrantedAuthority> authorities = memberRoles.stream()
-                .map(SimpleGrantedAuthority::new)
-                .collect(Collectors.toList());
+                .filter(role -> role != null && !role.isBlank())
+                .map(role -> (GrantedAuthority) new SimpleGrantedAuthority(role))
+                .toList();
         return new UsernamePasswordAuthenticationToken(memberId, null, authorities);
     }
 
@@ -76,12 +78,28 @@ class CustomServerSecurityContextRepository implements ServerSecurityContextRepo
         try {
             String responseJson = e.getResponseBodyAsString();
             JsonNode jsonNode = objectMapper.readTree(responseJson);
-            String status = jsonNode.path("status").asText(AuthExceptionCase.UNAUTHORIZED.getHttpStatus().name());
+            String rawStatus = jsonNode.path("status").asText(null);
+            String status = isKnownHttpStatus(rawStatus)
+                    ? rawStatus
+                    : AuthExceptionCase.UNAUTHORIZED.getHttpStatus().name();
             String message = jsonNode.path("message").asText(AuthExceptionCase.UNAUTHORIZED.getMessage());
             AuthErrorAttributeUtils.setAuthErrorAttribute(exchange, status, message);
         } catch (Exception jsonProcessingException) {
-            log.error("Content 파싱 실패: {}", jsonProcessingException.getMessage());
+            log.error("Content 파싱 실패 — HTTP {}", e.getStatusCode(), jsonProcessingException);
+            AuthErrorAttributeUtils.setAuthErrorAttribute(exchange, AuthExceptionCase.UNAUTHORIZED);
         }
         return Mono.empty();
+    }
+
+    private static boolean isKnownHttpStatus(String status) {
+        if (status == null) {
+            return false;
+        }
+        try {
+            org.springframework.http.HttpStatus.valueOf(status);
+            return true;
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
     }
 }
