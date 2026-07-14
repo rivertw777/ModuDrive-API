@@ -1,0 +1,20 @@
+package com.moduDrive.storage.exception;
+
+import com.moduDrive.common.core.exception.ExceptionCase;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import org.springframework.http.HttpStatus;
+
+@Getter
+@AllArgsConstructor
+public enum StorageExceptionCase implements ExceptionCase {
+
+    SESSION_NOT_FOUND(HttpStatus.NOT_FOUND, "업로드 세션을 찾을 수 없습니다."),
+    SESSION_ALREADY_COMPLETED(HttpStatus.BAD_REQUEST, "이미 완료된 업로드 세션입니다."),
+    CHUNK_UPLOAD_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "청크 업로드에 실패했습니다."),
+    FILE_NOT_FOUND_IN_STORAGE(HttpStatus.NOT_FOUND, "스토리지에서 파일을 찾을 수 없습니다."),
+    STORAGE_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "스토리지 오류가 발생했습니다.");
+
+    private final HttpStatus httpStatus;
+    private final String message;
+}

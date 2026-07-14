@@ -1,0 +1,6 @@
+spring:
+  application:
+    name: storage-service
+  config:
+    import:
+      - "classpath:application-resilience4j.yml"

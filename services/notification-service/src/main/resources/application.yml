@@ -1,0 +1,7 @@
+spring:
+  application:
+    name: notification-service
+  config:
+    import:
+      - "classpath:application-jpa.yml"
+      - "classpath:application-resilience4j.yml"

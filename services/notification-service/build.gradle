@@ -1,0 +1,52 @@
+import com.bmuschko.gradle.docker.tasks.image.DockerBuildImage
+
+plugins {
+    id 'com.bmuschko.docker-remote-api' version '10.0.0'
+}
+
+group = 'com.modudrive.notification'
+version = '0.0.1-SNAPSHOT'
+
+bootRun {
+    enabled = true
+}
+
+bootJar {
+    enabled = true
+}
+
+bootBuildImage {
+    enabled = true
+}
+
+dependencies {
+    implementation project(':common:core')
+    implementation project(':common:api')
+    implementation project(':common:infrastructure:jpa')
+    implementation project(':common:infrastructure:resilience4j')
+    implementation project(':common:infrastructure:spring-cloud')
+
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3'
+    runtimeOnly 'org.postgresql:postgresql'
+    testRuntimeOnly 'com.h2database:h2'
+    testImplementation 'com.tngtech.archunit:archunit-junit5:1.4.2'
+    testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
+}
+
+task prepareDockerContext(type: Copy) {
+    dependsOn bootJar
+    from bootJar
+    from rootProject.file('.docker/Dockerfile')
+    into layout.buildDirectory.dir('docker')
+}
+
+task docker(type: DockerBuildImage) {
+    dependsOn prepareDockerContext
+    inputDir = layout.buildDirectory.dir('docker')
+    images.add("${rootProject.name}-${project.name}:${version}")
+    buildArgs = ['JAR_FILE': bootJar.archiveFileName.get()]
+}
