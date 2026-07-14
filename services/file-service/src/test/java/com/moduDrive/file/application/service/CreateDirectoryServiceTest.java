@@ -49,6 +49,7 @@ class CreateDirectoryServiceTest {
 
             assertThat(result.isDirectory()).isTrue();
             assertThat(result.getName()).isEqualTo("docs");
+            assertThat(result.getStatus()).isEqualTo(com.moduDrive.file.domain.model.FileStatus.UPLOADED);
             then(saveFilePort).should().saveFile(any(File.class));
         }
     }

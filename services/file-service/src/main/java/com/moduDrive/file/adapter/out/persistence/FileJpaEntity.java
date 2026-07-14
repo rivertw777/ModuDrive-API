@@ -13,7 +13,9 @@ import java.util.UUID;
 @Getter
 @NoArgsConstructor
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
-@Table(name = "file")
+@Table(name = "file", uniqueConstraints = {
+        @UniqueConstraint(name = "uk_file_namespace_path_name", columnNames = {"namespace_id", "path", "name"})
+})
 @Entity
 class FileJpaEntity extends BaseTimeEntity {
 

@@ -7,7 +7,6 @@ import com.moduDrive.file.application.port.in.usecase.CreateDirectoryUseCase;
 import com.moduDrive.file.application.port.out.FindNamespacePort;
 import com.moduDrive.file.application.port.out.SaveFilePort;
 import com.moduDrive.file.domain.model.File;
-import com.moduDrive.file.domain.model.File.FileIsDirectory;
 import com.moduDrive.file.domain.model.File.FileNamespaceId;
 import com.moduDrive.file.domain.model.Namespace;
 import com.moduDrive.file.domain.model.Namespace.NamespaceUserId;
@@ -28,12 +27,11 @@ class CreateDirectoryService implements CreateDirectoryUseCase {
         Namespace namespace = findNamespacePort.findByUserId(new NamespaceUserId(command.getUserId()))
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.NAMESPACE_NOT_FOUND));
 
-        File directory = File.create(
+        File directory = File.createDirectory(
                 new FileNamespaceId(namespace.getId()),
                 command.getName(),
                 command.getPath(),
-                command.getOwnerId(),
-                new FileIsDirectory(true)
+                command.getOwnerId()
         );
         return saveFilePort.saveFile(directory);
     }
