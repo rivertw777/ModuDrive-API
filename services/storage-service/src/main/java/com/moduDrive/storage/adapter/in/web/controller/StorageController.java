@@ -4,9 +4,11 @@ import com.moduDrive.common.core.annotation.WebAdapter;
 import com.moduDrive.common.core.web.ApiResponse;
 import com.moduDrive.storage.adapter.in.web.dto.InitResumableUploadRequest;
 import com.moduDrive.storage.adapter.in.web.dto.ResumableUploadSessionResponse;
+import com.moduDrive.storage.application.port.in.command.CompleteResumableUploadCommand;
 import com.moduDrive.storage.application.port.in.command.InitResumableUploadCommand;
 import com.moduDrive.storage.application.port.in.command.SimpleUploadCommand;
 import com.moduDrive.storage.application.port.in.command.UploadChunkCommand;
+import com.moduDrive.storage.application.port.in.usecase.CompleteResumableUploadUseCase;
 import com.moduDrive.storage.application.port.in.usecase.InitResumableUploadUseCase;
 import com.moduDrive.storage.application.port.in.usecase.SimpleUploadUseCase;
 import com.moduDrive.storage.application.port.in.usecase.UploadChunkUseCase;
@@ -32,6 +34,7 @@ class StorageController {
     private final SimpleUploadUseCase simpleUploadUseCase;
     private final InitResumableUploadUseCase initResumableUploadUseCase;
     private final UploadChunkUseCase uploadChunkUseCase;
+    private final CompleteResumableUploadUseCase completeResumableUploadUseCase;
 
     @PostMapping("/api/v1/storage/upload")
     public ApiResponse<Void> simpleUpload(
@@ -58,6 +61,15 @@ class StorageController {
             @RequestParam MultipartFile chunk) throws IOException {
         uploadChunkUseCase.uploadChunk(
                 new UploadChunkCommand(sessionId, userId, chunkIndex, chunk.getBytes()));
+        return ApiResponse.success();
+    }
+
+    @PostMapping("/api/v1/storage/upload/resumable/{sessionId}/complete")
+    public ApiResponse<Void> completeResumableUpload(
+            @RequestHeader("X_USER_ID") Long userId,
+            @PathVariable String sessionId) {
+        completeResumableUploadUseCase.completeResumableUpload(
+                new CompleteResumableUploadCommand(sessionId, userId));
         return ApiResponse.success();
     }
 }
