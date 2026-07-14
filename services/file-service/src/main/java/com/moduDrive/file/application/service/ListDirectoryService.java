@@ -28,6 +28,6 @@ class ListDirectoryService implements ListDirectoryUseCase {
         Namespace namespace = findNamespacePort.findByUserId(command.getUserId())
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.NAMESPACE_NOT_FOUND));
 
-        return findFilePort.findByNamespaceIdAndPath(new NamespaceId(namespace.getId()), command.getPath());
+        return findFilePort.findByNamespaceIdAndPath(new NamespaceId(namespace.getId()), command.getPath().value());
     }
 }

@@ -8,6 +8,6 @@ import java.util.UUID;
 
 interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID> {
 
-    List<FileJpaEntity> findByNamespaceIdAndPathStartingWithAndStatusNot(
-            UUID namespaceId, String pathPrefix, FileStatus status);
+    List<FileJpaEntity> findByNamespaceIdAndPathAndStatusNot(
+            UUID namespaceId, String path, FileStatus status);
 }

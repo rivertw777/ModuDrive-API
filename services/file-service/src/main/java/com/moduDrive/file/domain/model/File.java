@@ -38,6 +38,23 @@ public class File {
         );
     }
 
+    public static File createDirectory(FileNamespaceId namespaceId,
+                                       FileName name,
+                                       FilePath path,
+                                       FileOwnerId ownerId) {
+        return new File(
+                null,
+                namespaceId.value(),
+                name.value(),
+                path.value(),
+                ownerId.value(),
+                null,
+                0L,
+                FileStatus.UPLOADED,
+                true
+        );
+    }
+
     public static File withId(FileId id,
                               FileNamespaceId namespaceId,
                               FileName name,
