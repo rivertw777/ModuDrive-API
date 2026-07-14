@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.moduDrive.common.core.web.GlobalExceptionHandler;
 import com.moduDrive.storage.application.port.in.usecase.InitResumableUploadUseCase;
 import com.moduDrive.storage.application.port.in.usecase.SimpleUploadUseCase;
+import com.moduDrive.storage.application.port.in.usecase.UploadChunkUseCase;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -24,6 +25,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willDoNothing;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.http.HttpMethod.PUT;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -35,6 +37,7 @@ class StorageControllerTest {
 
     @Mock private SimpleUploadUseCase simpleUploadUseCase;
     @Mock private InitResumableUploadUseCase initResumableUploadUseCase;
+    @Mock private UploadChunkUseCase uploadChunkUseCase;
     @InjectMocks private StorageController storageController;
 
     @BeforeEach
@@ -103,6 +106,36 @@ class StorageControllerTest {
                             .header("X_USER_ID", 1L)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"fileId\":\"" + UUID.randomUUID() + "\",\"totalChunks\":0}"))
+                    .andExpect(status().isBadRequest());
+        }
+    }
+
+    @Nested
+    @DisplayName("PUT /api/v1/storage/upload/resumable/{sessionId}")
+    class UploadChunk {
+
+        @Test
+        void returnsOkOnSuccess() throws Exception {
+            willDoNothing().given(uploadChunkUseCase).uploadChunk(any());
+            MockMultipartFile chunk = new MockMultipartFile(
+                    "chunk", "chunk0.bin", "application/octet-stream", "data".getBytes());
+
+            mockMvc.perform(multipart(PUT, "/api/v1/storage/upload/resumable/" + UUID.randomUUID())
+                            .file(chunk)
+                            .header("X_USER_ID", 1L)
+                            .param("chunkIndex", "0"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.message").value("success"));
+        }
+
+        @Test
+        void returnsBadRequestOnMissingChunkIndex() throws Exception {
+            MockMultipartFile chunk = new MockMultipartFile(
+                    "chunk", "chunk0.bin", "application/octet-stream", "data".getBytes());
+
+            mockMvc.perform(multipart(PUT, "/api/v1/storage/upload/resumable/" + UUID.randomUUID())
+                            .file(chunk)
+                            .header("X_USER_ID", 1L))
                     .andExpect(status().isBadRequest());
         }
     }
