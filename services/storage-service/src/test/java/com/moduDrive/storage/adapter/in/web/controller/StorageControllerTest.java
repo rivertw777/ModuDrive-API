@@ -2,6 +2,7 @@ package com.moduDrive.storage.adapter.in.web.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.moduDrive.common.core.web.GlobalExceptionHandler;
+import com.moduDrive.storage.application.port.in.usecase.InitResumableUploadUseCase;
 import com.moduDrive.storage.application.port.in.usecase.SimpleUploadUseCase;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -11,6 +12,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -18,8 +20,10 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willDoNothing;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -27,8 +31,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class StorageControllerTest {
 
     private MockMvc mockMvc;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Mock private SimpleUploadUseCase simpleUploadUseCase;
+    @Mock private InitResumableUploadUseCase initResumableUploadUseCase;
     @InjectMocks private StorageController storageController;
 
     @BeforeEach
@@ -61,6 +67,42 @@ class StorageControllerTest {
                     "file", "test.txt", "text/plain", "hello".getBytes());
 
             mockMvc.perform(multipart("/api/v1/storage/upload").file(file))
+                    .andExpect(status().isBadRequest());
+        }
+    }
+
+    @Nested
+    @DisplayName("POST /api/v1/storage/upload/resumable")
+    class InitResumableUpload {
+
+        @Test
+        void returnsSessionIdOnSuccess() throws Exception {
+            UUID sessionId = UUID.randomUUID();
+            given(initResumableUploadUseCase.initResumableUpload(any())).willReturn(sessionId);
+
+            mockMvc.perform(post("/api/v1/storage/upload/resumable")
+                            .header("X_USER_ID", 1L)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"fileId\":\"" + UUID.randomUUID() + "\",\"totalChunks\":5}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.sessionId").value(sessionId.toString()));
+        }
+
+        @Test
+        void returnsBadRequestWhenFileIdBlank() throws Exception {
+            mockMvc.perform(post("/api/v1/storage/upload/resumable")
+                            .header("X_USER_ID", 1L)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"fileId\":\"\",\"totalChunks\":3}"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void returnsBadRequestWhenTotalChunksZero() throws Exception {
+            mockMvc.perform(post("/api/v1/storage/upload/resumable")
+                            .header("X_USER_ID", 1L)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"fileId\":\"" + UUID.randomUUID() + "\",\"totalChunks\":0}"))
                     .andExpect(status().isBadRequest());
         }
     }
