@@ -19,6 +19,12 @@ bootBuildImage {
     enabled = true
 }
 
+afterEvaluate {
+    test {
+        maxHeapSize = "2048m"
+    }
+}
+
 dependencies {
     implementation project(':common:core')
     implementation project(':common:api')
