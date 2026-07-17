@@ -2,6 +2,7 @@ package com.moduDrive.storage.adapter.in.web.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.moduDrive.common.core.web.GlobalExceptionHandler;
+import com.moduDrive.storage.application.port.in.usecase.CompleteResumableUploadUseCase;
 import com.moduDrive.storage.application.port.in.usecase.InitResumableUploadUseCase;
 import com.moduDrive.storage.application.port.in.usecase.SimpleUploadUseCase;
 import com.moduDrive.storage.application.port.in.usecase.UploadChunkUseCase;
@@ -38,6 +39,7 @@ class StorageControllerTest {
     @Mock private SimpleUploadUseCase simpleUploadUseCase;
     @Mock private InitResumableUploadUseCase initResumableUploadUseCase;
     @Mock private UploadChunkUseCase uploadChunkUseCase;
+    @Mock private CompleteResumableUploadUseCase completeResumableUploadUseCase;
     @InjectMocks private StorageController storageController;
 
     @BeforeEach
@@ -137,6 +139,21 @@ class StorageControllerTest {
                             .file(chunk)
                             .header("X_USER_ID", 1L))
                     .andExpect(status().isBadRequest());
+        }
+    }
+
+    @Nested
+    @DisplayName("POST /api/v1/storage/upload/resumable/{sessionId}/complete")
+    class CompleteResumableUpload {
+
+        @Test
+        void returnsOkOnSuccess() throws Exception {
+            willDoNothing().given(completeResumableUploadUseCase).completeResumableUpload(any());
+
+            mockMvc.perform(post("/api/v1/storage/upload/resumable/" + UUID.randomUUID() + "/complete")
+                            .header("X_USER_ID", 1L))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.message").value("success"));
         }
     }
 }
