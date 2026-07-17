@@ -3,6 +3,7 @@ package com.moduDrive.storage.adapter.in.web.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.moduDrive.common.core.web.GlobalExceptionHandler;
 import com.moduDrive.storage.application.port.in.usecase.CompleteResumableUploadUseCase;
+import com.moduDrive.storage.application.port.in.usecase.DownloadFileUseCase;
 import com.moduDrive.storage.application.port.in.usecase.InitResumableUploadUseCase;
 import com.moduDrive.storage.application.port.in.usecase.SimpleUploadUseCase;
 import com.moduDrive.storage.application.port.in.usecase.UploadChunkUseCase;
@@ -21,9 +22,11 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willDoNothing;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.http.HttpMethod.PUT;
@@ -40,6 +43,7 @@ class StorageControllerTest {
     @Mock private InitResumableUploadUseCase initResumableUploadUseCase;
     @Mock private UploadChunkUseCase uploadChunkUseCase;
     @Mock private CompleteResumableUploadUseCase completeResumableUploadUseCase;
+    @Mock private DownloadFileUseCase downloadFileUseCase;
     @InjectMocks private StorageController storageController;
 
     @BeforeEach
@@ -154,6 +158,22 @@ class StorageControllerTest {
                             .header("X_USER_ID", 1L))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.message").value("success"));
+        }
+    }
+
+    @Nested
+    @DisplayName("GET /api/v1/storage/download/{fileId}")
+    class DownloadFile {
+
+        @Test
+        void returnsFileBytesOnSuccess() throws Exception {
+            byte[] data = "file content".getBytes();
+            given(downloadFileUseCase.download(any())).willReturn(data);
+
+            mockMvc.perform(get("/api/v1/storage/download/" + UUID.randomUUID()))
+                    .andExpect(status().isOk())
+                    .andExpect(result -> assertThat(result.getResponse().getContentAsByteArray())
+                            .isEqualTo(data));
         }
     }
 }
