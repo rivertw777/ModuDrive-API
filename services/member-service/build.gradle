@@ -25,12 +25,12 @@ dependencies {
     implementation project(':common:infrastructure:jpa')
     implementation project(':common:infrastructure:resilience4j')
     implementation project(':common:infrastructure:spring-cloud')
+    implementation project(':common:infrastructure:swagger')
 
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
     runtimeOnly 'org.postgresql:postgresql'
-    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3'
     implementation 'org.springframework.security:spring-security-crypto'
     testRuntimeOnly 'com.h2database:h2'
     testImplementation 'com.tngtech.archunit:archunit-junit5:1.4.2'
