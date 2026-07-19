@@ -23,6 +23,21 @@ class SwaggerRouteConfig {
                         "/auth-service/v3/api-docs/**")
                         .filters(f -> f.stripPrefix(1))
                         .uri("lb://auth-service"))
+                .route("file-service-swagger", r -> r.path(
+                        "/file-service/v3/api-docs",
+                        "/file-service/v3/api-docs/**")
+                        .filters(f -> f.stripPrefix(1))
+                        .uri("lb://file-service"))
+                .route("storage-service-swagger", r -> r.path(
+                        "/storage-service/v3/api-docs",
+                        "/storage-service/v3/api-docs/**")
+                        .filters(f -> f.stripPrefix(1))
+                        .uri("lb://storage-service"))
+                .route("notification-service-swagger", r -> r.path(
+                        "/notification-service/v3/api-docs",
+                        "/notification-service/v3/api-docs/**")
+                        .filters(f -> f.stripPrefix(1))
+                        .uri("lb://notification-service"))
                 .build();
     }
 }

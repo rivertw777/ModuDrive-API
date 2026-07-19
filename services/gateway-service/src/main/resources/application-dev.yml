@@ -5,4 +5,10 @@ springdoc:
         url: /member-service/v3/api-docs
       - name: auth-service
         url: /auth-service/v3/api-docs
+      - name: file-service
+        url: /file-service/v3/api-docs
+      - name: storage-service
+        url: /storage-service/v3/api-docs
+      - name: notification-service
+        url: /notification-service/v3/api-docs
     path: /swagger-ui.html

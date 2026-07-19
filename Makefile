@@ -1,5 +1,5 @@
 .PHONY: service infra \
-       gateway member auth
+       gateway member auth file storage notification
 
 BLUE := \033[0;34m
 GREEN := \033[0;32m
@@ -36,3 +36,21 @@ auth:
 	@./gradlew :services:auth-service:test
 	@./gradlew :services:auth-service:docker
 	@docker-compose -f $(SERVICE_COMPOSE_FILE) up -d auth-service
+
+file:
+	@echo "$(BLUE)🚀 Starting File Service...$(NC)"
+	@./gradlew :services:file-service:test
+	@./gradlew :services:file-service:docker
+	@docker-compose -f $(SERVICE_COMPOSE_FILE) up -d file-service
+
+storage:
+	@echo "$(BLUE)🚀 Starting Storage Service...$(NC)"
+	@./gradlew :services:storage-service:test
+	@./gradlew :services:storage-service:docker
+	@docker-compose -f $(SERVICE_COMPOSE_FILE) up -d storage-service
+
+notification:
+	@echo "$(BLUE)🚀 Starting Notification Service...$(NC)"
+	@./gradlew :services:notification-service:test
+	@./gradlew :services:notification-service:docker
+	@docker-compose -f $(SERVICE_COMPOSE_FILE) up -d notification-service
