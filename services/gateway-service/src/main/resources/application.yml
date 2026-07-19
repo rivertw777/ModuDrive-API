@@ -44,6 +44,12 @@ resilience4j:
         baseConfig: default
       authServiceCircuitBreaker:
         baseConfig: default
+      fileServiceCircuitBreaker:
+        baseConfig: default
+      storageServiceCircuitBreaker:
+        baseConfig: default
+      notificationServiceCircuitBreaker:
+        baseConfig: default
 
 client:
   url: ${FRONTEND_APP_URL}

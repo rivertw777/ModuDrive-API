@@ -28,10 +28,10 @@ make infra
 make service
 
 # Test + build image + start a single service
-make member   # or: make gateway, make auth
+make member   # or: make gateway, make auth, make file, make storage, make notification
 ```
 
-Docker Compose files are at `.docker/docker-compose.service.yml` (services) and `.docker/docker-compose.infra.yml` (Postgres). The shared `Dockerfile` lives at `.docker/Dockerfile`, referenced by every service's `build.gradle` via its `docker` task.
+Docker Compose files are at `.docker/docker-compose.service.yml` (services) and `.docker/docker-compose.infra.yml` (Postgres, MinIO). The shared `Dockerfile` lives at `.docker/Dockerfile`, referenced by every service's `build.gradle` via its `docker` task.
 
 The active Spring profile (`dev`) is injected via `SPRING_PROFILES_ACTIVE` in `docker-compose.service.yml`, not hardcoded in `application.yml`.
 
@@ -43,6 +43,9 @@ The active Spring profile (`dev`) is injected via `SPRING_PROFILES_ACTIVE` in `d
 | gateway-service       | 10001 | Spring Cloud Gateway (WebFlux/reactive)  |
 | member-service        | 10010 | User signup, lookup, password validation |
 | auth-service          | 10011 | JWT login + token validation             |
+| file-service          | 10012 | File metadata, versioning, sharing, directory management |
+| storage-service       | 10013 | Block-level file storage — split, compress, encrypt, upload/download via S3/MinIO |
+| notification-service  | 10014 | Long-polling notification delivery       |
 
 Swagger UI for all services is aggregated at the gateway: `http://localhost:10001/swagger-ui.html`.
 
