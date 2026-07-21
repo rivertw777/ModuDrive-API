@@ -4,18 +4,20 @@ spring:
 
   cloud:
     gateway:
-      globalcors:
-        cors-configurations:
-          '[/**]':
-            allow-credentials: true
-            allowed-origins: ${client.url}
-            allowed-headers: "*"
-            allowed-methods:
-              - PUT
-              - GET
-              - POST
-              - DELETE
-              - OPTIONS
+      server:
+        webflux:
+          globalcors:
+            cors-configurations:
+              '[/**]':
+                allow-credentials: true
+                allowed-origins: ${client.url}
+                allowed-headers: "*"
+                allowed-methods:
+                  - PUT
+                  - GET
+                  - POST
+                  - DELETE
+                  - OPTIONS
 
 resilience4j:
   timelimiter:

@@ -23,7 +23,7 @@ services:
       - SERVER_PORT=10001
       - SPRING_PROFILES_ACTIVE=dev
       - eureka.client.serviceUrl.defaultZone=http://eureka-server:10000/eureka/
-      - FRONTEND_APP_URL=http://host.docker.internal:3000
+      - FRONTEND_APP_URL=http://localhost:3000
     depends_on:
       member-service:
         condition: service_started
