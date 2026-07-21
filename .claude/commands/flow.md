@@ -9,7 +9,7 @@ Run the full git workflow end-to-end by inferring everything from the current wo
 3. Create a GitHub issue with `gh issue create --title "[type] title" --body "..."`. The title is in English; the body is written in Korean and summarizes what the issue is about. Note the issue number.
 4. Run `git checkout dev && git pull origin dev && git checkout -b <prefix>/<issue-number>-<slug>`.
 5. Run `./gradlew build` to verify the change compiles and all tests pass. If it fails, fix the underlying issue and rerun, up to 3 attempts total. If it still fails after 3 attempts, stop and report the failure to the user instead of continuing.
-6. Run `/code-review` and `/security-review` against the current diff. Fix any findings they surface; if a fix changes code, rerun `./gradlew build`. Repeat this cycle up to 3 attempts total. If findings still remain after 3 attempts, stop and report the remaining findings to the user instead of continuing.
+6. Run `/security-review` against the current diff. Fix any findings they surface; if a fix changes code, rerun `./gradlew build`. Repeat this cycle up to 3 attempts total. If findings still remain after 3 attempts, stop and report the remaining findings to the user instead of continuing.
 7. Stage all changes with `git add .` and commit. Include `Closes #<issue-number>` in the commit body.
 8. Push with `git push -u origin <branch>`.
 9. Create a PR to `dev` with `gh pr create`. The PR title is in English (same format as the commit message). The PR body is written in Korean and includes a summary of changes and `Closes #<issue-number>`. Print the PR URL.
