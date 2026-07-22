@@ -21,12 +21,12 @@ class NamespaceJpaEntity extends BaseTimeEntity {
     private UUID id;
 
     @Column(nullable = false, unique = true)
-    private Long userId;
+    private UUID userId;
 
     @Column(nullable = false)
     private String rootPath;
 
-    NamespaceJpaEntity(Long userId, String rootPath) {
+    NamespaceJpaEntity(UUID userId, String rootPath) {
         this.userId = userId;
         this.rootPath = rootPath;
     }

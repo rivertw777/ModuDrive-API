@@ -6,7 +6,7 @@ import java.util.UUID;
 
 public record NamespaceResponse(
         UUID namespaceId,
-        Long userId,
+        UUID userId,
         String rootPath
 ) {
     public static NamespaceResponse from(Namespace namespace) {

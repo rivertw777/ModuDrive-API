@@ -17,7 +17,7 @@ public class ShareFileCommand {
     private final FileShareSharedWithUserId sharedWithUserId;
     private final FileSharePermission permission;
 
-    public ShareFileCommand(UUID fileId, Long ownerId, Long sharedWithUserId, Permission permission) {
+    public ShareFileCommand(UUID fileId, UUID ownerId, UUID sharedWithUserId, Permission permission) {
         this.fileId = new FileId(fileId);
         this.ownerId = new FileShareOwnerId(ownerId);
         this.sharedWithUserId = new FileShareSharedWithUserId(sharedWithUserId);

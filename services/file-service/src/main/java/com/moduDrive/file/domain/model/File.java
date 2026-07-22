@@ -14,7 +14,7 @@ public class File {
     private final UUID namespaceId;
     private final String name;
     private final String path;
-    private final Long ownerId;
+    private final UUID ownerId;
     private UUID currentVersionId;
     private Long fileSize;
     private FileStatus status;
@@ -91,7 +91,7 @@ public class File {
     public record FileNamespaceId(UUID value) {}
     public record FileName(String value) {}
     public record FilePath(String value) {}
-    public record FileOwnerId(Long value) {}
+    public record FileOwnerId(UUID value) {}
     public record FileCurrentVersionId(UUID value) {}
     public record FileSize(Long value) {}
     public record FileIsDirectory(boolean value) {}

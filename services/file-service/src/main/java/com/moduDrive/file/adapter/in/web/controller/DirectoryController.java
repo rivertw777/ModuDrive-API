@@ -13,10 +13,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.UUID;
 
 @WebAdapter
 @RestController
@@ -28,7 +30,7 @@ class DirectoryController {
 
     @GetMapping("/api/v1/directories")
     public ApiResponse<List<FileResponse>> listDirectory(
-            @RequestParam Long userId,
+            @RequestHeader("X_USER_ID") UUID userId,
             @RequestParam String path) {
         List<FileResponse> files = listDirectoryUseCase
                 .listDirectory(new ListDirectoryCommand(userId, path))
@@ -39,9 +41,11 @@ class DirectoryController {
     }
 
     @PostMapping("/api/v1/directories")
-    public ApiResponse<FileResponse> createDirectory(@Valid @RequestBody CreateDirectoryRequest request) {
+    public ApiResponse<FileResponse> createDirectory(
+            @RequestHeader("X_USER_ID") UUID userId,
+            @Valid @RequestBody CreateDirectoryRequest request) {
         var directory = createDirectoryUseCase.createDirectory(
-                new CreateDirectoryCommand(request.userId(), request.name(), request.path(), request.userId())
+                new CreateDirectoryCommand(userId, request.name(), request.path(), userId)
         );
         return ApiResponse.success(FileResponse.from(directory));
     }

@@ -2,7 +2,7 @@ package com.moduDrive.file.adapter.in.web.controller;
 
 import com.moduDrive.common.core.annotation.WebAdapter;
 import com.moduDrive.common.core.web.ApiResponse;
-import com.moduDrive.file.adapter.in.web.dto.CreateNamespaceRequest;
+import com.moduDrive.common.api.dto.namespace.CreateNamespaceRequest;
 import com.moduDrive.file.adapter.in.web.dto.NamespaceResponse;
 import com.moduDrive.file.application.port.in.command.CreateNamespaceCommand;
 import com.moduDrive.file.application.port.in.usecase.CreateNamespaceUseCase;

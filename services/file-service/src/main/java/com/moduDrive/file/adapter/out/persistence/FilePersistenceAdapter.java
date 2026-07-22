@@ -14,6 +14,7 @@ import org.springframework.data.domain.PageRequest;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @PersistenceAdapter
@@ -112,7 +113,7 @@ class FilePersistenceAdapter implements
     }
 
     @Override
-    public boolean existsByFileIdAndSharedWithUserId(FileId fileId, Long sharedWithUserId) {
+    public boolean existsByFileIdAndSharedWithUserId(FileId fileId, UUID sharedWithUserId) {
         return fileShareRepository.existsByFileIdAndSharedWithUserId(fileId.value(), sharedWithUserId);
     }
 }

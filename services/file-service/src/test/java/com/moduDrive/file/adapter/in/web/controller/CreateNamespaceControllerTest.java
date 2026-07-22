@@ -37,9 +37,10 @@ class CreateNamespaceControllerTest {
     @MockitoBean
     private CreateNamespaceUseCase createNamespaceUseCase;
 
+    private static final String USER_ID = "11111111-1111-1111-1111-111111111111";
     private static final String REQUEST_JSON = """
-            {"userId":1}
-            """;
+            {"userId":"%s"}
+            """.formatted(USER_ID);
 
     @Nested
     @DisplayName("유효한 요청일 때")
@@ -51,7 +52,7 @@ class CreateNamespaceControllerTest {
             given(createNamespaceUseCase.createNamespace(any(CreateNamespaceCommand.class)))
                     .willReturn(Namespace.withId(
                             new NamespaceId(id),
-                            new NamespaceUserId(1L),
+                            new NamespaceUserId(UUID.fromString(USER_ID)),
                             new NamespaceRootPath("/1")
                     ));
 
@@ -59,7 +60,7 @@ class CreateNamespaceControllerTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(REQUEST_JSON))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.data.userId").value(1))
+                    .andExpect(jsonPath("$.data.userId").value(USER_ID))
                     .andExpect(jsonPath("$.data.rootPath").value("/1"));
         }
     }

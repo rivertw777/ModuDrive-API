@@ -36,8 +36,9 @@ class UploadFileMetadataControllerTest {
     @MockitoBean
     private UploadFileMetadataUseCase uploadFileMetadataUseCase;
 
+    private static final String USER_ID = "11111111-1111-1111-1111-111111111111";
     private static final String REQUEST_JSON = """
-            {"userId":1,"name":"report.pdf","path":"/1/docs","directory":false}
+            {"name":"report.pdf","path":"/1/docs","directory":false}
             """;
 
     private final File pendingFile = File.withId(
@@ -45,7 +46,7 @@ class UploadFileMetadataControllerTest {
             new FileNamespaceId(UUID.randomUUID()),
             new FileName("report.pdf"),
             new FilePath("/1/docs"),
-            new FileOwnerId(1L),
+            new FileOwnerId(UUID.fromString(USER_ID)),
             null, null,
             FileStatus.PENDING,
             new FileIsDirectory(false));
@@ -60,6 +61,7 @@ class UploadFileMetadataControllerTest {
                     .willReturn(pendingFile);
 
             mockMvc.perform(post("/api/v1/files/metadata")
+                            .header("X_USER_ID", USER_ID)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(REQUEST_JSON))
                     .andExpect(status().isOk())
@@ -75,6 +77,7 @@ class UploadFileMetadataControllerTest {
         @Test
         void returnsBadRequest() throws Exception {
             mockMvc.perform(post("/api/v1/files/metadata")
+                            .header("X_USER_ID", USER_ID)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{}"))
                     .andExpect(status().isBadRequest());
@@ -91,6 +94,7 @@ class UploadFileMetadataControllerTest {
                     .given(uploadFileMetadataUseCase).uploadFileMetadata(any(UploadFileMetadataCommand.class));
 
             mockMvc.perform(post("/api/v1/files/metadata")
+                            .header("X_USER_ID", USER_ID)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(REQUEST_JSON))
                     .andExpect(status().isNotFound())

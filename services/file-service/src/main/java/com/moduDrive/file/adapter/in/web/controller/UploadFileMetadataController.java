@@ -14,7 +14,10 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.UUID;
 
 @WebAdapter
 @RestController
@@ -24,13 +27,15 @@ class UploadFileMetadataController {
     private final UploadFileMetadataUseCase uploadFileMetadataUseCase;
 
     @PostMapping("/api/v1/files/metadata")
-    public ApiResponse<FileResponse> uploadFileMetadata(@Valid @RequestBody UploadFileMetadataRequest request) {
+    public ApiResponse<FileResponse> uploadFileMetadata(
+            @RequestHeader("X_USER_ID") UUID userId,
+            @Valid @RequestBody UploadFileMetadataRequest request) {
         var file = uploadFileMetadataUseCase.uploadFileMetadata(
                 new UploadFileMetadataCommand(
-                        request.userId(),
+                        userId,
                         new FileName(request.name()),
                         new FilePath(request.path()),
-                        new FileOwnerId(request.userId()),
+                        new FileOwnerId(userId),
                         new FileIsDirectory(Boolean.TRUE.equals(request.directory()))
                 )
         );

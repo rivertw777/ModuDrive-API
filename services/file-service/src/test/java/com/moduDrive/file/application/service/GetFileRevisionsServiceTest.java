@@ -39,7 +39,7 @@ class GetFileRevisionsServiceTest {
     private final GetFileRevisionsCommand command = new GetFileRevisionsCommand(fileId, 20);
 
     private final File file = File.withId(new FileId(fileId), new FileNamespaceId(UUID.randomUUID()),
-            new FileName("report.pdf"), new FilePath("/1"), new FileOwnerId(1L),
+            new FileName("report.pdf"), new FilePath("/1"), new FileOwnerId(UUID.randomUUID()),
             null, null, FileStatus.UPLOADED, new FileIsDirectory(false));
 
     @Nested

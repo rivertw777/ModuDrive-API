@@ -28,10 +28,10 @@ class FileShareJpaEntity {
     private UUID fileId;
 
     @Column(nullable = false)
-    private Long ownerId;
+    private UUID ownerId;
 
     @Column(nullable = false)
-    private Long sharedWithUserId;
+    private UUID sharedWithUserId;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -41,7 +41,7 @@ class FileShareJpaEntity {
     @Column(updatable = false)
     private LocalDateTime createdAt;
 
-    FileShareJpaEntity(UUID fileId, Long ownerId, Long sharedWithUserId, Permission permission) {
+    FileShareJpaEntity(UUID fileId, UUID ownerId, UUID sharedWithUserId, Permission permission) {
         this.fileId = fileId;
         this.ownerId = ownerId;
         this.sharedWithUserId = sharedWithUserId;

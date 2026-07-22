@@ -35,9 +35,11 @@ class ShareFileControllerTest {
     @MockitoBean private ShareFileUseCase shareFileUseCase;
 
     private static final UUID FILE_ID = UUID.randomUUID();
+    private static final String OWNER_ID = "11111111-1111-1111-1111-111111111111";
+    private static final String SHARED_WITH_USER_ID = "22222222-2222-2222-2222-222222222222";
     private static final String REQUEST_JSON = """
-            {"ownerId":1,"sharedWithUserId":2,"permission":"READ"}
-            """;
+            {"sharedWithUserId":"%s","permission":"READ"}
+            """.formatted(SHARED_WITH_USER_ID);
 
     @Nested
     @DisplayName("유효한 요청일 때")
@@ -47,11 +49,13 @@ class ShareFileControllerTest {
         void returnsFileShare() throws Exception {
             FileShare share = FileShare.withId(
                     new FileShareId(UUID.randomUUID()), new FileShareFileId(FILE_ID),
-                    new FileShareOwnerId(1L), new FileShareSharedWithUserId(2L),
+                    new FileShareOwnerId(UUID.fromString(OWNER_ID)),
+                    new FileShareSharedWithUserId(UUID.fromString(SHARED_WITH_USER_ID)),
                     new FileSharePermission(Permission.READ));
             given(shareFileUseCase.shareFile(any(ShareFileCommand.class))).willReturn(share);
 
             mockMvc.perform(post("/api/v1/files/{fileId}/share", FILE_ID)
+                            .header("X_USER_ID", OWNER_ID)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(REQUEST_JSON))
                     .andExpect(status().isOk())
@@ -69,6 +73,7 @@ class ShareFileControllerTest {
                     .given(shareFileUseCase).shareFile(any(ShareFileCommand.class));
 
             mockMvc.perform(post("/api/v1/files/{fileId}/share", FILE_ID)
+                            .header("X_USER_ID", OWNER_ID)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(REQUEST_JSON))
                     .andExpect(status().isBadRequest())

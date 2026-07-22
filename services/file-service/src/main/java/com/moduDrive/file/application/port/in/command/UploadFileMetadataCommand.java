@@ -6,16 +6,18 @@ import com.moduDrive.file.domain.model.File.FileOwnerId;
 import com.moduDrive.file.domain.model.File.FilePath;
 import lombok.Getter;
 
+import java.util.UUID;
+
 @Getter
 public class UploadFileMetadataCommand {
 
-    private final Long userId;
+    private final UUID userId;
     private final FileName name;
     private final FilePath path;
     private final FileOwnerId ownerId;
     private final FileIsDirectory isDirectory;
 
-    public UploadFileMetadataCommand(Long userId, FileName name, FilePath path,
+    public UploadFileMetadataCommand(UUID userId, FileName name, FilePath path,
                                      FileOwnerId ownerId, FileIsDirectory isDirectory) {
         this.userId = userId;
         this.name = name;

@@ -8,8 +8,8 @@ import java.util.UUID;
 public record FileShareResponse(
         UUID shareId,
         UUID fileId,
-        Long ownerId,
-        Long sharedWithUserId,
+        UUID ownerId,
+        UUID sharedWithUserId,
         Permission permission
 ) {
     public static FileShareResponse from(FileShare fileShare) {
