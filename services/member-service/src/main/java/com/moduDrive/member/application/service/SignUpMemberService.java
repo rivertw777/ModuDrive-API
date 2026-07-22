@@ -5,6 +5,7 @@ import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.member.application.port.in.command.SignUpMemberCommand;
 import com.moduDrive.member.application.port.in.usecase.SignUpMemberUseCase;
 import com.moduDrive.member.application.port.out.CheckEmailExistsPort;
+import com.moduDrive.member.application.port.out.CreateNamespacePort;
 import com.moduDrive.member.application.port.out.EncodePasswordPort;
 import com.moduDrive.member.application.port.out.SignUpMemberPort;
 import com.moduDrive.member.exception.MemberExceptionCase;
@@ -26,6 +27,7 @@ class SignUpMemberService implements SignUpMemberUseCase {
     private final SignUpMemberPort signUpMemberPort;
     private final EncodePasswordPort encodePasswordPort;
     private final CheckEmailExistsPort checkEmailExistsPort;
+    private final CreateNamespacePort createNamespacePort;
 
     @Transactional
     @Override
@@ -40,7 +42,8 @@ class SignUpMemberService implements SignUpMemberUseCase {
                 new MemberRoles(List.of(Role.MEMBER)),
                 new MemberIsValid(true)
         );
-        signUpMemberPort.createMember(member);
+        Member savedMember = signUpMemberPort.createMember(member);
+        createNamespacePort.createNamespace(savedMember.getId());
     }
 
     private void validateEmailNotDuplicated(MemberEmail memberEmail) {

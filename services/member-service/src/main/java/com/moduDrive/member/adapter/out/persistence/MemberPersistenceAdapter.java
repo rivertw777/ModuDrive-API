@@ -19,7 +19,7 @@ class MemberPersistenceAdapter implements SignUpMemberPort, FindMemberPort, Chec
     private final MemberMapper memberMapper;
 
     @Override
-    public void createMember(Member member) {
+    public Member createMember(Member member) {
         MemberJpaEntity entity = new MemberJpaEntity(
                 member.getName(),
                 member.getEmail(),
@@ -28,7 +28,8 @@ class MemberPersistenceAdapter implements SignUpMemberPort, FindMemberPort, Chec
                 member.isValid()
         );
 
-        springDataMemberRepository.save(entity);
+        MemberJpaEntity saved = springDataMemberRepository.save(entity);
+        return memberMapper.mapToDomainEntity(saved);
     }
 
     @Override
