@@ -36,6 +36,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ExtendWith(MockitoExtension.class)
 class StorageControllerTest {
 
+    private static final String USER_ID = UUID.randomUUID().toString();
+
     private MockMvc mockMvc;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -90,7 +92,7 @@ class StorageControllerTest {
             given(initResumableUploadUseCase.initResumableUpload(any())).willReturn(sessionId);
 
             mockMvc.perform(post("/api/v1/storage/upload/resumable")
-                            .header("X_USER_ID", 1L)
+                            .header("X_USER_ID", USER_ID)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"fileId\":\"" + UUID.randomUUID() + "\",\"totalChunks\":5}"))
                     .andExpect(status().isOk())
@@ -100,7 +102,7 @@ class StorageControllerTest {
         @Test
         void returnsBadRequestWhenFileIdBlank() throws Exception {
             mockMvc.perform(post("/api/v1/storage/upload/resumable")
-                            .header("X_USER_ID", 1L)
+                            .header("X_USER_ID", USER_ID)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"fileId\":\"\",\"totalChunks\":3}"))
                     .andExpect(status().isBadRequest());
@@ -109,7 +111,7 @@ class StorageControllerTest {
         @Test
         void returnsBadRequestWhenTotalChunksZero() throws Exception {
             mockMvc.perform(post("/api/v1/storage/upload/resumable")
-                            .header("X_USER_ID", 1L)
+                            .header("X_USER_ID", USER_ID)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"fileId\":\"" + UUID.randomUUID() + "\",\"totalChunks\":0}"))
                     .andExpect(status().isBadRequest());
@@ -128,7 +130,7 @@ class StorageControllerTest {
 
             mockMvc.perform(multipart(PUT, "/api/v1/storage/upload/resumable/" + UUID.randomUUID())
                             .file(chunk)
-                            .header("X_USER_ID", 1L)
+                            .header("X_USER_ID", USER_ID)
                             .param("chunkIndex", "0"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.message").value("success"));
@@ -141,7 +143,7 @@ class StorageControllerTest {
 
             mockMvc.perform(multipart(PUT, "/api/v1/storage/upload/resumable/" + UUID.randomUUID())
                             .file(chunk)
-                            .header("X_USER_ID", 1L))
+                            .header("X_USER_ID", USER_ID))
                     .andExpect(status().isBadRequest());
         }
     }
@@ -155,7 +157,7 @@ class StorageControllerTest {
             willDoNothing().given(completeResumableUploadUseCase).completeResumableUpload(any());
 
             mockMvc.perform(post("/api/v1/storage/upload/resumable/" + UUID.randomUUID() + "/complete")
-                            .header("X_USER_ID", 1L))
+                            .header("X_USER_ID", USER_ID))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.message").value("success"));
         }

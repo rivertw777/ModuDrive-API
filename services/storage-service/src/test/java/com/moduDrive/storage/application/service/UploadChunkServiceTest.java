@@ -26,7 +26,7 @@ class UploadChunkServiceTest {
     @Mock private FindUploadSessionPort findUploadSessionPort;
     @InjectMocks private UploadChunkService uploadChunkService;
 
-    private final long userId = 1L;
+    private final UUID userId = UUID.randomUUID();
 
     private UploadSession activeSession() {
         return UploadSession.create(UUID.randomUUID(), userId, 3);
@@ -78,7 +78,7 @@ class UploadChunkServiceTest {
             given(findUploadSessionPort.findSession(session.getSessionId()))
                     .willReturn(Optional.of(session));
             UploadChunkCommand command = new UploadChunkCommand(
-                    session.getSessionId().toString(), 999L, 0, new byte[1]);
+                    session.getSessionId().toString(), UUID.randomUUID(), 0, new byte[1]);
 
             assertThatThrownBy(() -> uploadChunkService.uploadChunk(command))
                     .isInstanceOf(BusinessException.class)

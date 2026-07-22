@@ -36,7 +36,7 @@ class CompleteResumableUploadServiceTest {
     @Mock private FileUploadCallbackPort callbackPort;
     @InjectMocks private CompleteResumableUploadService completeResumableUploadService;
 
-    private final long userId = 1L;
+    private final UUID userId = UUID.randomUUID();
 
     private UploadSession fullSession(int totalChunks) {
         UploadSession session = UploadSession.create(UUID.randomUUID(), userId, totalChunks);

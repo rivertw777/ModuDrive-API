@@ -12,12 +12,12 @@ public class UploadSession {
 
     private final UUID sessionId;
     private final UUID fileId;
-    private final long ownerId;
+    private final UUID ownerId;
     private final int totalChunks;
     private final ConcurrentMap<Integer, byte[]> chunks;
     private boolean completed;
 
-    private UploadSession(UUID sessionId, UUID fileId, long ownerId, int totalChunks) {
+    private UploadSession(UUID sessionId, UUID fileId, UUID ownerId, int totalChunks) {
         this.sessionId = sessionId;
         this.fileId = fileId;
         this.ownerId = ownerId;
@@ -26,7 +26,7 @@ public class UploadSession {
         this.completed = false;
     }
 
-    public static UploadSession create(UUID fileId, long ownerId, int totalChunks) {
+    public static UploadSession create(UUID fileId, UUID ownerId, int totalChunks) {
         return new UploadSession(UUID.randomUUID(), fileId, ownerId, totalChunks);
     }
 

@@ -53,7 +53,7 @@ class StorageController {
 
     @PostMapping("/api/v1/storage/upload/resumable")
     public ApiResponse<ResumableUploadSessionResponse> initResumableUpload(
-            @RequestHeader("X_USER_ID") Long userId,
+            @RequestHeader("X_USER_ID") UUID userId,
             @Valid @RequestBody InitResumableUploadRequest request) {
         UUID sessionId = initResumableUploadUseCase.initResumableUpload(
                 new InitResumableUploadCommand(request.fileId(), userId, request.totalChunks()));
@@ -62,7 +62,7 @@ class StorageController {
 
     @PutMapping("/api/v1/storage/upload/resumable/{sessionId}")
     public ApiResponse<Void> uploadChunk(
-            @RequestHeader("X_USER_ID") Long userId,
+            @RequestHeader("X_USER_ID") UUID userId,
             @PathVariable String sessionId,
             @RequestParam int chunkIndex,
             @RequestParam MultipartFile chunk) throws IOException {
@@ -73,7 +73,7 @@ class StorageController {
 
     @PostMapping("/api/v1/storage/upload/resumable/{sessionId}/complete")
     public ApiResponse<Void> completeResumableUpload(
-            @RequestHeader("X_USER_ID") Long userId,
+            @RequestHeader("X_USER_ID") UUID userId,
             @PathVariable String sessionId) {
         completeResumableUploadUseCase.completeResumableUpload(
                 new CompleteResumableUploadCommand(sessionId, userId));

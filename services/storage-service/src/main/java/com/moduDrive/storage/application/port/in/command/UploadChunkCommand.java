@@ -14,13 +14,13 @@ public class UploadChunkCommand extends SelfValidating<UploadChunkCommand> {
 
     @NotNull
     private final UUID sessionId;
-    private final long userId;
+    private final UUID userId;
     @Min(0)
     private final int chunkIndex;
     @NotNull
     private final byte[] data;
 
-    public UploadChunkCommand(String sessionId, long userId, int chunkIndex, byte[] data) {
+    public UploadChunkCommand(String sessionId, UUID userId, int chunkIndex, byte[] data) {
         this.sessionId = UUID.fromString(sessionId);
         this.userId = userId;
         this.chunkIndex = chunkIndex;

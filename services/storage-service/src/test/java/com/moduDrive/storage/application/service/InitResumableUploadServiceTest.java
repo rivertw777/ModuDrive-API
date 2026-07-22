@@ -24,7 +24,7 @@ class InitResumableUploadServiceTest {
     @InjectMocks private InitResumableUploadService initResumableUploadService;
 
     private final String fileId = UUID.randomUUID().toString();
-    private final long userId = 1L;
+    private final UUID userId = UUID.randomUUID();
 
     @Nested
     @DisplayName("재개 가능 업로드 세션 초기화 시")
