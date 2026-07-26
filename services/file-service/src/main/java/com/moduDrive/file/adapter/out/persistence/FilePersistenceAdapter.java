@@ -116,4 +116,12 @@ class FilePersistenceAdapter implements
     public boolean existsByFileIdAndSharedWithUserId(FileId fileId, UUID sharedWithUserId) {
         return fileShareRepository.existsByFileIdAndSharedWithUserId(fileId.value(), sharedWithUserId);
     }
+
+    @Override
+    public List<FileShare> findBySharedWithUserId(UUID sharedWithUserId) {
+        return fileShareRepository.findBySharedWithUserId(sharedWithUserId)
+                .stream()
+                .map(fileMapper::mapFileShareToDomain)
+                .collect(Collectors.toList());
+    }
 }
