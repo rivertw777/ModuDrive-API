@@ -61,11 +61,7 @@ class FilePersistenceAdapter implements
         FileJpaEntity entity = fileRepository.findById(file.getId())
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_NOT_FOUND));
 
-        switch (file.getStatus()) {
-            case UPLOADED -> entity.markUploaded(file.getCurrentVersionId(), file.getFileSize());
-            case DELETED -> entity.softDelete();
-            default -> throw new IllegalStateException("Unexpected status update: " + file.getStatus());
-        }
+        entity.applyChanges(file.getName(), file.getPath(), file.getCurrentVersionId(), file.getFileSize(), file.getStatus());
 
         return fileMapper.mapFileToDomain(fileRepository.save(entity));
     }
@@ -80,6 +76,24 @@ class FilePersistenceAdapter implements
     public List<File> findByNamespaceIdAndPath(NamespaceId namespaceId, String path) {
         return fileRepository
                 .findByNamespaceIdAndPathAndStatusNot(namespaceId.value(), path, FileStatus.DELETED)
+                .stream()
+                .map(fileMapper::mapFileToDomain)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<File> findByNamespaceIdAndStatus(NamespaceId namespaceId, FileStatus status) {
+        return fileRepository
+                .findByNamespaceIdAndStatus(namespaceId.value(), status)
+                .stream()
+                .map(fileMapper::mapFileToDomain)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<File> findByNamespaceIdAndNameContaining(NamespaceId namespaceId, String query) {
+        return fileRepository
+                .findByNamespaceIdAndNameContainingIgnoreCaseAndStatusNot(namespaceId.value(), query, FileStatus.DELETED)
                 .stream()
                 .map(fileMapper::mapFileToDomain)
                 .collect(Collectors.toList());
@@ -115,5 +129,13 @@ class FilePersistenceAdapter implements
     @Override
     public boolean existsByFileIdAndSharedWithUserId(FileId fileId, UUID sharedWithUserId) {
         return fileShareRepository.existsByFileIdAndSharedWithUserId(fileId.value(), sharedWithUserId);
+    }
+
+    @Override
+    public List<FileShare> findBySharedWithUserId(UUID sharedWithUserId) {
+        return fileShareRepository.findBySharedWithUserId(sharedWithUserId)
+                .stream()
+                .map(fileMapper::mapFileShareToDomain)
+                .collect(Collectors.toList());
     }
 }
