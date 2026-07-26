@@ -3,12 +3,17 @@ package com.moduDrive.member.application.service;
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.member.application.port.in.command.SignUpMemberCommand;
 import com.moduDrive.member.application.port.out.CheckEmailExistsPort;
+import com.moduDrive.member.application.port.out.CreateNamespacePort;
 import com.moduDrive.member.application.port.out.EncodePasswordPort;
 import com.moduDrive.member.application.port.out.SignUpMemberPort;
 import com.moduDrive.member.domain.model.Member;
 import com.moduDrive.member.domain.model.Member.MemberEmail;
+import com.moduDrive.member.domain.model.Member.MemberId;
+import com.moduDrive.member.domain.model.Member.MemberIsValid;
 import com.moduDrive.member.domain.model.Member.MemberName;
 import com.moduDrive.member.domain.model.Member.MemberPassword;
+import com.moduDrive.member.domain.model.Member.MemberRoles;
+import com.moduDrive.member.domain.model.Role;
 import com.moduDrive.member.exception.MemberExceptionCase;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -17,6 +22,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.util.List;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
@@ -33,6 +41,8 @@ class SignUpMemberServiceTest {
     private EncodePasswordPort encodePasswordPort;
     @Mock
     private CheckEmailExistsPort checkEmailExistsPort;
+    @Mock
+    private CreateNamespacePort createNamespacePort;
     @InjectMocks
     private SignUpMemberService signUpMemberService;
 
@@ -47,13 +57,20 @@ class SignUpMemberServiceTest {
 
         @Test
         void encodesPasswordAndCreatesMember() {
+            UUID memberId = UUID.randomUUID();
+            Member savedMember = Member.withId(
+                    new MemberId(memberId), command.getMemberName(), command.getMemberEmail(),
+                    new MemberPassword("encoded-password"), new MemberRoles(List.of(Role.MEMBER)),
+                    new MemberIsValid(true));
             given(checkEmailExistsPort.existsByEmail(command.getMemberEmail())).willReturn(false);
             given(encodePasswordPort.encodePassword(command.getMemberPassword()))
                     .willReturn(new MemberPassword("encoded-password"));
+            given(signUpMemberPort.createMember(any(Member.class))).willReturn(savedMember);
 
             signUpMemberService.signUpMember(command);
 
             then(signUpMemberPort).should().createMember(any(Member.class));
+            then(createNamespacePort).should().createNamespace(memberId);
         }
     }
 
