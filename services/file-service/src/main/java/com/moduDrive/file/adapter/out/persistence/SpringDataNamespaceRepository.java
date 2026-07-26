@@ -7,7 +7,7 @@ import java.util.UUID;
 
 interface SpringDataNamespaceRepository extends JpaRepository<NamespaceJpaEntity, UUID> {
 
-    boolean existsByUserId(Long userId);
+    boolean existsByUserId(UUID userId);
 
-    Optional<NamespaceJpaEntity> findByUserId(Long userId);
+    Optional<NamespaceJpaEntity> findByUserId(UUID userId);
 }

@@ -6,5 +6,5 @@ import java.util.UUID;
 
 interface SpringDataFileShareRepository extends JpaRepository<FileShareJpaEntity, UUID> {
 
-    boolean existsByFileIdAndSharedWithUserId(UUID fileId, Long sharedWithUserId);
+    boolean existsByFileIdAndSharedWithUserId(UUID fileId, UUID sharedWithUserId);
 }

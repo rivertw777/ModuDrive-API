@@ -11,7 +11,7 @@ import java.util.UUID;
 public class Namespace {
 
     private final UUID id;
-    private final Long userId;
+    private final UUID userId;
     private final String rootPath;
 
     public static Namespace create(NamespaceUserId userId) {
@@ -27,6 +27,6 @@ public class Namespace {
     }
 
     public record NamespaceId(UUID value) {}
-    public record NamespaceUserId(Long value) {}
+    public record NamespaceUserId(UUID value) {}
     public record NamespaceRootPath(String value) {}
 }

@@ -42,13 +42,14 @@ class UploadFileMetadataServiceTest {
     @InjectMocks
     private UploadFileMetadataService uploadFileMetadataService;
 
+    private final UUID userId = UUID.randomUUID();
     private final UploadFileMetadataCommand command = new UploadFileMetadataCommand(
-            1L, new FileName("report.pdf"), new FilePath("/1/docs"),
-            new FileOwnerId(1L), new FileIsDirectory(false));
+            userId, new FileName("report.pdf"), new FilePath("/1/docs"),
+            new FileOwnerId(userId), new FileIsDirectory(false));
 
     private final Namespace namespace = Namespace.withId(
             new NamespaceId(UUID.randomUUID()),
-            new NamespaceUserId(1L),
+            new NamespaceUserId(userId),
             new NamespaceRootPath("/1"));
 
     @Nested

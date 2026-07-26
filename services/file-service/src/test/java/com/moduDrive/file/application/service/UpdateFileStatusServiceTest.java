@@ -43,7 +43,7 @@ class UpdateFileStatusServiceTest {
     private final File pendingFile = File.withId(
             new FileId(fileId), new FileNamespaceId(UUID.randomUUID()),
             new FileName("report.pdf"), new FilePath("/1/docs"),
-            new FileOwnerId(1L), null, null,
+            new FileOwnerId(UUID.randomUUID()), null, null,
             FileStatus.PENDING, new FileIsDirectory(false));
 
     @Nested

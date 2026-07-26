@@ -33,7 +33,7 @@ class FileJpaEntity extends BaseTimeEntity {
     private String path;
 
     @Column(nullable = false)
-    private Long ownerId;
+    private UUID ownerId;
 
     private UUID currentVersionId;
 
@@ -46,7 +46,7 @@ class FileJpaEntity extends BaseTimeEntity {
     @Column(nullable = false)
     private boolean directory;
 
-    FileJpaEntity(UUID namespaceId, String name, String path, Long ownerId, FileStatus status, boolean directory) {
+    FileJpaEntity(UUID namespaceId, String name, String path, UUID ownerId, FileStatus status, boolean directory) {
         this.namespaceId = namespaceId;
         this.name = name;
         this.path = path;

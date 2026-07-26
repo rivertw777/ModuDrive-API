@@ -15,6 +15,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.UUID;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
@@ -31,8 +33,9 @@ class CreateNamespaceServiceTest {
     @InjectMocks
     private CreateNamespaceService createNamespaceService;
 
+    private final UUID userId = UUID.randomUUID();
     private final CreateNamespaceCommand command =
-            new CreateNamespaceCommand(new NamespaceUserId(1L));
+            new CreateNamespaceCommand(new NamespaceUserId(userId));
 
     @Nested
     @DisplayName("네임스페이스가 존재하지 않을 때")
@@ -46,8 +49,8 @@ class CreateNamespaceServiceTest {
 
             Namespace result = createNamespaceService.createNamespace(command);
 
-            assertThat(result.getUserId()).isEqualTo(1L);
-            assertThat(result.getRootPath()).isEqualTo("/1");
+            assertThat(result.getUserId()).isEqualTo(userId);
+            assertThat(result.getRootPath()).isEqualTo("/" + userId);
             then(saveNamespacePort).should().saveNamespace(any(Namespace.class));
         }
     }

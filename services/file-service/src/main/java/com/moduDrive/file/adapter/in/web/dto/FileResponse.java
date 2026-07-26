@@ -10,7 +10,7 @@ public record FileResponse(
         UUID namespaceId,
         String name,
         String path,
-        Long ownerId,
+        UUID ownerId,
         UUID currentVersionId,
         Long fileSize,
         FileStatus status,

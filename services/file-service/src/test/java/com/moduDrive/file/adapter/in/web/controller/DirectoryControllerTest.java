@@ -39,10 +39,12 @@ class DirectoryControllerTest {
     @MockitoBean private ListDirectoryUseCase listDirectoryUseCase;
     @MockitoBean private CreateDirectoryUseCase createDirectoryUseCase;
 
+    private static final String USER_ID = "11111111-1111-1111-1111-111111111111";
+
     private final File dirFile = File.withId(
             new FileId(UUID.randomUUID()), new FileNamespaceId(UUID.randomUUID()),
             new FileName("docs"), new FilePath("/1"),
-            new FileOwnerId(1L), null, null,
+            new FileOwnerId(UUID.fromString(USER_ID)), null, null,
             FileStatus.PENDING, new FileIsDirectory(true));
 
     @Nested
@@ -54,7 +56,7 @@ class DirectoryControllerTest {
             given(listDirectoryUseCase.listDirectory(any(ListDirectoryCommand.class))).willReturn(List.of(dirFile));
 
             mockMvc.perform(get("/api/v1/directories")
-                            .param("userId", "1")
+                            .header("X_USER_ID", USER_ID)
                             .param("path", "/1"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data[0].name").value("docs"))
@@ -67,7 +69,7 @@ class DirectoryControllerTest {
                     .given(listDirectoryUseCase).listDirectory(any(ListDirectoryCommand.class));
 
             mockMvc.perform(get("/api/v1/directories")
-                            .param("userId", "1")
+                            .header("X_USER_ID", USER_ID)
                             .param("path", "/1"))
                     .andExpect(status().isNotFound());
         }
@@ -82,9 +84,10 @@ class DirectoryControllerTest {
             given(createDirectoryUseCase.createDirectory(any(CreateDirectoryCommand.class))).willReturn(dirFile);
 
             mockMvc.perform(post("/api/v1/directories")
+                            .header("X_USER_ID", USER_ID)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
-                                    {"userId":1,"name":"docs","path":"/1"}
+                                    {"name":"docs","path":"/1"}
                                     """))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.directory").value(true));
@@ -93,6 +96,7 @@ class DirectoryControllerTest {
         @Test
         void returnsBadRequestOnMissingField() throws Exception {
             mockMvc.perform(post("/api/v1/directories")
+                            .header("X_USER_ID", USER_ID)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{}"))
                     .andExpect(status().isBadRequest());

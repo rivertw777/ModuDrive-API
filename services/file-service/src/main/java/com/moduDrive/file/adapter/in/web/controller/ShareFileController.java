@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
@@ -24,10 +25,11 @@ class ShareFileController {
 
     @PostMapping("/api/v1/files/{fileId}/share")
     public ApiResponse<FileShareResponse> shareFile(
+            @RequestHeader("X_USER_ID") UUID ownerId,
             @PathVariable UUID fileId,
             @Valid @RequestBody ShareFileRequest request) {
         var fileShare = shareFileUseCase.shareFile(
-                new ShareFileCommand(fileId, request.ownerId(), request.sharedWithUserId(), request.permission())
+                new ShareFileCommand(fileId, ownerId, request.sharedWithUserId(), request.permission())
         );
         return ApiResponse.success(FileShareResponse.from(fileShare));
     }

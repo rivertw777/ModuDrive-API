@@ -42,7 +42,7 @@ class UpdateFileStatusControllerTest {
     private final File uploadedFile = File.withId(
             new FileId(FILE_ID), new FileNamespaceId(UUID.randomUUID()),
             new FileName("report.pdf"), new FilePath("/1/docs"),
-            new FileOwnerId(1L), new FileCurrentVersionId(UUID.randomUUID()),
+            new FileOwnerId(UUID.randomUUID()), new FileCurrentVersionId(UUID.randomUUID()),
             new FileSize(1024L), FileStatus.UPLOADED, new FileIsDirectory(false));
 
     @Nested

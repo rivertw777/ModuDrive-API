@@ -12,8 +12,8 @@ public class FileShare {
 
     private final UUID id;
     private final UUID fileId;
-    private final Long ownerId;
-    private final Long sharedWithUserId;
+    private final UUID ownerId;
+    private final UUID sharedWithUserId;
     private final Permission permission;
 
     public static FileShare create(FileShareFileId fileId,
@@ -33,7 +33,7 @@ public class FileShare {
 
     public record FileShareId(UUID value) {}
     public record FileShareFileId(UUID value) {}
-    public record FileShareOwnerId(Long value) {}
-    public record FileShareSharedWithUserId(Long value) {}
+    public record FileShareOwnerId(UUID value) {}
+    public record FileShareSharedWithUserId(UUID value) {}
     public record FileSharePermission(Permission value) {}
 }

@@ -4,13 +4,15 @@ import com.moduDrive.file.domain.model.File.FilePath;
 import com.moduDrive.file.domain.model.Namespace.NamespaceUserId;
 import lombok.Getter;
 
+import java.util.UUID;
+
 @Getter
 public class ListDirectoryCommand {
 
     private final NamespaceUserId userId;
     private final FilePath path;
 
-    public ListDirectoryCommand(Long userId, String path) {
+    public ListDirectoryCommand(UUID userId, String path) {
         if (path == null || path.isBlank()) {
             throw new IllegalArgumentException("path must not be blank");
         }

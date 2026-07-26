@@ -37,10 +37,11 @@ class ShareFileServiceTest {
     @InjectMocks private ShareFileService shareFileService;
 
     private final UUID fileId = UUID.randomUUID();
-    private final ShareFileCommand command = new ShareFileCommand(fileId, 1L, 2L, Permission.READ);
+    private final UUID sharedWithUserId = UUID.randomUUID();
+    private final ShareFileCommand command = new ShareFileCommand(fileId, UUID.randomUUID(), sharedWithUserId, Permission.READ);
 
     private final File file = File.withId(new FileId(fileId), new FileNamespaceId(UUID.randomUUID()),
-            new FileName("report.pdf"), new FilePath("/1"), new FileOwnerId(1L),
+            new FileName("report.pdf"), new FilePath("/1"), new FileOwnerId(UUID.randomUUID()),
             null, null, FileStatus.UPLOADED, new FileIsDirectory(false));
 
     @Nested
@@ -55,7 +56,7 @@ class ShareFileServiceTest {
 
             FileShare result = shareFileService.shareFile(command);
 
-            assertThat(result.getSharedWithUserId()).isEqualTo(2L);
+            assertThat(result.getSharedWithUserId()).isEqualTo(sharedWithUserId);
             assertThat(result.getPermission()).isEqualTo(Permission.READ);
             then(saveFileSharePort).should().saveFileShare(any(FileShare.class));
         }

@@ -35,7 +35,7 @@ class GetFileServiceTest {
         return File.withId(
                 new FileId(fileId), new FileNamespaceId(UUID.randomUUID()),
                 new FileName("report.pdf"), new FilePath("/1/docs"),
-                new FileOwnerId(1L), null, null, status, new FileIsDirectory(false));
+                new FileOwnerId(UUID.randomUUID()), null, null, status, new FileIsDirectory(false));
     }
 
     @Nested
