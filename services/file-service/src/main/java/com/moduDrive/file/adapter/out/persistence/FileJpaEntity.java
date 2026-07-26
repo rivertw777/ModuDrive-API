@@ -55,13 +55,11 @@ class FileJpaEntity extends BaseTimeEntity {
         this.directory = directory;
     }
 
-    void markUploaded(UUID versionId, Long size) {
-        this.status = FileStatus.UPLOADED;
-        this.currentVersionId = versionId;
-        this.fileSize = size;
-    }
-
-    void softDelete() {
-        this.status = FileStatus.DELETED;
+    void applyChanges(String name, String path, UUID currentVersionId, Long fileSize, FileStatus status) {
+        this.name = name;
+        this.path = path;
+        this.currentVersionId = currentVersionId;
+        this.fileSize = fileSize;
+        this.status = status;
     }
 }

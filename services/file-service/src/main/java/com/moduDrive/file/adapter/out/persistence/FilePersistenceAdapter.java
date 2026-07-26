@@ -61,11 +61,7 @@ class FilePersistenceAdapter implements
         FileJpaEntity entity = fileRepository.findById(file.getId())
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_NOT_FOUND));
 
-        switch (file.getStatus()) {
-            case UPLOADED -> entity.markUploaded(file.getCurrentVersionId(), file.getFileSize());
-            case DELETED -> entity.softDelete();
-            default -> throw new IllegalStateException("Unexpected status update: " + file.getStatus());
-        }
+        entity.applyChanges(file.getName(), file.getPath(), file.getCurrentVersionId(), file.getFileSize(), file.getStatus());
 
         return fileMapper.mapFileToDomain(fileRepository.save(entity));
     }

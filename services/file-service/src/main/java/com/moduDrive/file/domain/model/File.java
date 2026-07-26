@@ -12,8 +12,8 @@ public class File {
 
     private final UUID id;
     private final UUID namespaceId;
-    private final String name;
-    private final String path;
+    private String name;
+    private String path;
     private final UUID ownerId;
     private UUID currentVersionId;
     private Long fileSize;
@@ -85,6 +85,14 @@ public class File {
 
     public void softDelete() {
         this.status = FileStatus.DELETED;
+    }
+
+    public void rename(FileName name) {
+        this.name = name.value();
+    }
+
+    public void move(FilePath path) {
+        this.path = path.value();
     }
 
     public record FileId(UUID value) {}
