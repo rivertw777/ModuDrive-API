@@ -87,6 +87,10 @@ public class File {
         this.status = FileStatus.DELETED;
     }
 
+    public void restore() {
+        this.status = FileStatus.UPLOADED;
+    }
+
     public record FileId(UUID value) {}
     public record FileNamespaceId(UUID value) {}
     public record FileName(String value) {}
