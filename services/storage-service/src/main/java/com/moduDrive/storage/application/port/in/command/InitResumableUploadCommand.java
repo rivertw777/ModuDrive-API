@@ -14,11 +14,11 @@ public class InitResumableUploadCommand extends SelfValidating<InitResumableUplo
 
     @NotNull
     private final UUID fileId;
-    private final long userId;
+    private final UUID userId;
     @Positive
     private final int totalChunks;
 
-    public InitResumableUploadCommand(String fileId, long userId, int totalChunks) {
+    public InitResumableUploadCommand(String fileId, UUID userId, int totalChunks) {
         this.fileId = UUID.fromString(fileId);
         this.userId = userId;
         this.totalChunks = totalChunks;

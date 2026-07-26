@@ -13,9 +13,9 @@ public class CompleteResumableUploadCommand extends SelfValidating<CompleteResum
 
     @NotNull
     private final UUID sessionId;
-    private final long userId;
+    private final UUID userId;
 
-    public CompleteResumableUploadCommand(String sessionId, long userId) {
+    public CompleteResumableUploadCommand(String sessionId, UUID userId) {
         this.sessionId = UUID.fromString(sessionId);
         this.userId = userId;
         this.validateSelf();
