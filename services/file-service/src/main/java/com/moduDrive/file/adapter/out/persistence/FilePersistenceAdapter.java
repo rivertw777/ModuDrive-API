@@ -82,6 +82,15 @@ class FilePersistenceAdapter implements
     }
 
     @Override
+    public List<File> findByNamespaceIdAndStatus(NamespaceId namespaceId, FileStatus status) {
+        return fileRepository
+                .findByNamespaceIdAndStatus(namespaceId.value(), status)
+                .stream()
+                .map(fileMapper::mapFileToDomain)
+                .collect(Collectors.toList());
+    }
+
+    @Override
     public List<File> findByNamespaceIdAndNameContaining(NamespaceId namespaceId, String query) {
         return fileRepository
                 .findByNamespaceIdAndNameContainingIgnoreCaseAndStatusNot(namespaceId.value(), query, FileStatus.DELETED)

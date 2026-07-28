@@ -87,6 +87,10 @@ public class File {
         this.status = FileStatus.DELETED;
     }
 
+    public void restore() {
+        this.status = FileStatus.UPLOADED;
+    }
+
     public void rename(FileName name) {
         this.name = name.value();
     }
