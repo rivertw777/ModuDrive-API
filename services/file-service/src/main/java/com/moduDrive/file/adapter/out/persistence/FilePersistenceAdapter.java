@@ -100,6 +100,15 @@ class FilePersistenceAdapter implements
     }
 
     @Override
+    public List<File> findByNamespaceId(NamespaceId namespaceId) {
+        return fileRepository
+                .findByNamespaceIdAndDirectoryFalseAndStatusNot(namespaceId.value(), FileStatus.DELETED)
+                .stream()
+                .map(fileMapper::mapFileToDomain)
+                .collect(Collectors.toList());
+    }
+
+    @Override
     public FileVersion saveFileVersion(FileVersion fileVersion) {
         FileVersionJpaEntity entity = new FileVersionJpaEntity(
                 fileVersion.getFileId(), fileVersion.getFileSize(),
