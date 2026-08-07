@@ -15,4 +15,7 @@ interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID> {
 
     List<FileJpaEntity> findByNamespaceIdAndNameContainingIgnoreCaseAndStatusNot(
             UUID namespaceId, String name, FileStatus status);
+
+    List<FileJpaEntity> findByNamespaceIdAndDirectoryFalseAndStatusNot(
+            UUID namespaceId, FileStatus status);
 }

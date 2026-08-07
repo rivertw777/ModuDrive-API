@@ -17,4 +17,6 @@ public interface FindFilePort {
     List<File> findByNamespaceIdAndStatus(NamespaceId namespaceId, FileStatus status);
 
     List<File> findByNamespaceIdAndNameContaining(NamespaceId namespaceId, String query);
+
+    List<File> findByNamespaceId(NamespaceId namespaceId);
 }
