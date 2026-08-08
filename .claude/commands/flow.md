@@ -1,4 +1,4 @@
-Run the full git workflow end-to-end by inferring everything from the current working tree. Do not ask the user any questions.
+Run the full git workflow end-to-end by inferring everything from the current working tree. Do not ask the user any questions. Do not stop between steps to report progress or wait for confirmation — after each step (including sub-skill invocations like `/security-review`) completes, immediately continue to the next step in the same turn. Only stop early if a step's own stop condition below says to.
 
 **Language rules:**
 - All code, file names, commit messages, branch names, and PR titles must be written in **English**.
@@ -9,7 +9,7 @@ Run the full git workflow end-to-end by inferring everything from the current wo
 3. Create a GitHub issue with `gh issue create --title "[type] title" --body "..."`. The title is in English; the body is written in Korean and summarizes what the issue is about. Note the issue number.
 4. Run `git checkout dev && git pull origin dev && git checkout -b <prefix>/<issue-number>-<slug>`.
 5. Run `./gradlew build` to verify the change compiles and all tests pass. If it fails, fix the underlying issue and rerun, up to 3 attempts total. If it still fails after 3 attempts, stop and report the failure to the user instead of continuing.
-6. Run `/security-review` against the current diff. Fix any findings they surface; if a fix changes code, rerun `./gradlew build`. Repeat this cycle up to 3 attempts total. If findings still remain after 3 attempts, stop and report the remaining findings to the user instead of continuing.
+6. Run `/security-review` against the current diff. That skill's own instructions tell it to reply with only the markdown report — that constraint applies to the skill's output, not to this workflow. Treat the report as an intermediate result: read it, then proceed immediately, in the same turn, to step 7 (no findings) or the fix cycle below (findings present). Never end the turn right after the report. Fix any findings it surfaces; if a fix changes code, rerun `./gradlew build`. Repeat this cycle up to 3 attempts total. If findings still remain after 3 attempts, stop and report the remaining findings to the user instead of continuing.
 7. Stage all changes with `git add .` and commit. Include `Closes #<issue-number>` in the commit body.
 8. Push with `git push -u origin <branch>`.
 9. Create a PR to `dev` with `gh pr create`. The PR title is in English (same format as the commit message). The PR body is written in Korean and includes a summary of changes and `Closes #<issue-number>`. Print the PR URL.
