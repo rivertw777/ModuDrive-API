@@ -19,4 +19,6 @@ public interface FindFilePort {
     List<File> findByNamespaceIdAndNameContaining(NamespaceId namespaceId, String query);
 
     List<File> findByNamespaceId(NamespaceId namespaceId);
+
+    long sumFileSizeByNamespaceId(NamespaceId namespaceId);
 }
