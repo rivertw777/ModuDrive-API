@@ -33,12 +33,14 @@ class GetStorageUsageControllerTest {
 
         @Test
         void returnsUsedAndQuotaBytes() throws Exception {
-            given(getStorageUsageUseCase.getUsedBytes(any(GetStorageUsageCommand.class))).willReturn(1024L);
+            long quotaBytes = 21474836480L;
+            given(getStorageUsageUseCase.getStorageUsage(any(GetStorageUsageCommand.class)))
+                    .willReturn(new GetStorageUsageUseCase.StorageUsage(1024L, quotaBytes));
 
             mockMvc.perform(get("/api/v1/files/usage").header("X_USER_ID", USER_ID))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.usedBytes").value(1024))
-                    .andExpect(jsonPath("$.data.quotaBytes").value(GetStorageUsageUseCase.DEFAULT_QUOTA_BYTES));
+                    .andExpect(jsonPath("$.data.quotaBytes").value(quotaBytes));
         }
     }
 }

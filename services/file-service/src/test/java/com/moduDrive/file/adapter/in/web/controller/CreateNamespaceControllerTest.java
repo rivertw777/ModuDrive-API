@@ -6,6 +6,7 @@ import com.moduDrive.file.application.port.in.command.CreateNamespaceCommand;
 import com.moduDrive.file.application.port.in.usecase.CreateNamespaceUseCase;
 import com.moduDrive.file.domain.model.Namespace;
 import com.moduDrive.file.domain.model.Namespace.NamespaceId;
+import com.moduDrive.file.domain.model.Namespace.NamespaceQuotaBytes;
 import com.moduDrive.file.domain.model.Namespace.NamespaceRootPath;
 import com.moduDrive.file.domain.model.Namespace.NamespaceUserId;
 import com.moduDrive.file.exception.FileExceptionCase;
@@ -53,7 +54,8 @@ class CreateNamespaceControllerTest {
                     .willReturn(Namespace.withId(
                             new NamespaceId(id),
                             new NamespaceUserId(UUID.fromString(USER_ID)),
-                            new NamespaceRootPath("/1")
+                            new NamespaceRootPath("/1"),
+                            new NamespaceQuotaBytes(21474836480L)
                     ));
 
             mockMvc.perform(post("/api/v1/namespaces")

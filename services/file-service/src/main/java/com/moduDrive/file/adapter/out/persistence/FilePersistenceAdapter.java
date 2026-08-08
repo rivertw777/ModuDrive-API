@@ -33,7 +33,7 @@ class FilePersistenceAdapter implements
 
     @Override
     public Namespace saveNamespace(Namespace namespace) {
-        NamespaceJpaEntity entity = new NamespaceJpaEntity(namespace.getUserId(), namespace.getRootPath());
+        NamespaceJpaEntity entity = new NamespaceJpaEntity(namespace.getUserId(), namespace.getRootPath(), namespace.getQuotaBytes());
         return fileMapper.mapNamespaceToDomain(namespaceRepository.save(entity));
     }
 

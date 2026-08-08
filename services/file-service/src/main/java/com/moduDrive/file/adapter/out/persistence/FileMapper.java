@@ -20,7 +20,8 @@ class FileMapper {
         return Namespace.withId(
                 new NamespaceId(entity.getId()),
                 new NamespaceUserId(entity.getUserId()),
-                new NamespaceRootPath(entity.getRootPath())
+                new NamespaceRootPath(entity.getRootPath()),
+                new NamespaceQuotaBytes(entity.getQuotaBytes())
         );
     }
 

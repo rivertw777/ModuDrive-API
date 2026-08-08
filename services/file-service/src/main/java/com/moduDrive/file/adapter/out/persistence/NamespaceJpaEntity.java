@@ -26,8 +26,12 @@ class NamespaceJpaEntity extends BaseTimeEntity {
     @Column(nullable = false)
     private String rootPath;
 
-    NamespaceJpaEntity(UUID userId, String rootPath) {
+    @Column(nullable = false)
+    private long quotaBytes;
+
+    NamespaceJpaEntity(UUID userId, String rootPath, long quotaBytes) {
         this.userId = userId;
         this.rootPath = rootPath;
+        this.quotaBytes = quotaBytes;
     }
 }

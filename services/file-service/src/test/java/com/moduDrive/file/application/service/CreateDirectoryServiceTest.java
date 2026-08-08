@@ -32,10 +32,12 @@ class CreateDirectoryServiceTest {
     @Mock private SaveFilePort saveFilePort;
     @InjectMocks private CreateDirectoryService createDirectoryService;
 
+    private static final long TEST_QUOTA_BYTES = 21474836480L;
+
     private final UUID userId = UUID.randomUUID();
     private final CreateDirectoryCommand command = new CreateDirectoryCommand(userId, "docs", "/1", userId);
     private final Namespace namespace = Namespace.withId(
-            new NamespaceId(UUID.randomUUID()), new NamespaceUserId(userId), new NamespaceRootPath("/1"));
+            new NamespaceId(UUID.randomUUID()), new NamespaceUserId(userId), new NamespaceRootPath("/1"), new NamespaceQuotaBytes(TEST_QUOTA_BYTES));
 
     @Nested
     @DisplayName("네임스페이스가 존재할 때")
