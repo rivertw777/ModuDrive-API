@@ -109,6 +109,11 @@ class FilePersistenceAdapter implements
     }
 
     @Override
+    public long sumFileSizeByNamespaceId(NamespaceId namespaceId) {
+        return fileRepository.sumFileSizeByNamespaceId(namespaceId.value());
+    }
+
+    @Override
     public FileVersion saveFileVersion(FileVersion fileVersion) {
         FileVersionJpaEntity entity = new FileVersionJpaEntity(
                 fileVersion.getFileId(), fileVersion.getFileSize(),
