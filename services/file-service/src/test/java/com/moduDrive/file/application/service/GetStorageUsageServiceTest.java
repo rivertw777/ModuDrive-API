@@ -2,6 +2,7 @@ package com.moduDrive.file.application.service;
 
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.file.application.port.in.command.GetStorageUsageCommand;
+import com.moduDrive.file.application.port.in.usecase.GetStorageUsageUseCase;
 import com.moduDrive.file.application.port.out.FindFilePort;
 import com.moduDrive.file.application.port.out.FindNamespacePort;
 import com.moduDrive.file.domain.model.Namespace;
@@ -30,23 +31,26 @@ class GetStorageUsageServiceTest {
     @Mock private FindFilePort findFilePort;
     @InjectMocks private GetStorageUsageService getStorageUsageService;
 
+    private static final long TEST_QUOTA_BYTES = 21474836480L;
+
     private final UUID userId = UUID.randomUUID();
     private final GetStorageUsageCommand command = new GetStorageUsageCommand(userId);
     private final Namespace namespace = Namespace.withId(
-            new NamespaceId(UUID.randomUUID()), new NamespaceUserId(userId), new NamespaceRootPath("/1"));
+            new NamespaceId(UUID.randomUUID()), new NamespaceUserId(userId), new NamespaceRootPath("/1"), new NamespaceQuotaBytes(TEST_QUOTA_BYTES));
 
     @Nested
     @DisplayName("네임스페이스가 존재할 때")
     class WhenNamespaceExists {
 
         @Test
-        void returnsSummedFileSize() {
+        void returnsUsedAndQuotaBytes() {
             given(findNamespacePort.findByUserId(any())).willReturn(Optional.of(namespace));
             given(findFilePort.sumFileSizeByNamespaceId(any())).willReturn(1024L);
 
-            long result = getStorageUsageService.getUsedBytes(command);
+            GetStorageUsageUseCase.StorageUsage result = getStorageUsageService.getStorageUsage(command);
 
-            assertThat(result).isEqualTo(1024L);
+            assertThat(result.usedBytes()).isEqualTo(1024L);
+            assertThat(result.quotaBytes()).isEqualTo(TEST_QUOTA_BYTES);
         }
     }
 
@@ -58,7 +62,7 @@ class GetStorageUsageServiceTest {
         void throwsNamespaceNotFound() {
             given(findNamespacePort.findByUserId(any())).willReturn(Optional.empty());
 
-            Throwable thrown = catchThrowable(() -> getStorageUsageService.getUsedBytes(command));
+            Throwable thrown = catchThrowable(() -> getStorageUsageService.getStorageUsage(command));
 
             assertThat(thrown).isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())

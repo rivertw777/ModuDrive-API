@@ -7,11 +7,11 @@ import com.moduDrive.file.application.port.out.SaveNamespacePort;
 import com.moduDrive.file.domain.model.Namespace;
 import com.moduDrive.file.domain.model.Namespace.NamespaceUserId;
 import com.moduDrive.file.exception.FileExceptionCase;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -26,16 +26,22 @@ import static org.mockito.BDDMockito.then;
 @ExtendWith(MockitoExtension.class)
 class CreateNamespaceServiceTest {
 
+    private static final long TEST_QUOTA_BYTES = 21474836480L;
+
     @Mock
     private FindNamespacePort findNamespacePort;
     @Mock
     private SaveNamespacePort saveNamespacePort;
-    @InjectMocks
     private CreateNamespaceService createNamespaceService;
 
     private final UUID userId = UUID.randomUUID();
     private final CreateNamespaceCommand command =
             new CreateNamespaceCommand(new NamespaceUserId(userId));
+
+    @BeforeEach
+    void setUp() {
+        createNamespaceService = new CreateNamespaceService(findNamespacePort, saveNamespacePort, TEST_QUOTA_BYTES);
+    }
 
     @Nested
     @DisplayName("네임스페이스가 존재하지 않을 때")
@@ -51,6 +57,7 @@ class CreateNamespaceServiceTest {
 
             assertThat(result.getUserId()).isEqualTo(userId);
             assertThat(result.getRootPath()).isEqualTo("/" + userId);
+            assertThat(result.getQuotaBytes()).isEqualTo(TEST_QUOTA_BYTES);
             then(saveNamespacePort).should().saveNamespace(any(Namespace.class));
         }
     }

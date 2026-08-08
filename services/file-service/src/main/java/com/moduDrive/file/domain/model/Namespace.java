@@ -13,20 +13,23 @@ public class Namespace {
     private final UUID id;
     private final UUID userId;
     private final String rootPath;
+    private final long quotaBytes;
 
-    public static Namespace create(NamespaceUserId userId) {
+    public static Namespace create(NamespaceUserId userId, NamespaceQuotaBytes quotaBytes) {
         return new Namespace(
                 null,
                 userId.value(),
-                "/" + userId.value()
+                "/" + userId.value(),
+                quotaBytes.value()
         );
     }
 
-    public static Namespace withId(NamespaceId id, NamespaceUserId userId, NamespaceRootPath rootPath) {
-        return new Namespace(id.value(), userId.value(), rootPath.value());
+    public static Namespace withId(NamespaceId id, NamespaceUserId userId, NamespaceRootPath rootPath, NamespaceQuotaBytes quotaBytes) {
+        return new Namespace(id.value(), userId.value(), rootPath.value(), quotaBytes.value());
     }
 
     public record NamespaceId(UUID value) {}
     public record NamespaceUserId(UUID value) {}
     public record NamespaceRootPath(String value) {}
+    public record NamespaceQuotaBytes(long value) {}
 }

@@ -5,3 +5,7 @@ spring:
     import:
       - "classpath:application-jpa.yml"
       - "classpath:application-resilience4j.yml"
+
+modudrive:
+  file:
+    default-quota-bytes: 21474836480 # 20GB

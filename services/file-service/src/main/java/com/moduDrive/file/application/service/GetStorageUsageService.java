@@ -21,10 +21,11 @@ class GetStorageUsageService implements GetStorageUsageUseCase {
 
     @Transactional(readOnly = true)
     @Override
-    public long getUsedBytes(GetStorageUsageCommand command) {
+    public StorageUsage getStorageUsage(GetStorageUsageCommand command) {
         Namespace namespace = findNamespacePort.findByUserId(command.getUserId())
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.NAMESPACE_NOT_FOUND));
 
-        return findFilePort.sumFileSizeByNamespaceId(new NamespaceId(namespace.getId()));
+        long usedBytes = findFilePort.sumFileSizeByNamespaceId(new NamespaceId(namespace.getId()));
+        return new StorageUsage(usedBytes, namespace.getQuotaBytes());
     }
 }

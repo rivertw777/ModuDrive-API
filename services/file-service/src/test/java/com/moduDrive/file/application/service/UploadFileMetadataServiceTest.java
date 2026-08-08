@@ -12,6 +12,7 @@ import com.moduDrive.file.domain.model.File.FilePath;
 import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.Namespace;
 import com.moduDrive.file.domain.model.Namespace.NamespaceId;
+import com.moduDrive.file.domain.model.Namespace.NamespaceQuotaBytes;
 import com.moduDrive.file.domain.model.Namespace.NamespaceRootPath;
 import com.moduDrive.file.domain.model.Namespace.NamespaceUserId;
 import com.moduDrive.file.exception.FileExceptionCase;
@@ -50,7 +51,8 @@ class UploadFileMetadataServiceTest {
     private final Namespace namespace = Namespace.withId(
             new NamespaceId(UUID.randomUUID()),
             new NamespaceUserId(userId),
-            new NamespaceRootPath("/1"));
+            new NamespaceRootPath("/1"),
+            new NamespaceQuotaBytes(21474836480L));
 
     @Nested
     @DisplayName("네임스페이스가 존재할 때")

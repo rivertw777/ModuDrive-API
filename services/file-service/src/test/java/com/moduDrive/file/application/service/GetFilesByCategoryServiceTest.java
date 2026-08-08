@@ -35,10 +35,12 @@ class GetFilesByCategoryServiceTest {
     @Mock private FindFilePort findFilePort;
     @InjectMocks private GetFilesByCategoryService getFilesByCategoryService;
 
+    private static final long TEST_QUOTA_BYTES = 21474836480L;
+
     private final UUID userId = UUID.randomUUID();
     private final GetFilesByCategoryCommand command = new GetFilesByCategoryCommand(userId, FileCategory.IMAGE);
     private final Namespace namespace = Namespace.withId(
-            new NamespaceId(UUID.randomUUID()), new NamespaceUserId(userId), new NamespaceRootPath("/1"));
+            new NamespaceId(UUID.randomUUID()), new NamespaceUserId(userId), new NamespaceRootPath("/1"), new NamespaceQuotaBytes(TEST_QUOTA_BYTES));
 
     @Nested
     @DisplayName("네임스페이스가 존재할 때")

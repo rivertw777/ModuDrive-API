@@ -34,10 +34,12 @@ class SearchFilesServiceTest {
     @Mock private FindFilePort findFilePort;
     @InjectMocks private SearchFilesService searchFilesService;
 
+    private static final long TEST_QUOTA_BYTES = 21474836480L;
+
     private final UUID userId = UUID.randomUUID();
     private final SearchFilesCommand command = new SearchFilesCommand(userId, "report");
     private final Namespace namespace = Namespace.withId(
-            new NamespaceId(UUID.randomUUID()), new NamespaceUserId(userId), new NamespaceRootPath("/1"));
+            new NamespaceId(UUID.randomUUID()), new NamespaceUserId(userId), new NamespaceRootPath("/1"), new NamespaceQuotaBytes(TEST_QUOTA_BYTES));
 
     @Nested
     @DisplayName("네임스페이스가 존재할 때")

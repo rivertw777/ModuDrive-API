@@ -21,7 +21,8 @@ class GetStorageUsageController {
 
     @GetMapping("/api/v1/files/usage")
     public ApiResponse<StorageUsageResponse> getStorageUsage(@RequestHeader("X_USER_ID") UUID userId) {
-        long usedBytes = getStorageUsageUseCase.getUsedBytes(new GetStorageUsageCommand(userId));
-        return ApiResponse.success(new StorageUsageResponse(usedBytes, GetStorageUsageUseCase.DEFAULT_QUOTA_BYTES));
+        GetStorageUsageUseCase.StorageUsage usage =
+                getStorageUsageUseCase.getStorageUsage(new GetStorageUsageCommand(userId));
+        return ApiResponse.success(new StorageUsageResponse(usage.usedBytes(), usage.quotaBytes()));
     }
 }
