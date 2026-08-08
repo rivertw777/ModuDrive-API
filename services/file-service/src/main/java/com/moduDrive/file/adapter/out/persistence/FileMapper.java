@@ -38,6 +38,7 @@ class FileMapper {
                 new FileIsDirectory(entity.isDirectory())
         );
         file.markFavorite(entity.isFavorite());
+        file.markUpdatedAt(entity.getUpdatedAt());
         return file;
     }
 

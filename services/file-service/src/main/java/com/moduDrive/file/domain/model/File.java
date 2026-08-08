@@ -4,6 +4,7 @@ import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Getter
@@ -20,6 +21,7 @@ public class File {
     private FileStatus status;
     private final boolean directory;
     private boolean favorite;
+    private LocalDateTime updatedAt;
 
     public static File create(FileNamespaceId namespaceId,
                               FileName name,
@@ -36,7 +38,8 @@ public class File {
                 null,
                 FileStatus.PENDING,
                 isDirectory.value(),
-                false
+                false,
+                null
         );
     }
 
@@ -54,7 +57,8 @@ public class File {
                 0L,
                 FileStatus.UPLOADED,
                 true,
-                false
+                false,
+                null
         );
     }
 
@@ -77,7 +81,8 @@ public class File {
                 fileSize != null ? fileSize.value() : null,
                 status,
                 isDirectory.value(),
-                false
+                false,
+                null
         );
     }
 
@@ -105,6 +110,10 @@ public class File {
 
     public void markFavorite(boolean favorite) {
         this.favorite = favorite;
+    }
+
+    public void markUpdatedAt(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
     }
 
     public record FileId(UUID value) {}
