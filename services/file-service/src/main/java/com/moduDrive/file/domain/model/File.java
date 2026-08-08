@@ -19,6 +19,7 @@ public class File {
     private Long fileSize;
     private FileStatus status;
     private final boolean directory;
+    private boolean favorite;
 
     public static File create(FileNamespaceId namespaceId,
                               FileName name,
@@ -34,7 +35,8 @@ public class File {
                 null,
                 null,
                 FileStatus.PENDING,
-                isDirectory.value()
+                isDirectory.value(),
+                false
         );
     }
 
@@ -51,7 +53,8 @@ public class File {
                 null,
                 0L,
                 FileStatus.UPLOADED,
-                true
+                true,
+                false
         );
     }
 
@@ -73,7 +76,8 @@ public class File {
                 currentVersionId != null ? currentVersionId.value() : null,
                 fileSize != null ? fileSize.value() : null,
                 status,
-                isDirectory.value()
+                isDirectory.value(),
+                false
         );
     }
 
@@ -97,6 +101,10 @@ public class File {
 
     public void move(FilePath path) {
         this.path = path.value();
+    }
+
+    public void markFavorite(boolean favorite) {
+        this.favorite = favorite;
     }
 
     public record FileId(UUID value) {}

@@ -14,7 +14,8 @@ public record FileResponse(
         UUID currentVersionId,
         Long fileSize,
         FileStatus status,
-        boolean directory
+        boolean directory,
+        boolean favorite
 ) {
     public static FileResponse from(File file) {
         return new FileResponse(
@@ -26,7 +27,8 @@ public record FileResponse(
                 file.getCurrentVersionId(),
                 file.getFileSize(),
                 file.getStatus(),
-                file.isDirectory()
+                file.isDirectory(),
+                file.isFavorite()
         );
     }
 }

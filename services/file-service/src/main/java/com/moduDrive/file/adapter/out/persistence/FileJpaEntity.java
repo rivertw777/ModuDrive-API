@@ -46,6 +46,9 @@ class FileJpaEntity extends BaseTimeEntity {
     @Column(nullable = false)
     private boolean directory;
 
+    @Column(nullable = false)
+    private boolean favorite;
+
     FileJpaEntity(UUID namespaceId, String name, String path, UUID ownerId, FileStatus status, boolean directory) {
         this.namespaceId = namespaceId;
         this.name = name;
@@ -55,11 +58,12 @@ class FileJpaEntity extends BaseTimeEntity {
         this.directory = directory;
     }
 
-    void applyChanges(String name, String path, UUID currentVersionId, Long fileSize, FileStatus status) {
+    void applyChanges(String name, String path, UUID currentVersionId, Long fileSize, FileStatus status, boolean favorite) {
         this.name = name;
         this.path = path;
         this.currentVersionId = currentVersionId;
         this.fileSize = fileSize;
         this.status = status;
+        this.favorite = favorite;
     }
 }
