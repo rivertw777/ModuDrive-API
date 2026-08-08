@@ -3,6 +3,7 @@ package com.moduDrive.file.adapter.in.web.dto;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.FileStatus;
 
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 public record FileResponse(
@@ -15,7 +16,8 @@ public record FileResponse(
         Long fileSize,
         FileStatus status,
         boolean directory,
-        boolean favorite
+        boolean favorite,
+        LocalDateTime updatedAt
 ) {
     public static FileResponse from(File file) {
         return new FileResponse(
@@ -28,7 +30,8 @@ public record FileResponse(
                 file.getFileSize(),
                 file.getStatus(),
                 file.isDirectory(),
-                file.isFavorite()
+                file.isFavorite(),
+                file.getUpdatedAt()
         );
     }
 }
