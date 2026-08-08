@@ -26,7 +26,7 @@ class FileMapper {
     }
 
     File mapFileToDomain(FileJpaEntity entity) {
-        return File.withId(
+        File file = File.withId(
                 new FileId(entity.getId()),
                 new FileNamespaceId(entity.getNamespaceId()),
                 new FileName(entity.getName()),
@@ -37,6 +37,8 @@ class FileMapper {
                 entity.getStatus(),
                 new FileIsDirectory(entity.isDirectory())
         );
+        file.markFavorite(entity.isFavorite());
+        return file;
     }
 
     FileVersion mapFileVersionToDomain(FileVersionJpaEntity entity) {

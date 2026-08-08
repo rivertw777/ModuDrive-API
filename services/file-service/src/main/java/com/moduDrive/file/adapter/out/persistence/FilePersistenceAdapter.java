@@ -61,7 +61,7 @@ class FilePersistenceAdapter implements
         FileJpaEntity entity = fileRepository.findById(file.getId())
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_NOT_FOUND));
 
-        entity.applyChanges(file.getName(), file.getPath(), file.getCurrentVersionId(), file.getFileSize(), file.getStatus());
+        entity.applyChanges(file.getName(), file.getPath(), file.getCurrentVersionId(), file.getFileSize(), file.getStatus(), file.isFavorite());
 
         return fileMapper.mapFileToDomain(fileRepository.save(entity));
     }
@@ -85,6 +85,15 @@ class FilePersistenceAdapter implements
     public List<File> findByNamespaceIdAndStatus(NamespaceId namespaceId, FileStatus status) {
         return fileRepository
                 .findByNamespaceIdAndStatus(namespaceId.value(), status)
+                .stream()
+                .map(fileMapper::mapFileToDomain)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<File> findByNamespaceIdAndFavorite(NamespaceId namespaceId) {
+        return fileRepository
+                .findByNamespaceIdAndFavoriteTrueAndStatusNot(namespaceId.value(), FileStatus.DELETED)
                 .stream()
                 .map(fileMapper::mapFileToDomain)
                 .collect(Collectors.toList());
