@@ -4,3 +4,14 @@ spring:
   config:
     import:
       - "classpath:application-resilience4j.yml"
+  servlet:
+    multipart:
+      # frontend switches to chunked/resumable upload above 20MB (see RESUMABLE_THRESHOLD
+      # in ModuDrive-WEB upload-file.ts); this only needs to cover the simple-upload path
+      # plus a margin, and the 5MB resumable chunk requests comfortably.
+      max-file-size: 25MB
+      max-request-size: 25MB
+
+modudrive:
+  storage:
+    max-file-size-bytes: 5368709120 # 5GB, enforced on resumable uploads (simple upload is already capped by max-file-size above)

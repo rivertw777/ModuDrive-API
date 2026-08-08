@@ -56,7 +56,7 @@ class StorageController {
             @RequestHeader("X_USER_ID") UUID userId,
             @Valid @RequestBody InitResumableUploadRequest request) {
         UUID sessionId = initResumableUploadUseCase.initResumableUpload(
-                new InitResumableUploadCommand(request.fileId(), userId, request.totalChunks()));
+                new InitResumableUploadCommand(request.fileId(), userId, request.totalChunks(), request.fileSize()));
         return ApiResponse.success(ResumableUploadSessionResponse.of(sessionId));
     }
 

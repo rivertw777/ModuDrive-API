@@ -10,6 +10,7 @@ public record InitResumableUploadRequest(
         @Pattern(regexp = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
                 message = "fileId must be a valid UUID")
         String fileId,
-        @NotNull @Positive Integer totalChunks
+        @NotNull @Positive Integer totalChunks,
+        @NotNull @Positive Long fileSize
 ) {
 }

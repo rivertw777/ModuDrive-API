@@ -94,7 +94,7 @@ class StorageControllerTest {
             mockMvc.perform(post("/api/v1/storage/upload/resumable")
                             .header("X_USER_ID", USER_ID)
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"fileId\":\"" + UUID.randomUUID() + "\",\"totalChunks\":5}"))
+                            .content("{\"fileId\":\"" + UUID.randomUUID() + "\",\"totalChunks\":5,\"fileSize\":1000000}"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.sessionId").value(sessionId.toString()));
         }
@@ -104,7 +104,7 @@ class StorageControllerTest {
             mockMvc.perform(post("/api/v1/storage/upload/resumable")
                             .header("X_USER_ID", USER_ID)
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"fileId\":\"\",\"totalChunks\":3}"))
+                            .content("{\"fileId\":\"\",\"totalChunks\":3,\"fileSize\":1000000}"))
                     .andExpect(status().isBadRequest());
         }
 
@@ -113,7 +113,7 @@ class StorageControllerTest {
             mockMvc.perform(post("/api/v1/storage/upload/resumable")
                             .header("X_USER_ID", USER_ID)
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"fileId\":\"" + UUID.randomUUID() + "\",\"totalChunks\":0}"))
+                            .content("{\"fileId\":\"" + UUID.randomUUID() + "\",\"totalChunks\":0,\"fileSize\":1000000}"))
                     .andExpect(status().isBadRequest());
         }
     }
