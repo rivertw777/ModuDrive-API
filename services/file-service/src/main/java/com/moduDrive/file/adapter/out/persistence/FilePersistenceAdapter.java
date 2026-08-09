@@ -67,6 +67,11 @@ class FilePersistenceAdapter implements
     }
 
     @Override
+    public void deleteFile(FileId fileId) {
+        fileRepository.deleteById(fileId.value());
+    }
+
+    @Override
     public Optional<File> findById(FileId fileId) {
         return fileRepository.findById(fileId.value())
                 .map(fileMapper::mapFileToDomain);
