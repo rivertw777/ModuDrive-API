@@ -12,7 +12,6 @@ public class AuthResponseMapper {
     public LoginResponse toLoginResponse(TokenPair tokenPair) {
         return new LoginResponse(
                 tokenPair.getAccessToken(),
-                tokenPair.getRefreshToken(),
                 tokenPair.getGrantType(),
                 tokenPair.getIssuedAt()
         );

@@ -14,19 +14,23 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(LoginController.class)
-@Import({GlobalExceptionHandler.class, AuthResponseMapper.class})
+@Import({GlobalExceptionHandler.class, AuthResponseMapper.class, RefreshTokenCookieFactory.class})
 class LoginControllerTest {
 
     @Autowired
@@ -43,7 +47,7 @@ class LoginControllerTest {
     class WhenRequestIsValid {
 
         @Test
-        void returnsTokenPairResponse() throws Exception {
+        void returnsAccessTokenInBodyWithoutRefreshToken() throws Exception {
             TokenPair tokenPair = TokenPairTestFixture.aTokenPair();
             given(loginUseCase.login(any(LoginCommand.class))).willReturn(tokenPair);
 
@@ -52,8 +56,25 @@ class LoginControllerTest {
                             .content(REQUEST_JSON))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.accessToken").value("access-token"))
-                    .andExpect(jsonPath("$.data.refreshToken").value("refresh-token"))
-                    .andExpect(jsonPath("$.data.grantType").value("Bearer"));
+                    .andExpect(jsonPath("$.data.grantType").value("Bearer"))
+                    .andExpect(jsonPath("$.data.refreshToken").doesNotExist());
+        }
+
+        @Test
+        void setsRefreshTokenAsHttpOnlyCookie() throws Exception {
+            TokenPair tokenPair = TokenPairTestFixture.aTokenPair();
+            given(loginUseCase.login(any(LoginCommand.class))).willReturn(tokenPair);
+
+            mockMvc.perform(post("/api/v1/auth/login")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(REQUEST_JSON))
+                    .andExpect(status().isOk())
+                    .andExpect(cookie().value("refresh_token", "refresh-token"))
+                    .andExpect(cookie().httpOnly("refresh_token", true))
+                    .andExpect(cookie().secure("refresh_token", true))
+                    .andExpect(cookie().path("refresh_token", "/api/v1/auth"))
+                    .andExpect(cookie().maxAge("refresh_token", 604800))
+                    .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("SameSite=None")));
         }
     }
 
@@ -87,7 +108,8 @@ class LoginControllerTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(REQUEST_JSON))
                     .andExpect(status().isUnauthorized())
-                    .andExpect(jsonPath("$.message").value(AuthExceptionCase.MEMBER_NOT_VALID.getMessage()));
+                    .andExpect(jsonPath("$.message").value(AuthExceptionCase.MEMBER_NOT_VALID.getMessage()))
+                    .andExpect(cookie().doesNotExist("refresh_token"));
         }
     }
 }

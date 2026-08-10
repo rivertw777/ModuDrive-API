@@ -9,6 +9,7 @@ import com.moduDrive.auth.domain.vo.MemberEmail;
 import com.moduDrive.auth.domain.vo.MemberPassword;
 import com.moduDrive.common.core.annotation.WebAdapter;
 import com.moduDrive.common.core.web.ApiResponse;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.val;
@@ -23,14 +24,17 @@ class LoginController {
 
     private final LoginUseCase loginUseCase;
     private final AuthResponseMapper authResponseMapper;
+    private final RefreshTokenCookieFactory refreshTokenCookieFactory;
 
     @PostMapping("/api/v1/auth/login")
-    public ApiResponse<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
+    public ApiResponse<LoginResponse> login(@Valid @RequestBody LoginRequest request,
+                                            HttpServletResponse httpServletResponse) {
         val command = new LoginCommand(
                 new MemberEmail(request.email()),
                 new MemberPassword(request.password())
         );
         val tokenPair = loginUseCase.login(command);
+        refreshTokenCookieFactory.setRefreshToken(httpServletResponse, tokenPair.getRefreshToken());
 
         val response = authResponseMapper.toLoginResponse(tokenPair);
         return ApiResponse.success(response);
