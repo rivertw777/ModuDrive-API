@@ -18,11 +18,15 @@ class TokenPairTest {
                 TokenPairTestFixture.DEFAULT_ACCESS_TOKEN,
                 TokenPairTestFixture.DEFAULT_REFRESH_TOKEN,
                 TokenPairTestFixture.DEFAULT_GRANT_TYPE,
-                new TokenIssuedAt(issuedAt));
+                new TokenIssuedAt(issuedAt),
+                TokenPairTestFixture.DEFAULT_FAMILY_ID,
+                TokenPairTestFixture.DEFAULT_JTI);
 
         assertThat(tokenPair.getAccessToken()).isEqualTo("access-token");
         assertThat(tokenPair.getRefreshToken()).isEqualTo("refresh-token");
         assertThat(tokenPair.getGrantType()).isEqualTo("Bearer");
         assertThat(tokenPair.getIssuedAt()).isEqualTo(issuedAt);
+        assertThat(tokenPair.getFamilyId()).isEqualTo("family-id");
+        assertThat(tokenPair.getJti()).isEqualTo("jti");
     }
 }
