@@ -18,9 +18,12 @@ class RefreshTokenCookieFactory {
     private static final String COOKIE_PATH = "/api/v1/auth";
 
     private final Duration maxAge;
+    private final boolean secure;
 
-    RefreshTokenCookieFactory(@Value("${jwt.refreshToken.expiration}") long refreshTokenExpiration) {
+    RefreshTokenCookieFactory(@Value("${jwt.refreshToken.expiration}") long refreshTokenExpiration,
+                              @Value("${jwt.refreshToken.cookie.secure}") boolean secure) {
         this.maxAge = Duration.ofMillis(refreshTokenExpiration);
+        this.secure = secure;
     }
 
     static RefreshToken readRefreshToken(String refreshTokenCookie) {
@@ -38,11 +41,12 @@ class RefreshTokenCookieFactory {
         addCookie(response, "", Duration.ZERO);
     }
 
-    private static void addCookie(HttpServletResponse response, String value, Duration maxAge) {
+    private void addCookie(HttpServletResponse response, String value, Duration maxAge) {
         ResponseCookie cookie = ResponseCookie.from(COOKIE_NAME, value)
                 .httpOnly(true)
-                .secure(true)
-                .sameSite("None")
+                .secure(secure)
+                // SameSite=None은 명세상 Secure 쿠키에서만 유효하므로 secure와 함께 움직인다
+                .sameSite(secure ? "None" : "Lax")
                 .path(COOKIE_PATH)
                 .maxAge(maxAge)
                 .build();
