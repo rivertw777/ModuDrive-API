@@ -1,6 +1,7 @@
 package com.moduDrive.auth.adapter.out.client.member;
 
 import com.moduDrive.auth.domain.model.MemberAuthData;
+import com.moduDrive.auth.domain.model.MemberAuthData.MemberId;
 import com.moduDrive.auth.exception.AuthExceptionCase;
 import com.moduDrive.common.api.dto.member.AuthenticateMemberRequest;
 import com.moduDrive.common.api.dto.member.AuthenticateMemberResponse;
@@ -59,6 +60,42 @@ class MemberClientAdapterTest {
             given(memberClient.authenticateMember(request)).willReturn(ApiResponse.success(response));
 
             Throwable thrown = catchThrowable(() -> memberClientAdapter.authenticateMember(request));
+
+            assertThat(thrown)
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(AuthExceptionCase.MEMBER_NOT_VALID);
+        }
+    }
+
+    @Nested
+    @DisplayName("상태 조회한 회원이 유효할 때")
+    class WhenFetchedMemberIsValid {
+
+        @Test
+        void returnsCurrentMemberAuthData() {
+            AuthenticateMemberResponse response = new AuthenticateMemberResponse(
+                    "member-id", "river", "river@modudrive.com", true, List.of("ADMIN"));
+            given(memberClient.fetchMemberStatus("member-id")).willReturn(ApiResponse.success(response));
+
+            MemberAuthData result = memberClientAdapter.fetchMemberStatus(new MemberId("member-id"));
+
+            assertThat(result.getMemberId()).isEqualTo("member-id");
+            assertThat(result.getMemberRoles()).containsExactly("ADMIN");
+        }
+    }
+
+    @Nested
+    @DisplayName("상태 조회한 회원이 유효하지 않을 때")
+    class WhenFetchedMemberIsNotValid {
+
+        @Test
+        void throwsBusinessException() {
+            AuthenticateMemberResponse response = new AuthenticateMemberResponse(
+                    "member-id", "river", "river@modudrive.com", false, List.of("MEMBER"));
+            given(memberClient.fetchMemberStatus("member-id")).willReturn(ApiResponse.success(response));
+
+            Throwable thrown = catchThrowable(() -> memberClientAdapter.fetchMemberStatus(new MemberId("member-id")));
 
             assertThat(thrown)
                     .isInstanceOf(BusinessException.class)
