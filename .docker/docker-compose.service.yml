@@ -57,6 +57,9 @@ services:
       - SPRING_PROFILES_ACTIVE=dev
       - eureka.client.serviceUrl.defaultZone=http://eureka-server:10000/eureka/
       - JWT_SECRET_KEY=MTgxNzg1NjEwNzE3Nzc1MjA1MDA0NzUwMDQ0OTM1Mjg=
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=modudrive
     depends_on:
       eureka-server:
         condition: service_started

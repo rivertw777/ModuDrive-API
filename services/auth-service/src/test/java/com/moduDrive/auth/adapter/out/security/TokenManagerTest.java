@@ -1,8 +1,12 @@
 package com.moduDrive.auth.adapter.out.security;
 
+import com.moduDrive.auth.domain.model.AccessTokenClaims;
 import com.moduDrive.auth.domain.model.MemberAuthData;
+import com.moduDrive.auth.domain.model.RefreshTokenClaims;
 import com.moduDrive.auth.domain.model.TokenPair;
 import com.moduDrive.auth.domain.model.TokenPair.AccessToken;
+import com.moduDrive.auth.domain.model.TokenPair.RefreshToken;
+import com.moduDrive.auth.domain.model.TokenPair.TokenFamilyId;
 import com.moduDrive.auth.exception.AuthExceptionCase;
 import com.moduDrive.auth.fixture.MemberAuthDataTestFixture;
 import com.moduDrive.common.core.exception.BusinessException;
@@ -43,12 +47,84 @@ class TokenManagerTest {
             assertThat(tokenPair.getAccessToken()).isNotBlank();
             assertThat(tokenPair.getRefreshToken()).isNotBlank();
             assertThat(tokenPair.getGrantType()).isEqualTo("Bearer");
+            assertThat(tokenPair.getFamilyId()).isNotBlank();
+            assertThat(tokenPair.getJti()).isNotBlank();
+        }
+
+        @Test
+        void createsDistinctFamilyPerLogin() {
+            TokenManager tokenManager = new TokenManager(secret, ONE_HOUR, ONE_HOUR);
+            MemberAuthData memberAuthData = MemberAuthDataTestFixture.aMemberAuthData();
+
+            TokenPair first = tokenManager.generateToken(memberAuthData);
+            TokenPair second = tokenManager.generateToken(memberAuthData);
+
+            assertThat(first.getFamilyId()).isNotEqualTo(second.getFamilyId());
+            assertThat(first.getJti()).isNotEqualTo(second.getJti());
         }
     }
 
     @Nested
-    @DisplayName("유효한 토큰을 검증할 때")
-    class WhenValidatingValidToken {
+    @DisplayName("기존 패밀리로 토큰을 재발급할 때")
+    class WhenGeneratingTokenWithExistingFamily {
+
+        @Test
+        void keepsFamilyIdAndMintsNewJti() {
+            TokenManager tokenManager = new TokenManager(secret, ONE_HOUR, ONE_HOUR);
+            MemberAuthData memberAuthData = MemberAuthDataTestFixture.aMemberAuthData();
+            TokenPair original = tokenManager.generateToken(memberAuthData);
+
+            TokenPair rotated = tokenManager.generateToken(
+                    memberAuthData, new TokenFamilyId(original.getFamilyId()));
+
+            assertThat(rotated.getFamilyId()).isEqualTo(original.getFamilyId());
+            assertThat(rotated.getJti()).isNotEqualTo(original.getJti());
+        }
+    }
+
+    @Nested
+    @DisplayName("리프레시 토큰의 클레임을 읽을 때")
+    class WhenReadingRefreshTokenClaims {
+
+        @Test
+        void returnsRoundTrippedFamilyIdAndJti() {
+            TokenManager tokenManager = new TokenManager(secret, ONE_HOUR, ONE_HOUR);
+            MemberAuthData memberAuthData = MemberAuthDataTestFixture.aMemberAuthDataWithRoles(List.of("MEMBER", "ADMIN"));
+            TokenPair tokenPair = tokenManager.generateToken(memberAuthData);
+
+            RefreshTokenClaims claims = tokenManager.getRefreshTokenClaims(
+                    new RefreshToken(tokenPair.getRefreshToken()));
+
+            assertThat(claims.getFamilyId().getFamilyIdValue()).isEqualTo(tokenPair.getFamilyId());
+            assertThat(claims.getJti().getJtiValue()).isEqualTo(tokenPair.getJti());
+            assertThat(claims.getMemberAuthData().getMemberId()).isEqualTo("member-id");
+            assertThat(claims.getMemberAuthData().getMemberRoles()).containsExactly("MEMBER", "ADMIN");
+        }
+    }
+
+    @Nested
+    @DisplayName("액세스 토큰으로 리프레시 클레임을 읽을 때")
+    class WhenReadingRefreshClaimsFromAccessToken {
+
+        @Test
+        void throwsTokenInvalidException() {
+            TokenManager tokenManager = new TokenManager(secret, ONE_HOUR, ONE_HOUR);
+            MemberAuthData memberAuthData = MemberAuthDataTestFixture.aMemberAuthData();
+            TokenPair tokenPair = tokenManager.generateToken(memberAuthData);
+
+            Throwable thrown = catchThrowable(() -> tokenManager.getRefreshTokenClaims(
+                    new RefreshToken(tokenPair.getAccessToken())));
+
+            assertThat(thrown)
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(AuthExceptionCase.TOKEN_INVALID);
+        }
+    }
+
+    @Nested
+    @DisplayName("액세스 토큰의 클레임을 읽을 때")
+    class WhenReadingAccessTokenClaims {
 
         @Test
         void returnsOriginalMemberAuthData() {
@@ -56,11 +132,95 @@ class TokenManagerTest {
             MemberAuthData memberAuthData = MemberAuthDataTestFixture.aMemberAuthDataWithRoles(List.of("MEMBER", "ADMIN"));
             TokenPair tokenPair = tokenManager.generateToken(memberAuthData);
 
-            MemberAuthData result = tokenManager.getMemberAuthDataFromToken(
+            AccessTokenClaims claims = tokenManager.getAccessTokenClaims(
                     new AccessToken(tokenPair.getAccessToken()));
 
-            assertThat(result.getMemberId()).isEqualTo("member-id");
-            assertThat(result.getMemberRoles()).containsExactly("MEMBER", "ADMIN");
+            assertThat(claims.getMemberAuthData().getMemberId()).isEqualTo("member-id");
+            assertThat(claims.getMemberAuthData().getMemberRoles()).containsExactly("MEMBER", "ADMIN");
+        }
+
+        @Test
+        void returnsRoundTrippedJti() {
+            TokenManager tokenManager = new TokenManager(secret, ONE_HOUR, ONE_HOUR);
+            MemberAuthData memberAuthData = MemberAuthDataTestFixture.aMemberAuthData();
+            TokenPair tokenPair = tokenManager.generateToken(memberAuthData);
+
+            AccessTokenClaims claims = tokenManager.getAccessTokenClaims(
+                    new AccessToken(tokenPair.getAccessToken()));
+
+            assertThat(claims.getJti().getJtiValue()).isNotBlank();
+        }
+
+        @Test
+        void returnsExpiryOneAccessTokenLifetimeAfterIssue() {
+            TokenManager tokenManager = new TokenManager(secret, ONE_HOUR, ONE_HOUR);
+            MemberAuthData memberAuthData = MemberAuthDataTestFixture.aMemberAuthData();
+            TokenPair tokenPair = tokenManager.generateToken(memberAuthData);
+
+            AccessTokenClaims claims = tokenManager.getAccessTokenClaims(
+                    new AccessToken(tokenPair.getAccessToken()));
+
+            // JWT exp has second precision, so compare against the truncated issuedAt + lifetime.
+            long expectedEpochSecond = (tokenPair.getIssuedAt().getTime() + ONE_HOUR) / 1000L;
+            assertThat(claims.getExpiresAt().getTime() / 1000L).isEqualTo(expectedEpochSecond);
+        }
+
+        @Test
+        void returnsFamilyIdMatchingTheRefreshToken() {
+            TokenManager tokenManager = new TokenManager(secret, ONE_HOUR, ONE_HOUR);
+            MemberAuthData memberAuthData = MemberAuthDataTestFixture.aMemberAuthData();
+            TokenPair tokenPair = tokenManager.generateToken(memberAuthData);
+
+            AccessTokenClaims claims = tokenManager.getAccessTokenClaims(
+                    new AccessToken(tokenPair.getAccessToken()));
+
+            assertThat(claims.getFamilyId().getFamilyIdValue()).isEqualTo(tokenPair.getFamilyId());
+        }
+
+        @Test
+        void keepsFamilyIdAcrossRotation() {
+            TokenManager tokenManager = new TokenManager(secret, ONE_HOUR, ONE_HOUR);
+            MemberAuthData memberAuthData = MemberAuthDataTestFixture.aMemberAuthData();
+            TokenPair original = tokenManager.generateToken(memberAuthData);
+
+            TokenPair rotated = tokenManager.generateToken(
+                    memberAuthData, new TokenFamilyId(original.getFamilyId()));
+            AccessTokenClaims claims = tokenManager.getAccessTokenClaims(
+                    new AccessToken(rotated.getAccessToken()));
+
+            assertThat(claims.getFamilyId().getFamilyIdValue()).isEqualTo(original.getFamilyId());
+        }
+
+        @Test
+        void mintsDistinctAccessJtiFromRefreshJti() {
+            TokenManager tokenManager = new TokenManager(secret, ONE_HOUR, ONE_HOUR);
+            MemberAuthData memberAuthData = MemberAuthDataTestFixture.aMemberAuthData();
+            TokenPair tokenPair = tokenManager.generateToken(memberAuthData);
+
+            AccessTokenClaims claims = tokenManager.getAccessTokenClaims(
+                    new AccessToken(tokenPair.getAccessToken()));
+
+            assertThat(claims.getJti().getJtiValue()).isNotEqualTo(tokenPair.getJti());
+        }
+    }
+
+    @Nested
+    @DisplayName("리프레시 토큰으로 액세스 클레임을 읽을 때")
+    class WhenReadingAccessClaimsFromRefreshToken {
+
+        @Test
+        void throwsTokenInvalidException() {
+            TokenManager tokenManager = new TokenManager(secret, ONE_HOUR, ONE_HOUR);
+            MemberAuthData memberAuthData = MemberAuthDataTestFixture.aMemberAuthData();
+            TokenPair tokenPair = tokenManager.generateToken(memberAuthData);
+
+            Throwable thrown = catchThrowable(() -> tokenManager.getAccessTokenClaims(
+                    new AccessToken(tokenPair.getRefreshToken())));
+
+            assertThat(thrown)
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(AuthExceptionCase.TOKEN_INVALID);
         }
     }
 
@@ -74,7 +234,7 @@ class TokenManagerTest {
             MemberAuthData memberAuthData = MemberAuthDataTestFixture.aMemberAuthData();
             TokenPair tokenPair = tokenManager.generateToken(memberAuthData);
 
-            Throwable thrown = catchThrowable(() -> tokenManager.getMemberAuthDataFromToken(
+            Throwable thrown = catchThrowable(() -> tokenManager.getAccessTokenClaims(
                     new AccessToken(tokenPair.getAccessToken())));
 
             assertThat(thrown)
@@ -92,7 +252,7 @@ class TokenManagerTest {
         void throwsTokenInvalidException() {
             TokenManager tokenManager = new TokenManager(secret, ONE_HOUR, ONE_HOUR);
 
-            Throwable thrown = catchThrowable(() -> tokenManager.getMemberAuthDataFromToken(
+            Throwable thrown = catchThrowable(() -> tokenManager.getAccessTokenClaims(
                     new AccessToken("not-a-valid-jwt")));
 
             assertThat(thrown)

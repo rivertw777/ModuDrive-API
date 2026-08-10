@@ -12,16 +12,22 @@ public class TokenPair {
     private final String refreshToken;
     private final String grantType;
     private Date issuedAt;
+    private final String familyId;
+    private final String jti;
 
     public static TokenPair create(AccessToken accessToken,
                                    RefreshToken refreshToken,
                                    TokenGrantType grantType,
-                                   TokenIssuedAt tokenIssuedAt) {
+                                   TokenIssuedAt tokenIssuedAt,
+                                   TokenFamilyId familyId,
+                                   TokenJti jti) {
         return new TokenPair(
                 accessToken.tokenValue,
                 refreshToken.tokenValue,
                 grantType.grantTypeValue,
-                tokenIssuedAt.issuedAtValue
+                tokenIssuedAt.issuedAtValue,
+                familyId.familyIdValue,
+                jti.jtiValue
         );
     }
 
@@ -55,6 +61,22 @@ public class TokenPair {
             this.issuedAtValue = value;
         }
         Date issuedAtValue;
+    }
+
+    @Value
+    public static class TokenFamilyId {
+        public TokenFamilyId(String value) {
+            this.familyIdValue = value;
+        }
+        String familyIdValue;
+    }
+
+    @Value
+    public static class TokenJti {
+        public TokenJti(String value) {
+            this.jtiValue = value;
+        }
+        String jtiValue;
     }
 
 }
