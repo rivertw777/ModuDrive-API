@@ -12,6 +12,9 @@ jwt:
     expiration: 3600000  # 1시간
   refreshToken:
     expiration: 604800000  # 7일
+    cookie:
+      # HTTPS 환경 기본값. false로 내리면 SameSite도 Lax로 함께 완화된다 (dev 프로파일)
+      secure: true
 
 resilience4j:
   retry:

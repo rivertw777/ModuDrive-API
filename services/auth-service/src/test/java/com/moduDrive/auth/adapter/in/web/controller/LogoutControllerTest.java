@@ -5,6 +5,7 @@ import com.moduDrive.auth.application.port.in.usecase.LogoutUseCase;
 import com.moduDrive.auth.exception.AuthExceptionCase;
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.common.core.web.GlobalExceptionHandler;
+import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -13,7 +14,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -22,11 +22,12 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(LogoutController.class)
-@Import(GlobalExceptionHandler.class)
+@Import({GlobalExceptionHandler.class, RefreshTokenCookieFactory.class})
 class LogoutControllerTest {
 
     @Autowired
@@ -34,19 +35,15 @@ class LogoutControllerTest {
     @MockitoBean
     private LogoutUseCase logoutUseCase;
 
-    private static final String REQUEST_JSON = """
-            {"refreshToken":"refresh-token"}
-            """;
+    private static final Cookie REFRESH_TOKEN_COOKIE = new Cookie("refresh_token", "refresh-token");
 
     @Nested
     @DisplayName("Authorization 헤더 없이 로그아웃을 요청할 때")
     class WhenAuthorizationHeaderIsAbsent {
 
         @Test
-        void returnsSuccessResponseWithoutAccessToken() throws Exception {
-            mockMvc.perform(post("/api/v1/auth/logout")
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content(REQUEST_JSON))
+        void passesCookieRefreshTokenWithoutAccessToken() throws Exception {
+            mockMvc.perform(post("/api/v1/auth/logout").cookie(REFRESH_TOKEN_COOKIE))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.message").value("success"));
 
@@ -54,6 +51,16 @@ class LogoutControllerTest {
             then(logoutUseCase).should().logout(captor.capture());
             assertThat(captor.getValue().getAccessToken()).isNull();
             assertThat(captor.getValue().getRefreshToken().getTokenValue()).isEqualTo("refresh-token");
+        }
+
+        @Test
+        void clearsRefreshTokenCookie() throws Exception {
+            mockMvc.perform(post("/api/v1/auth/logout").cookie(REFRESH_TOKEN_COOKIE))
+                    .andExpect(status().isOk())
+                    .andExpect(cookie().value("refresh_token", ""))
+                    .andExpect(cookie().maxAge("refresh_token", 0))
+                    .andExpect(cookie().httpOnly("refresh_token", true))
+                    .andExpect(cookie().path("refresh_token", "/api/v1/auth"));
         }
     }
 
@@ -64,9 +71,8 @@ class LogoutControllerTest {
         @Test
         void passesStrippedAccessTokenToUseCase() throws Exception {
             mockMvc.perform(post("/api/v1/auth/logout")
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer access-token")
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content(REQUEST_JSON))
+                            .cookie(REFRESH_TOKEN_COOKIE)
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer access-token"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.message").value("success"));
 
@@ -83,9 +89,8 @@ class LogoutControllerTest {
         @Test
         void treatsAccessTokenAsAbsent() throws Exception {
             mockMvc.perform(post("/api/v1/auth/logout")
-                            .header(HttpHeaders.AUTHORIZATION, "Basic dXNlcjpwYXNz")
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content(REQUEST_JSON))
+                            .cookie(REFRESH_TOKEN_COOKIE)
+                            .header(HttpHeaders.AUTHORIZATION, "Basic dXNlcjpwYXNz"))
                     .andExpect(status().isOk());
 
             ArgumentCaptor<LogoutCommand> captor = ArgumentCaptor.forClass(LogoutCommand.class);
@@ -95,19 +100,14 @@ class LogoutControllerTest {
     }
 
     @Nested
-    @DisplayName("요청 값 검증에 실패했을 때")
-    class WhenRequestIsInvalid {
+    @DisplayName("리프레시 토큰 쿠키가 없을 때")
+    class WhenRefreshTokenCookieIsAbsent {
 
         @Test
-        void returnsBadRequest() throws Exception {
-            String invalidJson = """
-                    {"refreshToken":""}
-                    """;
-
-            mockMvc.perform(post("/api/v1/auth/logout")
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content(invalidJson))
-                    .andExpect(status().isBadRequest());
+        void returnsUnauthorizedWithoutCallingUseCase() throws Exception {
+            mockMvc.perform(post("/api/v1/auth/logout"))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.message").value(AuthExceptionCase.TOKEN_INVALID.getMessage()));
 
             then(logoutUseCase).shouldHaveNoInteractions();
         }
@@ -122,11 +122,10 @@ class LogoutControllerTest {
             willThrow(new BusinessException(AuthExceptionCase.TOKEN_INVALID))
                     .given(logoutUseCase).logout(any(LogoutCommand.class));
 
-            mockMvc.perform(post("/api/v1/auth/logout")
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content(REQUEST_JSON))
+            mockMvc.perform(post("/api/v1/auth/logout").cookie(REFRESH_TOKEN_COOKIE))
                     .andExpect(status().isUnauthorized())
-                    .andExpect(jsonPath("$.message").value(AuthExceptionCase.TOKEN_INVALID.getMessage()));
+                    .andExpect(jsonPath("$.message").value(AuthExceptionCase.TOKEN_INVALID.getMessage()))
+                    .andExpect(cookie().doesNotExist("refresh_token"));
         }
     }
 }
