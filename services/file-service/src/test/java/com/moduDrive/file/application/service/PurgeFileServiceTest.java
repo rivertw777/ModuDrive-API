@@ -1,7 +1,7 @@
 package com.moduDrive.file.application.service;
 
 import com.moduDrive.common.core.exception.BusinessException;
-import com.moduDrive.file.application.port.in.command.RestoreFileCommand;
+import com.moduDrive.file.application.port.in.command.PurgeFileCommand;
 import com.moduDrive.file.application.port.out.FindFilePort;
 import com.moduDrive.file.application.port.out.SaveFilePort;
 import com.moduDrive.file.domain.model.File;
@@ -27,15 +27,15 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 
 @ExtendWith(MockitoExtension.class)
-class RestoreFileServiceTest {
+class PurgeFileServiceTest {
 
     @Mock private FindFilePort findFilePort;
     @Mock private SaveFilePort saveFilePort;
     @Mock private DirectoryCascader directoryCascader;
-    @InjectMocks private RestoreFileService restoreFileService;
+    @InjectMocks private PurgeFileService purgeFileService;
 
     private final UUID fileId = UUID.randomUUID();
-    private final RestoreFileCommand command = new RestoreFileCommand(fileId);
+    private final PurgeFileCommand command = new PurgeFileCommand(fileId);
 
     private File makeFile(FileStatus status) {
         return makeFile(status, new FileIsDirectory(false));
@@ -52,31 +52,29 @@ class RestoreFileServiceTest {
     class WhenFileIsDeleted {
 
         @Test
-        void restoresFile() {
+        void purgesFile() {
             given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(makeFile(FileStatus.DELETED)));
-            given(saveFilePort.saveFile(any())).willAnswer(inv -> inv.getArgument(0));
 
-            File result = restoreFileService.restoreFile(command);
+            purgeFileService.purgeFile(command);
 
-            assertThat(result.getStatus()).isEqualTo(FileStatus.UPLOADED);
-            then(saveFilePort).should().saveFile(any(File.class));
+            then(saveFilePort).should().deleteFile(command.getFileId());
             then(directoryCascader).shouldHaveNoInteractions();
         }
     }
 
     @Nested
-    @DisplayName("복원 대상이 디렉토리일 때")
+    @DisplayName("삭제 대상이 디렉토리일 때")
     class WhenFileIsDirectory {
 
         @Test
-        void cascadesRestoreToDescendants() {
+        void cascadesPurgeToDescendants() {
             given(findFilePort.findById(command.getFileId()))
                     .willReturn(Optional.of(makeFile(FileStatus.DELETED, new FileIsDirectory(true))));
-            given(saveFilePort.saveFile(any())).willAnswer(inv -> inv.getArgument(0));
 
-            restoreFileService.restoreFile(command);
+            purgeFileService.purgeFile(command);
 
-            then(directoryCascader).should().restore(any(), eq("/1/docs/report.pdf"));
+            then(directoryCascader).should().purge(any(), eq("/1/docs/report.pdf"));
+            then(saveFilePort).should().deleteFile(command.getFileId());
         }
     }
 
@@ -88,7 +86,7 @@ class RestoreFileServiceTest {
         void throwsFileNotFound() {
             given(findFilePort.findById(command.getFileId())).willReturn(Optional.empty());
 
-            Throwable thrown = catchThrowable(() -> restoreFileService.restoreFile(command));
+            Throwable thrown = catchThrowable(() -> purgeFileService.purgeFile(command));
 
             assertThat(thrown).isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
@@ -105,7 +103,7 @@ class RestoreFileServiceTest {
         void throwsFileNotDeleted() {
             given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(makeFile(FileStatus.UPLOADED)));
 
-            Throwable thrown = catchThrowable(() -> restoreFileService.restoreFile(command));
+            Throwable thrown = catchThrowable(() -> purgeFileService.purgeFile(command));
 
             assertThat(thrown).isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())

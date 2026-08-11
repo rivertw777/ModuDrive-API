@@ -14,6 +14,10 @@ public interface FindFilePort {
 
     List<File> findByNamespaceIdAndPath(NamespaceId namespaceId, String path);
 
+    /** Entries whose {@code path} is {@code pathPrefix} or nested under it — i.e. every
+     * descendant of the directory whose full path is {@code pathPrefix}. */
+    List<File> findByNamespaceIdAndPathStartingWith(NamespaceId namespaceId, String pathPrefix);
+
     List<File> findByNamespaceIdAndStatus(NamespaceId namespaceId, FileStatus status);
 
     List<File> findByNamespaceIdAndFavorite(NamespaceId namespaceId);

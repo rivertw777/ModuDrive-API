@@ -87,6 +87,21 @@ class FilePersistenceAdapter implements
     }
 
     @Override
+    public List<File> findByNamespaceIdAndPathStartingWith(NamespaceId namespaceId, String pathPrefix) {
+        return fileRepository
+                .findSubtreeByNamespaceIdAndPathPrefix(namespaceId.value(), pathPrefix, escapeLikePattern(pathPrefix))
+                .stream()
+                .map(fileMapper::mapFileToDomain)
+                .collect(Collectors.toList());
+    }
+
+    /** Escapes LIKE metacharacters (\, %, _) so a directory name containing them can't widen
+     * the subtree-prefix match beyond its own descendants. Pair with the query's {@code escape '\'}. */
+    private static String escapeLikePattern(String value) {
+        return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+    }
+
+    @Override
     public List<File> findByNamespaceIdAndStatus(NamespaceId namespaceId, FileStatus status) {
         return fileRepository
                 .findByNamespaceIdAndStatus(namespaceId.value(), status)

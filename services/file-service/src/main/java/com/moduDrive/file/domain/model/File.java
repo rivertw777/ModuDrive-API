@@ -108,6 +108,12 @@ public class File {
         this.path = path.value();
     }
 
+    /** This entry's own full path (its parent {@code path} joined with its {@code name}) — the
+     * value child entries store as their {@code path} while they live inside it. */
+    public String fullPath() {
+        return "/".equals(path) ? "/" + name : path + "/" + name;
+    }
+
     public void markFavorite(boolean favorite) {
         this.favorite = favorite;
     }

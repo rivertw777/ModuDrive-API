@@ -8,6 +8,7 @@ import com.moduDrive.file.application.port.out.FindFilePort;
 import com.moduDrive.file.application.port.out.SaveFilePort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.FileStatus;
+import com.moduDrive.file.domain.model.Namespace.NamespaceId;
 import com.moduDrive.file.exception.FileExceptionCase;
 import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,6 +19,7 @@ class RestoreFileService implements RestoreFileUseCase {
 
     private final FindFilePort findFilePort;
     private final SaveFilePort saveFilePort;
+    private final DirectoryCascader directoryCascader;
 
     @Transactional
     @Override
@@ -30,6 +32,12 @@ class RestoreFileService implements RestoreFileUseCase {
         }
 
         file.restore();
-        return saveFilePort.saveFile(file);
+        File saved = saveFilePort.saveFile(file);
+
+        if (saved.isDirectory()) {
+            directoryCascader.restore(new NamespaceId(saved.getNamespaceId()), saved.fullPath());
+        }
+
+        return saved;
     }
 }

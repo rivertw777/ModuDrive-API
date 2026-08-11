@@ -22,6 +22,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 
@@ -30,15 +31,20 @@ class RenameFileServiceTest {
 
     @Mock private FindFilePort findFilePort;
     @Mock private SaveFilePort saveFilePort;
+    @Mock private DirectoryCascader directoryCascader;
     @InjectMocks private RenameFileService renameFileService;
 
     private final UUID fileId = UUID.randomUUID();
     private final RenameFileCommand command = new RenameFileCommand(fileId, "renamed.pdf");
 
     private File makeFile(FileStatus status) {
+        return makeFile(status, new FileIsDirectory(false));
+    }
+
+    private File makeFile(FileStatus status, FileIsDirectory isDirectory) {
         return File.withId(new FileId(fileId), new FileNamespaceId(UUID.randomUUID()),
                 new FileName("report.pdf"), new FilePath("/1/docs"),
-                new FileOwnerId(UUID.randomUUID()), null, null, status, new FileIsDirectory(false));
+                new FileOwnerId(UUID.randomUUID()), null, null, status, isDirectory);
     }
 
     @Nested
@@ -54,6 +60,25 @@ class RenameFileServiceTest {
 
             assertThat(result.getName()).isEqualTo("renamed.pdf");
             then(saveFilePort).should().saveFile(any(File.class));
+            then(directoryCascader).shouldHaveNoInteractions();
+        }
+    }
+
+    @Nested
+    @DisplayName("이름을 바꾸는 대상이 디렉토리일 때")
+    class WhenFileIsDirectory {
+
+        @Test
+        void cascadesDescendantPaths() {
+            given(findFilePort.findById(command.getFileId()))
+                    .willReturn(Optional.of(makeFile(FileStatus.UPLOADED, new FileIsDirectory(true))));
+            given(saveFilePort.saveFile(any())).willAnswer(inv -> inv.getArgument(0));
+
+            File result = renameFileService.renameFile(command);
+
+            // old full path "/1/docs/report.pdf" -> new full path "/1/docs/renamed.pdf"
+            then(directoryCascader).should()
+                    .movePath(any(), eq("/1/docs/report.pdf"), eq("/1/docs/renamed.pdf"));
         }
     }
 
