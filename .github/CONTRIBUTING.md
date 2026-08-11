@@ -51,9 +51,13 @@ Scopes:
 | `member` | services/member-service |
 | `auth` | services/auth-service |
 | `gateway` | services/gateway-service |
+| `file` | services/file-service |
+| `storage` | services/storage-service |
+| `notification` | services/notification-service |
 | `eureka` | services/eureka-server |
 | `common` | common/* |
 
+- Scope is optional; omit it for repo-level changes (`.github/*`, `.claude/*`, root configs) that don't map to any row above
 - Start with lowercase verb: add, remove, update, fix
 - No period at end, under 50 chars
 - Add body when the reason for the change is not obvious
