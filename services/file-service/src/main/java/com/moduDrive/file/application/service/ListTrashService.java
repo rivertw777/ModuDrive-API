@@ -15,6 +15,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @UseCase
 @RequiredArgsConstructor
@@ -29,6 +31,17 @@ class ListTrashService implements ListTrashUseCase {
         Namespace namespace = findNamespacePort.findByUserId(command.getUserId())
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.NAMESPACE_NOT_FOUND));
 
-        return findFilePort.findByNamespaceIdAndStatus(new NamespaceId(namespace.getId()), FileStatus.DELETED);
+        List<File> deleted = findFilePort.findByNamespaceIdAndStatus(new NamespaceId(namespace.getId()), FileStatus.DELETED);
+
+        // Deleting a directory cascades DELETED onto every descendant, so trash would otherwise
+        // list each nested file/folder too — keep only the roots of each deleted subtree.
+        Set<String> deletedDirectoryFullPaths = deleted.stream()
+                .filter(File::isDirectory)
+                .map(File::fullPath)
+                .collect(Collectors.toSet());
+
+        return deleted.stream()
+                .filter(file -> !deletedDirectoryFullPaths.contains(file.getPath()))
+                .collect(Collectors.toList());
     }
 }

@@ -8,6 +8,7 @@ import com.moduDrive.file.application.port.out.FindFilePort;
 import com.moduDrive.file.application.port.out.SaveFilePort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.FileStatus;
+import com.moduDrive.file.domain.model.Namespace.NamespaceId;
 import com.moduDrive.file.exception.FileExceptionCase;
 import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,6 +19,7 @@ class MoveFileService implements MoveFileUseCase {
 
     private final FindFilePort findFilePort;
     private final SaveFilePort saveFilePort;
+    private final DirectoryCascader directoryCascader;
 
     @Transactional
     @Override
@@ -29,7 +31,20 @@ class MoveFileService implements MoveFileUseCase {
             throw new BusinessException(FileExceptionCase.FILE_ALREADY_DELETED);
         }
 
+        String oldFullPath = file.fullPath();
+        String newParentPath = command.getPath().value();
+
+        if (file.isDirectory() && (newParentPath.equals(oldFullPath) || newParentPath.startsWith(oldFullPath + "/"))) {
+            throw new BusinessException(FileExceptionCase.INVALID_MOVE_TARGET);
+        }
+
         file.move(command.getPath());
-        return saveFilePort.saveFile(file);
+        File saved = saveFilePort.saveFile(file);
+
+        if (saved.isDirectory()) {
+            directoryCascader.movePath(new NamespaceId(saved.getNamespaceId()), oldFullPath, saved.fullPath());
+        }
+
+        return saved;
     }
 }

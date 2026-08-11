@@ -16,7 +16,8 @@ public enum FileExceptionCase implements ExceptionCase {
     FILE_NOT_DELETED(HttpStatus.BAD_REQUEST, "삭제된 파일이 아닙니다."),
     FILE_NOT_UPLOADED(HttpStatus.BAD_REQUEST, "업로드 완료되지 않은 파일입니다."),
     DIRECTORY_NOT_FOUND(HttpStatus.NOT_FOUND, "디렉토리를 찾을 수 없습니다."),
-    FILE_SHARE_ALREADY_EXISTS(HttpStatus.BAD_REQUEST, "이미 공유된 파일입니다.");
+    FILE_SHARE_ALREADY_EXISTS(HttpStatus.BAD_REQUEST, "이미 공유된 파일입니다."),
+    INVALID_MOVE_TARGET(HttpStatus.BAD_REQUEST, "디렉토리를 자기 자신의 하위 경로로 이동할 수 없습니다.");
 
     private final HttpStatus httpStatus;
     private final String message;

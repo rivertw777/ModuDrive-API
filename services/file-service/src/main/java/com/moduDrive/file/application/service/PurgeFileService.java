@@ -8,6 +8,7 @@ import com.moduDrive.file.application.port.out.FindFilePort;
 import com.moduDrive.file.application.port.out.SaveFilePort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.FileStatus;
+import com.moduDrive.file.domain.model.Namespace.NamespaceId;
 import com.moduDrive.file.exception.FileExceptionCase;
 import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,6 +19,7 @@ class PurgeFileService implements PurgeFileUseCase {
 
     private final FindFilePort findFilePort;
     private final SaveFilePort saveFilePort;
+    private final DirectoryCascader directoryCascader;
 
     @Transactional
     @Override
@@ -27,6 +29,10 @@ class PurgeFileService implements PurgeFileUseCase {
 
         if (file.getStatus() != FileStatus.DELETED) {
             throw new BusinessException(FileExceptionCase.FILE_NOT_DELETED);
+        }
+
+        if (file.isDirectory()) {
+            directoryCascader.purge(new NamespaceId(file.getNamespaceId()), file.fullPath());
         }
 
         saveFilePort.deleteFile(command.getFileId());
