@@ -7,22 +7,22 @@ services:
     networks:
       - modudrive_network
     ports:
-      - "10000:10000"
+      - "${EUREKA_SERVER_PORT}:${EUREKA_SERVER_PORT}"
     environment:
-      - SERVER_PORT=10000
-      - SPRING_PROFILES_ACTIVE=dev
-      - eureka.client.serviceUrl.defaultZone=http://eureka-server:10000/eureka/
+      - SERVER_PORT=${EUREKA_SERVER_PORT}
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE}
+      - eureka.client.serviceUrl.defaultZone=http://eureka-server:${EUREKA_SERVER_PORT}/eureka/
 
   gateway-service:
     image: modu-drive-gateway-service:0.0.1-SNAPSHOT
     networks:
       - modudrive_network
     ports:
-      - "10001:10001"
+      - "${GATEWAY_SERVER_PORT}:${GATEWAY_SERVER_PORT}"
     environment:
-      - SERVER_PORT=10001
-      - SPRING_PROFILES_ACTIVE=dev
-      - eureka.client.serviceUrl.defaultZone=http://eureka-server:10000/eureka/
+      - SERVER_PORT=${GATEWAY_SERVER_PORT}
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE}
+      - eureka.client.serviceUrl.defaultZone=http://eureka-server:${EUREKA_SERVER_PORT}/eureka/
       - CLIENT_URL=${CLIENT_URL}
     depends_on:
       member-service:
@@ -33,12 +33,12 @@ services:
     networks:
       - modudrive_network
     ports:
-      - "10010:10010"
+      - "${MEMBER_SERVER_PORT}:${MEMBER_SERVER_PORT}"
     environment:
-      - SERVER_PORT=10010
-      - SPRING_PROFILES_ACTIVE=dev
-      - eureka.client.serviceUrl.defaultZone=http://eureka-server:10000/eureka/
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      - SERVER_PORT=${MEMBER_SERVER_PORT}
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE}
+      - eureka.client.serviceUrl.defaultZone=http://eureka-server:${EUREKA_SERVER_PORT}/eureka/
+      - SPRING_DATASOURCE_URL=${SPRING_DATASOURCE_URL}
       - SPRING_DATASOURCE_USERNAME=${POSTGRES_USER}
       - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD}
       - SPRING_JPA_HIBERNATE_DDL_AUTO=${SPRING_JPA_HIBERNATE_DDL_AUTO}
@@ -51,18 +51,18 @@ services:
     networks:
       - modudrive_network
     ports:
-      - "10011:10011"
+      - "${AUTH_SERVER_PORT}:${AUTH_SERVER_PORT}"
     environment:
-      - SERVER_PORT=10011
-      - SPRING_PROFILES_ACTIVE=dev
-      - eureka.client.serviceUrl.defaultZone=http://eureka-server:10000/eureka/
+      - SERVER_PORT=${AUTH_SERVER_PORT}
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE}
+      - eureka.client.serviceUrl.defaultZone=http://eureka-server:${EUREKA_SERVER_PORT}/eureka/
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
       - JWT_ACCESS_TOKEN_EXPIRATION=${JWT_ACCESS_TOKEN_EXPIRATION}
       - JWT_REFRESH_TOKEN_EXPIRATION=${JWT_REFRESH_TOKEN_EXPIRATION}
       - JWT_REFRESH_TOKEN_COOKIE_SECURE=${JWT_REFRESH_TOKEN_COOKIE_SECURE}
-      - REDIS_HOST=${REDIS_HOST}
-      - REDIS_PORT=${REDIS_PORT}
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
     depends_on:
       eureka-server:
         condition: service_started
@@ -72,12 +72,12 @@ services:
     networks:
       - modudrive_network
     ports:
-      - "10012:10012"
+      - "${FILE_SERVER_PORT}:${FILE_SERVER_PORT}"
     environment:
-      - SERVER_PORT=10012
-      - SPRING_PROFILES_ACTIVE=dev
-      - eureka.client.serviceUrl.defaultZone=http://eureka-server:10000/eureka/
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      - SERVER_PORT=${FILE_SERVER_PORT}
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE}
+      - eureka.client.serviceUrl.defaultZone=http://eureka-server:${EUREKA_SERVER_PORT}/eureka/
+      - SPRING_DATASOURCE_URL=${SPRING_DATASOURCE_URL}
       - SPRING_DATASOURCE_USERNAME=${POSTGRES_USER}
       - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD}
       - SPRING_JPA_HIBERNATE_DDL_AUTO=${SPRING_JPA_HIBERNATE_DDL_AUTO}
@@ -91,11 +91,11 @@ services:
     networks:
       - modudrive_network
     ports:
-      - "10013:10013"
+      - "${STORAGE_SERVER_PORT}:${STORAGE_SERVER_PORT}"
     environment:
-      - SERVER_PORT=10013
-      - SPRING_PROFILES_ACTIVE=dev
-      - eureka.client.serviceUrl.defaultZone=http://eureka-server:10000/eureka/
+      - SERVER_PORT=${STORAGE_SERVER_PORT}
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE}
+      - eureka.client.serviceUrl.defaultZone=http://eureka-server:${EUREKA_SERVER_PORT}/eureka/
       - STORAGE_MULTIPART_MAX_FILE_SIZE=${STORAGE_MULTIPART_MAX_FILE_SIZE}
       - STORAGE_MULTIPART_MAX_REQUEST_SIZE=${STORAGE_MULTIPART_MAX_REQUEST_SIZE}
       - MODUDRIVE_STORAGE_MAX_FILE_SIZE_BYTES=${MODUDRIVE_STORAGE_MAX_FILE_SIZE_BYTES}
@@ -114,12 +114,12 @@ services:
     networks:
       - modudrive_network
     ports:
-      - "10014:10014"
+      - "${NOTIFICATION_SERVER_PORT}:${NOTIFICATION_SERVER_PORT}"
     environment:
-      - SERVER_PORT=10014
-      - SPRING_PROFILES_ACTIVE=dev
-      - eureka.client.serviceUrl.defaultZone=http://eureka-server:10000/eureka/
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      - SERVER_PORT=${NOTIFICATION_SERVER_PORT}
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE}
+      - eureka.client.serviceUrl.defaultZone=http://eureka-server:${EUREKA_SERVER_PORT}/eureka/
+      - SPRING_DATASOURCE_URL=${SPRING_DATASOURCE_URL}
       - SPRING_DATASOURCE_USERNAME=${POSTGRES_USER}
       - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD}
       - SPRING_JPA_HIBERNATE_DDL_AUTO=${SPRING_JPA_HIBERNATE_DDL_AUTO}
