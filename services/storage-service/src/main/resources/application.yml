@@ -9,9 +9,18 @@ spring:
       # frontend switches to chunked/resumable upload above 20MB (see RESUMABLE_THRESHOLD
       # in ModuDrive-WEB upload-file.ts); this only needs to cover the simple-upload path
       # plus a margin, and the 5MB resumable chunk requests comfortably.
-      max-file-size: 25MB
-      max-request-size: 25MB
+      max-file-size: ${STORAGE_MULTIPART_MAX_FILE_SIZE}
+      max-request-size: ${STORAGE_MULTIPART_MAX_REQUEST_SIZE}
 
 modudrive:
   storage:
-    max-file-size-bytes: 5368709120 # 5GB, enforced on resumable uploads (simple upload is already capped by max-file-size above)
+    max-file-size-bytes: ${MODUDRIVE_STORAGE_MAX_FILE_SIZE_BYTES}
+
+storage:
+  s3:
+    endpoint: ${STORAGE_S3_ENDPOINT}
+    bucket: ${STORAGE_S3_BUCKET}
+    access-key: ${STORAGE_S3_ACCESS_KEY}
+    secret-key: ${STORAGE_S3_SECRET_KEY}
+    region: ${STORAGE_S3_REGION}
+  block-size: ${STORAGE_BLOCK_SIZE}

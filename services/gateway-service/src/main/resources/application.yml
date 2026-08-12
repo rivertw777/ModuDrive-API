@@ -37,4 +37,4 @@ resilience4j:
         baseConfig: default
 
 client:
-  url: ${FRONTEND_APP_URL}
+  url: ${CLIENT_URL}
