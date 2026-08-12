@@ -16,6 +16,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -31,6 +32,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @WebMvcTest(LoginController.class)
 @Import({GlobalExceptionHandler.class, AuthResponseMapper.class, RefreshTokenCookieFactory.class})
+@TestPropertySource(properties = {
+        "jwt.refreshToken.expiration=604800000",
+        "jwt.refreshToken.cookie.secure=true"
+})
 class LoginControllerTest {
 
     @Autowired

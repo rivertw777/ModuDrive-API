@@ -8,4 +8,4 @@ spring:
 
 modudrive:
   file:
-    default-quota-bytes: 21474836480 # 20GB
+    default-quota-bytes: ${MODUDRIVE_FILE_DEFAULT_QUOTA_BYTES}
