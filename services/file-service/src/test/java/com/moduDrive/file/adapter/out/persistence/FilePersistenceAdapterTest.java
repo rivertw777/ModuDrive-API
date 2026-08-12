@@ -1,6 +1,9 @@
 package com.moduDrive.file.adapter.out.persistence;
 
 import com.moduDrive.file.domain.model.File;
+import com.moduDrive.file.domain.model.FileAccess;
+import com.moduDrive.file.domain.model.FileAccess.FileAccessFileId;
+import com.moduDrive.file.domain.model.FileAccess.FileAccessUserId;
 import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.Namespace.NamespaceId;
 import org.junit.jupiter.api.DisplayName;
@@ -10,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.context.annotation.Import;
 
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -22,6 +26,8 @@ class FilePersistenceAdapterTest {
     private FilePersistenceAdapter filePersistenceAdapter;
     @Autowired
     private SpringDataFileRepository springDataFileRepository;
+    @Autowired
+    private SpringDataFileAccessRepository springDataFileAccessRepository;
 
     private final UUID namespaceIdValue = UUID.randomUUID();
     private final NamespaceId namespaceId = new NamespaceId(namespaceIdValue);
@@ -58,6 +64,48 @@ class FilePersistenceAdapterTest {
             var result = filePersistenceAdapter.findByNamespaceIdAndPathStartingWith(namespaceId, "/1/%");
 
             assertThat(result).extracting(File::getPath).containsExactly("/1/%");
+        }
+    }
+
+    @Nested
+    @DisplayName("파일 접근을 기록할 때")
+    class WhenRecordingFileAccess {
+
+        @Test
+        @DisplayName("같은 사용자-파일 조합을 다시 접근하면 새 행을 만들지 않고 시각만 갱신한다")
+        void upsertsInsteadOfDuplicating() {
+            UUID userId = UUID.randomUUID();
+            UUID fileId = UUID.randomUUID();
+            LocalDateTime firstAccess = LocalDateTime.now().minusMinutes(5);
+            LocalDateTime secondAccess = LocalDateTime.now();
+
+            filePersistenceAdapter.recordAccess(
+                    FileAccess.of(new FileAccessUserId(userId), new FileAccessFileId(fileId), firstAccess));
+            filePersistenceAdapter.recordAccess(
+                    FileAccess.of(new FileAccessUserId(userId), new FileAccessFileId(fileId), secondAccess));
+
+            var rows = springDataFileAccessRepository.findByUserIdOrderByAccessedAtDesc(
+                    userId, org.springframework.data.domain.PageRequest.of(0, 10));
+            assertThat(rows).hasSize(1);
+            assertThat(rows.get(0).getAccessedAt()).isEqualToIgnoringNanos(secondAccess);
+        }
+
+        @Test
+        @DisplayName("최근 접근한 순서대로, limit 개수만큼 조회한다")
+        void listsMostRecentFirstUpToLimit() {
+            UUID userId = UUID.randomUUID();
+            UUID olderFileId = UUID.randomUUID();
+            UUID newerFileId = UUID.randomUUID();
+
+            filePersistenceAdapter.recordAccess(FileAccess.of(
+                    new FileAccessUserId(userId), new FileAccessFileId(olderFileId),
+                    LocalDateTime.now().minusMinutes(10)));
+            filePersistenceAdapter.recordAccess(FileAccess.of(
+                    new FileAccessUserId(userId), new FileAccessFileId(newerFileId), LocalDateTime.now()));
+
+            var result = filePersistenceAdapter.findByUserIdOrderByAccessedAtDesc(userId, 1);
+
+            assertThat(result).extracting(FileAccess::getFileId).containsExactly(newerFileId);
         }
     }
 }

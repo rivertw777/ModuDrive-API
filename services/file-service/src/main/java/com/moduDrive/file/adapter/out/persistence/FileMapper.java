@@ -2,6 +2,7 @@ package com.moduDrive.file.adapter.out.persistence;
 
 import com.moduDrive.file.domain.model.Block;
 import com.moduDrive.file.domain.model.File;
+import com.moduDrive.file.domain.model.FileAccess;
 import com.moduDrive.file.domain.model.FileShare;
 import com.moduDrive.file.domain.model.FileVersion;
 import com.moduDrive.file.domain.model.Namespace;
@@ -9,6 +10,7 @@ import org.springframework.stereotype.Component;
 
 import static com.moduDrive.file.domain.model.Block.*;
 import static com.moduDrive.file.domain.model.File.*;
+import static com.moduDrive.file.domain.model.FileAccess.*;
 import static com.moduDrive.file.domain.model.FileShare.*;
 import static com.moduDrive.file.domain.model.FileVersion.*;
 import static com.moduDrive.file.domain.model.Namespace.*;
@@ -50,6 +52,13 @@ class FileMapper {
                 new FileVersionBlockCount(entity.getBlockCount()),
                 new FileVersionS3Path(entity.getS3Path())
         );
+    }
+
+    FileAccess mapFileAccessToDomain(FileAccessJpaEntity entity) {
+        return FileAccess.of(
+                new FileAccessUserId(entity.getUserId()),
+                new FileAccessFileId(entity.getFileId()),
+                entity.getAccessedAt());
     }
 
     FileShare mapFileShareToDomain(FileShareJpaEntity entity) {
