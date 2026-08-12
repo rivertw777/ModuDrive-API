@@ -3,7 +3,9 @@ package com.moduDrive.file.adapter.in.web.controller;
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.common.core.web.GlobalExceptionHandler;
 import com.moduDrive.file.application.port.in.command.GetFileCommand;
+import com.moduDrive.file.application.port.in.command.RecordFileAccessCommand;
 import com.moduDrive.file.application.port.in.usecase.GetFileUseCase;
+import com.moduDrive.file.application.port.in.usecase.RecordFileAccessUseCase;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
 import com.moduDrive.file.domain.model.FileStatus;
@@ -21,6 +23,7 @@ import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -32,8 +35,10 @@ class GetFileControllerTest {
 
     @Autowired private MockMvc mockMvc;
     @MockitoBean private GetFileUseCase getFileUseCase;
+    @MockitoBean private RecordFileAccessUseCase recordFileAccessUseCase;
 
     private static final UUID FILE_ID = UUID.randomUUID();
+    private static final UUID USER_ID = UUID.randomUUID();
 
     private final File uploadedFile = File.withId(
             new FileId(FILE_ID), new FileNamespaceId(UUID.randomUUID()),
@@ -49,10 +54,28 @@ class GetFileControllerTest {
         void returnsFileInfo() throws Exception {
             given(getFileUseCase.getFile(any(GetFileCommand.class))).willReturn(uploadedFile);
 
-            mockMvc.perform(get("/api/v1/files/{fileId}", FILE_ID))
+            mockMvc.perform(get("/api/v1/files/{fileId}", FILE_ID).header("X_USER_ID", USER_ID))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.name").value("report.pdf"))
                     .andExpect(jsonPath("$.data.status").value("UPLOADED"));
+
+            then(recordFileAccessUseCase).should().recordAccess(any(RecordFileAccessCommand.class));
+        }
+    }
+
+    @Nested
+    @DisplayName("접근 기록이 실패할 때")
+    class WhenRecordingAccessFails {
+
+        @Test
+        void stillReturnsFileInfo() throws Exception {
+            given(getFileUseCase.getFile(any(GetFileCommand.class))).willReturn(uploadedFile);
+            willThrow(new RuntimeException("db hiccup"))
+                    .given(recordFileAccessUseCase).recordAccess(any(RecordFileAccessCommand.class));
+
+            mockMvc.perform(get("/api/v1/files/{fileId}", FILE_ID).header("X_USER_ID", USER_ID))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.name").value("report.pdf"));
         }
     }
 
@@ -65,9 +88,11 @@ class GetFileControllerTest {
             willThrow(new BusinessException(FileExceptionCase.FILE_NOT_FOUND))
                     .given(getFileUseCase).getFile(any(GetFileCommand.class));
 
-            mockMvc.perform(get("/api/v1/files/{fileId}", FILE_ID))
+            mockMvc.perform(get("/api/v1/files/{fileId}", FILE_ID).header("X_USER_ID", USER_ID))
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.message").value(FileExceptionCase.FILE_NOT_FOUND.getMessage()));
+
+            then(recordFileAccessUseCase).shouldHaveNoInteractions();
         }
     }
 }

@@ -23,12 +23,14 @@ class FilePersistenceAdapter implements
         SaveNamespacePort, FindNamespacePort,
         SaveFilePort, FindFilePort,
         SaveFileVersionPort, FindFileVersionsPort,
-        SaveFileSharePort, FindFileSharePort {
+        SaveFileSharePort, FindFileSharePort,
+        SaveFileAccessPort, FindFileAccessPort {
 
     private final SpringDataNamespaceRepository namespaceRepository;
     private final SpringDataFileRepository fileRepository;
     private final SpringDataFileVersionRepository fileVersionRepository;
     private final SpringDataFileShareRepository fileShareRepository;
+    private final SpringDataFileAccessRepository fileAccessRepository;
     private final FileMapper fileMapper;
 
     @Override
@@ -179,6 +181,31 @@ class FilePersistenceAdapter implements
         return fileShareRepository.findBySharedWithUserId(sharedWithUserId)
                 .stream()
                 .map(fileMapper::mapFileShareToDomain)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public void recordAccess(FileAccess fileAccess) {
+        FileAccessJpaEntity entity = fileAccessRepository
+                .findByUserIdAndFileId(fileAccess.getUserId(), fileAccess.getFileId())
+                .map(existing -> {
+                    existing.touch(fileAccess.getAccessedAt());
+                    return existing;
+                })
+                .orElseGet(() -> new FileAccessJpaEntity(
+                        fileAccess.getUserId(), fileAccess.getFileId(), fileAccess.getAccessedAt()));
+        // saveAndFlush (not save): forces the uk_file_access_user_file violation from a
+        // concurrent insert-race to surface here, synchronously, instead of at commit time
+        // after the caller (RecordFileAccessService) has already returned — that's what lets
+        // its try/catch actually catch it instead of the exception leaking into the response.
+        fileAccessRepository.saveAndFlush(entity);
+    }
+
+    @Override
+    public List<FileAccess> findByUserIdOrderByAccessedAtDesc(UUID userId, int limit) {
+        return fileAccessRepository.findByUserIdOrderByAccessedAtDesc(userId, PageRequest.of(0, limit))
+                .stream()
+                .map(fileMapper::mapFileAccessToDomain)
                 .collect(Collectors.toList());
     }
 }
