@@ -38,9 +38,9 @@ services:
       - SERVER_PORT=10010
       - SPRING_PROFILES_ACTIVE=dev
       - eureka.client.serviceUrl.defaultZone=http://eureka-server:10000/eureka/
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/modu_drive
-      - SPRING_DATASOURCE_USERNAME=modudrive
-      - SPRING_DATASOURCE_PASSWORD=1234
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      - SPRING_DATASOURCE_USERNAME=${POSTGRES_USER}
+      - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD}
       - SPRING_JPA_HIBERNATE_DDL_AUTO=update
     depends_on:
       eureka-server:
@@ -56,10 +56,10 @@ services:
       - SERVER_PORT=10011
       - SPRING_PROFILES_ACTIVE=dev
       - eureka.client.serviceUrl.defaultZone=http://eureka-server:10000/eureka/
-      - JWT_SECRET_KEY=MTgxNzg1NjEwNzE3Nzc1MjA1MDA0NzUwMDQ0OTM1Mjg=
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - REDIS_PASSWORD=modudrive
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
     depends_on:
       eureka-server:
         condition: service_started
@@ -74,9 +74,9 @@ services:
       - SERVER_PORT=10012
       - SPRING_PROFILES_ACTIVE=dev
       - eureka.client.serviceUrl.defaultZone=http://eureka-server:10000/eureka/
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/modu_drive
-      - SPRING_DATASOURCE_USERNAME=modudrive
-      - SPRING_DATASOURCE_PASSWORD=1234
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      - SPRING_DATASOURCE_USERNAME=${POSTGRES_USER}
+      - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD}
       - SPRING_JPA_HIBERNATE_DDL_AUTO=update
     depends_on:
       eureka-server:
@@ -94,8 +94,8 @@ services:
       - eureka.client.serviceUrl.defaultZone=http://eureka-server:10000/eureka/
       - STORAGE_S3_ENDPOINT=http://minio:9000
       - STORAGE_S3_BUCKET=modudrive
-      - STORAGE_S3_ACCESS_KEY=minioadmin
-      - STORAGE_S3_SECRET_KEY=minioadmin
+      - STORAGE_S3_ACCESS_KEY=${MINIO_ROOT_USER}
+      - STORAGE_S3_SECRET_KEY=${MINIO_ROOT_PASSWORD}
       - STORAGE_S3_REGION=us-east-1
     depends_on:
       eureka-server:
@@ -111,9 +111,9 @@ services:
       - SERVER_PORT=10014
       - SPRING_PROFILES_ACTIVE=dev
       - eureka.client.serviceUrl.defaultZone=http://eureka-server:10000/eureka/
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/modu_drive
-      - SPRING_DATASOURCE_USERNAME=modudrive
-      - SPRING_DATASOURCE_PASSWORD=1234
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      - SPRING_DATASOURCE_USERNAME=${POSTGRES_USER}
+      - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD}
       - SPRING_JPA_HIBERNATE_DDL_AUTO=update
     depends_on:
       eureka-server:

@@ -1,4 +1,7 @@
 {
+  "permissions": {
+    "deny": ["Read(./.env)", "Read(./.docker/.env)"]
+  },
   "hooks": {
     "PreToolUse": [
       {
