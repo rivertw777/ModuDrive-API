@@ -38,3 +38,6 @@ out/
 
 .claude/answer/
 .omc/
+
+.docker/.env
+!.docker/.env.example
