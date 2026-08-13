@@ -16,11 +16,12 @@ optional.
 This is a **documented policy today, not yet enforced by the build** — no
 JaCoCo gate is wired into `./gradlew build` or `check` yet. The exact recipe
 to wire it in later is in [JaCoCo gate](#jacoco-gate-recipe-apply-when-ready)
-below; it isn't applied yet because there are no tests for existing code
-(`SignUpMemberService`, `LoginService`, `MemberPersistenceAdapter`, etc.), and
-turning the gate on today would fail `./gradlew build` immediately. Until it's
-wired in, treat 70% as something a reviewer checks for, not something CI
-blocks on.
+below; it isn't applied yet because coverage is still uneven across services —
+`member-service` and `auth-service` are well covered, but `storage-service`
+and `notification-service` are thin (notification is barely started), so
+turning the gate on today would fail `./gradlew build` immediately. Until
+every service clears the bar, treat 70% as something a reviewer checks for,
+not something CI blocks on.
 
 **In scope for 70% (must be tested):**
 `domain/**`, `application/service/**`, `adapter/in/web/controller/**`,
@@ -77,19 +78,20 @@ needed:
   instead of JUnit's `assertEquals`/`assertTrue`. Fluent chains read as the
   Then step and produce far more readable failure output.
 
-Need to be added to a service's `build.gradle` `dependencies {}` the first
-time they're used (not present in any service yet):
-
-- **ArchUnit** — `testImplementation 'com.tngtech.archunit:archunit-junit5:1.4.2'`.
-  Must be `1.4.x`+, not `1.3.0` — `1.3.0` bundles an ASM version that cannot
-  parse Java 25 class files (this project's `sourceCompatibility`). Symptom:
-  `ClassFileImporter().importPackages(...)` silently returns **zero** classes
-  (no exception), so every ArchUnit rule fails with "failed to check any
-  classes" instead of an ASM/bytecode error. If you ever see that message,
-  suspect the ArchUnit/JDK version mismatch first, not the rule itself.
+- **ArchUnit** — already added to every service's `build.gradle`
+  (`testImplementation 'com.tngtech.archunit:archunit-junit5:1.4.2'`) alongside
+  each service's `HexagonalArchitectureTest`. Must be `1.4.x`+, not `1.3.0` —
+  `1.3.0` bundles an ASM version that cannot parse Java 25 class files (this
+  project's `sourceCompatibility`). Symptom: `ClassFileImporter().importPackages(...)`
+  silently returns **zero** classes (no exception), so every ArchUnit rule
+  fails with "failed to check any classes" instead of an ASM/bytecode error.
+  If you ever see that message, suspect the ArchUnit/JDK version mismatch
+  first, not the rule itself.
 - **Testcontainers** (only for the Postgres-specific persistence tests
-  described below) — `testImplementation 'org.testcontainers:junit-jupiter:1.20.4'`
-  and `testImplementation 'org.testcontainers:postgresql:1.20.4'`
+  described below) — not yet added to any service; needs
+  `testImplementation 'org.testcontainers:junit-jupiter:1.20.4'` and
+  `testImplementation 'org.testcontainers:postgresql:1.20.4'` in that
+  service's `build.gradle` the first time a Postgres-specific test is written.
 
 **Spring Boot 4.0 test-slice annotations are no longer bundled in
 `spring-boot-starter-test`.** `@WebMvcTest`, `@DataJpaTest`, etc. moved to
@@ -278,8 +280,8 @@ project's hexagonal conventions are already based on — see the
 5. New `adapter/out/security` or `adapter/out/client` logic — Mockito test
    mocking the raw collaborator, asserting the translation to/from the
    domain object.
-6. First test class in a service that doesn't have one yet — add the
-   `archunit-junit5` dependency and the `HexagonalArchitectureTest`.
+6. New service added to the monorepo — add the `archunit-junit5` dependency
+   and a `HexagonalArchitectureTest`; every existing service already has one.
 7. Run `./gradlew :services:<service>:test` before opening a PR.
 
 ## JaCoCo gate recipe (apply when ready)

@@ -1,3 +1,15 @@
+---
+name: note
+disable-model-invocation: true
+description: >-
+  Sync the Obsidian vault's ModuDrive-API "data model" and "feature" notes against the current
+  source in this repo. Manual-only: invoke by typing /note or explicitly asking for it by name —
+  do not trigger this automatically from a general "document this" request, since it writes
+  directly into the user's personal Obsidian vault.
+---
+
+# Note
+
 Sync the Obsidian vault's ModuDrive-API "data model" and "feature" notes against the current source in this repo. Do not ask the user questions; report a summary at the end instead.
 
 Vault root: `ModuDrive/1. Projects/ModuDrive-API`. Use the `mcp__obsidian__*` tools (search_notes / read_note / write_note / patch_note) to read and write notes — not raw filesystem access.
