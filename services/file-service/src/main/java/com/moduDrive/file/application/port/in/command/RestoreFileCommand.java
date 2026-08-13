@@ -9,8 +9,10 @@ import java.util.UUID;
 public class RestoreFileCommand {
 
     private final FileId fileId;
+    private final UUID callerId;
 
-    public RestoreFileCommand(UUID fileId) {
+    public RestoreFileCommand(UUID fileId, UUID callerId) {
         this.fileId = new FileId(fileId);
+        this.callerId = callerId;
     }
 }

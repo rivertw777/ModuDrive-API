@@ -7,10 +7,13 @@ import com.moduDrive.file.domain.model.Namespace.NamespaceId;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 public interface FindFilePort {
 
     Optional<File> findById(FileId fileId);
+
+    Optional<File> findByLinkToken(UUID linkToken);
 
     List<File> findByNamespaceIdAndPath(NamespaceId namespaceId, String path);
 

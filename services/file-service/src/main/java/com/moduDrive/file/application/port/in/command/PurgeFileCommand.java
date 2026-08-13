@@ -9,8 +9,10 @@ import java.util.UUID;
 public class PurgeFileCommand {
 
     private final FileId fileId;
+    private final UUID callerId;
 
-    public PurgeFileCommand(UUID fileId) {
+    public PurgeFileCommand(UUID fileId, UUID callerId) {
         this.fileId = new FileId(fileId);
+        this.callerId = callerId;
     }
 }

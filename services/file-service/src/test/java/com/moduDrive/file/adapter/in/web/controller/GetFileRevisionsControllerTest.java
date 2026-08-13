@@ -34,6 +34,7 @@ class GetFileRevisionsControllerTest {
     @MockitoBean private GetFileRevisionsUseCase getFileRevisionsUseCase;
 
     private static final UUID FILE_ID = UUID.randomUUID();
+    private static final String USER_ID = "11111111-1111-1111-1111-111111111111";
 
     @Nested
     @DisplayName("리비전이 존재할 때")
@@ -47,7 +48,8 @@ class GetFileRevisionsControllerTest {
             given(getFileRevisionsUseCase.getFileRevisions(any(GetFileRevisionsCommand.class)))
                     .willReturn(List.of(v));
 
-            mockMvc.perform(get("/api/v1/files/{fileId}/revisions", FILE_ID))
+            mockMvc.perform(get("/api/v1/files/{fileId}/revisions", FILE_ID)
+                            .header("X_USER_ID", USER_ID))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data[0].s3Path").value("s3://b/k"));
         }
@@ -62,7 +64,8 @@ class GetFileRevisionsControllerTest {
             willThrow(new BusinessException(FileExceptionCase.FILE_NOT_FOUND))
                     .given(getFileRevisionsUseCase).getFileRevisions(any(GetFileRevisionsCommand.class));
 
-            mockMvc.perform(get("/api/v1/files/{fileId}/revisions", FILE_ID))
+            mockMvc.perform(get("/api/v1/files/{fileId}/revisions", FILE_ID)
+                            .header("X_USER_ID", USER_ID))
                     .andExpect(status().isNotFound());
         }
     }

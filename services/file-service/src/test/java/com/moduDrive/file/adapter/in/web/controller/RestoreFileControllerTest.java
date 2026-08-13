@@ -34,6 +34,7 @@ class RestoreFileControllerTest {
     @MockitoBean private RestoreFileUseCase restoreFileUseCase;
 
     private static final UUID FILE_ID = UUID.randomUUID();
+    private static final String USER_ID = "11111111-1111-1111-1111-111111111111";
 
     @Nested
     @DisplayName("파일이 삭제된 상태일 때")
@@ -46,7 +47,8 @@ class RestoreFileControllerTest {
                     new FileOwnerId(UUID.randomUUID()), null, null, FileStatus.UPLOADED, new FileIsDirectory(false));
             given(restoreFileUseCase.restoreFile(any(RestoreFileCommand.class))).willReturn(restored);
 
-            mockMvc.perform(patch("/api/v1/files/{fileId}/restore", FILE_ID))
+            mockMvc.perform(patch("/api/v1/files/{fileId}/restore", FILE_ID)
+                            .header("X_USER_ID", USER_ID))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.status").value("UPLOADED"));
         }
@@ -61,7 +63,8 @@ class RestoreFileControllerTest {
             willThrow(new BusinessException(FileExceptionCase.FILE_NOT_DELETED))
                     .given(restoreFileUseCase).restoreFile(any(RestoreFileCommand.class));
 
-            mockMvc.perform(patch("/api/v1/files/{fileId}/restore", FILE_ID))
+            mockMvc.perform(patch("/api/v1/files/{fileId}/restore", FILE_ID)
+                            .header("X_USER_ID", USER_ID))
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.message").value(FileExceptionCase.FILE_NOT_DELETED.getMessage()));
         }

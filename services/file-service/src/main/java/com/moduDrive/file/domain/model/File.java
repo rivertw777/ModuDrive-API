@@ -22,6 +22,8 @@ public class File {
     private final boolean directory;
     private boolean favorite;
     private LocalDateTime updatedAt;
+    private ShareScope accessScope;
+    private UUID linkToken;
 
     public static File create(FileNamespaceId namespaceId,
                               FileName name,
@@ -39,6 +41,8 @@ public class File {
                 FileStatus.PENDING,
                 isDirectory.value(),
                 false,
+                null,
+                ShareScope.RESTRICTED,
                 null
         );
     }
@@ -58,6 +62,8 @@ public class File {
                 FileStatus.UPLOADED,
                 true,
                 false,
+                null,
+                ShareScope.RESTRICTED,
                 null
         );
     }
@@ -82,6 +88,8 @@ public class File {
                 status,
                 isDirectory.value(),
                 false,
+                null,
+                ShareScope.RESTRICTED,
                 null
         );
     }
@@ -120,6 +128,20 @@ public class File {
 
     public void markUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    /** Idempotent: an already-issued token is kept, so re-selecting LINK never invalidates
+     * links already handed out. Rotation would need its own explicit operation. */
+    public void enableLinkSharing(UUID token) {
+        this.accessScope = ShareScope.LINK;
+        if (this.linkToken == null) {
+            this.linkToken = token;
+        }
+    }
+
+    public void disableLinkSharing() {
+        this.accessScope = ShareScope.RESTRICTED;
+        this.linkToken = null;
     }
 
     public record FileId(UUID value) {}

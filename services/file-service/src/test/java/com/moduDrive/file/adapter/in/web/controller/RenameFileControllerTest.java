@@ -35,6 +35,7 @@ class RenameFileControllerTest {
     @MockitoBean private RenameFileUseCase renameFileUseCase;
 
     private static final UUID FILE_ID = UUID.randomUUID();
+    private static final String USER_ID = "11111111-1111-1111-1111-111111111111";
 
     @Nested
     @DisplayName("파일이 존재할 때")
@@ -48,6 +49,7 @@ class RenameFileControllerTest {
             given(renameFileUseCase.renameFile(any(RenameFileCommand.class))).willReturn(renamed);
 
             mockMvc.perform(patch("/api/v1/files/{fileId}/name", FILE_ID)
+                            .header("X_USER_ID", USER_ID)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
                                     {"name":"renamed.pdf"}
@@ -59,6 +61,7 @@ class RenameFileControllerTest {
         @Test
         void returnsBadRequestOnBlankName() throws Exception {
             mockMvc.perform(patch("/api/v1/files/{fileId}/name", FILE_ID)
+                            .header("X_USER_ID", USER_ID)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
                                     {"name":""}
@@ -77,6 +80,7 @@ class RenameFileControllerTest {
                     .given(renameFileUseCase).renameFile(any(RenameFileCommand.class));
 
             mockMvc.perform(patch("/api/v1/files/{fileId}/name", FILE_ID)
+                            .header("X_USER_ID", USER_ID)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
                                     {"name":"renamed.pdf"}

@@ -2,6 +2,7 @@ package com.moduDrive.file.adapter.out.persistence;
 
 import com.moduDrive.common.infrastructure.jpa.audit.BaseTimeEntity;
 import com.moduDrive.file.domain.model.FileStatus;
+import com.moduDrive.file.domain.model.ShareScope;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -49,6 +50,15 @@ class FileJpaEntity extends BaseTimeEntity {
     @Column(nullable = false)
     private boolean favorite;
 
+    // Left DB-nullable on purpose: ddl-auto=update can't add a NOT NULL column to a table that
+    // already has rows, so pre-existing files would break the migration. FileMapper reads a null
+    // back as RESTRICTED (the safe default).
+    @Enumerated(EnumType.STRING)
+    private ShareScope accessScope;
+
+    @Column(unique = true)
+    private UUID linkToken;
+
     FileJpaEntity(UUID namespaceId, String name, String path, UUID ownerId, FileStatus status, boolean directory) {
         this.namespaceId = namespaceId;
         this.name = name;
@@ -56,14 +66,18 @@ class FileJpaEntity extends BaseTimeEntity {
         this.ownerId = ownerId;
         this.status = status;
         this.directory = directory;
+        this.accessScope = ShareScope.RESTRICTED;
     }
 
-    void applyChanges(String name, String path, UUID currentVersionId, Long fileSize, FileStatus status, boolean favorite) {
+    void applyChanges(String name, String path, UUID currentVersionId, Long fileSize, FileStatus status,
+                      boolean favorite, ShareScope accessScope, UUID linkToken) {
         this.name = name;
         this.path = path;
         this.currentVersionId = currentVersionId;
         this.fileSize = fileSize;
         this.status = status;
         this.favorite = favorite;
+        this.accessScope = accessScope;
+        this.linkToken = linkToken;
     }
 }

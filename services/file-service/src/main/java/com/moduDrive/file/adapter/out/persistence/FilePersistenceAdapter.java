@@ -6,10 +6,12 @@ import com.moduDrive.file.application.port.out.*;
 import com.moduDrive.file.domain.model.*;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.FileId;
+import com.moduDrive.file.domain.model.FileShare.FileShareId;
 import com.moduDrive.file.domain.model.Namespace.NamespaceId;
 import com.moduDrive.file.domain.model.Namespace.NamespaceUserId;
 import com.moduDrive.file.exception.FileExceptionCase;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 
 import java.util.List;
@@ -23,7 +25,7 @@ class FilePersistenceAdapter implements
         SaveNamespacePort, FindNamespacePort,
         SaveFilePort, FindFilePort,
         SaveFileVersionPort, FindFileVersionsPort,
-        SaveFileSharePort, FindFileSharePort,
+        SaveFileSharePort, FindFileSharePort, DeleteFileSharePort,
         SaveFileAccessPort, FindFileAccessPort {
 
     private final SpringDataNamespaceRepository namespaceRepository;
@@ -63,7 +65,8 @@ class FilePersistenceAdapter implements
         FileJpaEntity entity = fileRepository.findById(file.getId())
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_NOT_FOUND));
 
-        entity.applyChanges(file.getName(), file.getPath(), file.getCurrentVersionId(), file.getFileSize(), file.getStatus(), file.isFavorite());
+        entity.applyChanges(file.getName(), file.getPath(), file.getCurrentVersionId(), file.getFileSize(),
+                file.getStatus(), file.isFavorite(), file.getAccessScope(), file.getLinkToken());
 
         return fileMapper.mapFileToDomain(fileRepository.save(entity));
     }
@@ -76,6 +79,12 @@ class FilePersistenceAdapter implements
     @Override
     public Optional<File> findById(FileId fileId) {
         return fileRepository.findById(fileId.value())
+                .map(fileMapper::mapFileToDomain);
+    }
+
+    @Override
+    public Optional<File> findByLinkToken(UUID linkToken) {
+        return fileRepository.findByLinkToken(linkToken)
                 .map(fileMapper::mapFileToDomain);
     }
 
@@ -164,16 +173,57 @@ class FilePersistenceAdapter implements
 
     @Override
     public FileShare saveFileShare(FileShare fileShare) {
-        FileShareJpaEntity entity = new FileShareJpaEntity(
-                fileShare.getFileId(), fileShare.getOwnerId(),
-                fileShare.getSharedWithUserId(), fileShare.getPermission()
-        );
+        if (fileShare.getId() == null) {
+            FileShareJpaEntity entity = new FileShareJpaEntity(
+                    fileShare.getFileId(), fileShare.getOwnerId(),
+                    fileShare.getSharedWithUserId(), fileShare.getRole()
+            );
+            try {
+                return fileMapper.mapFileShareToDomain(fileShareRepository.save(entity));
+            } catch (DataIntegrityViolationException e) {
+                // The app-layer existsBy check in ShareFileService is best-effort against a
+                // concurrent duplicate invite; the DB unique constraint is what actually closes
+                // that race, so translate its violation into the same business error instead of
+                // letting a raw constraint-violation message leak out as a 500.
+                throw new BusinessException(FileExceptionCase.FILE_SHARE_ALREADY_EXISTS);
+            }
+        }
+
+        FileShareJpaEntity entity = fileShareRepository.findById(fileShare.getId())
+                .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_SHARE_NOT_FOUND));
+        entity.applyRole(fileShare.getRole());
+
         return fileMapper.mapFileShareToDomain(fileShareRepository.save(entity));
+    }
+
+    @Override
+    public void deleteFileShare(FileShareId shareId) {
+        fileShareRepository.deleteById(shareId.value());
     }
 
     @Override
     public boolean existsByFileIdAndSharedWithUserId(FileId fileId, UUID sharedWithUserId) {
         return fileShareRepository.existsByFileIdAndSharedWithUserId(fileId.value(), sharedWithUserId);
+    }
+
+    @Override
+    public Optional<FileShare> findByFileIdAndSharedWithUserId(FileId fileId, UUID sharedWithUserId) {
+        return fileShareRepository.findByFileIdAndSharedWithUserId(fileId.value(), sharedWithUserId)
+                .map(fileMapper::mapFileShareToDomain);
+    }
+
+    @Override
+    public Optional<FileShare> findByShareId(FileShareId shareId) {
+        return fileShareRepository.findById(shareId.value())
+                .map(fileMapper::mapFileShareToDomain);
+    }
+
+    @Override
+    public List<FileShare> findByFileId(FileId fileId) {
+        return fileShareRepository.findByFileId(fileId.value())
+                .stream()
+                .map(fileMapper::mapFileShareToDomain)
+                .collect(Collectors.toList());
     }
 
     @Override

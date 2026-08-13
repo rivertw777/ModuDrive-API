@@ -10,10 +10,12 @@ import java.util.UUID;
 public class RenameFileCommand {
 
     private final FileId fileId;
+    private final UUID callerId;
     private final FileName name;
 
-    public RenameFileCommand(UUID fileId, String name) {
+    public RenameFileCommand(UUID fileId, UUID callerId, String name) {
         this.fileId = new FileId(fileId);
+        this.callerId = callerId;
         this.name = new FileName(name);
     }
 }

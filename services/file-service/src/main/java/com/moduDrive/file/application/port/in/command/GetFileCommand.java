@@ -9,8 +9,10 @@ import java.util.UUID;
 public class GetFileCommand {
 
     private final FileId fileId;
+    private final UUID callerId;
 
-    public GetFileCommand(UUID fileId) {
+    public GetFileCommand(UUID fileId, UUID callerId) {
         this.fileId = new FileId(fileId);
+        this.callerId = callerId;
     }
 }

@@ -25,19 +25,25 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 
+import static org.mockito.ArgumentMatchers.eq;
+
+import static org.mockito.BDDMockito.willThrow;
+
 @ExtendWith(MockitoExtension.class)
 class UpdateFileFavoriteServiceTest {
 
     @Mock private FindFilePort findFilePort;
     @Mock private SaveFilePort saveFilePort;
+    @Mock private FileAccessGuard fileAccessGuard;
     @InjectMocks private UpdateFileFavoriteService updateFileFavoriteService;
 
     private final UUID fileId = UUID.randomUUID();
+    private final UUID callerId = UUID.randomUUID();
 
     private File makeFile() {
         return File.withId(new FileId(fileId), new FileNamespaceId(UUID.randomUUID()),
                 new FileName("report.pdf"), new FilePath("/1/docs"),
-                new FileOwnerId(UUID.randomUUID()), null, null, FileStatus.UPLOADED, new FileIsDirectory(false));
+                new FileOwnerId(callerId), null, null, FileStatus.UPLOADED, new FileIsDirectory(false));
     }
 
     @Nested
@@ -46,7 +52,7 @@ class UpdateFileFavoriteServiceTest {
 
         @Test
         void marksFileAsFavorite() {
-            UpdateFileFavoriteCommand command = new UpdateFileFavoriteCommand(fileId, true);
+            UpdateFileFavoriteCommand command = new UpdateFileFavoriteCommand(fileId, callerId, true);
             given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(makeFile()));
             given(saveFilePort.saveFile(any())).willAnswer(inv -> inv.getArgument(0));
 
@@ -58,7 +64,7 @@ class UpdateFileFavoriteServiceTest {
 
         @Test
         void unmarksFileAsFavorite() {
-            UpdateFileFavoriteCommand command = new UpdateFileFavoriteCommand(fileId, false);
+            UpdateFileFavoriteCommand command = new UpdateFileFavoriteCommand(fileId, callerId, false);
             given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(makeFile()));
             given(saveFilePort.saveFile(any())).willAnswer(inv -> inv.getArgument(0));
 
@@ -74,7 +80,7 @@ class UpdateFileFavoriteServiceTest {
 
         @Test
         void throwsFileNotFound() {
-            UpdateFileFavoriteCommand command = new UpdateFileFavoriteCommand(fileId, true);
+            UpdateFileFavoriteCommand command = new UpdateFileFavoriteCommand(fileId, callerId, true);
             given(findFilePort.findById(command.getFileId())).willReturn(Optional.empty());
 
             Throwable thrown = catchThrowable(() -> updateFileFavoriteService.updateFavorite(command));
@@ -82,6 +88,26 @@ class UpdateFileFavoriteServiceTest {
             assertThat(thrown).isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
                     .isEqualTo(FileExceptionCase.FILE_NOT_FOUND);
+            then(saveFilePort).shouldHaveNoInteractions();
+        }
+    }
+
+    @Nested
+    @DisplayName("호출자에게 접근 권한이 없을 때")
+    class WhenCallerLacksAccess {
+
+        @Test
+        void throwsFileAccessDenied() {
+            UpdateFileFavoriteCommand command = new UpdateFileFavoriteCommand(fileId, callerId, true);
+            given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(makeFile()));
+            willThrow(new BusinessException(FileExceptionCase.FILE_ACCESS_DENIED))
+                    .given(fileAccessGuard).requireOwner(any(File.class), eq(callerId));
+
+            Throwable thrown = catchThrowable(() -> updateFileFavoriteService.updateFavorite(command));
+
+            assertThat(thrown).isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(FileExceptionCase.FILE_ACCESS_DENIED);
             then(saveFilePort).shouldHaveNoInteractions();
         }
     }

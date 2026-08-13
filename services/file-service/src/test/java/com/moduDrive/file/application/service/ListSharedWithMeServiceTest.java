@@ -8,7 +8,7 @@ import com.moduDrive.file.domain.model.File.*;
 import com.moduDrive.file.domain.model.FileShare;
 import com.moduDrive.file.domain.model.FileShare.*;
 import com.moduDrive.file.domain.model.FileStatus;
-import com.moduDrive.file.domain.model.Permission;
+import com.moduDrive.file.domain.model.Role;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -37,7 +37,7 @@ class ListSharedWithMeServiceTest {
     private FileShare makeShare(UUID fileId) {
         return FileShare.withId(new FileShareId(UUID.randomUUID()), new FileShareFileId(fileId),
                 new FileShareOwnerId(UUID.randomUUID()), new FileShareSharedWithUserId(sharedWithUserId),
-                new FileSharePermission(Permission.READ));
+                new FileShareRole(Role.VIEWER));
     }
 
     private File makeFile(UUID fileId, FileStatus status) {

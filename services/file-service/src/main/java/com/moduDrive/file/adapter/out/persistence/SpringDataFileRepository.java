@@ -6,9 +6,12 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID> {
+
+    Optional<FileJpaEntity> findByLinkToken(UUID linkToken);
 
     List<FileJpaEntity> findByNamespaceIdAndPathAndStatusNot(
             UUID namespaceId, String path, FileStatus status);

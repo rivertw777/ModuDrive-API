@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
@@ -24,9 +25,10 @@ class MoveFileController {
 
     @PatchMapping("/api/v1/files/{fileId}/path")
     public ApiResponse<FileResponse> moveFile(
+            @RequestHeader("X_USER_ID") UUID callerId,
             @PathVariable UUID fileId,
             @Valid @RequestBody MoveFileRequest request) {
-        var command = new MoveFileCommand(fileId, request.path());
+        var command = new MoveFileCommand(fileId, callerId, request.path());
         return ApiResponse.success(FileResponse.from(moveFileUseCase.moveFile(command)));
     }
 }

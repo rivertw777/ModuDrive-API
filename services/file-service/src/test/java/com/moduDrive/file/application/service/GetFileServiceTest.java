@@ -22,20 +22,32 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.BDDMockito.given;
 
+import com.moduDrive.file.domain.model.Role;
+
+import static org.mockito.ArgumentMatchers.eq;
+
+import static org.mockito.ArgumentMatchers.any;
+
+import static org.mockito.BDDMockito.willThrow;
+
+import static org.mockito.BDDMockito.then;
+
 @ExtendWith(MockitoExtension.class)
 class GetFileServiceTest {
 
     @Mock private FindFilePort findFilePort;
+    @Mock private FileAccessGuard fileAccessGuard;
     @InjectMocks private GetFileService getFileService;
 
     private final UUID fileId = UUID.randomUUID();
-    private final GetFileCommand command = new GetFileCommand(fileId);
+    private final UUID callerId = UUID.randomUUID();
+    private final GetFileCommand command = new GetFileCommand(fileId, callerId);
 
     private File makeFile(FileStatus status) {
         return File.withId(
                 new FileId(fileId), new FileNamespaceId(UUID.randomUUID()),
                 new FileName("report.pdf"), new FilePath("/1/docs"),
-                new FileOwnerId(UUID.randomUUID()), null, null, status, new FileIsDirectory(false));
+                new FileOwnerId(callerId), null, null, status, new FileIsDirectory(false));
     }
 
     @Nested
@@ -83,6 +95,25 @@ class GetFileServiceTest {
             assertThat(thrown).isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
                     .isEqualTo(FileExceptionCase.FILE_ALREADY_DELETED);
+        }
+    }
+
+    @Nested
+    @DisplayName("호출자에게 접근 권한이 없을 때")
+    class WhenCallerLacksAccess {
+
+        @Test
+        void throwsFileAccessDenied() {
+            given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(makeFile(FileStatus.UPLOADED)));
+            willThrow(new BusinessException(FileExceptionCase.FILE_ACCESS_DENIED))
+                    .given(fileAccessGuard).requireRole(any(File.class), eq(callerId), eq(Role.VIEWER));
+
+            Throwable thrown = catchThrowable(() -> getFileService.getFile(command));
+
+            assertThat(thrown).isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(FileExceptionCase.FILE_ACCESS_DENIED);
+            
         }
     }
 }

@@ -9,10 +9,12 @@ import java.util.UUID;
 public class GetFileRevisionsCommand {
 
     private final FileId fileId;
+    private final UUID callerId;
     private final int limit;
 
-    public GetFileRevisionsCommand(UUID fileId, int limit) {
+    public GetFileRevisionsCommand(UUID fileId, UUID callerId, int limit) {
         this.fileId = new FileId(fileId);
+        this.callerId = callerId;
         this.limit = limit;
     }
 }

@@ -30,7 +30,7 @@ class GetFileController {
     public ApiResponse<FileResponse> getFile(
             @RequestHeader("X_USER_ID") UUID userId,
             @PathVariable UUID fileId) {
-        File file = getFileUseCase.getFile(new GetFileCommand(fileId));
+        File file = getFileUseCase.getFile(new GetFileCommand(fileId, userId));
         // Belt-and-suspenders alongside RecordFileAccessService's own catch: this call crosses
         // a @Transactional proxy boundary, so a failure could in principle surface here at
         // commit time rather than inside that method's try block. Either way, a tracking
