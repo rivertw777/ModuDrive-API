@@ -16,9 +16,11 @@ import java.util.UUID;
 
 /** Service-to-service only: storage-service resolves the latest version to stream for download
  * through this route. Kept off {@code /api/v1/files/**} (the gateway only proxies that prefix,
- * see gateway RouteConfig) so it never needs — or gets — a tenant auth guard; the caller here
- * is another trusted service, not an end user. Same response shape as the tenant-facing
- * {@code GET /api/v1/files/{fileId}/revisions} so storage-service's DTO didn't need to change. */
+ * see gateway RouteConfig) so the caller here is another trusted service, not an end user
+ * directly — but the original caller's id still rides along as {@code userId} so
+ * FileAccessGuard can verify that user actually has VIEWER access before the download proceeds
+ * (see #152). Same response shape as the tenant-facing {@code GET /api/v1/files/{fileId}/revisions}
+ * so storage-service's DTO didn't need to change. */
 @WebAdapter
 @RestController
 @RequiredArgsConstructor
@@ -29,9 +31,10 @@ class GetLatestFileVersionsController {
     @GetMapping("/internal/files/{fileId}/revisions")
     public ApiResponse<List<FileVersionResponse>> getLatestFileVersions(
             @PathVariable UUID fileId,
+            @RequestParam UUID userId,
             @RequestParam(defaultValue = "1") int limit) {
         List<FileVersionResponse> revisions = getLatestFileVersionsUseCase
-                .getLatestFileVersions(new GetLatestFileVersionsCommand(fileId, limit))
+                .getLatestFileVersions(new GetLatestFileVersionsCommand(fileId, limit, userId))
                 .stream()
                 .map(FileVersionResponse::from)
                 .toList();

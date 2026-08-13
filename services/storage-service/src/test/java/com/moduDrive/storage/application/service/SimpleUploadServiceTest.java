@@ -31,6 +31,7 @@ class SimpleUploadServiceTest {
     @InjectMocks private SimpleUploadService simpleUploadService;
 
     private final String fileId = UUID.randomUUID().toString();
+    private final UUID userId = UUID.randomUUID();
 
     @Nested
     @DisplayName("파일 업로드 성공 시")
@@ -39,27 +40,27 @@ class SimpleUploadServiceTest {
         @Test
         void storesBlocksAndCallsBack() {
             byte[] data = "hello world".getBytes();
-            SimpleUploadCommand command = new SimpleUploadCommand(fileId, data);
+            SimpleUploadCommand command = new SimpleUploadCommand(fileId, userId, data);
             given(storeBlocksPort.storeBlocks(anyString(), anyList())).willReturn(1);
 
             simpleUploadService.simpleUpload(command);
 
             then(storeBlocksPort).should().storeBlocks(anyString(), anyList());
             then(callbackPort).should().notifyUploadComplete(
-                    any(UUID.class), any(Long.class), any(Integer.class), anyString());
+                    any(UUID.class), any(UUID.class), any(Long.class), any(Integer.class), anyString());
         }
 
         @Test
         void callbackReceivesCorrectFileSize() {
             byte[] data = new byte[100];
-            SimpleUploadCommand command = new SimpleUploadCommand(fileId, data);
+            SimpleUploadCommand command = new SimpleUploadCommand(fileId, userId, data);
             given(storeBlocksPort.storeBlocks(anyString(), anyList())).willReturn(1);
 
             ArgumentCaptor<Long> sizeCaptor = ArgumentCaptor.forClass(Long.class);
             simpleUploadService.simpleUpload(command);
 
             then(callbackPort).should().notifyUploadComplete(
-                    any(UUID.class), sizeCaptor.capture(), any(Integer.class), anyString());
+                    any(UUID.class), any(UUID.class), sizeCaptor.capture(), any(Integer.class), anyString());
             assertThat(sizeCaptor.getValue()).isEqualTo(100L);
         }
     }
@@ -70,7 +71,7 @@ class SimpleUploadServiceTest {
 
         @Test
         void storesSingleEmptyBlock() {
-            SimpleUploadCommand command = new SimpleUploadCommand(fileId, new byte[0]);
+            SimpleUploadCommand command = new SimpleUploadCommand(fileId, userId, new byte[0]);
             given(storeBlocksPort.storeBlocks(anyString(), anyList())).willReturn(1);
 
             simpleUploadService.simpleUpload(command);

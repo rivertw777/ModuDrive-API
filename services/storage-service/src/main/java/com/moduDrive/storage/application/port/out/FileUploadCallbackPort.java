@@ -4,5 +4,5 @@ import java.util.UUID;
 
 public interface FileUploadCallbackPort {
 
-    void notifyUploadComplete(UUID fileId, long fileSize, int blockCount, String s3Path);
+    void notifyUploadComplete(UUID fileId, UUID userId, long fileSize, int blockCount, String s3Path);
 }

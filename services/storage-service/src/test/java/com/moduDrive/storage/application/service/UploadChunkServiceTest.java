@@ -41,8 +41,10 @@ class UploadChunkServiceTest {
             UploadSession session = activeSession();
             given(findUploadSessionPort.findSession(session.getSessionId()))
                     .willReturn(Optional.of(session));
+            // Same value as userId but a different object — regression guard for the
+            // reference-equality bug this service used to have.
             UploadChunkCommand command = new UploadChunkCommand(
-                    session.getSessionId().toString(), userId, 0, "chunk0".getBytes());
+                    session.getSessionId().toString(), UUID.fromString(userId.toString()), 0, "chunk0".getBytes());
 
             uploadChunkService.uploadChunk(command);
 

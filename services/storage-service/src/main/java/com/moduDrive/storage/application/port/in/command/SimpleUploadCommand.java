@@ -8,11 +8,13 @@ import java.util.UUID;
 public class SimpleUploadCommand {
 
     private final UUID fileId;
+    private final UUID userId;
     private final byte[] data;
     private final long fileSize;
 
-    public SimpleUploadCommand(String fileId, byte[] data) {
+    public SimpleUploadCommand(String fileId, UUID userId, byte[] data) {
         this.fileId = UUID.fromString(fileId);
+        this.userId = userId;
         this.data = data;
         this.fileSize = data.length;
     }

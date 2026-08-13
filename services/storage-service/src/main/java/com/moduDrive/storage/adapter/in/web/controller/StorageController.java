@@ -45,9 +45,10 @@ class StorageController {
 
     @PostMapping("/api/v1/storage/upload")
     public ApiResponse<Void> simpleUpload(
+            @RequestHeader("X_USER_ID") UUID userId,
             @RequestParam String fileId,
             @RequestParam MultipartFile file) throws IOException {
-        simpleUploadUseCase.simpleUpload(new SimpleUploadCommand(fileId, file.getBytes()));
+        simpleUploadUseCase.simpleUpload(new SimpleUploadCommand(fileId, userId, file.getBytes()));
         return ApiResponse.success();
     }
 
@@ -81,8 +82,10 @@ class StorageController {
     }
 
     @GetMapping("/api/v1/storage/download/{fileId}")
-    public ResponseEntity<byte[]> downloadFile(@PathVariable String fileId) {
-        byte[] data = downloadFileUseCase.download(new DownloadFileCommand(fileId));
+    public ResponseEntity<byte[]> downloadFile(
+            @RequestHeader("X_USER_ID") UUID userId,
+            @PathVariable String fileId) {
+        byte[] data = downloadFileUseCase.download(new DownloadFileCommand(fileId, userId));
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileId + "\"")

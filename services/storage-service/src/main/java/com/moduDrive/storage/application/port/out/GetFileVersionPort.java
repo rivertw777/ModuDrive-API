@@ -4,7 +4,7 @@ import java.util.UUID;
 
 public interface GetFileVersionPort {
 
-    String getS3Path(UUID fileId);
+    String getS3Path(UUID fileId, UUID userId);
 
-    int getBlockCount(UUID fileId);
+    int getBlockCount(UUID fileId, UUID userId);
 }

@@ -20,7 +20,7 @@ class UploadChunkService implements UploadChunkUseCase {
         UploadSession session = findUploadSessionPort.findSession(command.getSessionId())
                 .orElseThrow(() -> new BusinessException(StorageExceptionCase.SESSION_NOT_FOUND));
 
-        if (session.getOwnerId() != command.getUserId()) {
+        if (!session.getOwnerId().equals(command.getUserId())) {
             throw new BusinessException(StorageExceptionCase.SESSION_OWNER_MISMATCH);
         }
         if (session.isCompleted()) {

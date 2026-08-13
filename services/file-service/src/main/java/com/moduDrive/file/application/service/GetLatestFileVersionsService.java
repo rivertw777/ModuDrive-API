@@ -6,26 +6,29 @@ import com.moduDrive.file.application.port.in.command.GetLatestFileVersionsComma
 import com.moduDrive.file.application.port.in.usecase.GetLatestFileVersionsUseCase;
 import com.moduDrive.file.application.port.out.FindFilePort;
 import com.moduDrive.file.application.port.out.FindFileVersionsPort;
+import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.FileVersion;
+import com.moduDrive.file.domain.model.Role;
 import com.moduDrive.file.exception.FileExceptionCase;
 import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
-/** Deliberately unguarded — see {@link GetLatestFileVersionsCommand}'s javadoc for why. */
 @UseCase
 @RequiredArgsConstructor
 class GetLatestFileVersionsService implements GetLatestFileVersionsUseCase {
 
     private final FindFilePort findFilePort;
     private final FindFileVersionsPort findFileVersionsPort;
+    private final FileAccessGuard fileAccessGuard;
 
     @Transactional(readOnly = true)
     @Override
     public List<FileVersion> getLatestFileVersions(GetLatestFileVersionsCommand command) {
-        findFilePort.findById(command.getFileId())
+        File file = findFilePort.findById(command.getFileId())
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_NOT_FOUND));
+        fileAccessGuard.requireRole(file, command.getCallerId(), Role.VIEWER);
 
         return findFileVersionsPort.findByFileIdOrderByCreatedAtDesc(command.getFileId(), command.getLimit());
     }

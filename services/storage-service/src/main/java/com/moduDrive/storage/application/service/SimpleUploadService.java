@@ -26,7 +26,7 @@ class SimpleUploadService implements SimpleUploadUseCase {
         String s3Path = "files/" + command.getFileId() + "/" + UUID.randomUUID();
         List<byte[]> blocks = splitIntoBlocks(command.getData(), DEFAULT_BLOCK_SIZE);
         int blockCount = storeBlocksPort.storeBlocks(s3Path, blocks);
-        callbackPort.notifyUploadComplete(command.getFileId(), command.getFileSize(), blockCount, s3Path);
+        callbackPort.notifyUploadComplete(command.getFileId(), command.getUserId(), command.getFileSize(), blockCount, s3Path);
     }
 
     private List<byte[]> splitIntoBlocks(byte[] data, int size) {

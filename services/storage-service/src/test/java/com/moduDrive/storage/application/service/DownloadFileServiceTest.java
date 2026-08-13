@@ -27,6 +27,7 @@ class DownloadFileServiceTest {
     @InjectMocks private DownloadFileService downloadFileService;
 
     private final String fileId = UUID.randomUUID().toString();
+    private final UUID userId = UUID.randomUUID();
 
     @Nested
     @DisplayName("파일 다운로드 성공 시")
@@ -34,24 +35,24 @@ class DownloadFileServiceTest {
 
         @Test
         void returnsAssembledBytes() {
-            given(getFileVersionPort.getS3Path(UUID.fromString(fileId))).willReturn("files/abc/xyz");
-            given(getFileVersionPort.getBlockCount(UUID.fromString(fileId))).willReturn(2);
+            given(getFileVersionPort.getS3Path(UUID.fromString(fileId), userId)).willReturn("files/abc/xyz");
+            given(getFileVersionPort.getBlockCount(UUID.fromString(fileId), userId)).willReturn(2);
             given(retrieveBlocksPort.retrieveBlocks(anyString(), anyInt()))
                     .willReturn(List.of("hello ".getBytes(), "world".getBytes()));
 
-            byte[] result = downloadFileService.download(new DownloadFileCommand(fileId));
+            byte[] result = downloadFileService.download(new DownloadFileCommand(fileId, userId));
 
             assertThat(new String(result)).isEqualTo("hello world");
         }
 
         @Test
         void assembleSingleBlockCorrectly() {
-            given(getFileVersionPort.getS3Path(UUID.fromString(fileId))).willReturn("files/abc/xyz");
-            given(getFileVersionPort.getBlockCount(UUID.fromString(fileId))).willReturn(1);
+            given(getFileVersionPort.getS3Path(UUID.fromString(fileId), userId)).willReturn("files/abc/xyz");
+            given(getFileVersionPort.getBlockCount(UUID.fromString(fileId), userId)).willReturn(1);
             given(retrieveBlocksPort.retrieveBlocks(anyString(), anyInt()))
                     .willReturn(List.of("data".getBytes()));
 
-            byte[] result = downloadFileService.download(new DownloadFileCommand(fileId));
+            byte[] result = downloadFileService.download(new DownloadFileCommand(fileId, userId));
 
             assertThat(result).isEqualTo("data".getBytes());
         }
