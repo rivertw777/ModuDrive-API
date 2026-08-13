@@ -1,0 +1,5 @@
+jwt:
+  refreshToken:
+    expiration: 604800000
+    cookie:
+      secure: true
