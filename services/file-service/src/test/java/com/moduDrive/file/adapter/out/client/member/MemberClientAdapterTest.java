@@ -85,4 +85,34 @@ class MemberClientAdapterTest {
             assertThat(thrown).isSameAs(serverError);
         }
     }
+
+    @Nested
+    @DisplayName("id로 회원을 조회할 때")
+    class WhenFindingMemberById {
+
+        @Test
+        void returnsMemberSummary() {
+            UUID memberId = UUID.randomUUID();
+            given(memberClient.findMemberById(memberId.toString()))
+                    .willReturn(ApiResponse.success(new MemberResponse(memberId.toString(), "river", EMAIL)));
+
+            var result = memberClientAdapter.findMemberById(memberId);
+
+            assertThat(result.name()).isEqualTo("river");
+            assertThat(result.email()).isEqualTo(EMAIL);
+        }
+
+        @Test
+        void translatesClientErrorToShareTargetNotFound() {
+            UUID memberId = UUID.randomUUID();
+            willThrow(new FeignException.NotFound("member not found", request(), null, Map.of()))
+                    .given(memberClient).findMemberById(memberId.toString());
+
+            Throwable thrown = catchThrowable(() -> memberClientAdapter.findMemberById(memberId));
+
+            assertThat(thrown).isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(FileExceptionCase.SHARE_TARGET_NOT_FOUND);
+        }
+    }
 }
