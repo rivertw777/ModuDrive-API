@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -23,10 +24,11 @@ class GetFileRevisionsController {
 
     @GetMapping("/api/v1/files/{fileId}/revisions")
     public ApiResponse<List<FileVersionResponse>> getFileRevisions(
+            @RequestHeader("X_USER_ID") UUID callerId,
             @PathVariable UUID fileId,
             @RequestParam(defaultValue = "20") int limit) {
         List<FileVersionResponse> revisions = getFileRevisionsUseCase
-                .getFileRevisions(new GetFileRevisionsCommand(fileId, limit))
+                .getFileRevisions(new GetFileRevisionsCommand(fileId, callerId, limit))
                 .stream()
                 .map(FileVersionResponse::from)
                 .toList();

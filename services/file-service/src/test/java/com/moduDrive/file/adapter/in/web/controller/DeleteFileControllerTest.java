@@ -31,6 +31,7 @@ class DeleteFileControllerTest {
     @MockitoBean private DeleteFileUseCase deleteFileUseCase;
 
     private static final UUID FILE_ID = UUID.randomUUID();
+    private static final String USER_ID = "11111111-1111-1111-1111-111111111111";
 
     @Nested
     @DisplayName("파일이 존재할 때")
@@ -38,7 +39,8 @@ class DeleteFileControllerTest {
 
         @Test
         void returnsSuccess() throws Exception {
-            mockMvc.perform(delete("/api/v1/files/{fileId}", FILE_ID))
+            mockMvc.perform(delete("/api/v1/files/{fileId}", FILE_ID)
+                            .header("X_USER_ID", USER_ID))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.message").value("success"));
 
@@ -55,7 +57,8 @@ class DeleteFileControllerTest {
             willThrow(new BusinessException(FileExceptionCase.FILE_NOT_FOUND))
                     .given(deleteFileUseCase).deleteFile(any(DeleteFileCommand.class));
 
-            mockMvc.perform(delete("/api/v1/files/{fileId}", FILE_ID))
+            mockMvc.perform(delete("/api/v1/files/{fileId}", FILE_ID)
+                            .header("X_USER_ID", USER_ID))
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.message").value(FileExceptionCase.FILE_NOT_FOUND.getMessage()));
         }

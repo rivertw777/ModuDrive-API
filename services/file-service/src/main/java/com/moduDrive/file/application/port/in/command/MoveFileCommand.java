@@ -10,10 +10,12 @@ import java.util.UUID;
 public class MoveFileCommand {
 
     private final FileId fileId;
+    private final UUID callerId;
     private final FilePath path;
 
-    public MoveFileCommand(UUID fileId, String path) {
+    public MoveFileCommand(UUID fileId, UUID callerId, String path) {
         this.fileId = new FileId(fileId);
+        this.callerId = callerId;
         this.path = new FilePath(path);
     }
 }

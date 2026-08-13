@@ -9,10 +9,12 @@ import java.util.UUID;
 public class UpdateFileFavoriteCommand {
 
     private final FileId fileId;
+    private final UUID callerId;
     private final boolean favorite;
 
-    public UpdateFileFavoriteCommand(UUID fileId, boolean favorite) {
+    public UpdateFileFavoriteCommand(UUID fileId, UUID callerId, boolean favorite) {
         this.fileId = new FileId(fileId);
+        this.callerId = callerId;
         this.favorite = favorite;
     }
 }

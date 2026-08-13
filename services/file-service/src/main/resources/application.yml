@@ -9,3 +9,13 @@ spring:
 modudrive:
   file:
     default-quota-bytes: ${MODUDRIVE_FILE_DEFAULT_QUOTA_BYTES}
+
+resilience4j:
+  retry:
+    instances:
+      memberServiceRetry:
+        baseConfig: default
+  circuitbreaker:
+    instances:
+      memberServiceCircuitBreaker:
+        baseConfig: default

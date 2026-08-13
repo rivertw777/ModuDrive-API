@@ -9,8 +9,10 @@ import java.util.UUID;
 public class DeleteFileCommand {
 
     private final FileId fileId;
+    private final UUID callerId;
 
-    public DeleteFileCommand(UUID fileId) {
+    public DeleteFileCommand(UUID fileId, UUID callerId) {
         this.fileId = new FileId(fileId);
+        this.callerId = callerId;
     }
 }

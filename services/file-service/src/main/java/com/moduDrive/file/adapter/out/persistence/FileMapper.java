@@ -6,6 +6,8 @@ import com.moduDrive.file.domain.model.FileAccess;
 import com.moduDrive.file.domain.model.FileShare;
 import com.moduDrive.file.domain.model.FileVersion;
 import com.moduDrive.file.domain.model.Namespace;
+import com.moduDrive.file.domain.model.Role;
+import com.moduDrive.file.domain.model.ShareScope;
 import org.springframework.stereotype.Component;
 
 import static com.moduDrive.file.domain.model.Block.*;
@@ -41,6 +43,11 @@ class FileMapper {
         );
         file.markFavorite(entity.isFavorite());
         file.markUpdatedAt(entity.getUpdatedAt());
+        // Rows written before access_scope existed read back as null — treat that as RESTRICTED
+        // so a legacy row can never be mistaken for a publicly linkable one.
+        if (entity.getAccessScope() == ShareScope.LINK) {
+            file.enableLinkSharing(entity.getLinkToken());
+        }
         return file;
     }
 
@@ -67,7 +74,9 @@ class FileMapper {
                 new FileShareFileId(entity.getFileId()),
                 new FileShareOwnerId(entity.getOwnerId()),
                 new FileShareSharedWithUserId(entity.getSharedWithUserId()),
-                new FileSharePermission(entity.getPermission())
+                // A legacy row predating the permission→role rename maps to the least
+                // privileged role rather than blowing up or silently granting EDITOR.
+                new FileShareRole(entity.getRole() != null ? entity.getRole() : Role.VIEWER)
         );
     }
 }

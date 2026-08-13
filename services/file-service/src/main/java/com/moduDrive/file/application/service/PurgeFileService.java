@@ -20,12 +20,14 @@ class PurgeFileService implements PurgeFileUseCase {
     private final FindFilePort findFilePort;
     private final SaveFilePort saveFilePort;
     private final DirectoryCascader directoryCascader;
+    private final FileAccessGuard fileAccessGuard;
 
     @Transactional
     @Override
     public void purgeFile(PurgeFileCommand command) {
         File file = findFilePort.findById(command.getFileId())
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_NOT_FOUND));
+        fileAccessGuard.requireOwner(file, command.getCallerId());
 
         if (file.getStatus() != FileStatus.DELETED) {
             throw new BusinessException(FileExceptionCase.FILE_NOT_DELETED);

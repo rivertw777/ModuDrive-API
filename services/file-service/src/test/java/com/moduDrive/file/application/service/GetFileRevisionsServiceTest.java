@@ -28,18 +28,26 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 
+import com.moduDrive.file.domain.model.Role;
+
+import static org.mockito.BDDMockito.willThrow;
+
+import static org.mockito.BDDMockito.then;
+
 @ExtendWith(MockitoExtension.class)
 class GetFileRevisionsServiceTest {
 
     @Mock private FindFilePort findFilePort;
     @Mock private FindFileVersionsPort findFileVersionsPort;
+    @Mock private FileAccessGuard fileAccessGuard;
     @InjectMocks private GetFileRevisionsService getFileRevisionsService;
 
     private final UUID fileId = UUID.randomUUID();
-    private final GetFileRevisionsCommand command = new GetFileRevisionsCommand(fileId, 20);
+    private final UUID callerId = UUID.randomUUID();
+    private final GetFileRevisionsCommand command = new GetFileRevisionsCommand(fileId, callerId, 20);
 
     private final File file = File.withId(new FileId(fileId), new FileNamespaceId(UUID.randomUUID()),
-            new FileName("report.pdf"), new FilePath("/1"), new FileOwnerId(UUID.randomUUID()),
+            new FileName("report.pdf"), new FilePath("/1"), new FileOwnerId(callerId),
             null, null, FileStatus.UPLOADED, new FileIsDirectory(false));
 
     @Nested
@@ -75,6 +83,25 @@ class GetFileRevisionsServiceTest {
             assertThat(thrown).isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
                     .isEqualTo(FileExceptionCase.FILE_NOT_FOUND);
+        }
+    }
+
+    @Nested
+    @DisplayName("호출자에게 접근 권한이 없을 때")
+    class WhenCallerLacksAccess {
+
+        @Test
+        void throwsFileAccessDenied() {
+            given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(file));
+            willThrow(new BusinessException(FileExceptionCase.FILE_ACCESS_DENIED))
+                    .given(fileAccessGuard).requireRole(any(File.class), eq(callerId), eq(Role.VIEWER));
+
+            Throwable thrown = catchThrowable(() -> getFileRevisionsService.getFileRevisions(command));
+
+            assertThat(thrown).isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(FileExceptionCase.FILE_ACCESS_DENIED);
+            then(findFileVersionsPort).shouldHaveNoInteractions();
         }
     }
 }

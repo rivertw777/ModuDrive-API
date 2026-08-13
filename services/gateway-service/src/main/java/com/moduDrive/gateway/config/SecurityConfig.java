@@ -35,6 +35,8 @@ class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .authorizeExchange(exchange -> exchange
                         .pathMatchers("/api/v1/member/sign-up").permitAll()
+                        // Link-shared read-only view: the link token in the path is the credential.
+                        .pathMatchers(HttpMethod.GET, "/api/v1/files/public/**").permitAll()
                         .pathMatchers("/api/v1/auth/login", "/api/v1/auth/reissue", "/api/v1/auth/logout").permitAll()
                         .pathMatchers("/webjars/swagger-ui/**", "/v3/api-docs/**", "/*/v3/api-docs/**").permitAll()
                         .anyExchange().authenticated()

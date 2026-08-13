@@ -23,13 +23,13 @@ class ShareFileController {
 
     private final ShareFileUseCase shareFileUseCase;
 
-    @PostMapping("/api/v1/files/{fileId}/share")
+    @PostMapping("/api/v1/files/{fileId}/shares")
     public ApiResponse<FileShareResponse> shareFile(
             @RequestHeader("X_USER_ID") UUID ownerId,
             @PathVariable UUID fileId,
             @Valid @RequestBody ShareFileRequest request) {
         var fileShare = shareFileUseCase.shareFile(
-                new ShareFileCommand(fileId, ownerId, request.sharedWithUserId(), request.permission())
+                new ShareFileCommand(fileId, ownerId, request.email(), request.role())
         );
         return ApiResponse.success(FileShareResponse.from(fileShare));
     }

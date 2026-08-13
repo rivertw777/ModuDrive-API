@@ -7,6 +7,7 @@ import com.moduDrive.file.application.port.in.usecase.RenameFileUseCase;
 import com.moduDrive.file.application.port.out.FindFilePort;
 import com.moduDrive.file.application.port.out.SaveFilePort;
 import com.moduDrive.file.domain.model.File;
+import com.moduDrive.file.domain.model.Role;
 import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.Namespace.NamespaceId;
 import com.moduDrive.file.exception.FileExceptionCase;
@@ -20,12 +21,14 @@ class RenameFileService implements RenameFileUseCase {
     private final FindFilePort findFilePort;
     private final SaveFilePort saveFilePort;
     private final DirectoryCascader directoryCascader;
+    private final FileAccessGuard fileAccessGuard;
 
     @Transactional
     @Override
     public File renameFile(RenameFileCommand command) {
         File file = findFilePort.findById(command.getFileId())
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_NOT_FOUND));
+        fileAccessGuard.requireRole(file, command.getCallerId(), Role.EDITOR);
 
         if (file.getStatus() == FileStatus.DELETED) {
             throw new BusinessException(FileExceptionCase.FILE_ALREADY_DELETED);

@@ -35,6 +35,7 @@ class UpdateFileFavoriteControllerTest {
     @MockitoBean private UpdateFileFavoriteUseCase updateFileFavoriteUseCase;
 
     private static final UUID FILE_ID = UUID.randomUUID();
+    private static final String USER_ID = "11111111-1111-1111-1111-111111111111";
 
     @Nested
     @DisplayName("파일이 존재할 때")
@@ -49,6 +50,7 @@ class UpdateFileFavoriteControllerTest {
             given(updateFileFavoriteUseCase.updateFavorite(any(UpdateFileFavoriteCommand.class))).willReturn(favorited);
 
             mockMvc.perform(patch("/api/v1/files/{fileId}/favorite", FILE_ID)
+                            .header("X_USER_ID", USER_ID)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"favorite\":true}"))
                     .andExpect(status().isOk())
@@ -66,6 +68,7 @@ class UpdateFileFavoriteControllerTest {
                     .given(updateFileFavoriteUseCase).updateFavorite(any(UpdateFileFavoriteCommand.class));
 
             mockMvc.perform(patch("/api/v1/files/{fileId}/favorite", FILE_ID)
+                            .header("X_USER_ID", USER_ID)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"favorite\":true}"))
                     .andExpect(status().isNotFound())

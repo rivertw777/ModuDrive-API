@@ -1,22 +1,29 @@
 package com.moduDrive.file.adapter.out.persistence;
 
 import com.moduDrive.file.domain.model.File;
+import com.moduDrive.file.domain.model.File.*;
 import com.moduDrive.file.domain.model.FileAccess;
 import com.moduDrive.file.domain.model.FileAccess.FileAccessFileId;
 import com.moduDrive.file.domain.model.FileAccess.FileAccessUserId;
+import com.moduDrive.file.domain.model.FileShare;
+import com.moduDrive.file.domain.model.FileShare.*;
 import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.Namespace.NamespaceId;
+import com.moduDrive.file.domain.model.Role;
+import com.moduDrive.file.domain.model.ShareScope;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 @DataJpaTest
 @Import({FilePersistenceAdapter.class, FileMapper.class})
@@ -28,6 +35,8 @@ class FilePersistenceAdapterTest {
     private SpringDataFileRepository springDataFileRepository;
     @Autowired
     private SpringDataFileAccessRepository springDataFileAccessRepository;
+    @Autowired
+    private SpringDataFileShareRepository springDataFileShareRepository;
 
     private final UUID namespaceIdValue = UUID.randomUUID();
     private final NamespaceId namespaceId = new NamespaceId(namespaceIdValue);
@@ -64,6 +73,100 @@ class FilePersistenceAdapterTest {
             var result = filePersistenceAdapter.findByNamespaceIdAndPathStartingWith(namespaceId, "/1/%");
 
             assertThat(result).extracting(File::getPath).containsExactly("/1/%");
+        }
+    }
+
+    @Nested
+    @DisplayName("공유 범위와 링크 토큰을 저장할 때")
+    class WhenPersistingLinkSharing {
+
+        @Test
+        @DisplayName("LINK로 전환한 파일은 토큰으로 다시 조회된다")
+        void roundTripsAccessScopeAndLinkToken() {
+            File saved = filePersistenceAdapter.saveFile(File.create(
+                    new FileNamespaceId(namespaceIdValue), new FileName("public.pdf"),
+                    new FilePath("/1"), new FileOwnerId(UUID.randomUUID()), new FileIsDirectory(false)));
+            UUID token = UUID.randomUUID();
+            saved.enableLinkSharing(token);
+            filePersistenceAdapter.saveFile(saved);
+
+            var result = filePersistenceAdapter.findByLinkToken(token);
+
+            assertThat(result).isPresent();
+            assertThat(result.get().getAccessScope()).isEqualTo(ShareScope.LINK);
+            assertThat(result.get().getLinkToken()).isEqualTo(token);
+        }
+
+        @Test
+        @DisplayName("RESTRICTED로 되돌리면 토큰으로 더 이상 조회되지 않는다")
+        void clearsTokenOnRestricted() {
+            File saved = filePersistenceAdapter.saveFile(File.create(
+                    new FileNamespaceId(namespaceIdValue), new FileName("was-public.pdf"),
+                    new FilePath("/1"), new FileOwnerId(UUID.randomUUID()), new FileIsDirectory(false)));
+            UUID token = UUID.randomUUID();
+            saved.enableLinkSharing(token);
+            File linked = filePersistenceAdapter.saveFile(saved);
+            linked.disableLinkSharing();
+            filePersistenceAdapter.saveFile(linked);
+
+            assertThat(filePersistenceAdapter.findByLinkToken(token)).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("파일 공유를 저장하고 조회할 때")
+    class WhenPersistingFileShares {
+
+        @Test
+        @DisplayName("파일 단위와 사용자 단위로 조회되고, 역할 변경이 새 행을 만들지 않는다")
+        void savesUpdatesAndQueriesShares() {
+            UUID fileIdValue = UUID.randomUUID();
+            UUID ownerIdValue = UUID.randomUUID();
+            UUID granteeId = UUID.randomUUID();
+            FileId fileId = new FileId(fileIdValue);
+
+            FileShare created = filePersistenceAdapter.saveFileShare(FileShare.create(
+                    new FileShareFileId(fileIdValue), new FileShareOwnerId(ownerIdValue),
+                    new FileShareSharedWithUserId(granteeId), new FileShareRole(Role.VIEWER)));
+
+            created.changeRole(new FileShareRole(Role.EDITOR));
+            filePersistenceAdapter.saveFileShare(created);
+
+            assertThat(filePersistenceAdapter.findByFileId(fileId)).hasSize(1);
+            assertThat(filePersistenceAdapter.findByFileIdAndSharedWithUserId(fileId, granteeId))
+                    .get().extracting(FileShare::getRole).isEqualTo(Role.EDITOR);
+            assertThat(filePersistenceAdapter.existsByFileIdAndSharedWithUserId(fileId, granteeId)).isTrue();
+        }
+
+        @Test
+        @DisplayName("같은 파일-사용자 조합은 DB 유니크 제약으로 두 번 저장되지 않는다")
+        void rejectsDuplicateShareRowAtTheDatabaseLevel() {
+            UUID fileIdValue = UUID.randomUUID();
+            UUID ownerIdValue = UUID.randomUUID();
+            UUID granteeId = UUID.randomUUID();
+            springDataFileShareRepository.saveAndFlush(
+                    new FileShareJpaEntity(fileIdValue, ownerIdValue, granteeId, Role.VIEWER));
+
+            // The app-layer existsBy check can't see a concurrent insert; uk_file_share_file_user is
+            // what actually rejects the second row, so assert the constraint exists, not the check.
+            Throwable thrown = catchThrowable(() -> springDataFileShareRepository.saveAndFlush(
+                    new FileShareJpaEntity(fileIdValue, ownerIdValue, granteeId, Role.EDITOR)));
+
+            assertThat(thrown).isInstanceOf(DataIntegrityViolationException.class);
+        }
+
+        @Test
+        @DisplayName("공유를 해제하면 행이 사라진다")
+        void deletesShare() {
+            UUID fileIdValue = UUID.randomUUID();
+            UUID granteeId = UUID.randomUUID();
+            FileShare created = filePersistenceAdapter.saveFileShare(FileShare.create(
+                    new FileShareFileId(fileIdValue), new FileShareOwnerId(UUID.randomUUID()),
+                    new FileShareSharedWithUserId(granteeId), new FileShareRole(Role.VIEWER)));
+
+            filePersistenceAdapter.deleteFileShare(new FileShareId(created.getId()));
+
+            assertThat(filePersistenceAdapter.findByFileId(new FileId(fileIdValue))).isEmpty();
         }
     }
 

@@ -17,7 +17,10 @@ interface FileServiceFeignClient {
     void updateFileStatus(@PathVariable String fileId,
                           @RequestBody FileUploadCallbackRequest request);
 
-    @GetMapping("/api/v1/files/{fileId}/revisions")
+    // Internal, service-to-service route (see file-service's GetLatestFileVersionsController) —
+    // not the tenant-facing /api/v1/files/{fileId}/revisions, which now requires an X_USER_ID
+    // this Feign call has no user to supply.
+    @GetMapping("/internal/files/{fileId}/revisions")
     ApiResponse<List<FileVersionDto>> getFileRevisions(@PathVariable String fileId,
                                                        @RequestParam(defaultValue = "1") int limit);
 }

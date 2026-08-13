@@ -26,16 +26,22 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 
+import com.moduDrive.file.domain.model.Role;
+
+import static org.mockito.BDDMockito.willThrow;
+
 @ExtendWith(MockitoExtension.class)
 class DeleteFileServiceTest {
 
     @Mock private FindFilePort findFilePort;
     @Mock private SaveFilePort saveFilePort;
     @Mock private DirectoryCascader directoryCascader;
+    @Mock private FileAccessGuard fileAccessGuard;
     @InjectMocks private DeleteFileService deleteFileService;
 
     private final UUID fileId = UUID.randomUUID();
-    private final DeleteFileCommand command = new DeleteFileCommand(fileId);
+    private final UUID callerId = UUID.randomUUID();
+    private final DeleteFileCommand command = new DeleteFileCommand(fileId, callerId);
 
     private File makeFile(FileStatus status) {
         return makeFile(status, new FileIsDirectory(false));
@@ -44,7 +50,7 @@ class DeleteFileServiceTest {
     private File makeFile(FileStatus status, FileIsDirectory isDirectory) {
         return File.withId(new FileId(fileId), new FileNamespaceId(UUID.randomUUID()),
                 new FileName("report.pdf"), new FilePath("/1/docs"),
-                new FileOwnerId(UUID.randomUUID()), null, null, status, isDirectory);
+                new FileOwnerId(callerId), null, null, status, isDirectory);
     }
 
     @Nested
@@ -108,6 +114,25 @@ class DeleteFileServiceTest {
             assertThat(thrown).isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
                     .isEqualTo(FileExceptionCase.FILE_ALREADY_DELETED);
+            then(saveFilePort).shouldHaveNoInteractions();
+        }
+    }
+
+    @Nested
+    @DisplayName("호출자에게 접근 권한이 없을 때")
+    class WhenCallerLacksAccess {
+
+        @Test
+        void throwsFileAccessDenied() {
+            given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(makeFile(FileStatus.UPLOADED)));
+            willThrow(new BusinessException(FileExceptionCase.FILE_ACCESS_DENIED))
+                    .given(fileAccessGuard).requireOwner(any(File.class), eq(callerId));
+
+            Throwable thrown = catchThrowable(() -> deleteFileService.deleteFile(command));
+
+            assertThat(thrown).isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(FileExceptionCase.FILE_ACCESS_DENIED);
             then(saveFilePort).shouldHaveNoInteractions();
         }
     }

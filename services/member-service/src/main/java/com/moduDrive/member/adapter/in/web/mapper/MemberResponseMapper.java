@@ -1,6 +1,7 @@
 package com.moduDrive.member.adapter.in.web.mapper;
 
 import com.moduDrive.common.api.dto.member.AuthenticateMemberResponse;
+import com.moduDrive.common.api.dto.member.MemberResponse;
 import com.moduDrive.member.adapter.in.web.dto.FindMemberResponse;
 import com.moduDrive.member.domain.model.Member;
 import com.moduDrive.member.domain.model.Role;
@@ -18,6 +19,14 @@ public class MemberResponseMapper {
                 member.getRoles().stream()
                         .map(Role::name)
                         .toList()
+        );
+    }
+
+    public MemberResponse toMemberResponse(Member member) {
+        return new MemberResponse(
+                member.getId().toString(),
+                member.getName(),
+                member.getEmail()
         );
     }
 

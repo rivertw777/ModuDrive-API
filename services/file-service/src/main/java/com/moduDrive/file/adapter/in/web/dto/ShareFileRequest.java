@@ -1,11 +1,11 @@
 package com.moduDrive.file.adapter.in.web.dto;
 
-import com.moduDrive.file.domain.model.Permission;
+import com.moduDrive.file.domain.model.Role;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
-import java.util.UUID;
-
 public record ShareFileRequest(
-        @NotNull UUID sharedWithUserId,
-        @NotNull Permission permission
+        @NotBlank @Email String email,
+        @NotNull Role role
 ) {}

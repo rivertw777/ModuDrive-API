@@ -35,6 +35,7 @@ class MoveFileControllerTest {
     @MockitoBean private MoveFileUseCase moveFileUseCase;
 
     private static final UUID FILE_ID = UUID.randomUUID();
+    private static final String USER_ID = "11111111-1111-1111-1111-111111111111";
 
     @Nested
     @DisplayName("파일이 존재할 때")
@@ -48,6 +49,7 @@ class MoveFileControllerTest {
             given(moveFileUseCase.moveFile(any(MoveFileCommand.class))).willReturn(moved);
 
             mockMvc.perform(patch("/api/v1/files/{fileId}/path", FILE_ID)
+                            .header("X_USER_ID", USER_ID)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
                                     {"path":"/1/archive"}
@@ -59,6 +61,7 @@ class MoveFileControllerTest {
         @Test
         void returnsBadRequestOnBlankPath() throws Exception {
             mockMvc.perform(patch("/api/v1/files/{fileId}/path", FILE_ID)
+                            .header("X_USER_ID", USER_ID)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
                                     {"path":""}
@@ -77,6 +80,7 @@ class MoveFileControllerTest {
                     .given(moveFileUseCase).moveFile(any(MoveFileCommand.class));
 
             mockMvc.perform(patch("/api/v1/files/{fileId}/path", FILE_ID)
+                            .header("X_USER_ID", USER_ID)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
                                     {"path":"/1/archive"}
