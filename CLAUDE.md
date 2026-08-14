@@ -28,7 +28,7 @@ make infra
 make service
 
 # Test + build image + start a single service
-make member   # or: make gateway, make auth, make file, make storage, make notification
+make member   # or: make gateway, make auth, make file, make storage, make mail
 ```
 
 Docker Compose files are at `.docker/docker-compose.service.yml` (services) and `.docker/docker-compose.infra.yml` (Postgres, MinIO). The shared `Dockerfile` lives at `.docker/Dockerfile`, referenced by every service's `build.gradle` via its `docker` task.
@@ -45,7 +45,7 @@ The active Spring profile (`dev`) is injected via `SPRING_PROFILES_ACTIVE` in `d
 | auth-service          | 10011 | JWT login + token validation             |
 | file-service          | 10012 | File metadata, versioning, sharing, directory management |
 | storage-service       | 10013 | Block-level file storage — split, compress, encrypt, upload/download via S3/MinIO |
-| notification-service  | 10014 | Long-polling notification delivery, async mail sending (Kafka consumer) |
+| mail-service           | 10014 | Async mail sending (Kafka consumer)      |
 
 Swagger UI for all services is aggregated at the gateway: `http://localhost:10001/swagger-ui.html`.
 
@@ -61,9 +61,9 @@ For the full layer breakdown, naming conventions, dependency-direction rules, an
 |-------------------------------------|--------------------------------------------------------------|
 | `common:core`                       | `@UseCase`/`@WebAdapter`/`@PersistenceAdapter`, `ApiResponse<T>`, `BusinessException`, `ExceptionCase` interface, `SelfValidating`, `LoggingAspect` |
 | `common:api`                        | Shared DTOs for cross-service calls (auth, member)           |
-| `common:event`                      | Kafka mail event DTOs (`VerificationMailRequested`, `ShareInviteMailRequested`) and `MailTopics` — used by member/file-service (producers) and notification-service (consumer) |
+| `common:event`                      | Kafka mail event DTOs (`VerificationMailRequested`, `ShareInviteMailRequested`) and `MailTopics` — used by member/file-service (producers) and mail-service (consumer) |
 | `common:infrastructure:jpa`         | `BaseTimeEntity` (JPA auditing), `AuditingConfig`            |
-| `common:infrastructure:kafka`       | `spring-boot-starter-kafka` — used by member/file-service (producers) and notification-service (consumer) for async mail events |
+| `common:infrastructure:kafka`       | `spring-boot-starter-kafka` — used by member/file-service (producers) and mail-service (consumer) for async mail events |
 | `common:infrastructure:redis`       | `spring-boot-starter-data-redis` — used by auth-service for token storage, member-service for email verification tokens |
 | `common:infrastructure:resilience4j`| `CircuitBreakerEventConfig`, `RetryEventConfig`, `FeignFallbackUtils` |
 | `common:infrastructure:spring-cloud`| `spring-cloud-starter-netflix-eureka-client`, `spring-cloud-starter-openfeign` — all services that register with Eureka or use Feign depend on this module |

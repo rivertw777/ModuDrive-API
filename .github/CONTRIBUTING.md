@@ -53,7 +53,7 @@ Scopes:
 | `gateway` | services/gateway-service |
 | `file` | services/file-service |
 | `storage` | services/storage-service |
-| `notification` | services/notification-service |
+| `mail` | services/mail-service |
 | `eureka` | services/eureka-server |
 | `common` | common/* |
 

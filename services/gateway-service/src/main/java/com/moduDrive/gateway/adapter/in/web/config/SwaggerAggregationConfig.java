@@ -24,7 +24,7 @@ class SwaggerAggregationConfig {
             "auth-service",
             "file-service",
             "storage-service",
-            "notification-service"
+            "mail-service"
     );
 
     private final SwaggerUiConfigProperties swaggerUiConfigProperties;
