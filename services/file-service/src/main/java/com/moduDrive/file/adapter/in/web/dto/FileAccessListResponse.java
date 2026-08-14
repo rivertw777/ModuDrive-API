@@ -19,7 +19,12 @@ public record FileAccessListResponse(
                 view.file().getOwnerId(),
                 view.file().getAccessScope(),
                 view.file().getLinkToken(),
-                view.shares().stream().map(FileShareResponse::from).toList()
+                view.shares().stream()
+                        .map(share -> {
+                            var summary = view.memberSummaries().get(share.getSharedWithUserId());
+                            return FileShareResponse.from(share, summary.email(), summary.name());
+                        })
+                        .toList()
         );
     }
 }

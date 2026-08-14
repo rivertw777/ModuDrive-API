@@ -21,7 +21,10 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.moduDrive.file.application.port.out.FindMemberByIdPort.MemberSummary;
+
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -51,18 +54,22 @@ class ListFileSharesControllerTest {
                     new FileName("report.pdf"), new FilePath("/1"),
                     new FileOwnerId(UUID.fromString(OWNER_ID)), null, null,
                     FileStatus.UPLOADED, new FileIsDirectory(false));
+            UUID sharedWithUserId = UUID.randomUUID();
             FileShare share = FileShare.withId(new FileShareId(UUID.randomUUID()), new FileShareFileId(FILE_ID),
                     new FileShareOwnerId(UUID.fromString(OWNER_ID)),
-                    new FileShareSharedWithUserId(UUID.randomUUID()), new FileShareRole(Role.EDITOR));
+                    new FileShareSharedWithUserId(sharedWithUserId), new FileShareRole(Role.EDITOR));
             given(listFileSharesUseCase.listFileShares(any(ListFileSharesCommand.class)))
-                    .willReturn(new FileSharesView(file, List.of(share)));
+                    .willReturn(new FileSharesView(file, List.of(share),
+                            Map.of(sharedWithUserId, new MemberSummary("river", "river@modudrive.com"))));
 
             mockMvc.perform(get("/api/v1/files/{fileId}/shares", FILE_ID)
                             .header("X_USER_ID", OWNER_ID))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.ownerId").value(OWNER_ID))
                     .andExpect(jsonPath("$.data.scope").value("RESTRICTED"))
-                    .andExpect(jsonPath("$.data.shares[0].role").value("EDITOR"));
+                    .andExpect(jsonPath("$.data.shares[0].role").value("EDITOR"))
+                    .andExpect(jsonPath("$.data.shares[0].sharedWithEmail").value("river@modudrive.com"))
+                    .andExpect(jsonPath("$.data.shares[0].sharedWithName").value("river"));
         }
     }
 

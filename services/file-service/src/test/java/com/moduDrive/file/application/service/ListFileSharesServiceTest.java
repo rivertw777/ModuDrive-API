@@ -5,6 +5,8 @@ import com.moduDrive.file.application.port.in.command.ListFileSharesCommand;
 import com.moduDrive.file.application.port.in.usecase.ListFileSharesUseCase.FileSharesView;
 import com.moduDrive.file.application.port.out.FindFilePort;
 import com.moduDrive.file.application.port.out.FindFileSharePort;
+import com.moduDrive.file.application.port.out.FindMemberByIdPort;
+import com.moduDrive.file.application.port.out.FindMemberByIdPort.MemberSummary;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
 import com.moduDrive.file.domain.model.FileShare;
@@ -37,6 +39,7 @@ class ListFileSharesServiceTest {
 
     @Mock private FindFilePort findFilePort;
     @Mock private FindFileSharePort findFileSharePort;
+    @Mock private FindMemberByIdPort findMemberByIdPort;
     @Mock private FileAccessGuard fileAccessGuard;
     @InjectMocks private ListFileSharesService listFileSharesService;
 
@@ -53,17 +56,21 @@ class ListFileSharesServiceTest {
     class WhenOwnerLists {
 
         @Test
-        void returnsFileWithItsShares() {
+        void returnsFileWithItsSharesAndMemberSummaries() {
+            UUID sharedWithUserId = UUID.randomUUID();
             FileShare share = FileShare.withId(new FileShareId(UUID.randomUUID()), new FileShareFileId(fileId),
-                    new FileShareOwnerId(ownerId), new FileShareSharedWithUserId(UUID.randomUUID()),
+                    new FileShareOwnerId(ownerId), new FileShareSharedWithUserId(sharedWithUserId),
                     new FileShareRole(Role.EDITOR));
+            MemberSummary summary = new MemberSummary("river", "river@modudrive.com");
             given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(file));
             given(findFileSharePort.findByFileId(command.getFileId())).willReturn(List.of(share));
+            given(findMemberByIdPort.findMemberById(sharedWithUserId)).willReturn(summary);
 
             FileSharesView result = listFileSharesService.listFileShares(command);
 
             assertThat(result.file().getOwnerId()).isEqualTo(ownerId);
             assertThat(result.shares()).containsExactly(share);
+            assertThat(result.memberSummaries()).containsEntry(sharedWithUserId, summary);
         }
 
         @Test
@@ -74,6 +81,25 @@ class ListFileSharesServiceTest {
             FileSharesView result = listFileSharesService.listFileShares(command);
 
             assertThat(result.shares()).isEmpty();
+            assertThat(result.memberSummaries()).isEmpty();
+        }
+
+        @Test
+        void degradesToUnknownWhenMemberLookupFails() {
+            UUID sharedWithUserId = UUID.randomUUID();
+            FileShare share = FileShare.withId(new FileShareId(UUID.randomUUID()), new FileShareFileId(fileId),
+                    new FileShareOwnerId(ownerId), new FileShareSharedWithUserId(sharedWithUserId),
+                    new FileShareRole(Role.VIEWER));
+            given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(file));
+            given(findFileSharePort.findByFileId(command.getFileId())).willReturn(List.of(share));
+            willThrow(new BusinessException(FileExceptionCase.SHARE_TARGET_NOT_FOUND))
+                    .given(findMemberByIdPort).findMemberById(sharedWithUserId);
+
+            FileSharesView result = listFileSharesService.listFileShares(command);
+
+            assertThat(result.shares()).containsExactly(share);
+            assertThat(result.memberSummaries().get(sharedWithUserId))
+                    .isEqualTo(new MemberSummary(null, null));
         }
     }
 
