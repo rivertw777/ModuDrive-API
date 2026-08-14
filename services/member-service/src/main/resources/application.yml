@@ -4,4 +4,14 @@ spring:
   config:
     import:
       - "classpath:application-jpa.yml"
+      - "classpath:application-redis.yml"
       - "classpath:application-resilience4j.yml"
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+modudrive:
+  member:
+    email-verification-token-expiration: ${MEMBER_EMAIL_VERIFICATION_TOKEN_EXPIRATION:1800000}

@@ -48,4 +48,8 @@ class MemberJpaEntity extends BaseTimeEntity {
         this.isValid = isValid;
     }
 
+    void markEmailVerified() {
+        this.isValid = true;
+    }
+
 }

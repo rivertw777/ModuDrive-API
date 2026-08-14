@@ -1,9 +1,11 @@
 package com.moduDrive.member.application.service;
 
 import com.moduDrive.common.core.exception.BusinessException;
+import com.moduDrive.member.application.event.MemberSignedUpEvent;
 import com.moduDrive.member.application.port.in.command.SignUpMemberCommand;
 import com.moduDrive.member.application.port.out.CheckEmailExistsPort;
 import com.moduDrive.member.application.port.out.CreateNamespacePort;
+import com.moduDrive.member.application.port.out.EmailVerificationTokenPort;
 import com.moduDrive.member.application.port.out.EncodePasswordPort;
 import com.moduDrive.member.application.port.out.SignUpMemberPort;
 import com.moduDrive.member.domain.model.Member;
@@ -22,6 +24,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.List;
 import java.util.UUID;
@@ -29,6 +32,9 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 
@@ -43,6 +49,10 @@ class SignUpMemberServiceTest {
     private CheckEmailExistsPort checkEmailExistsPort;
     @Mock
     private CreateNamespacePort createNamespacePort;
+    @Mock
+    private EmailVerificationTokenPort emailVerificationTokenPort;
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
     @InjectMocks
     private SignUpMemberService signUpMemberService;
 
@@ -55,13 +65,14 @@ class SignUpMemberServiceTest {
     @DisplayName("이메일이 중복되지 않았을 때")
     class WhenEmailIsUnique {
 
+        private final UUID memberId = UUID.randomUUID();
+        private final Member savedMember = Member.withId(
+                new MemberId(memberId), command.getMemberName(), command.getMemberEmail(),
+                new MemberPassword("encoded-password"), new MemberRoles(List.of(Role.MEMBER)),
+                new MemberIsValid(false));
+
         @Test
-        void encodesPasswordAndCreatesMember() {
-            UUID memberId = UUID.randomUUID();
-            Member savedMember = Member.withId(
-                    new MemberId(memberId), command.getMemberName(), command.getMemberEmail(),
-                    new MemberPassword("encoded-password"), new MemberRoles(List.of(Role.MEMBER)),
-                    new MemberIsValid(true));
+        void encodesPasswordAndCreatesUnverifiedMember() {
             given(checkEmailExistsPort.existsByEmail(command.getMemberEmail())).willReturn(false);
             given(encodePasswordPort.encodePassword(command.getMemberPassword()))
                     .willReturn(new MemberPassword("encoded-password"));
@@ -69,8 +80,26 @@ class SignUpMemberServiceTest {
 
             signUpMemberService.signUpMember(command);
 
-            then(signUpMemberPort).should().createMember(any(Member.class));
+            then(signUpMemberPort).should().createMember(
+                    argThat((Member m) -> !m.isValid() && m.getEmail().equals(command.getMemberEmail().emailValue())));
             then(createNamespacePort).should().createNamespace(memberId);
+        }
+
+        @Test
+        void issuesVerificationTokenAndPublishesSignedUpEvent() {
+            given(checkEmailExistsPort.existsByEmail(command.getMemberEmail())).willReturn(false);
+            given(encodePasswordPort.encodePassword(command.getMemberPassword()))
+                    .willReturn(new MemberPassword("encoded-password"));
+            given(signUpMemberPort.createMember(any(Member.class))).willReturn(savedMember);
+
+            signUpMemberService.signUpMember(command);
+
+            then(emailVerificationTokenPort).should().saveToken(anyString(), eq(memberId));
+            then(eventPublisher).should().publishEvent(argThat((MemberSignedUpEvent event) ->
+                    event.memberId().equals(memberId)
+                            && event.email().equals(command.getMemberEmail().emailValue())
+                            && event.name().equals(command.getMemberName().nameValue())
+                            && event.verificationToken() != null));
         }
     }
 
@@ -90,6 +119,8 @@ class SignUpMemberServiceTest {
                     .isEqualTo(MemberExceptionCase.DUPLICATE_EMAIL);
             then(encodePasswordPort).shouldHaveNoInteractions();
             then(signUpMemberPort).shouldHaveNoInteractions();
+            then(emailVerificationTokenPort).shouldHaveNoInteractions();
+            then(eventPublisher).shouldHaveNoInteractions();
         }
     }
 }
