@@ -35,7 +35,7 @@ def current_branch():
 
 
 def target_branches(segment):
-    match = re.search(r"\bgit\s+push\b(.*)", segment)
+    match = re.search(r"\bgit\s+push\b(.*)", segment, re.DOTALL)
     rest = match.group(1) if match else ""
     try:
         tokens = shlex.split(rest)

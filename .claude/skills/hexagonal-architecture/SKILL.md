@@ -9,6 +9,12 @@ One class per use case, not fat CRUD services/controllers. Dependency direction 
 one-way: `domain` ← `application` ← `adapter`. `domain` never imports `application`
 or `adapter`. `application` never imports `adapter`.
 
+Applies to the services with a real `domain/application/adapter` split: member, auth,
+file, storage. `gateway-service` (a reactive WebFlux edge service — `config/exception/adapter`
+only, no domain/application layer) and `eureka-server` (a bare registry with no business
+logic) don't follow this structure; only borrow the adapter/config conventions below where
+they're actually relevant.
+
 ## Core principles
 
 1. **Keep the domain model pure.** Classes in `domain/model/` and `domain/vo/`

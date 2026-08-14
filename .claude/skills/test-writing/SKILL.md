@@ -280,8 +280,11 @@ project's hexagonal conventions are already based on — see the
 5. New `adapter/out/security` or `adapter/out/client` logic — Mockito test
    mocking the raw collaborator, asserting the translation to/from the
    domain object.
-6. New service added to the monorepo — add the `archunit-junit5` dependency
-   and a `HexagonalArchitectureTest`; every existing service already has one.
+6. New service with a `domain/application/adapter` split — add the `archunit-junit5`
+   dependency and a `HexagonalArchitectureTest`; member/auth/file/storage already have
+   one. `gateway-service` has an equivalent `GatewayArchitectureTest` scoped to its own
+   (non-hexagonal) layout; `eureka-server` (no business logic) and `notification-service`
+   (barely started) don't have one yet.
 7. Run `./gradlew :services:<service>:test` before opening a PR.
 
 ## JaCoCo gate recipe (apply when ready)
