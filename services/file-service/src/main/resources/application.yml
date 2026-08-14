@@ -5,6 +5,11 @@ spring:
     import:
       - "classpath:application-jpa.yml"
       - "classpath:application-resilience4j.yml"
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
 
 modudrive:
   file:

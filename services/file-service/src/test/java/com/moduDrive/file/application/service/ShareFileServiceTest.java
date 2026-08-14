@@ -71,7 +71,7 @@ class ShareFileServiceTest {
             assertThat(result.getSharedWithUserId()).isEqualTo(granteeId);
             assertThat(result.getRole()).isEqualTo(Role.VIEWER);
             then(eventPublisher).should().publishEvent(
-                    new FileShareInvitedEvent(fileId, ownerId, granteeId, Role.VIEWER));
+                    new FileShareInvitedEvent(fileId, ownerId, granteeId, EMAIL, "report.pdf", Role.VIEWER));
         }
     }
 

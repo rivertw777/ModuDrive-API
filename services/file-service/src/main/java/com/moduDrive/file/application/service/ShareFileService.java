@@ -56,7 +56,8 @@ class ShareFileService implements ShareFileUseCase {
         FileShare saved = saveFileSharePort.saveFileShare(fileShare);
 
         eventPublisher.publishEvent(new FileShareInvitedEvent(
-                saved.getFileId(), saved.getOwnerId(), saved.getSharedWithUserId(), saved.getRole()));
+                saved.getFileId(), saved.getOwnerId(), saved.getSharedWithUserId(),
+                command.getEmail(), file.getName(), saved.getRole()));
 
         return saved;
     }
