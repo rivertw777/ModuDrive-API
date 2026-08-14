@@ -21,7 +21,7 @@ bootBuildImage {
 
 dependencies {
     implementation project(':common:core')
-    implementation project(':common:api')
+    implementation project(':common:event')
     implementation project(':common:infrastructure:jpa')
     implementation project(':common:infrastructure:kafka')
     implementation project(':common:infrastructure:resilience4j')

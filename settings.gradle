@@ -6,6 +6,7 @@ rootProject.name = 'modu-drive'
 
 include ("common:core")
 include ("common:api")
+include ("common:event")
 include ("common:infrastructure:jpa")
 include ("common:infrastructure:kafka")
 include ("common:infrastructure:redis")

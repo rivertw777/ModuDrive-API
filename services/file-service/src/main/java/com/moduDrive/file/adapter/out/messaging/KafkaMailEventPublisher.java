@@ -1,7 +1,7 @@
 package com.moduDrive.file.adapter.out.messaging;
 
-import com.moduDrive.common.api.dto.mail.MailTopics;
-import com.moduDrive.common.api.dto.mail.ShareInviteMailRequested;
+import com.moduDrive.common.event.mail.MailTopics;
+import com.moduDrive.common.event.mail.ShareInviteMailRequested;
 import com.moduDrive.file.application.port.out.PublishMailEventPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
