@@ -1,7 +1,7 @@
 package com.moduDrive.member.adapter.out.messaging;
 
-import com.moduDrive.common.api.dto.mail.MailTopics;
-import com.moduDrive.common.api.dto.mail.VerificationMailRequested;
+import com.moduDrive.common.event.mail.MailTopics;
+import com.moduDrive.common.event.mail.VerificationMailRequested;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;

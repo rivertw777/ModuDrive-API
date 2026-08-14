@@ -1,4 +1,4 @@
-package com.moduDrive.common.api.dto.mail;
+package com.moduDrive.common.event.mail;
 
 import java.util.UUID;
 

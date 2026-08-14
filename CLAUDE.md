@@ -61,6 +61,7 @@ For the full layer breakdown, naming conventions, dependency-direction rules, an
 |-------------------------------------|--------------------------------------------------------------|
 | `common:core`                       | `@UseCase`/`@WebAdapter`/`@PersistenceAdapter`, `ApiResponse<T>`, `BusinessException`, `ExceptionCase` interface, `SelfValidating`, `LoggingAspect` |
 | `common:api`                        | Shared DTOs for cross-service calls (auth, member)           |
+| `common:event`                      | Kafka mail event DTOs (`VerificationMailRequested`, `ShareInviteMailRequested`) and `MailTopics` — used by member/file-service (producers) and notification-service (consumer) |
 | `common:infrastructure:jpa`         | `BaseTimeEntity` (JPA auditing), `AuditingConfig`            |
 | `common:infrastructure:kafka`       | `spring-boot-starter-kafka` — used by member/file-service (producers) and notification-service (consumer) for async mail events |
 | `common:infrastructure:redis`       | `spring-boot-starter-data-redis` — used by auth-service for token storage, member-service for email verification tokens |

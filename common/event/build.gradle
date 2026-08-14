@@ -1,0 +1,5 @@
+group = 'com.modudrive.common.event'
+
+repositories {
+    mavenCentral()
+}

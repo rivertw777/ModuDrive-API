@@ -1,7 +1,7 @@
 package com.moduDrive.notification.adapter.in.messaging;
 
-import com.moduDrive.common.api.dto.mail.ShareInviteMailRequested;
-import com.moduDrive.common.api.dto.mail.VerificationMailRequested;
+import com.moduDrive.common.event.mail.ShareInviteMailRequested;
+import com.moduDrive.common.event.mail.VerificationMailRequested;
 import com.moduDrive.notification.application.port.in.command.SendShareInviteMailCommand;
 import com.moduDrive.notification.application.port.in.command.SendVerificationMailCommand;
 import com.moduDrive.notification.application.port.in.usecase.SendShareInviteMailUseCase;

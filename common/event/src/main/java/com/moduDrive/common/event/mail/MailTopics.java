@@ -1,4 +1,4 @@
-package com.moduDrive.common.api.dto.mail;
+package com.moduDrive.common.event.mail;
 
 /** Kafka topic names shared by mail event producers (member, file) and the consumer (notification). */
 public final class MailTopics {
