@@ -8,8 +8,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 
-import java.util.UUID;
-
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -18,12 +16,12 @@ class KafkaMailEventPublisher implements PublishMailEventPort {
     private final KafkaTemplate<String, Object> kafkaTemplate;
 
     @Override
-    public void publishVerificationRequested(UUID memberId, String email, String name, String verificationToken) {
-        kafkaTemplate.send(MailTopics.VERIFICATION_REQUESTED, memberId.toString(),
-                        new VerificationMailRequested(memberId, email, name, verificationToken))
+    public void publishVerificationRequested(String email, String verificationToken) {
+        kafkaTemplate.send(MailTopics.VERIFICATION_REQUESTED, email,
+                        new VerificationMailRequested(email, verificationToken))
                 .whenComplete((result, ex) -> {
                     if (ex != null) {
-                        log.error("Failed to publish verification mail event: memberId={}", memberId, ex);
+                        log.error("Failed to publish verification mail event: email={}", email, ex);
                     }
                 });
     }

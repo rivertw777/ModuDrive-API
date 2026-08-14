@@ -111,32 +111,4 @@ class MemberPersistenceAdapterTest {
                     .isEqualTo(MemberExceptionCase.MEMBER_NOT_FOUND);
         }
     }
-
-    @Nested
-    @DisplayName("이메일 인증을 완료 처리할 때")
-    class WhenMarkingEmailVerified {
-
-        @Test
-        void flipsIsValidToTrue() {
-            MemberJpaEntity saved = springDataMemberRepository.save(
-                    new MemberJpaEntity(memberName.nameValue(), memberEmail.emailValue(),
-                            memberPassword.passwordValue(), memberRoles.roleValues(), false));
-
-            memberPersistenceAdapter.markEmailVerified(new MemberId(saved.getId()));
-
-            Member member = memberPersistenceAdapter.findMemberById(new MemberId(saved.getId()));
-            assertThat(member.isValid()).isTrue();
-        }
-
-        @Test
-        void throwsBusinessExceptionWhenNotFound() {
-            Throwable thrown = catchThrowable(
-                    () -> memberPersistenceAdapter.markEmailVerified(new MemberId(UUID.randomUUID())));
-
-            assertThat(thrown)
-                    .isInstanceOf(BusinessException.class)
-                    .extracting(e -> ((BusinessException) e).getExceptionCase())
-                    .isEqualTo(MemberExceptionCase.MEMBER_NOT_FOUND);
-        }
-    }
 }

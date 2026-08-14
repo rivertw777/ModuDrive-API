@@ -5,7 +5,6 @@ import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.member.application.port.out.CheckEmailExistsPort;
 import com.moduDrive.member.application.port.out.FindMemberPort;
 import com.moduDrive.member.application.port.out.SignUpMemberPort;
-import com.moduDrive.member.application.port.out.UpdateMemberValidityPort;
 import com.moduDrive.member.exception.MemberExceptionCase;
 import com.moduDrive.member.domain.model.Member;
 import com.moduDrive.member.domain.model.Member.MemberEmail;
@@ -15,7 +14,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 @PersistenceAdapter
 class MemberPersistenceAdapter implements
-        SignUpMemberPort, FindMemberPort, CheckEmailExistsPort, UpdateMemberValidityPort {
+        SignUpMemberPort, FindMemberPort, CheckEmailExistsPort {
 
     private final SpringDataMemberRepository springDataMemberRepository;
     private final MemberMapper memberMapper;
@@ -53,15 +52,6 @@ class MemberPersistenceAdapter implements
                 .orElseThrow(() -> new BusinessException(MemberExceptionCase.MEMBER_NOT_FOUND));
 
         return memberMapper.mapToDomainEntity(entity);
-    }
-
-    @Override
-    public void markEmailVerified(MemberId memberId) {
-        MemberJpaEntity entity = springDataMemberRepository.findById(memberId.idValue())
-                .orElseThrow(() -> new BusinessException(MemberExceptionCase.MEMBER_NOT_FOUND));
-
-        entity.markEmailVerified();
-        springDataMemberRepository.save(entity);
     }
 
 }

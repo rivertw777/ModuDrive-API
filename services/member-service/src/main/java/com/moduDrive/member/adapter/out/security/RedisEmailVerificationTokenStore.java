@@ -7,12 +7,12 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.util.Optional;
-import java.util.UUID;
 
 @Component
 class RedisEmailVerificationTokenStore implements EmailVerificationTokenPort {
 
-    private static final String KEY_PREFIX = "email-verify:";
+    private static final String TOKEN_PREFIX = "email-verify-token:";
+    private static final String VERIFIED_PREFIX = "email-verified:";
 
     private final RedisRepository redisRepository;
     private final long tokenExpiration;
@@ -24,21 +24,39 @@ class RedisEmailVerificationTokenStore implements EmailVerificationTokenPort {
     }
 
     @Override
-    public void saveToken(String token, UUID memberId) {
-        redisRepository.set(key(token), memberId.toString(), Duration.ofMillis(tokenExpiration));
+    public void saveToken(String token, String email) {
+        redisRepository.set(tokenKey(token), email, Duration.ofMillis(tokenExpiration));
     }
 
     @Override
-    public Optional<UUID> consumeToken(String token) {
-        String memberId = redisRepository.get(key(token));
-        if (memberId == null) {
+    public Optional<String> consumeToken(String token) {
+        String email = redisRepository.get(tokenKey(token));
+        if (email == null) {
             return Optional.empty();
         }
-        redisRepository.delete(key(token));
-        return Optional.of(UUID.fromString(memberId));
+        redisRepository.delete(tokenKey(token));
+        return Optional.of(email);
     }
 
-    private String key(String token) {
-        return KEY_PREFIX + token;
+    @Override
+    public void markVerified(String email) {
+        redisRepository.set(verifiedKey(email), "true", Duration.ofMillis(tokenExpiration));
+    }
+
+    @Override
+    public boolean consumeVerified(String email) {
+        boolean verified = redisRepository.get(verifiedKey(email)) != null;
+        if (verified) {
+            redisRepository.delete(verifiedKey(email));
+        }
+        return verified;
+    }
+
+    private String tokenKey(String token) {
+        return TOKEN_PREFIX + token;
+    }
+
+    private String verifiedKey(String email) {
+        return VERIFIED_PREFIX + email;
     }
 }

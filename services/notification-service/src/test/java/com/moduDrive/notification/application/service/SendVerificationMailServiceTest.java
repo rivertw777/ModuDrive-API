@@ -30,7 +30,7 @@ class SendVerificationMailServiceTest {
         @Test
         void sendsMailWithVerificationLinkBuiltFromBaseUrl() {
             SendVerificationMailCommand command =
-                    new SendVerificationMailCommand("river@modudrive.com", "river", "some-token");
+                    new SendVerificationMailCommand("river@modudrive.com", "some-token");
 
             service().sendVerificationMail(command);
 

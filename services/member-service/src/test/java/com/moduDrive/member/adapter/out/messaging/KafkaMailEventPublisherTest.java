@@ -11,7 +11,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.kafka.core.KafkaTemplate;
 
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -31,16 +30,15 @@ class KafkaMailEventPublisherTest {
     class WhenPublishingVerificationRequested {
 
         @Test
-        void sendsPayloadToVerificationTopicKeyedByMemberId() {
-            UUID memberId = UUID.randomUUID();
+        void sendsPayloadToVerificationTopicKeyedByEmail() {
             given(kafkaTemplate.send(any(String.class), any(String.class), any()))
                     .willReturn(CompletableFuture.completedFuture(null));
 
-            kafkaMailEventPublisher.publishVerificationRequested(memberId, "river@modudrive.com", "river", "token");
+            kafkaMailEventPublisher.publishVerificationRequested("river@modudrive.com", "token");
 
             then(kafkaTemplate).should().send(
-                    MailTopics.VERIFICATION_REQUESTED, memberId.toString(),
-                    new VerificationMailRequested(memberId, "river@modudrive.com", "river", "token"));
+                    MailTopics.VERIFICATION_REQUESTED, "river@modudrive.com",
+                    new VerificationMailRequested("river@modudrive.com", "token"));
         }
     }
 }
