@@ -2,8 +2,8 @@ package com.moduDrive.member.adapter.in.web.controller;
 
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.common.core.web.GlobalExceptionHandler;
-import com.moduDrive.member.application.port.in.command.VerifyMemberEmailCommand;
-import com.moduDrive.member.application.port.in.usecase.VerifyMemberEmailUseCase;
+import com.moduDrive.member.application.port.in.command.ConfirmEmailVerificationCommand;
+import com.moduDrive.member.application.port.in.usecase.ConfirmEmailVerificationUseCase;
 import com.moduDrive.member.exception.MemberExceptionCase;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -20,14 +20,14 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(VerifyMemberEmailController.class)
+@WebMvcTest(ConfirmEmailVerificationController.class)
 @Import(GlobalExceptionHandler.class)
-class VerifyMemberEmailControllerTest {
+class ConfirmEmailVerificationControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
     @MockitoBean
-    private VerifyMemberEmailUseCase verifyMemberEmailUseCase;
+    private ConfirmEmailVerificationUseCase confirmEmailVerificationUseCase;
 
     private static final String TOKEN = "some-token";
 
@@ -41,7 +41,8 @@ class VerifyMemberEmailControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.message").value("success"));
 
-            then(verifyMemberEmailUseCase).should().verifyMemberEmail(new VerifyMemberEmailCommand(TOKEN));
+            then(confirmEmailVerificationUseCase).should()
+                    .confirmEmailVerification(new ConfirmEmailVerificationCommand(TOKEN));
         }
     }
 
@@ -52,7 +53,8 @@ class VerifyMemberEmailControllerTest {
         @Test
         void returnsBadRequestWithExceptionMessage() throws Exception {
             willThrow(new BusinessException(MemberExceptionCase.INVALID_VERIFICATION_TOKEN))
-                    .given(verifyMemberEmailUseCase).verifyMemberEmail(new VerifyMemberEmailCommand(TOKEN));
+                    .given(confirmEmailVerificationUseCase)
+                    .confirmEmailVerification(new ConfirmEmailVerificationCommand(TOKEN));
 
             mockMvc.perform(get("/api/v1/member/verify-email").param("token", TOKEN))
                     .andExpect(status().isBadRequest())

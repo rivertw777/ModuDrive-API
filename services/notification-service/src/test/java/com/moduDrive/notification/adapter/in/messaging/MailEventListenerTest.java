@@ -35,12 +35,12 @@ class MailEventListenerTest {
         @Test
         void delegatesToSendVerificationMailUseCase() {
             VerificationMailRequested event =
-                    new VerificationMailRequested(UUID.randomUUID(), "river@modudrive.com", "river", "token");
+                    new VerificationMailRequested("river@modudrive.com", "token");
 
             mailEventListener.onVerificationRequested(event);
 
             then(sendVerificationMailUseCase).should().sendVerificationMail(
-                    new SendVerificationMailCommand("river@modudrive.com", "river", "token"));
+                    new SendVerificationMailCommand("river@modudrive.com", "token"));
         }
     }
 

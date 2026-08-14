@@ -10,7 +10,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Duration;
 import java.util.Optional;
-import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -23,7 +22,9 @@ class RedisEmailVerificationTokenStoreTest {
 
     private static final long EXPIRATION = 30 * 60 * 1000L;
     private static final String TOKEN = "some-token";
-    private static final String KEY = "email-verify:some-token";
+    private static final String TOKEN_KEY = "email-verify-token:some-token";
+    private static final String EMAIL = "river@modudrive.com";
+    private static final String VERIFIED_KEY = "email-verified:river@modudrive.com";
 
     @Mock
     private RedisRepository redisRepository;
@@ -37,12 +38,10 @@ class RedisEmailVerificationTokenStoreTest {
     class WhenSavingToken {
 
         @Test
-        void writesMemberIdUnderTokenKeyWithExpiration() {
-            UUID memberId = UUID.randomUUID();
+        void writesEmailUnderTokenKeyWithExpiration() {
+            store().saveToken(TOKEN, EMAIL);
 
-            store().saveToken(TOKEN, memberId);
-
-            then(redisRepository).should().set(KEY, memberId.toString(), Duration.ofMillis(EXPIRATION));
+            then(redisRepository).should().set(TOKEN_KEY, EMAIL, Duration.ofMillis(EXPIRATION));
         }
     }
 
@@ -51,14 +50,13 @@ class RedisEmailVerificationTokenStoreTest {
     class WhenConsumingExistingToken {
 
         @Test
-        void returnsMemberIdAndDeletesKey() {
-            UUID memberId = UUID.randomUUID();
-            given(redisRepository.get(KEY)).willReturn(memberId.toString());
+        void returnsEmailAndDeletesKey() {
+            given(redisRepository.get(TOKEN_KEY)).willReturn(EMAIL);
 
-            Optional<UUID> resolved = store().consumeToken(TOKEN);
+            Optional<String> resolved = store().consumeToken(TOKEN);
 
-            assertThat(resolved).contains(memberId);
-            then(redisRepository).should().delete(KEY);
+            assertThat(resolved).contains(EMAIL);
+            then(redisRepository).should().delete(TOKEN_KEY);
         }
     }
 
@@ -68,11 +66,48 @@ class RedisEmailVerificationTokenStoreTest {
 
         @Test
         void returnsEmptyAndSkipsDelete() {
-            given(redisRepository.get(KEY)).willReturn(null);
+            given(redisRepository.get(TOKEN_KEY)).willReturn(null);
 
-            Optional<UUID> resolved = store().consumeToken(TOKEN);
+            Optional<String> resolved = store().consumeToken(TOKEN);
 
             assertThat(resolved).isEmpty();
+            then(redisRepository).should(never()).delete(anyString());
+        }
+    }
+
+    @Nested
+    @DisplayName("이메일 인증 완료를 표시할 때")
+    class WhenMarkingVerified {
+
+        @Test
+        void writesVerifiedFlagUnderEmailKeyWithExpiration() {
+            store().markVerified(EMAIL);
+
+            then(redisRepository).should().set(VERIFIED_KEY, "true", Duration.ofMillis(EXPIRATION));
+        }
+    }
+
+    @Nested
+    @DisplayName("인증 완료된 이메일을 소비할 때")
+    class WhenConsumingVerified {
+
+        @Test
+        void returnsTrueAndDeletesKeyWhenPresent() {
+            given(redisRepository.get(VERIFIED_KEY)).willReturn("true");
+
+            boolean consumed = store().consumeVerified(EMAIL);
+
+            assertThat(consumed).isTrue();
+            then(redisRepository).should().delete(VERIFIED_KEY);
+        }
+
+        @Test
+        void returnsFalseAndSkipsDeleteWhenAbsent() {
+            given(redisRepository.get(VERIFIED_KEY)).willReturn(null);
+
+            boolean consumed = store().consumeVerified(EMAIL);
+
+            assertThat(consumed).isFalse();
             then(redisRepository).should(never()).delete(anyString());
         }
     }

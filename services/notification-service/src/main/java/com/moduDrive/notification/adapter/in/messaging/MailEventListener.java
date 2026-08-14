@@ -21,7 +21,7 @@ class MailEventListener {
     @KafkaListener(topics = MailTopics.VERIFICATION_REQUESTED)
     void onVerificationRequested(VerificationMailRequested event) {
         sendVerificationMailUseCase.sendVerificationMail(
-                new SendVerificationMailCommand(event.email(), event.name(), event.verificationToken()));
+                new SendVerificationMailCommand(event.email(), event.verificationToken()));
     }
 
     @KafkaListener(topics = MailTopics.SHARE_INVITE_REQUESTED)

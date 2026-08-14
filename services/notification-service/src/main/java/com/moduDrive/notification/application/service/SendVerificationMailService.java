@@ -21,8 +21,8 @@ class SendVerificationMailService implements SendVerificationMailUseCase {
     @Override
     public void sendVerificationMail(SendVerificationMailCommand command) {
         String link = verifyBaseUrl + "/api/v1/member/verify-email?token=" + command.getVerificationToken();
-        String body = "%s님, ModuDrive 회원가입을 완료하려면 아래 링크를 클릭해 이메일을 인증해주세요.\n\n%s"
-                .formatted(command.getName(), link);
+        String body = "ModuDrive 회원가입을 계속하려면 아래 링크를 클릭해 이메일을 인증해주세요.\n\n%s"
+                .formatted(link);
 
         sendMailPort.send(command.getEmail(), "[ModuDrive] 이메일 인증을 완료해주세요", body);
     }
