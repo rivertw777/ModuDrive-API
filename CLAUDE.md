@@ -62,8 +62,11 @@ For the full layer breakdown, naming conventions, dependency-direction rules, an
 | `common:core`                       | `@UseCase`/`@WebAdapter`/`@PersistenceAdapter`, `ApiResponse<T>`, `BusinessException`, `ExceptionCase` interface, `SelfValidating`, `LoggingAspect` |
 | `common:api`                        | Shared DTOs for cross-service calls (auth, member)           |
 | `common:infrastructure:jpa`         | `BaseTimeEntity` (JPA auditing), `AuditingConfig`            |
+| `common:infrastructure:kafka`       | `spring-boot-starter-kafka` — not yet referenced by any service; add to a service's build.gradle when its first producer/consumer lands |
+| `common:infrastructure:redis`       | `spring-boot-starter-data-redis` — used by auth-service for token storage |
 | `common:infrastructure:resilience4j`| `CircuitBreakerEventConfig`, `RetryEventConfig`, `FeignFallbackUtils` |
 | `common:infrastructure:spring-cloud`| `spring-cloud-starter-netflix-eureka-client`, `spring-cloud-starter-openfeign` — all services that register with Eureka or use Feign depend on this module |
+| `common:infrastructure:swagger`     | Aggregated OpenAPI/Swagger UI config (dev profile)           |
 
 Application services (auth, member, gateway) depend on `common:core`, `common:api`, and `common:infrastructure:spring-cloud`. JPA services also depend on `common:infrastructure:jpa`. `eureka-server` is a standalone registry and does not depend on any common module.
 
