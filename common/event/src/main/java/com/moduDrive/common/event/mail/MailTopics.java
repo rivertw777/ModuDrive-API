@@ -1,6 +1,6 @@
 package com.moduDrive.common.event.mail;
 
-/** Kafka topic names shared by mail event producers (member, file) and the consumer (notification). */
+/** Kafka topic names shared by mail event producers (member, file) and the consumer (mail-service). */
 public final class MailTopics {
 
     public static final String VERIFICATION_REQUESTED = "mail.verification-requested";

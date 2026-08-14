@@ -115,14 +115,14 @@ services:
       eureka-server:
         condition: service_started
 
-  notification-service:
-    image: modu-drive-notification-service:0.0.1-SNAPSHOT
+  mail-service:
+    image: modu-drive-mail-service:0.0.1-SNAPSHOT
     networks:
       - modudrive_network
     ports:
-      - "${NOTIFICATION_SERVER_PORT}:${NOTIFICATION_SERVER_PORT}"
+      - "${MAIL_SERVER_PORT}:${MAIL_SERVER_PORT}"
     environment:
-      - SERVER_PORT=${NOTIFICATION_SERVER_PORT}
+      - SERVER_PORT=${MAIL_SERVER_PORT}
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE}
       - eureka.client.serviceUrl.defaultZone=http://eureka-server:${EUREKA_SERVER_PORT}/eureka/
       - SPRING_DATASOURCE_URL=${SPRING_DATASOURCE_URL}

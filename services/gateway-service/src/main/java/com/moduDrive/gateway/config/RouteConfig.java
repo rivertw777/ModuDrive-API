@@ -24,9 +24,9 @@ class RouteConfig {
                 .route("storage-service", r -> r.path("/api/v1/storage/**")
                         .filters(f -> addCircuitBreaker(f, "storageServiceCircuitBreaker"))
                         .uri("lb://storage-service"))
-                .route("notification-service", r -> r.path("/api/v1/notifications/**")
-                        .filters(f -> addCircuitBreaker(f, "notificationServiceCircuitBreaker"))
-                        .uri("lb://notification-service"))
+                .route("mail-service", r -> r.path("/api/v1/mail/**")
+                        .filters(f -> addCircuitBreaker(f, "mailServiceCircuitBreaker"))
+                        .uri("lb://mail-service"))
                 .build();
     }
 

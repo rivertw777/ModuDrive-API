@@ -33,7 +33,7 @@ resilience4j:
         baseConfig: default
       storageServiceCircuitBreaker:
         baseConfig: default
-      notificationServiceCircuitBreaker:
+      mailServiceCircuitBreaker:
         baseConfig: default
 
 client:
