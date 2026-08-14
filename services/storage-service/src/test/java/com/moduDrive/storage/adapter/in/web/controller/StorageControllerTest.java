@@ -67,6 +67,7 @@ class StorageControllerTest {
 
             mockMvc.perform(multipart("/api/v1/storage/upload")
                             .file(file)
+                            .header("X_USER_ID", USER_ID)
                             .param("fileId", UUID.randomUUID().toString()))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.message").value("success"));
@@ -77,7 +78,9 @@ class StorageControllerTest {
             MockMultipartFile file = new MockMultipartFile(
                     "file", "test.txt", "text/plain", "hello".getBytes());
 
-            mockMvc.perform(multipart("/api/v1/storage/upload").file(file))
+            mockMvc.perform(multipart("/api/v1/storage/upload")
+                            .file(file)
+                            .header("X_USER_ID", USER_ID))
                     .andExpect(status().isBadRequest());
         }
     }
@@ -172,7 +175,8 @@ class StorageControllerTest {
             byte[] data = "file content".getBytes();
             given(downloadFileUseCase.download(any())).willReturn(data);
 
-            mockMvc.perform(get("/api/v1/storage/download/" + UUID.randomUUID()))
+            mockMvc.perform(get("/api/v1/storage/download/" + UUID.randomUUID())
+                            .header("X_USER_ID", USER_ID))
                     .andExpect(status().isOk())
                     .andExpect(result -> assertThat(result.getResponse().getContentAsByteArray())
                             .isEqualTo(data));

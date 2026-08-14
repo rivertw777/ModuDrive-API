@@ -20,8 +20,8 @@ class DownloadFileService implements DownloadFileUseCase {
 
     @Override
     public byte[] download(DownloadFileCommand command) {
-        String s3Path = getFileVersionPort.getS3Path(command.getFileId());
-        int blockCount = getFileVersionPort.getBlockCount(command.getFileId());
+        String s3Path = getFileVersionPort.getS3Path(command.getFileId(), command.getUserId());
+        int blockCount = getFileVersionPort.getBlockCount(command.getFileId(), command.getUserId());
         List<byte[]> blocks = retrieveBlocksPort.retrieveBlocks(s3Path, blockCount);
         return assembleBlocks(blocks);
     }

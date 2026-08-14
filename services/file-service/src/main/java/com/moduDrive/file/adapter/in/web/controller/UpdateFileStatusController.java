@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
@@ -24,10 +25,11 @@ class UpdateFileStatusController {
 
     @PutMapping("/api/v1/files/{fileId}/uploaded")
     public ApiResponse<FileResponse> markUploaded(
+            @RequestHeader("X_USER_ID") UUID callerId,
             @PathVariable UUID fileId,
             @Valid @RequestBody UpdateFileStatusRequest request) {
         var file = updateFileStatusUseCase.updateFileStatus(
-                new UpdateFileStatusCommand(fileId, request.fileSize(), request.blockCount(), request.s3Path())
+                new UpdateFileStatusCommand(fileId, callerId, request.fileSize(), request.blockCount(), request.s3Path())
         );
         return ApiResponse.success(FileResponse.from(file));
     }

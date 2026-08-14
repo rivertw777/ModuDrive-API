@@ -13,9 +13,10 @@ class FileServiceCallbackAdapter implements FileUploadCallbackPort {
     private final FileServiceFeignClient fileServiceFeignClient;
 
     @Override
-    public void notifyUploadComplete(UUID fileId, long fileSize, int blockCount, String s3Path) {
+    public void notifyUploadComplete(UUID fileId, UUID userId, long fileSize, int blockCount, String s3Path) {
         fileServiceFeignClient.updateFileStatus(
                 fileId.toString(),
+                userId.toString(),
                 new FileUploadCallbackRequest(fileSize, blockCount, s3Path)
         );
     }

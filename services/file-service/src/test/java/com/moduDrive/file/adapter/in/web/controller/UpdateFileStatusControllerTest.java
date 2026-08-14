@@ -35,6 +35,7 @@ class UpdateFileStatusControllerTest {
     @MockitoBean private UpdateFileStatusUseCase updateFileStatusUseCase;
 
     private static final UUID FILE_ID = UUID.randomUUID();
+    private static final UUID USER_ID = UUID.randomUUID();
     private static final String REQUEST_JSON = """
             {"fileSize":1024,"blockCount":2,"s3Path":"s3://bucket/key"}
             """;
@@ -55,6 +56,7 @@ class UpdateFileStatusControllerTest {
                     .willReturn(uploadedFile);
 
             mockMvc.perform(put("/api/v1/files/{fileId}/uploaded", FILE_ID)
+                            .header("X_USER_ID", USER_ID.toString())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(REQUEST_JSON))
                     .andExpect(status().isOk())
@@ -72,6 +74,7 @@ class UpdateFileStatusControllerTest {
                     .given(updateFileStatusUseCase).updateFileStatus(any(UpdateFileStatusCommand.class));
 
             mockMvc.perform(put("/api/v1/files/{fileId}/uploaded", FILE_ID)
+                            .header("X_USER_ID", USER_ID.toString())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(REQUEST_JSON))
                     .andExpect(status().isNotFound())
@@ -86,6 +89,7 @@ class UpdateFileStatusControllerTest {
         @Test
         void returnsBadRequest() throws Exception {
             mockMvc.perform(put("/api/v1/files/{fileId}/uploaded", FILE_ID)
+                            .header("X_USER_ID", USER_ID.toString())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{}"))
                     .andExpect(status().isBadRequest());

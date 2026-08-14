@@ -35,19 +35,21 @@ class GetLatestFileVersionsControllerTest {
 
     private static final UUID FILE_ID = UUID.randomUUID();
 
+    private static final UUID USER_ID = UUID.randomUUID();
+
     @Nested
-    @DisplayName("최신 버전이 존재할 때 (X_USER_ID 없이 서비스 간 호출)")
+    @DisplayName("최신 버전이 존재하고 접근 권한이 있을 때")
     class WhenLatestVersionExists {
 
         @Test
-        void returnsVersionListWithoutRequiringAuthHeader() throws Exception {
+        void returnsVersionList() throws Exception {
             FileVersion v = FileVersion.withId(new FileVersionId(UUID.randomUUID()),
                     new FileVersionFileId(FILE_ID), new FileVersionFileSize(512L),
                     new FileVersionBlockCount(1), new FileVersionS3Path("s3://b/k"));
             given(getLatestFileVersionsUseCase.getLatestFileVersions(any(GetLatestFileVersionsCommand.class)))
                     .willReturn(List.of(v));
 
-            mockMvc.perform(get("/internal/files/{fileId}/revisions", FILE_ID))
+            mockMvc.perform(get("/internal/files/{fileId}/revisions", FILE_ID).param("userId", USER_ID.toString()))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data[0].s3Path").value("s3://b/k"));
         }
@@ -62,8 +64,22 @@ class GetLatestFileVersionsControllerTest {
             willThrow(new BusinessException(FileExceptionCase.FILE_NOT_FOUND))
                     .given(getLatestFileVersionsUseCase).getLatestFileVersions(any(GetLatestFileVersionsCommand.class));
 
-            mockMvc.perform(get("/internal/files/{fileId}/revisions", FILE_ID))
+            mockMvc.perform(get("/internal/files/{fileId}/revisions", FILE_ID).param("userId", USER_ID.toString()))
                     .andExpect(status().isNotFound());
+        }
+    }
+
+    @Nested
+    @DisplayName("호출자에게 접근 권한이 없을 때")
+    class WhenCallerLacksAccess {
+
+        @Test
+        void returnsForbidden() throws Exception {
+            willThrow(new BusinessException(FileExceptionCase.FILE_ACCESS_DENIED))
+                    .given(getLatestFileVersionsUseCase).getLatestFileVersions(any(GetLatestFileVersionsCommand.class));
+
+            mockMvc.perform(get("/internal/files/{fileId}/revisions", FILE_ID).param("userId", USER_ID.toString()))
+                    .andExpect(status().isForbidden());
         }
     }
 }

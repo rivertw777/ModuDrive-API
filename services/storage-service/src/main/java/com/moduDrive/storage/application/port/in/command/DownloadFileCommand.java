@@ -14,8 +14,12 @@ public class DownloadFileCommand extends SelfValidating<DownloadFileCommand> {
     @NotNull
     private final UUID fileId;
 
-    public DownloadFileCommand(String fileId) {
+    @NotNull
+    private final UUID userId;
+
+    public DownloadFileCommand(String fileId, UUID userId) {
         this.fileId = UUID.fromString(fileId);
+        this.userId = userId;
         this.validateSelf();
     }
 }

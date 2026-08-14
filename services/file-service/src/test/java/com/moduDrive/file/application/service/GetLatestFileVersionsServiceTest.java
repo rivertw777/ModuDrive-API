@@ -9,6 +9,7 @@ import com.moduDrive.file.domain.model.File.*;
 import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.FileVersion;
 import com.moduDrive.file.domain.model.FileVersion.*;
+import com.moduDrive.file.domain.model.Role;
 import com.moduDrive.file.exception.FileExceptionCase;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -27,27 +28,31 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
+import static org.mockito.BDDMockito.willThrow;
 
 @ExtendWith(MockitoExtension.class)
 class GetLatestFileVersionsServiceTest {
 
     @Mock private FindFilePort findFilePort;
     @Mock private FindFileVersionsPort findFileVersionsPort;
+    @Mock private FileAccessGuard fileAccessGuard;
     @InjectMocks private GetLatestFileVersionsService getLatestFileVersionsService;
 
     private final UUID fileId = UUID.randomUUID();
-    private final GetLatestFileVersionsCommand command = new GetLatestFileVersionsCommand(fileId, 1);
+    private final UUID callerId = UUID.randomUUID();
+    private final GetLatestFileVersionsCommand command = new GetLatestFileVersionsCommand(fileId, 1, callerId);
 
     private final File file = File.withId(new FileId(fileId), new FileNamespaceId(UUID.randomUUID()),
             new FileName("report.pdf"), new FilePath("/1"), new FileOwnerId(UUID.randomUUID()),
             null, null, FileStatus.UPLOADED, new FileIsDirectory(false));
 
     @Nested
-    @DisplayName("파일이 존재할 때 (호출자 컨텍스트 없이 서비스 간 호출)")
+    @DisplayName("파일이 존재하고 접근 권한이 있을 때")
     class WhenFileExists {
 
         @Test
-        void returnsVersionListWithoutAnyAccessCheck() {
+        void returnsVersionList() {
             FileVersion v = FileVersion.withId(new FileVersionId(UUID.randomUUID()),
                     new FileVersionFileId(fileId), new FileVersionFileSize(512L),
                     new FileVersionBlockCount(1), new FileVersionS3Path("s3://b/k"));
@@ -75,6 +80,25 @@ class GetLatestFileVersionsServiceTest {
             assertThat(thrown).isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
                     .isEqualTo(FileExceptionCase.FILE_NOT_FOUND);
+        }
+    }
+
+    @Nested
+    @DisplayName("호출자에게 접근 권한이 없을 때")
+    class WhenCallerLacksAccess {
+
+        @Test
+        void throwsFileAccessDenied() {
+            given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(file));
+            willThrow(new BusinessException(FileExceptionCase.FILE_ACCESS_DENIED))
+                    .given(fileAccessGuard).requireRole(any(File.class), eq(callerId), eq(Role.VIEWER));
+
+            Throwable thrown = catchThrowable(() -> getLatestFileVersionsService.getLatestFileVersions(command));
+
+            assertThat(thrown).isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(FileExceptionCase.FILE_ACCESS_DENIED);
+            then(findFileVersionsPort).shouldHaveNoInteractions();
         }
     }
 }

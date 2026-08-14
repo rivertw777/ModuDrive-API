@@ -28,7 +28,7 @@ class CompleteResumableUploadService implements CompleteResumableUploadUseCase {
         UploadSession session = findUploadSessionPort.findSession(command.getSessionId())
                 .orElseThrow(() -> new BusinessException(StorageExceptionCase.SESSION_NOT_FOUND));
 
-        if (session.getOwnerId() != command.getUserId()) {
+        if (!session.getOwnerId().equals(command.getUserId())) {
             throw new BusinessException(StorageExceptionCase.SESSION_OWNER_MISMATCH);
         }
         if (session.isCompleted()) {
@@ -46,7 +46,7 @@ class CompleteResumableUploadService implements CompleteResumableUploadUseCase {
         String s3Path = "files/" + session.getFileId() + "/" + UUID.randomUUID();
         int blockCount = storeBlocksPort.storeBlocks(s3Path, orderedChunks);
 
-        callbackPort.notifyUploadComplete(session.getFileId(), totalSize, blockCount, s3Path);
+        callbackPort.notifyUploadComplete(session.getFileId(), command.getUserId(), totalSize, blockCount, s3Path);
         session.markCompleted();
     }
 }

@@ -20,11 +20,11 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 
@@ -37,6 +37,10 @@ class CompleteResumableUploadServiceTest {
     @InjectMocks private CompleteResumableUploadService completeResumableUploadService;
 
     private final UUID userId = UUID.randomUUID();
+    // Same value as userId but a different object — regression guard for the reference-equality
+    // bug this service used to have (session.getOwnerId() != command.getUserId()), which reusing
+    // the same instance everywhere would silently mask.
+    private final UUID sameValueDifferentInstance = UUID.fromString(userId.toString());
 
     private UploadSession fullSession(int totalChunks) {
         UploadSession session = UploadSession.create(UUID.randomUUID(), userId, totalChunks);
@@ -58,10 +62,11 @@ class CompleteResumableUploadServiceTest {
             given(storeBlocksPort.storeBlocks(anyString(), anyList())).willReturn(2);
 
             completeResumableUploadService.completeResumableUpload(
-                    new CompleteResumableUploadCommand(session.getSessionId().toString(), userId));
+                    new CompleteResumableUploadCommand(session.getSessionId().toString(), sameValueDifferentInstance));
 
             then(storeBlocksPort).should().storeBlocks(anyString(), anyList());
-            then(callbackPort).should().notifyUploadComplete(any(UUID.class), anyLong(), anyInt(), anyString());
+            then(callbackPort).should().notifyUploadComplete(
+                    eq(session.getFileId()), eq(userId), anyLong(), anyInt(), anyString());
         }
 
         @Test
@@ -72,7 +77,7 @@ class CompleteResumableUploadServiceTest {
             given(storeBlocksPort.storeBlocks(anyString(), anyList())).willReturn(1);
 
             completeResumableUploadService.completeResumableUpload(
-                    new CompleteResumableUploadCommand(session.getSessionId().toString(), userId));
+                    new CompleteResumableUploadCommand(session.getSessionId().toString(), sameValueDifferentInstance));
 
             assertThat(session.isCompleted()).isTrue();
         }
