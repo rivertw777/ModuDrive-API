@@ -51,9 +51,13 @@ class UpdateFileShareRoleServiceTest {
             null, null, FileStatus.UPLOADED, new FileIsDirectory(false));
 
     private FileShare share(UUID belongsToFileId) {
+        return share(belongsToFileId, Role.VIEWER);
+    }
+
+    private FileShare share(UUID belongsToFileId, Role role) {
         return FileShare.withId(new FileShareId(shareId), new FileShareFileId(belongsToFileId),
                 new FileShareOwnerId(ownerId), new FileShareSharedWithUserId(UUID.randomUUID()),
-                new FileShareRole(Role.VIEWER));
+                new FileShareRole(role));
     }
 
     @Nested

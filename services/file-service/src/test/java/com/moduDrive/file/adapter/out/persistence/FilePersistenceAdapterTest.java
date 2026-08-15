@@ -11,6 +11,7 @@ import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.Namespace.NamespaceId;
 import com.moduDrive.file.domain.model.Role;
 import com.moduDrive.file.domain.model.ShareScope;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -26,7 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
 @DataJpaTest
-@Import({FilePersistenceAdapter.class, FileMapper.class})
+@Import({FilePersistenceAdapter.class, FileMapper.class, RolePermissionPersistenceAdapter.class})
 class FilePersistenceAdapterTest {
 
     @Autowired
@@ -37,9 +38,19 @@ class FilePersistenceAdapterTest {
     private SpringDataFileAccessRepository springDataFileAccessRepository;
     @Autowired
     private SpringDataFileShareRepository springDataFileShareRepository;
+    @Autowired
+    private SpringDataFileRoleRepository springDataFileRoleRepository;
 
     private final UUID namespaceIdValue = UUID.randomUUID();
     private final NamespaceId namespaceId = new NamespaceId(namespaceIdValue);
+    private UUID viewerRoleId;
+    private UUID editorRoleId;
+
+    @BeforeEach
+    void seedRoles() {
+        viewerRoleId = springDataFileRoleRepository.saveAndFlush(new FileRoleJpaEntity(Role.VIEWER)).getId();
+        editorRoleId = springDataFileRoleRepository.saveAndFlush(new FileRoleJpaEntity(Role.EDITOR)).getId();
+    }
 
     private void save(String path, String name) {
         springDataFileRepository.save(new FileJpaEntity(
@@ -87,7 +98,7 @@ class FilePersistenceAdapterTest {
                     new FileNamespaceId(namespaceIdValue), new FileName("public.pdf"),
                     new FilePath("/1"), new FileOwnerId(UUID.randomUUID()), new FileIsDirectory(false)));
             UUID token = UUID.randomUUID();
-            saved.enableLinkSharing(token);
+            saved.enableLinkSharing(token, Role.EDITOR);
             filePersistenceAdapter.saveFile(saved);
 
             var result = filePersistenceAdapter.findByLinkToken(token);
@@ -95,6 +106,7 @@ class FilePersistenceAdapterTest {
             assertThat(result).isPresent();
             assertThat(result.get().getAccessScope()).isEqualTo(ShareScope.LINK);
             assertThat(result.get().getLinkToken()).isEqualTo(token);
+            assertThat(result.get().getLinkRole()).isEqualTo(Role.EDITOR);
         }
 
         @Test
@@ -104,7 +116,7 @@ class FilePersistenceAdapterTest {
                     new FileNamespaceId(namespaceIdValue), new FileName("was-public.pdf"),
                     new FilePath("/1"), new FileOwnerId(UUID.randomUUID()), new FileIsDirectory(false)));
             UUID token = UUID.randomUUID();
-            saved.enableLinkSharing(token);
+            saved.enableLinkSharing(token, Role.VIEWER);
             File linked = filePersistenceAdapter.saveFile(saved);
             linked.disableLinkSharing();
             filePersistenceAdapter.saveFile(linked);
@@ -145,12 +157,12 @@ class FilePersistenceAdapterTest {
             UUID ownerIdValue = UUID.randomUUID();
             UUID granteeId = UUID.randomUUID();
             springDataFileShareRepository.saveAndFlush(
-                    new FileShareJpaEntity(fileIdValue, ownerIdValue, granteeId, Role.VIEWER));
+                    new FileShareJpaEntity(fileIdValue, ownerIdValue, granteeId, viewerRoleId));
 
             // The app-layer existsBy check can't see a concurrent insert; uk_file_share_file_user is
             // what actually rejects the second row, so assert the constraint exists, not the check.
             Throwable thrown = catchThrowable(() -> springDataFileShareRepository.saveAndFlush(
-                    new FileShareJpaEntity(fileIdValue, ownerIdValue, granteeId, Role.EDITOR)));
+                    new FileShareJpaEntity(fileIdValue, ownerIdValue, granteeId, editorRoleId)));
 
             assertThat(thrown).isInstanceOf(DataIntegrityViolationException.class);
         }

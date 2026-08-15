@@ -35,9 +35,13 @@ class ListSharedWithMeServiceTest {
     private final ListSharedWithMeCommand command = new ListSharedWithMeCommand(sharedWithUserId);
 
     private FileShare makeShare(UUID fileId) {
+        return makeShare(fileId, Role.VIEWER);
+    }
+
+    private FileShare makeShare(UUID fileId, Role role) {
         return FileShare.withId(new FileShareId(UUID.randomUUID()), new FileShareFileId(fileId),
                 new FileShareOwnerId(UUID.randomUUID()), new FileShareSharedWithUserId(sharedWithUserId),
-                new FileShareRole(Role.VIEWER));
+                new FileShareRole(role));
     }
 
     private File makeFile(UUID fileId, FileStatus status) {

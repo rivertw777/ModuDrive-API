@@ -8,6 +8,7 @@ import com.moduDrive.file.domain.model.FileVersion;
 import com.moduDrive.file.domain.model.Namespace;
 import com.moduDrive.file.domain.model.Role;
 import com.moduDrive.file.domain.model.ShareScope;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import static com.moduDrive.file.domain.model.Block.*;
@@ -18,7 +19,10 @@ import static com.moduDrive.file.domain.model.FileVersion.*;
 import static com.moduDrive.file.domain.model.Namespace.*;
 
 @Component
+@RequiredArgsConstructor
 class FileMapper {
+
+    private final RolePermissionPersistenceAdapter rolePermissionPersistenceAdapter;
 
     Namespace mapNamespaceToDomain(NamespaceJpaEntity entity) {
         return Namespace.withId(
@@ -46,7 +50,10 @@ class FileMapper {
         // Rows written before access_scope existed read back as null — treat that as RESTRICTED
         // so a legacy row can never be mistaken for a publicly linkable one.
         if (entity.getAccessScope() == ShareScope.LINK) {
-            file.enableLinkSharing(entity.getLinkToken());
+            // Rows written before link_role existed read back as null — the link they handed out
+            // was viewer-only at the time, so that is what it stays.
+            file.enableLinkSharing(entity.getLinkToken(),
+                    entity.getLinkRole() != null ? entity.getLinkRole() : Role.VIEWER);
         }
         return file;
     }
@@ -74,9 +81,12 @@ class FileMapper {
                 new FileShareFileId(entity.getFileId()),
                 new FileShareOwnerId(entity.getOwnerId()),
                 new FileShareSharedWithUserId(entity.getSharedWithUserId()),
-                // A legacy row predating the permission→role rename maps to the least
-                // privileged role rather than blowing up or silently granting EDITOR.
-                new FileShareRole(entity.getRole() != null ? entity.getRole() : Role.VIEWER)
+                // Rows written before the role→granted_role_id rename read back as null (ddl-auto
+                // can't add a NOT NULL column to a table that already has rows) — same fallback as
+                // the legacy access_scope/link_role columns above.
+                new FileShareRole(entity.getGrantedRoleId() != null
+                        ? rolePermissionPersistenceAdapter.findRole(entity.getGrantedRoleId())
+                        : Role.VIEWER)
         );
     }
 }

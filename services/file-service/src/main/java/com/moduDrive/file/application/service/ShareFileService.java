@@ -40,10 +40,12 @@ class ShareFileService implements ShareFileUseCase {
 
         UUID granteeId = findMemberByEmailPort.findMemberIdByEmail(command.getEmail());
 
-        // Owner is never a stored FileShare row (see answer.md §1) — inviting yourself would
-        // create a duplicate identity for the same access level and break that invariant.
-        if (granteeId.equals(command.getOwnerId().value())
-                || findFileSharePort.existsByFileIdAndSharedWithUserId(command.getFileId(), granteeId)) {
+        // The owner has no FileShare row of their own (ownership is file.ownerId, not a grant), so
+        // inviting yourself would just be a pointless, confusing entry in your own sharing dialog.
+        if (granteeId.equals(command.getOwnerId().value())) {
+            throw new BusinessException(FileExceptionCase.FILE_SHARE_SELF_NOT_ALLOWED);
+        }
+        if (findFileSharePort.existsByFileIdAndSharedWithUserId(command.getFileId(), granteeId)) {
             throw new BusinessException(FileExceptionCase.FILE_SHARE_ALREADY_EXISTS);
         }
 

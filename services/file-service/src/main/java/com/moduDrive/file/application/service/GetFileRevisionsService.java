@@ -8,7 +8,7 @@ import com.moduDrive.file.application.port.out.FindFilePort;
 import com.moduDrive.file.application.port.out.FindFileVersionsPort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.FileVersion;
-import com.moduDrive.file.domain.model.Role;
+import com.moduDrive.file.domain.model.Permission;
 import com.moduDrive.file.exception.FileExceptionCase;
 import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,7 +28,7 @@ class GetFileRevisionsService implements GetFileRevisionsUseCase {
     public List<FileVersion> getFileRevisions(GetFileRevisionsCommand command) {
         File file = findFilePort.findById(command.getFileId())
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_NOT_FOUND));
-        fileAccessGuard.requireRole(file, command.getCallerId(), Role.VIEWER);
+        fileAccessGuard.requirePermission(file, command.getCallerId(), Permission.READ);
 
         return findFileVersionsPort.findByFileIdOrderByCreatedAtDesc(command.getFileId(), command.getLimit());
     }

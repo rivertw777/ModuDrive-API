@@ -30,9 +30,13 @@ class UpdateFileScopeService implements UpdateFileScopeUseCase {
         fileAccessGuard.requireOwner(file, command.getCallerId());
 
         if (command.getScope() == ShareScope.LINK) {
+            // A link grants a role to whoever holds it, so it must name one.
+            if (command.getRole() == null) {
+                throw new BusinessException(FileExceptionCase.INVALID_LINK_ROLE);
+            }
             // File.enableLinkSharing keeps an existing token, so re-selecting LINK doesn't
             // silently break links already shared.
-            file.enableLinkSharing(UUID.randomUUID());
+            file.enableLinkSharing(UUID.randomUUID(), command.getRole());
         } else {
             file.disableLinkSharing();
         }

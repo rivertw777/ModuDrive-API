@@ -9,7 +9,7 @@ import com.moduDrive.file.domain.model.File.*;
 import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.FileVersion;
 import com.moduDrive.file.domain.model.FileVersion.*;
-import com.moduDrive.file.domain.model.Role;
+import com.moduDrive.file.domain.model.Permission;
 import com.moduDrive.file.exception.FileExceptionCase;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -91,7 +91,7 @@ class GetLatestFileVersionsServiceTest {
         void throwsFileAccessDenied() {
             given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(file));
             willThrow(new BusinessException(FileExceptionCase.FILE_ACCESS_DENIED))
-                    .given(fileAccessGuard).requireRole(any(File.class), eq(callerId), eq(Role.VIEWER));
+                    .given(fileAccessGuard).requirePermission(any(File.class), eq(callerId), eq(Permission.READ));
 
             Throwable thrown = catchThrowable(() -> getLatestFileVersionsService.getLatestFileVersions(command));
 

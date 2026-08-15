@@ -2,6 +2,7 @@ package com.moduDrive.file.adapter.out.persistence;
 
 import com.moduDrive.common.infrastructure.jpa.audit.BaseTimeEntity;
 import com.moduDrive.file.domain.model.FileStatus;
+import com.moduDrive.file.domain.model.Role;
 import com.moduDrive.file.domain.model.ShareScope;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
@@ -59,6 +60,10 @@ class FileJpaEntity extends BaseTimeEntity {
     @Column(unique = true)
     private UUID linkToken;
 
+    /** Null while the file is RESTRICTED. */
+    @Enumerated(EnumType.STRING)
+    private Role linkRole;
+
     FileJpaEntity(UUID namespaceId, String name, String path, UUID ownerId, FileStatus status, boolean directory) {
         this.namespaceId = namespaceId;
         this.name = name;
@@ -70,7 +75,7 @@ class FileJpaEntity extends BaseTimeEntity {
     }
 
     void applyChanges(String name, String path, UUID currentVersionId, Long fileSize, FileStatus status,
-                      boolean favorite, ShareScope accessScope, UUID linkToken) {
+                      boolean favorite, ShareScope accessScope, UUID linkToken, Role linkRole) {
         this.name = name;
         this.path = path;
         this.currentVersionId = currentVersionId;
@@ -79,5 +84,6 @@ class FileJpaEntity extends BaseTimeEntity {
         this.favorite = favorite;
         this.accessScope = accessScope;
         this.linkToken = linkToken;
+        this.linkRole = linkRole;
     }
 }

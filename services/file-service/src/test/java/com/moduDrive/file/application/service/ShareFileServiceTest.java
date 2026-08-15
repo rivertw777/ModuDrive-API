@@ -115,6 +115,26 @@ class ShareFileServiceTest {
     }
 
     @Nested
+    @DisplayName("자기 자신에게 공유하려 할 때")
+    class WhenSharingToSelf {
+
+        @Test
+        void throwsFileShareSelfNotAllowed() {
+            given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(file));
+            given(findMemberByEmailPort.findMemberIdByEmail(EMAIL)).willReturn(ownerId);
+
+            Throwable thrown = catchThrowable(() -> shareFileService.shareFile(command));
+
+            assertThat(thrown).isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(FileExceptionCase.FILE_SHARE_SELF_NOT_ALLOWED);
+            then(findFileSharePort).shouldHaveNoInteractions();
+            then(saveFileSharePort).shouldHaveNoInteractions();
+            then(eventPublisher).shouldHaveNoInteractions();
+        }
+    }
+
+    @Nested
     @DisplayName("이미 공유된 파일인 경우")
     class WhenAlreadyShared {
 
