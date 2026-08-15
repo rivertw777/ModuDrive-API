@@ -1,4 +1,4 @@
-.PHONY: service infra \
+.PHONY: service infra reset \
        gateway member auth file storage mail
 
 BLUE := \033[0;34m
@@ -16,8 +16,13 @@ service:
 	@./.scripts/start.sh
 
 infra:
-	@echo "$(GREEN)🗄️  Starting infrastructure...$(NC)"
+	@echo "$(GREEN)🗄️ Starting infrastructure...$(NC)"
 	@docker-compose -f $(INFRA_COMPOSE_FILE) up -d
+
+reset:
+	@echo "$(RED)🧨 Wiping infra data volumes and restarting...$(NC)"
+	@chmod +x .scripts/reset.sh
+	@./.scripts/reset.sh
 
 gateway:
 	@echo "$(BLUE)🚀 Starting Gateway Service...$(NC)"
