@@ -7,6 +7,7 @@ import com.moduDrive.file.application.port.out.SaveFilePort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
 import com.moduDrive.file.domain.model.FileStatus;
+import com.moduDrive.file.domain.model.Role;
 import com.moduDrive.file.domain.model.ShareScope;
 import com.moduDrive.file.exception.FileExceptionCase;
 import org.junit.jupiter.api.DisplayName;
@@ -46,7 +47,11 @@ class UpdateFileScopeServiceTest {
     }
 
     private UpdateFileScopeCommand command(ShareScope scope) {
-        return new UpdateFileScopeCommand(fileId, ownerId, scope);
+        return command(scope, Role.VIEWER);
+    }
+
+    private UpdateFileScopeCommand command(ShareScope scope, Role role) {
+        return new UpdateFileScopeCommand(fileId, ownerId, scope, role);
     }
 
     @Nested
@@ -62,13 +67,28 @@ class UpdateFileScopeServiceTest {
 
             assertThat(result.getAccessScope()).isEqualTo(ShareScope.LINK);
             assertThat(result.getLinkToken()).isNotNull();
+            assertThat(result.getLinkRole()).isEqualTo(Role.VIEWER);
+        }
+
+        @Test
+        void upgradesTheLinkRoleWithoutRotatingTheToken() {
+            File alreadyLinked = makeFile();
+            UUID existingToken = UUID.randomUUID();
+            alreadyLinked.enableLinkSharing(existingToken, Role.VIEWER);
+            given(findFilePort.findById(new FileId(fileId))).willReturn(Optional.of(alreadyLinked));
+            given(saveFilePort.saveFile(any(File.class))).willAnswer(inv -> inv.getArgument(0));
+
+            File result = updateFileScopeService.updateFileScope(command(ShareScope.LINK, Role.EDITOR));
+
+            assertThat(result.getLinkRole()).isEqualTo(Role.EDITOR);
+            assertThat(result.getLinkToken()).isEqualTo(existingToken);
         }
 
         @Test
         void keepsExistingTokenWhenLinkIsReSelected() {
             File alreadyLinked = makeFile();
             UUID existingToken = UUID.randomUUID();
-            alreadyLinked.enableLinkSharing(existingToken);
+            alreadyLinked.enableLinkSharing(existingToken, Role.VIEWER);
             given(findFilePort.findById(new FileId(fileId))).willReturn(Optional.of(alreadyLinked));
             given(saveFilePort.saveFile(any(File.class))).willAnswer(inv -> inv.getArgument(0));
 
@@ -85,7 +105,7 @@ class UpdateFileScopeServiceTest {
         @Test
         void clearsLinkToken() {
             File linked = makeFile();
-            linked.enableLinkSharing(UUID.randomUUID());
+            linked.enableLinkSharing(UUID.randomUUID(), Role.VIEWER);
             given(findFilePort.findById(new FileId(fileId))).willReturn(Optional.of(linked));
             given(saveFilePort.saveFile(any(File.class))).willAnswer(inv -> inv.getArgument(0));
 
@@ -93,6 +113,25 @@ class UpdateFileScopeServiceTest {
 
             assertThat(result.getAccessScope()).isEqualTo(ShareScope.RESTRICTED);
             assertThat(result.getLinkToken()).isNull();
+            assertThat(result.getLinkRole()).isNull();
+        }
+    }
+
+    @Nested
+    @DisplayName("LINK 전환 요청의 역할이 유효하지 않을 때")
+    class WhenLinkRoleIsInvalid {
+
+        @Test
+        void throwsInvalidLinkRoleWhenRoleIsMissing() {
+            given(findFilePort.findById(new FileId(fileId))).willReturn(Optional.of(makeFile()));
+
+            Throwable thrown = catchThrowable(
+                    () -> updateFileScopeService.updateFileScope(command(ShareScope.LINK, null)));
+
+            assertThat(thrown).isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(FileExceptionCase.INVALID_LINK_ROLE);
+            then(saveFilePort).shouldHaveNoInteractions();
         }
     }
 

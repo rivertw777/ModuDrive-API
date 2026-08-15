@@ -7,6 +7,7 @@ import com.moduDrive.file.application.port.in.usecase.UpdateFileScopeUseCase;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
 import com.moduDrive.file.domain.model.FileStatus;
+import com.moduDrive.file.domain.model.Role;
 import com.moduDrive.file.exception.FileExceptionCase;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -37,7 +38,7 @@ class UpdateFileScopeControllerTest {
     private static final UUID FILE_ID = UUID.randomUUID();
     private static final String OWNER_ID = "11111111-1111-1111-1111-111111111111";
     private static final String LINK_JSON = """
-            {"scope":"LINK"}
+            {"scope":"LINK","role":"VIEWER"}
             """;
 
     private static File file() {
@@ -55,7 +56,7 @@ class UpdateFileScopeControllerTest {
         void returnsScopeWithLinkToken() throws Exception {
             UUID token = UUID.randomUUID();
             File linked = file();
-            linked.enableLinkSharing(token);
+            linked.enableLinkSharing(token, Role.VIEWER);
             given(updateFileScopeUseCase.updateFileScope(any(UpdateFileScopeCommand.class))).willReturn(linked);
 
             mockMvc.perform(put("/api/v1/files/{fileId}/scope", FILE_ID)
@@ -64,7 +65,8 @@ class UpdateFileScopeControllerTest {
                             .content(LINK_JSON))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.scope").value("LINK"))
-                    .andExpect(jsonPath("$.data.linkToken").value(token.toString()));
+                    .andExpect(jsonPath("$.data.linkToken").value(token.toString()))
+                    .andExpect(jsonPath("$.data.role").value("VIEWER"));
         }
 
         @Test

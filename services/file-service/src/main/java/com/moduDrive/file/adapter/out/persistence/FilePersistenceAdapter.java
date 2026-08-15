@@ -34,6 +34,7 @@ class FilePersistenceAdapter implements
     private final SpringDataFileShareRepository fileShareRepository;
     private final SpringDataFileAccessRepository fileAccessRepository;
     private final FileMapper fileMapper;
+    private final RolePermissionPersistenceAdapter rolePermissionPersistenceAdapter;
 
     @Override
     public Namespace saveNamespace(Namespace namespace) {
@@ -66,7 +67,7 @@ class FilePersistenceAdapter implements
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_NOT_FOUND));
 
         entity.applyChanges(file.getName(), file.getPath(), file.getCurrentVersionId(), file.getFileSize(),
-                file.getStatus(), file.isFavorite(), file.getAccessScope(), file.getLinkToken());
+                file.getStatus(), file.isFavorite(), file.getAccessScope(), file.getLinkToken(), file.getLinkRole());
 
         return fileMapper.mapFileToDomain(fileRepository.save(entity));
     }
@@ -176,7 +177,7 @@ class FilePersistenceAdapter implements
         if (fileShare.getId() == null) {
             FileShareJpaEntity entity = new FileShareJpaEntity(
                     fileShare.getFileId(), fileShare.getOwnerId(),
-                    fileShare.getSharedWithUserId(), fileShare.getRole()
+                    fileShare.getSharedWithUserId(), rolePermissionPersistenceAdapter.findRoleId(fileShare.getRole())
             );
             try {
                 return fileMapper.mapFileShareToDomain(fileShareRepository.save(entity));
@@ -191,7 +192,7 @@ class FilePersistenceAdapter implements
 
         FileShareJpaEntity entity = fileShareRepository.findById(fileShare.getId())
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_SHARE_NOT_FOUND));
-        entity.applyRole(fileShare.getRole());
+        entity.applyGrantedRoleId(rolePermissionPersistenceAdapter.findRoleId(fileShare.getRole()));
 
         return fileMapper.mapFileShareToDomain(fileShareRepository.save(entity));
     }

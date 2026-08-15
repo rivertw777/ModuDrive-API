@@ -29,8 +29,7 @@ class RevokeFileShareService implements RevokeFileShareUseCase {
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_NOT_FOUND));
         fileAccessGuard.requireOwner(file, command.getCallerId());
 
-        // Same reason as UpdateFileShareRoleService: a share id from another file must not be
-        // revocable by this file's owner.
+        // A share id from another file must not be revocable by this file's owner.
         FileShare fileShare = findFileSharePort.findByShareId(command.getShareId())
                 .filter(share -> share.getFileId().equals(command.getFileId().value()))
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_SHARE_NOT_FOUND));

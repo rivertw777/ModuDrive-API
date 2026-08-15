@@ -28,7 +28,7 @@ class UpdateFileScopeController {
             @RequestHeader("X_USER_ID") UUID callerId,
             @PathVariable UUID fileId,
             @Valid @RequestBody UpdateFileScopeRequest request) {
-        var command = new UpdateFileScopeCommand(fileId, callerId, request.scope());
+        var command = new UpdateFileScopeCommand(fileId, callerId, request.scope(), request.role());
         return ApiResponse.success(FileScopeResponse.from(updateFileScopeUseCase.updateFileScope(command)));
     }
 }

@@ -26,7 +26,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 
-import com.moduDrive.file.domain.model.Role;
+import com.moduDrive.file.domain.model.Permission;
 
 import static org.mockito.BDDMockito.willThrow;
 
@@ -130,7 +130,7 @@ class RenameFileServiceTest {
         void throwsFileAccessDenied() {
             given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(makeFile(FileStatus.UPLOADED)));
             willThrow(new BusinessException(FileExceptionCase.FILE_ACCESS_DENIED))
-                    .given(fileAccessGuard).requireRole(any(File.class), eq(callerId), eq(Role.EDITOR));
+                    .given(fileAccessGuard).requirePermission(any(File.class), eq(callerId), eq(Permission.RENAME));
 
             Throwable thrown = catchThrowable(() -> renameFileService.renameFile(command));
 

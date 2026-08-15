@@ -24,6 +24,50 @@ CREATE TABLE IF NOT EXISTS namespace (
     updated_at  TIMESTAMP(6)
 );
 
+-- File sharing: viewer/editor roles, the permissions each grants, and the grant matrix between
+-- them. There is no OWNER role — ownership is file.owner_id, checked directly rather than granted.
+CREATE TABLE IF NOT EXISTS file_role (
+    id        UUID         PRIMARY KEY,
+    role_name VARCHAR(255) NOT NULL UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS file_permission (
+    id              UUID         PRIMARY KEY,
+    permission_name VARCHAR(255) NOT NULL UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS file_role_permission (
+    file_role_id       UUID NOT NULL REFERENCES file_role(id),
+    file_permission_id UUID NOT NULL REFERENCES file_permission(id),
+    PRIMARY KEY (file_role_id, file_permission_id)
+);
+
+WITH viewer_role AS (
+    INSERT INTO file_role (id, role_name) VALUES (gen_random_uuid(), 'VIEWER') RETURNING id
+),
+editor_role AS (
+    INSERT INTO file_role (id, role_name) VALUES (gen_random_uuid(), 'EDITOR') RETURNING id
+),
+read_permission AS (
+    INSERT INTO file_permission (id, permission_name) VALUES (gen_random_uuid(), 'READ') RETURNING id
+),
+download_permission AS (
+    INSERT INTO file_permission (id, permission_name) VALUES (gen_random_uuid(), 'DOWNLOAD') RETURNING id
+),
+rename_permission AS (
+    INSERT INTO file_permission (id, permission_name) VALUES (gen_random_uuid(), 'RENAME') RETURNING id
+)
+INSERT INTO file_role_permission (file_role_id, file_permission_id)
+SELECT viewer_role.id, read_permission.id FROM viewer_role, read_permission
+UNION ALL
+SELECT viewer_role.id, download_permission.id FROM viewer_role, download_permission
+UNION ALL
+SELECT editor_role.id, read_permission.id FROM editor_role, read_permission
+UNION ALL
+SELECT editor_role.id, download_permission.id FROM editor_role, download_permission
+UNION ALL
+SELECT editor_role.id, rename_permission.id FROM editor_role, rename_permission;
+
 -- test
 WITH inserted AS (
     INSERT INTO member (id, name, email, password, is_valid, created_at, updated_at, is_deleted)

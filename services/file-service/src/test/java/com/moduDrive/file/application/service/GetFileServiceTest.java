@@ -22,7 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.BDDMockito.given;
 
-import com.moduDrive.file.domain.model.Role;
+import com.moduDrive.file.domain.model.Permission;
 
 import static org.mockito.ArgumentMatchers.eq;
 
@@ -106,7 +106,7 @@ class GetFileServiceTest {
         void throwsFileAccessDenied() {
             given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(makeFile(FileStatus.UPLOADED)));
             willThrow(new BusinessException(FileExceptionCase.FILE_ACCESS_DENIED))
-                    .given(fileAccessGuard).requireRole(any(File.class), eq(callerId), eq(Role.VIEWER));
+                    .given(fileAccessGuard).requirePermission(any(File.class), eq(callerId), eq(Permission.READ));
 
             Throwable thrown = catchThrowable(() -> getFileService.getFile(command));
 

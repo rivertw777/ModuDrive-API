@@ -1,6 +1,5 @@
 package com.moduDrive.file.adapter.out.persistence;
 
-import com.moduDrive.file.domain.model.Role;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -37,22 +36,25 @@ class FileShareJpaEntity {
     @Column(nullable = false)
     private UUID sharedWithUserId;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private Role role;
+    /** FK to {@code file_role.id}, resolved to/from a {@link com.moduDrive.file.domain.model.Role}
+     * by {@link FileMapper} and {@link FilePersistenceAdapter} via the role directory cache.
+     * Left DB-nullable on purpose, like {@code file.access_scope}/{@code link_role}: ddl-auto=update
+     * can't add a NOT NULL column to a table that already has rows, so a pre-existing deployment's
+     * rows would otherwise fail the migration outright. Application code always sets it on write. */
+    private UUID grantedRoleId;
 
     @CreatedDate
     @Column(updatable = false)
     private LocalDateTime createdAt;
 
-    FileShareJpaEntity(UUID fileId, UUID ownerId, UUID sharedWithUserId, Role role) {
+    FileShareJpaEntity(UUID fileId, UUID ownerId, UUID sharedWithUserId, UUID grantedRoleId) {
         this.fileId = fileId;
         this.ownerId = ownerId;
         this.sharedWithUserId = sharedWithUserId;
-        this.role = role;
+        this.grantedRoleId = grantedRoleId;
     }
 
-    void applyRole(Role role) {
-        this.role = role;
+    void applyGrantedRoleId(UUID grantedRoleId) {
+        this.grantedRoleId = grantedRoleId;
     }
 }

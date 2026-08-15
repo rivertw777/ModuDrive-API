@@ -24,6 +24,8 @@ public class File {
     private LocalDateTime updatedAt;
     private ShareScope accessScope;
     private UUID linkToken;
+    /** Only meaningful while {@code accessScope == LINK}; null otherwise. */
+    private Role linkRole;
 
     public static File create(FileNamespaceId namespaceId,
                               FileName name,
@@ -43,6 +45,7 @@ public class File {
                 false,
                 null,
                 ShareScope.RESTRICTED,
+                null,
                 null
         );
     }
@@ -64,6 +67,7 @@ public class File {
                 false,
                 null,
                 ShareScope.RESTRICTED,
+                null,
                 null
         );
     }
@@ -90,6 +94,7 @@ public class File {
                 false,
                 null,
                 ShareScope.RESTRICTED,
+                null,
                 null
         );
     }
@@ -130,18 +135,21 @@ public class File {
         this.updatedAt = updatedAt;
     }
 
-    /** Idempotent: an already-issued token is kept, so re-selecting LINK never invalidates
-     * links already handed out. Rotation would need its own explicit operation. */
-    public void enableLinkSharing(UUID token) {
+    /** Idempotent in the token: an already-issued token is kept, so re-selecting LINK never
+     * invalidates links already handed out. Rotation would need its own explicit operation.
+     * {@code role} is always re-applied, which is how a viewer link is upgraded to an editor one. */
+    public void enableLinkSharing(UUID token, Role role) {
         this.accessScope = ShareScope.LINK;
         if (this.linkToken == null) {
             this.linkToken = token;
         }
+        this.linkRole = role;
     }
 
     public void disableLinkSharing() {
         this.accessScope = ShareScope.RESTRICTED;
         this.linkToken = null;
+        this.linkRole = null;
     }
 
     public record FileId(UUID value) {}
