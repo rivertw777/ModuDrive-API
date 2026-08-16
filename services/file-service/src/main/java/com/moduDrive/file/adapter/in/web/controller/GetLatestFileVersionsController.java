@@ -18,8 +18,8 @@ import java.util.UUID;
  * through this route. Kept off {@code /api/v1/files/**} (the gateway only proxies that prefix,
  * see gateway RouteConfig) so the caller here is another trusted service, not an end user
  * directly — but the original caller's id still rides along as {@code userId} so
- * FileAccessGuard can verify that user actually has VIEWER access before the download proceeds
- * (see #152). Same response shape as the tenant-facing {@code GET /api/v1/files/{fileId}/revisions}
+ * FileAccessGuard can verify that user actually holds DOWNLOAD permission before the download
+ * proceeds (see #152). Same response shape as the tenant-facing {@code GET /api/v1/files/{fileId}/revisions}
  * so storage-service's DTO didn't need to change. */
 @WebAdapter
 @RestController
