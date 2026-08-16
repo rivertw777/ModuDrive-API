@@ -10,7 +10,6 @@ import com.moduDrive.file.domain.model.File.*;
 import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.FileVersion;
 import com.moduDrive.file.domain.model.FileVersion.*;
-import com.moduDrive.file.domain.model.Permission;
 import com.moduDrive.file.exception.FileExceptionCase;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -106,7 +105,7 @@ class UpdateFileStatusServiceTest {
         void throwsFileAccessDenied() {
             given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(pendingFile));
             willThrow(new BusinessException(FileExceptionCase.FILE_ACCESS_DENIED))
-                    .given(fileAccessGuard).requirePermission(any(File.class), eq(ownerId), eq(Permission.RENAME));
+                    .given(fileAccessGuard).requireOwner(any(File.class), eq(ownerId));
 
             Throwable thrown = catchThrowable(() -> updateFileStatusService.updateFileStatus(command));
 

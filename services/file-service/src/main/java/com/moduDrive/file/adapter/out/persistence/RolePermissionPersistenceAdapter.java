@@ -21,12 +21,16 @@ import java.util.UUID;
  * rows that only change when someone edits the tables by hand, so paying a query per permission
  * check or per share row would buy nothing.
  * <p>
- * Loaded on first use rather than in the constructor because {@link RolePermissionSeeder} is an
- * {@code ApplicationRunner} — it fires after the context is refreshed, so a constructor read would
- * see empty tables on a fresh database and deny everything until the next restart.
+ * Loaded on first use rather than in the constructor: tests construct this adapter and seed the
+ * matrix rows afterward (see {@code RolePermissionPersistenceAdapterTest}), so an eager
+ * constructor read would permanently cache an empty snapshot before the rows exist.
  * <p>
  * ponytail: a restart is the way to pick up manual row edits; add a refresh hook only once an
  * admin-facing edit feature actually exists.
+ * <p>
+ * {@code .docker/init/01_postgres_init.sql} is now the only thing that seeds this matrix — a
+ * Postgres volume created before that schema existed (and never wiped via {@code make reset})
+ * will boot with these tables empty.
  * <p>
  * {@code findRoleId}/{@code findRole} (the {@code file_share.granted_role_id} FK translation) are
  * plain package-private methods, not a formal out port: their only callers are {@link FileMapper}
@@ -66,10 +70,11 @@ class RolePermissionPersistenceAdapter implements FindRolePermissionsPort {
         return role;
     }
 
-    /** Never memoizes an empty read: the web server can start accepting requests before
-     * {@link RolePermissionSeeder} (an {@code ApplicationRunner}) has run, and caching an empty
-     * snapshot from that window would deny every permission check for the process's whole
-     * lifetime. An empty load retries on the very next call instead. */
+    /** Never memoizes an empty read: this adapter can be constructed before the matrix rows exist
+     * (a test seeding them afterward, or a database where {@code init.sql} never ran — e.g. a
+     * volume created before this schema existed and never reset), and caching an empty snapshot
+     * from that window would deny every permission check for the process's whole lifetime. An
+     * empty load retries on the very next call instead. */
     private Directory directory() {
         Directory loaded = directory;
         if (loaded == null || loaded.isEmpty()) {

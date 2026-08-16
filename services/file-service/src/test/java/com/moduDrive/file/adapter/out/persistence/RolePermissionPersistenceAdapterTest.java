@@ -113,7 +113,7 @@ class RolePermissionPersistenceAdapterTest {
     }
 
     @Nested
-    @DisplayName("애플리케이션 시작 직후, 시더가 아직 실행되지 않았을 때")
+    @DisplayName("매트릭스 행이 아직 존재하지 않을 때")
     class WhenTablesAreEmpty {
 
         @Test

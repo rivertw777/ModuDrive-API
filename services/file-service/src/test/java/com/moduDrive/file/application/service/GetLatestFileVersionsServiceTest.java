@@ -91,7 +91,7 @@ class GetLatestFileVersionsServiceTest {
         void throwsFileAccessDenied() {
             given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(file));
             willThrow(new BusinessException(FileExceptionCase.FILE_ACCESS_DENIED))
-                    .given(fileAccessGuard).requirePermission(any(File.class), eq(callerId), eq(Permission.READ));
+                    .given(fileAccessGuard).requirePermission(any(File.class), eq(callerId), eq(Permission.DOWNLOAD));
 
             Throwable thrown = catchThrowable(() -> getLatestFileVersionsService.getLatestFileVersions(command));
 

@@ -10,7 +10,6 @@ import com.moduDrive.file.application.port.out.SaveFileVersionPort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.FileVersion;
 import com.moduDrive.file.domain.model.FileVersion.FileVersionFileId;
-import com.moduDrive.file.domain.model.Permission;
 import com.moduDrive.file.exception.FileExceptionCase;
 import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,14 +28,14 @@ class UpdateFileStatusService implements UpdateFileStatusUseCase {
     public File updateFileStatus(UpdateFileStatusCommand command) {
         File file = findFilePort.findById(command.getFileId())
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_NOT_FOUND));
-        // RENAME is the editor-tier permission in the matrix, and finishing an upload is an
-        // editor-tier write — this keeps the exact set of roles that could complete an upload
-        // before the permission table existed (OWNER + EDITOR, never VIEWER).
-        fileAccessGuard.requirePermission(file, command.getCallerId(), Permission.RENAME);
-        // That permission only proves the caller may write *some* version of this file — s3Path is
-        // otherwise a free-form string storage-service hands back, so without this check an
-        // EDITOR could point their own file at another file's storage location (e.g. one they
-        // saw via a since-revoked VIEWER share) and read its bytes back out indefinitely.
+        // Only the file's owner ever reaches this: UploadFileMetadataService creates the PENDING
+        // row in the caller's own namespace, so the fileId being completed here always belongs to
+        // whoever started the upload — there is no shared-EDITOR re-upload flow to authorize.
+        fileAccessGuard.requireOwner(file, command.getCallerId());
+        // s3Path is otherwise a free-form string storage-service hands back — this guard is
+        // defense-in-depth against a buggy or compromised storage-service pointing a completed
+        // upload at another file's storage location, not against the caller (already proven to be
+        // the owner above).
         if (!command.getS3Path().value().startsWith("files/" + file.getId() + "/")) {
             throw new BusinessException(FileExceptionCase.FILE_ACCESS_DENIED);
         }
