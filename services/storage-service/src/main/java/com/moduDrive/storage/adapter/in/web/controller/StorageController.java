@@ -7,11 +7,13 @@ import com.moduDrive.storage.adapter.in.web.dto.ResumableUploadSessionResponse;
 import com.moduDrive.storage.application.port.in.command.CompleteResumableUploadCommand;
 import com.moduDrive.storage.application.port.in.command.DownloadFileCommand;
 import com.moduDrive.storage.application.port.in.command.InitResumableUploadCommand;
+import com.moduDrive.storage.application.port.in.command.PublicDownloadFileCommand;
 import com.moduDrive.storage.application.port.in.command.SimpleUploadCommand;
 import com.moduDrive.storage.application.port.in.command.UploadChunkCommand;
 import com.moduDrive.storage.application.port.in.usecase.CompleteResumableUploadUseCase;
 import com.moduDrive.storage.application.port.in.usecase.DownloadFileUseCase;
 import com.moduDrive.storage.application.port.in.usecase.InitResumableUploadUseCase;
+import com.moduDrive.storage.application.port.in.usecase.PublicDownloadFileUseCase;
 import com.moduDrive.storage.application.port.in.usecase.SimpleUploadUseCase;
 import com.moduDrive.storage.application.port.in.usecase.UploadChunkUseCase;
 import jakarta.validation.Valid;
@@ -42,6 +44,7 @@ class StorageController {
     private final UploadChunkUseCase uploadChunkUseCase;
     private final CompleteResumableUploadUseCase completeResumableUploadUseCase;
     private final DownloadFileUseCase downloadFileUseCase;
+    private final PublicDownloadFileUseCase publicDownloadFileUseCase;
 
     @PostMapping("/api/v1/storage/upload")
     public ApiResponse<Void> simpleUpload(
@@ -89,6 +92,17 @@ class StorageController {
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileId + "\"")
+                .body(data);
+    }
+
+    /** Reached through the gateway's permitAll list, so there is deliberately no X_USER_ID —
+     * the link token is the whole credential and file-service is what validates it. */
+    @GetMapping("/api/v1/storage/public/{token}/download")
+    public ResponseEntity<byte[]> publicDownloadFile(@PathVariable String token) {
+        byte[] data = publicDownloadFileUseCase.downloadPublic(new PublicDownloadFileCommand(token));
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + token + "\"")
                 .body(data);
     }
 }

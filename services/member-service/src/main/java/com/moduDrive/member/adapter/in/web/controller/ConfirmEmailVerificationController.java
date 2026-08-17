@@ -2,11 +2,15 @@ package com.moduDrive.member.adapter.in.web.controller;
 
 import com.moduDrive.common.core.annotation.WebAdapter;
 import com.moduDrive.common.core.web.ApiResponse;
+import com.moduDrive.member.adapter.in.web.dto.ConfirmEmailVerificationRequest;
 import com.moduDrive.member.application.port.in.command.ConfirmEmailVerificationCommand;
 import com.moduDrive.member.application.port.in.usecase.ConfirmEmailVerificationUseCase;
+import com.moduDrive.member.domain.model.Member.MemberEmail;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestParam;
+import lombok.val;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 @WebAdapter
@@ -16,9 +20,11 @@ class ConfirmEmailVerificationController {
 
     private final ConfirmEmailVerificationUseCase confirmEmailVerificationUseCase;
 
-    @GetMapping("/api/v1/member/verify-email")
-    public ApiResponse<Void> confirmEmailVerification(@RequestParam String token) {
-        confirmEmailVerificationUseCase.confirmEmailVerification(new ConfirmEmailVerificationCommand(token));
+    @PostMapping("/api/v1/member/verify-email/confirm")
+    public ApiResponse<Void> confirmEmailVerification(@Valid @RequestBody ConfirmEmailVerificationRequest request) {
+        val command = new ConfirmEmailVerificationCommand(new MemberEmail(request.email()), request.code());
+        confirmEmailVerificationUseCase.confirmEmailVerification(command);
+
         return ApiResponse.success();
     }
 }

@@ -16,9 +16,9 @@ class KafkaMailEventPublisher implements PublishMailEventPort {
     private final KafkaTemplate<String, Object> kafkaTemplate;
 
     @Override
-    public void publishVerificationRequested(String email, String verificationToken) {
+    public void publishVerificationRequested(String email, String verificationCode) {
         kafkaTemplate.send(MailTopics.VERIFICATION_REQUESTED, email,
-                        new VerificationMailRequested(email, verificationToken))
+                        new VerificationMailRequested(email, verificationCode))
                 .whenComplete((result, ex) -> {
                     if (ex != null) {
                         log.error("Failed to publish verification mail event: email={}", email, ex);

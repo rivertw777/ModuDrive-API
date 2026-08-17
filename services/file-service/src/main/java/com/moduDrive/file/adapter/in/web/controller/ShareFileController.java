@@ -31,6 +31,8 @@ class ShareFileController {
         var fileShare = shareFileUseCase.shareFile(
                 new ShareFileCommand(fileId, ownerId, request.email(), request.role())
         );
-        return ApiResponse.success(FileShareResponse.from(fileShare));
+        // Empty means a guest invite (no ModuDrive member owns the email) — nothing to return but
+        // a success: the invite went out as a no-login link, not a FileShare row.
+        return ApiResponse.success(fileShare.map(FileShareResponse::from).orElse(null));
     }
 }

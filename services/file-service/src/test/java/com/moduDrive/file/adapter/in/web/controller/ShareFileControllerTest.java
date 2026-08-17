@@ -18,6 +18,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -52,7 +53,7 @@ class ShareFileControllerTest {
                     new FileShareOwnerId(UUID.fromString(OWNER_ID)),
                     new FileShareSharedWithUserId(UUID.fromString(SHARED_WITH_USER_ID)),
                     new FileShareRole(Role.VIEWER));
-            given(shareFileUseCase.shareFile(any(ShareFileCommand.class))).willReturn(share);
+            given(shareFileUseCase.shareFile(any(ShareFileCommand.class))).willReturn(Optional.of(share));
 
             mockMvc.perform(post("/api/v1/files/{fileId}/shares", FILE_ID)
                             .header("X_USER_ID", OWNER_ID)
@@ -71,6 +72,23 @@ class ShareFileControllerTest {
                                     {"email":"not-an-email","role":"VIEWER"}
                                     """))
                     .andExpect(status().isBadRequest());
+        }
+    }
+
+    @Nested
+    @DisplayName("초대 대상 이메일의 회원이 없을 때")
+    class WhenGranteeIsNotAMember {
+
+        @Test
+        void returnsSuccessWithNoData() throws Exception {
+            given(shareFileUseCase.shareFile(any(ShareFileCommand.class))).willReturn(Optional.empty());
+
+            mockMvc.perform(post("/api/v1/files/{fileId}/shares", FILE_ID)
+                            .header("X_USER_ID", OWNER_ID)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(REQUEST_JSON))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data").doesNotExist());
         }
     }
 

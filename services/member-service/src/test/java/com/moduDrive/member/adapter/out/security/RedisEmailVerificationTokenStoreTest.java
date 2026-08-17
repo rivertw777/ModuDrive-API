@@ -9,7 +9,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Duration;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -21,9 +20,10 @@ import static org.mockito.Mockito.never;
 class RedisEmailVerificationTokenStoreTest {
 
     private static final long EXPIRATION = 30 * 60 * 1000L;
-    private static final String TOKEN = "some-token";
-    private static final String TOKEN_KEY = "email-verify-token:some-token";
+    private static final String CODE = "042917";
     private static final String EMAIL = "river@modudrive.com";
+    private static final String CODE_KEY = "email-verify-code:river@modudrive.com";
+    private static final String ATTEMPTS_KEY = "email-verify-attempts:river@modudrive.com";
     private static final String VERIFIED_KEY = "email-verified:river@modudrive.com";
 
     @Mock
@@ -34,44 +34,76 @@ class RedisEmailVerificationTokenStoreTest {
     }
 
     @Nested
-    @DisplayName("토큰을 저장할 때")
-    class WhenSavingToken {
+    @DisplayName("인증 코드를 저장할 때")
+    class WhenSavingCode {
 
         @Test
-        void writesEmailUnderTokenKeyWithExpiration() {
-            store().saveToken(TOKEN, EMAIL);
+        void writesCodeUnderEmailKeyWithExpiration() {
+            store().saveCode(EMAIL, CODE);
 
-            then(redisRepository).should().set(TOKEN_KEY, EMAIL, Duration.ofMillis(EXPIRATION));
+            then(redisRepository).should().set(CODE_KEY, CODE, Duration.ofMillis(EXPIRATION));
         }
     }
 
     @Nested
-    @DisplayName("존재하는 토큰을 소비할 때")
-    class WhenConsumingExistingToken {
+    @DisplayName("저장된 코드와 일치하는 코드를 확인할 때")
+    class WhenConfirmingMatchingCode {
 
         @Test
-        void returnsEmailAndDeletesKey() {
-            given(redisRepository.get(TOKEN_KEY)).willReturn(EMAIL);
+        void returnsTrueAndDeletesKey() {
+            given(redisRepository.get(CODE_KEY)).willReturn(CODE);
 
-            Optional<String> resolved = store().consumeToken(TOKEN);
+            boolean confirmed = store().confirmCode(EMAIL, CODE);
 
-            assertThat(resolved).contains(EMAIL);
-            then(redisRepository).should().delete(TOKEN_KEY);
+            assertThat(confirmed).isTrue();
+            then(redisRepository).should().delete(CODE_KEY);
         }
     }
 
     @Nested
-    @DisplayName("존재하지 않는 토큰을 소비하려 할 때")
-    class WhenConsumingMissingToken {
+    @DisplayName("저장된 코드와 다른 코드를 확인할 때")
+    class WhenConfirmingMismatchedCode {
 
         @Test
-        void returnsEmptyAndSkipsDelete() {
-            given(redisRepository.get(TOKEN_KEY)).willReturn(null);
+        void returnsFalseAndSkipsDelete() {
+            given(redisRepository.get(CODE_KEY)).willReturn(CODE);
 
-            Optional<String> resolved = store().consumeToken(TOKEN);
+            boolean confirmed = store().confirmCode(EMAIL, "999999");
 
-            assertThat(resolved).isEmpty();
+            assertThat(confirmed).isFalse();
             then(redisRepository).should(never()).delete(anyString());
+        }
+    }
+
+    @Nested
+    @DisplayName("저장된 코드가 없는 이메일을 확인할 때")
+    class WhenConfirmingMissingCode {
+
+        @Test
+        void returnsFalseAndSkipsDelete() {
+            given(redisRepository.get(CODE_KEY)).willReturn(null);
+
+            boolean confirmed = store().confirmCode(EMAIL, CODE);
+
+            assertThat(confirmed).isFalse();
+            then(redisRepository).should(never()).delete(anyString());
+        }
+    }
+
+    @Nested
+    @DisplayName("일치하지 않는 코드를 5회 연속 확인했을 때")
+    class WhenConfirmingMismatchedCodeRepeatedly {
+
+        @Test
+        void deletesTheCodeAfterTheFifthFailureSoItCannotBeBruteForced() {
+            given(redisRepository.get(CODE_KEY)).willReturn(CODE);
+            given(redisRepository.get(ATTEMPTS_KEY)).willReturn(null, "1", "2", "3", "4");
+
+            for (int i = 0; i < 5; i++) {
+                assertThat(store().confirmCode(EMAIL, "999999")).isFalse();
+            }
+
+            then(redisRepository).should().delete(CODE_KEY);
         }
     }
 

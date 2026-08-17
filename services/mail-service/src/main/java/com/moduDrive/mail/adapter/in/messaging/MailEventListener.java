@@ -21,12 +21,12 @@ class MailEventListener {
     @KafkaListener(topics = MailTopics.VERIFICATION_REQUESTED)
     void onVerificationRequested(VerificationMailRequested event) {
         sendVerificationMailUseCase.sendVerificationMail(
-                new SendVerificationMailCommand(event.email(), event.verificationToken()));
+                new SendVerificationMailCommand(event.email(), event.verificationCode()));
     }
 
     @KafkaListener(topics = MailTopics.SHARE_INVITE_REQUESTED)
     void onShareInviteRequested(ShareInviteMailRequested event) {
         sendShareInviteMailUseCase.sendShareInviteMail(
-                new SendShareInviteMailCommand(event.granteeEmail(), event.fileName(), event.role()));
+                new SendShareInviteMailCommand(event.granteeEmail(), event.fileName(), event.role(), event.linkToken()));
     }
 }

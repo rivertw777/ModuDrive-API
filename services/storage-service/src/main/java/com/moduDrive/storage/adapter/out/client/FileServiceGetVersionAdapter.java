@@ -25,8 +25,25 @@ class FileServiceGetVersionAdapter implements GetFileVersionPort {
         return latestVersion(fileId, userId).blockCount();
     }
 
+    @Override
+    public String getPublicS3Path(String token) {
+        return latestPublicVersion(token).s3Path();
+    }
+
+    @Override
+    public int getPublicBlockCount(String token) {
+        return latestPublicVersion(token).blockCount();
+    }
+
     private FileVersionDto latestVersion(UUID fileId, UUID userId) {
-        List<FileVersionDto> versions = feignClient.getFileRevisions(fileId.toString(), userId.toString(), 1).getData();
+        return firstOrThrow(feignClient.getFileRevisions(fileId.toString(), userId.toString(), 1).getData());
+    }
+
+    private FileVersionDto latestPublicVersion(String token) {
+        return firstOrThrow(feignClient.getPublicFileRevisions(token, 1).getData());
+    }
+
+    private FileVersionDto firstOrThrow(List<FileVersionDto> versions) {
         if (versions == null || versions.isEmpty()) {
             throw new BusinessException(StorageExceptionCase.FILE_NOT_FOUND_IN_STORAGE);
         }

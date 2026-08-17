@@ -16,8 +16,10 @@ class ConfirmEmailVerificationService implements ConfirmEmailVerificationUseCase
 
     @Override
     public void confirmEmailVerification(ConfirmEmailVerificationCommand command) {
-        String email = emailVerificationTokenPort.consumeToken(command.getToken())
-                .orElseThrow(() -> new BusinessException(MemberExceptionCase.INVALID_VERIFICATION_TOKEN));
+        String email = command.getMemberEmail().emailValue();
+        if (!emailVerificationTokenPort.confirmCode(email, command.getCode())) {
+            throw new BusinessException(MemberExceptionCase.INVALID_VERIFICATION_CODE);
+        }
 
         emailVerificationTokenPort.markVerified(email);
     }

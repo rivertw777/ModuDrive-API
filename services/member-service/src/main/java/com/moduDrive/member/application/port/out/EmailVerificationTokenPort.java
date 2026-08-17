@@ -1,13 +1,11 @@
 package com.moduDrive.member.application.port.out;
 
-import java.util.Optional;
-
 public interface EmailVerificationTokenPort {
 
-    void saveToken(String token, String email);
+    void saveCode(String email, String code);
 
-    /** Resolves and invalidates the token in one step so it can't be replayed. */
-    Optional<String> consumeToken(String token);
+    /** Matches the code stored for the email and invalidates it in one step so it can't be replayed. */
+    boolean confirmCode(String email, String code);
 
     void markVerified(String email);
 

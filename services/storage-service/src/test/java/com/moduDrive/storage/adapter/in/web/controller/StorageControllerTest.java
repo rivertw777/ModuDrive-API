@@ -5,6 +5,7 @@ import com.moduDrive.common.core.web.GlobalExceptionHandler;
 import com.moduDrive.storage.application.port.in.usecase.CompleteResumableUploadUseCase;
 import com.moduDrive.storage.application.port.in.usecase.DownloadFileUseCase;
 import com.moduDrive.storage.application.port.in.usecase.InitResumableUploadUseCase;
+import com.moduDrive.storage.application.port.in.usecase.PublicDownloadFileUseCase;
 import com.moduDrive.storage.application.port.in.usecase.SimpleUploadUseCase;
 import com.moduDrive.storage.application.port.in.usecase.UploadChunkUseCase;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
@@ -23,6 +25,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willDoNothing;
@@ -30,6 +33,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.http.HttpMethod.PUT;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -46,6 +50,7 @@ class StorageControllerTest {
     @Mock private UploadChunkUseCase uploadChunkUseCase;
     @Mock private CompleteResumableUploadUseCase completeResumableUploadUseCase;
     @Mock private DownloadFileUseCase downloadFileUseCase;
+    @Mock private PublicDownloadFileUseCase publicDownloadFileUseCase;
     @InjectMocks private StorageController storageController;
 
     @BeforeEach
@@ -180,6 +185,31 @@ class StorageControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(result -> assertThat(result.getResponse().getContentAsByteArray())
                             .isEqualTo(data));
+        }
+    }
+
+    @Nested
+    @DisplayName("GET /api/v1/storage/public/{token}/download")
+    class PublicDownloadFile {
+
+        @Test
+        void returnsFileBytesWithoutRequiringAUserHeader() throws Exception {
+            byte[] data = "public content".getBytes();
+            given(publicDownloadFileUseCase.downloadPublic(any())).willReturn(data);
+
+            mockMvc.perform(get("/api/v1/storage/public/" + UUID.randomUUID() + "/download"))
+                    .andExpect(status().isOk())
+                    .andExpect(result -> assertThat(result.getResponse().getContentAsByteArray())
+                            .isEqualTo(data));
+        }
+
+        @Test
+        void marksTheResponseAsAnAttachment() throws Exception {
+            given(publicDownloadFileUseCase.downloadPublic(any())).willReturn("x".getBytes());
+
+            mockMvc.perform(get("/api/v1/storage/public/" + UUID.randomUUID() + "/download"))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, startsWith("attachment;")));
         }
     }
 }

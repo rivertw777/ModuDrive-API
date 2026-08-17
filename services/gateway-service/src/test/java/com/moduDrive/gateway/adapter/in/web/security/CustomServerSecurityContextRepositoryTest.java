@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.moduDrive.common.api.dto.auth.ValidateTokenRequest;
 import com.moduDrive.common.api.dto.auth.ValidateTokenResponse;
 import com.moduDrive.common.core.web.ApiResponse;
-import com.moduDrive.gateway.adapter.out.auth.AuthClient;
+import com.moduDrive.gateway.adapter.out.client.auth.AuthClient;
 import com.moduDrive.gateway.exception.AuthExceptionCase;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;

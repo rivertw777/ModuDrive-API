@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS file_role_permission (
     PRIMARY KEY (file_role_id, file_permission_id)
 );
 
+-- 파일 역할 - 권한 생성
 WITH viewer_role AS (
     INSERT INTO file_role (id, role_name) VALUES (gen_random_uuid(), 'VIEWER') RETURNING id
 ),
@@ -68,7 +69,7 @@ SELECT editor_role.id, download_permission.id FROM editor_role, download_permiss
 UNION ALL
 SELECT editor_role.id, rename_permission.id FROM editor_role, rename_permission;
 
--- test
+-- test 유저 생성
 WITH inserted AS (
     INSERT INTO member (id, name, email, password, is_valid, created_at, updated_at, is_deleted)
     VALUES (
@@ -90,7 +91,7 @@ role_inserted AS (
 INSERT INTO namespace (id, user_id, root_path, quota_bytes, created_at, updated_at)
 SELECT gen_random_uuid(), id, '/' || id, 21474836480, NOW(), NOW() FROM inserted;
 
--- test2
+-- test2 유저 생성
 WITH inserted AS (
 INSERT INTO member (id, name, email, password, is_valid, created_at, updated_at, is_deleted)
 VALUES (

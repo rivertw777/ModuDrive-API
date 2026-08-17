@@ -8,10 +8,10 @@ import lombok.Getter;
 public class SendVerificationMailCommand {
 
     private final String email;
-    private final String verificationToken;
+    private final String verificationCode;
 
-    public SendVerificationMailCommand(String email, String verificationToken) {
+    public SendVerificationMailCommand(String email, String verificationCode) {
         this.email = email;
-        this.verificationToken = verificationToken;
+        this.verificationCode = verificationCode;
     }
 }

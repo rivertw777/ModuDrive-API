@@ -6,12 +6,14 @@ import com.moduDrive.file.application.port.in.command.ShareFileCommand;
 import com.moduDrive.file.application.port.out.FindFilePort;
 import com.moduDrive.file.application.port.out.FindFileSharePort;
 import com.moduDrive.file.application.port.out.FindMemberByEmailPort;
+import com.moduDrive.file.application.port.out.SaveFilePort;
 import com.moduDrive.file.application.port.out.SaveFileSharePort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
 import com.moduDrive.file.domain.model.FileShare;
 import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.Role;
+import com.moduDrive.file.domain.model.ShareScope;
 import com.moduDrive.file.exception.FileExceptionCase;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -39,6 +41,7 @@ class ShareFileServiceTest {
     @Mock private FindFilePort findFilePort;
     @Mock private FindFileSharePort findFileSharePort;
     @Mock private SaveFileSharePort saveFileSharePort;
+    @Mock private SaveFilePort saveFilePort;
     @Mock private FindMemberByEmailPort findMemberByEmailPort;
     @Mock private FileAccessGuard fileAccessGuard;
     @Mock private ApplicationEventPublisher eventPublisher;
@@ -61,17 +64,19 @@ class ShareFileServiceTest {
         @Test
         void savesFileShareAndPublishesInvitedEvent() {
             given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(file));
-            given(findMemberByEmailPort.findMemberIdByEmail(EMAIL)).willReturn(granteeId);
+            given(findMemberByEmailPort.findMemberIdByEmail(EMAIL)).willReturn(Optional.of(granteeId));
             given(findFileSharePort.existsByFileIdAndSharedWithUserId(command.getFileId(), granteeId))
                     .willReturn(false);
             given(saveFileSharePort.saveFileShare(any(FileShare.class))).willAnswer(inv -> inv.getArgument(0));
 
-            FileShare result = shareFileService.shareFile(command);
+            Optional<FileShare> result = shareFileService.shareFile(command);
 
-            assertThat(result.getSharedWithUserId()).isEqualTo(granteeId);
-            assertThat(result.getRole()).isEqualTo(Role.VIEWER);
+            assertThat(result).isPresent();
+            assertThat(result.get().getSharedWithUserId()).isEqualTo(granteeId);
+            assertThat(result.get().getRole()).isEqualTo(Role.VIEWER);
             then(eventPublisher).should().publishEvent(
-                    new FileShareInvitedEvent(fileId, ownerId, granteeId, EMAIL, "report.pdf", Role.VIEWER));
+                    new FileShareInvitedEvent(fileId, ownerId, granteeId, EMAIL, "report.pdf", Role.VIEWER, null));
+            then(saveFilePort).shouldHaveNoInteractions();
         }
     }
 
@@ -97,20 +102,44 @@ class ShareFileServiceTest {
 
     @Nested
     @DisplayName("초대 대상 이메일의 회원이 없을 때")
-    class WhenShareTargetNotFound {
+    class WhenGranteeIsNotAMember {
 
         @Test
-        void propagatesShareTargetNotFound() {
+        void enablesLinkSharingAndPublishesGuestInviteInsteadOfAFileShareRow() {
             given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(file));
-            willThrow(new BusinessException(FileExceptionCase.SHARE_TARGET_NOT_FOUND))
-                    .given(findMemberByEmailPort).findMemberIdByEmail(EMAIL);
+            given(findMemberByEmailPort.findMemberIdByEmail(EMAIL)).willReturn(Optional.empty());
+            given(saveFilePort.saveFile(any(File.class))).willAnswer(inv -> inv.getArgument(0));
 
-            Throwable thrown = catchThrowable(() -> shareFileService.shareFile(command));
+            Optional<FileShare> result = shareFileService.shareFile(command);
 
-            assertThat(thrown).isInstanceOf(BusinessException.class)
-                    .extracting(e -> ((BusinessException) e).getExceptionCase())
-                    .isEqualTo(FileExceptionCase.SHARE_TARGET_NOT_FOUND);
+            assertThat(result).isEmpty();
+            assertThat(file.getAccessScope()).isEqualTo(ShareScope.LINK);
+            assertThat(file.getLinkRole()).isEqualTo(Role.VIEWER);
             then(saveFileSharePort).shouldHaveNoInteractions();
+            then(eventPublisher).should().publishEvent(
+                    new FileShareInvitedEvent(fileId, ownerId, null, EMAIL, "report.pdf", Role.VIEWER, file.getLinkToken()));
+        }
+    }
+
+    @Nested
+    @DisplayName("이미 링크 공유 중인 파일에 다른 역할로 게스트를 초대할 때")
+    class WhenFileIsAlreadyLinkShared {
+
+        @Test
+        void keepsTheExistingLinkRoleInsteadOfOverwritingItForEveryLinkHolder() {
+            file.enableLinkSharing(UUID.randomUUID(), Role.VIEWER);
+            UUID existingToken = file.getLinkToken();
+            ShareFileCommand editorInvite = new ShareFileCommand(fileId, ownerId, "guest2@modudrive.com", Role.EDITOR);
+            given(findFilePort.findById(editorInvite.getFileId())).willReturn(Optional.of(file));
+            given(findMemberByEmailPort.findMemberIdByEmail("guest2@modudrive.com")).willReturn(Optional.empty());
+            given(saveFilePort.saveFile(any(File.class))).willAnswer(inv -> inv.getArgument(0));
+
+            shareFileService.shareFile(editorInvite);
+
+            assertThat(file.getLinkRole()).isEqualTo(Role.VIEWER);
+            assertThat(file.getLinkToken()).isEqualTo(existingToken);
+            then(eventPublisher).should().publishEvent(new FileShareInvitedEvent(
+                    fileId, ownerId, null, "guest2@modudrive.com", "report.pdf", Role.VIEWER, existingToken));
         }
     }
 
@@ -121,7 +150,7 @@ class ShareFileServiceTest {
         @Test
         void throwsFileShareSelfNotAllowed() {
             given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(file));
-            given(findMemberByEmailPort.findMemberIdByEmail(EMAIL)).willReturn(ownerId);
+            given(findMemberByEmailPort.findMemberIdByEmail(EMAIL)).willReturn(Optional.of(ownerId));
 
             Throwable thrown = catchThrowable(() -> shareFileService.shareFile(command));
 
@@ -141,7 +170,7 @@ class ShareFileServiceTest {
         @Test
         void throwsFileShareAlreadyExists() {
             given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(file));
-            given(findMemberByEmailPort.findMemberIdByEmail(EMAIL)).willReturn(granteeId);
+            given(findMemberByEmailPort.findMemberIdByEmail(EMAIL)).willReturn(Optional.of(granteeId));
             given(findFileSharePort.existsByFileIdAndSharedWithUserId(command.getFileId(), granteeId))
                     .willReturn(true);
 
