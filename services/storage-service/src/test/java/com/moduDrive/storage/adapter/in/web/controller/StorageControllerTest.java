@@ -212,4 +212,95 @@ class StorageControllerTest {
                     .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, startsWith("attachment;")));
         }
     }
+
+    @Nested
+    @DisplayName("GET /api/v1/storage/view/{fileId}")
+    class ViewFile {
+
+        @Test
+        void returnsImageContentTypeAndInlineDisposition() throws Exception {
+            byte[] data = "image bytes".getBytes();
+            given(downloadFileUseCase.download(any())).willReturn(data);
+
+            mockMvc.perform(get("/api/v1/storage/view/" + UUID.randomUUID())
+                            .header("X_USER_ID", USER_ID)
+                            .param("fileName", "photo.png"))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string(HttpHeaders.CONTENT_TYPE, "image/png"))
+                    .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, startsWith("inline;")))
+                    .andExpect(result -> assertThat(result.getResponse().getContentAsByteArray())
+                            .isEqualTo(data));
+        }
+
+        @Test
+        void fallsBackToOctetStreamForAnUnknownExtension() throws Exception {
+            given(downloadFileUseCase.download(any())).willReturn("x".getBytes());
+
+            mockMvc.perform(get("/api/v1/storage/view/" + UUID.randomUUID())
+                            .header("X_USER_ID", USER_ID)
+                            .param("fileName", "archive.zip"))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string(HttpHeaders.CONTENT_TYPE, "application/octet-stream"));
+        }
+
+        @Test
+        void fallsBackToOctetStreamForSvgToPreventInlineScriptExecution() throws Exception {
+            given(downloadFileUseCase.download(any())).willReturn("<script>evil()</script>".getBytes());
+
+            mockMvc.perform(get("/api/v1/storage/view/" + UUID.randomUUID())
+                            .header("X_USER_ID", USER_ID)
+                            .param("fileName", "image.svg"))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string(HttpHeaders.CONTENT_TYPE, "application/octet-stream"));
+        }
+
+        @Test
+        void setsNosniffToBlockMimeSniffingOfTheFallbackType() throws Exception {
+            given(downloadFileUseCase.download(any())).willReturn("x".getBytes());
+
+            mockMvc.perform(get("/api/v1/storage/view/" + UUID.randomUUID())
+                            .header("X_USER_ID", USER_ID)
+                            .param("fileName", "photo.png"))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("X-Content-Type-Options", "nosniff"));
+        }
+
+        @Test
+        void encodesANonAsciiFileNameInTheDisposition() throws Exception {
+            given(downloadFileUseCase.download(any())).willReturn("x".getBytes());
+
+            mockMvc.perform(get("/api/v1/storage/view/" + UUID.randomUUID())
+                            .header("X_USER_ID", USER_ID)
+                            .param("fileName", "사진.jpg"))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION,
+                            "inline; filename=\"__.jpg\"; filename*=UTF-8''%EC%82%AC%EC%A7%84.jpg"));
+        }
+
+        @Test
+        void returnsBadRequestOnMissingFileName() throws Exception {
+            mockMvc.perform(get("/api/v1/storage/view/" + UUID.randomUUID())
+                            .header("X_USER_ID", USER_ID))
+                    .andExpect(status().isBadRequest());
+        }
+    }
+
+    @Nested
+    @DisplayName("GET /api/v1/storage/public/{token}/view")
+    class ViewPublicFile {
+
+        @Test
+        void returnsInlineContentWithoutRequiringAUserHeader() throws Exception {
+            byte[] data = "audio bytes".getBytes();
+            given(publicDownloadFileUseCase.downloadPublic(any())).willReturn(data);
+
+            mockMvc.perform(get("/api/v1/storage/public/" + UUID.randomUUID() + "/view")
+                            .param("fileName", "song.mp3"))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string(HttpHeaders.CONTENT_TYPE, "audio/mpeg"))
+                    .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, startsWith("inline;")))
+                    .andExpect(result -> assertThat(result.getResponse().getContentAsByteArray())
+                            .isEqualTo(data));
+        }
+    }
 }

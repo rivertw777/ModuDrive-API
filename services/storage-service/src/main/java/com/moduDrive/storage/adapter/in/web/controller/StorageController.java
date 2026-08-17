@@ -105,4 +105,35 @@ class StorageController {
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + token + "\"")
                 .body(data);
     }
+
+    /** Inline counterpart to {@link #downloadFile}: same permission check (reuses
+     * {@link DownloadFileUseCase} as-is), but a real Content-Type and {@code inline} disposition.
+     * {@code fileName} is caller-supplied display text, not trusted file identity — it only
+     * ever feeds a response header via {@link FileMimeTypes}, never a storage lookup. */
+    @GetMapping("/api/v1/storage/view/{fileId}")
+    public ResponseEntity<byte[]> viewFile(
+            @RequestHeader("X_USER_ID") UUID userId,
+            @PathVariable String fileId,
+            @RequestParam String fileName) {
+        byte[] data = downloadFileUseCase.download(new DownloadFileCommand(fileId, userId));
+        return inline(data, fileName);
+    }
+
+    /** Inline counterpart to {@link #publicDownloadFile}, same relationship as {@link #viewFile}
+     * is to {@link #downloadFile}. */
+    @GetMapping("/api/v1/storage/public/{token}/view")
+    public ResponseEntity<byte[]> viewPublicFile(
+            @PathVariable String token,
+            @RequestParam String fileName) {
+        byte[] data = publicDownloadFileUseCase.downloadPublic(new PublicDownloadFileCommand(token));
+        return inline(data, fileName);
+    }
+
+    private static ResponseEntity<byte[]> inline(byte[] data, String fileName) {
+        return ResponseEntity.ok()
+                .contentType(FileMimeTypes.contentType(fileName))
+                .header(HttpHeaders.CONTENT_DISPOSITION, FileMimeTypes.inlineDisposition(fileName))
+                .header("X-Content-Type-Options", "nosniff")
+                .body(data);
+    }
 }
