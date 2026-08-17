@@ -7,6 +7,7 @@ import com.moduDrive.file.application.port.in.usecase.GetFilesByCategoryUseCase;
 import com.moduDrive.file.application.port.out.FindFilePort;
 import com.moduDrive.file.application.port.out.FindNamespacePort;
 import com.moduDrive.file.domain.model.File;
+import com.moduDrive.file.domain.model.FileCategory;
 import com.moduDrive.file.domain.model.Namespace;
 import com.moduDrive.file.domain.model.Namespace.NamespaceId;
 import com.moduDrive.file.exception.FileExceptionCase;
@@ -30,7 +31,7 @@ class GetFilesByCategoryService implements GetFilesByCategoryUseCase {
 
         return findFilePort.findByNamespaceId(new NamespaceId(namespace.getId()))
                 .stream()
-                .filter(file -> command.getCategory().matches(file.getName()))
+                .filter(file -> FileCategory.of(file.getName()) == command.getCategory())
                 .toList();
     }
 }
