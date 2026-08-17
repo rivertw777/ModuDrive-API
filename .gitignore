@@ -41,3 +41,5 @@ out/
 
 .docker/.env
 !.docker/.env.example
+
+.docs

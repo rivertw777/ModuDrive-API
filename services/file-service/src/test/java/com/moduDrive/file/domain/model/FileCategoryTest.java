@@ -40,4 +40,20 @@ class FileCategoryTest {
             assertThat(FileCategory.IMAGE.matches("weird.")).isFalse();
         }
     }
+
+    @Nested
+    @DisplayName("of()로 카테고리를 판별할 때")
+    class WhenResolvingCategory {
+
+        @Test
+        void knownExtensionResolvesToMatchingCategory() {
+            assertThat(FileCategory.of("photo.png")).isEqualTo(FileCategory.IMAGE);
+        }
+
+        @Test
+        void unknownExtensionResolvesToOther() {
+            assertThat(FileCategory.of("archive.zip")).isEqualTo(FileCategory.OTHER);
+            assertThat(FileCategory.of("README")).isEqualTo(FileCategory.OTHER);
+        }
+    }
 }
