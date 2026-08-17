@@ -135,7 +135,7 @@ services:
       - MAIL_USERNAME=${MAIL_USERNAME}
       - MAIL_PASSWORD=${MAIL_PASSWORD}
       - MAIL_FROM=${MAIL_FROM}
-      - MODUDRIVE_MAIL_VERIFY_BASE_URL=${MODUDRIVE_MAIL_VERIFY_BASE_URL}
+      - CLIENT_URL=${CLIENT_URL}
     depends_on:
       eureka-server:
         condition: service_started

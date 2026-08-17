@@ -35,12 +35,12 @@ class MailEventListenerTest {
         @Test
         void delegatesToSendVerificationMailUseCase() {
             VerificationMailRequested event =
-                    new VerificationMailRequested("river@modudrive.com", "token");
+                    new VerificationMailRequested("river@modudrive.com", "042917");
 
             mailEventListener.onVerificationRequested(event);
 
             then(sendVerificationMailUseCase).should().sendVerificationMail(
-                    new SendVerificationMailCommand("river@modudrive.com", "token"));
+                    new SendVerificationMailCommand("river@modudrive.com", "042917"));
         }
     }
 
@@ -50,13 +50,14 @@ class MailEventListenerTest {
 
         @Test
         void delegatesToSendShareInviteMailUseCase() {
-            ShareInviteMailRequested event =
-                    new ShareInviteMailRequested(UUID.randomUUID(), "grantee@modudrive.com", "report.pdf", "VIEWER");
+            UUID linkToken = UUID.randomUUID();
+            ShareInviteMailRequested event = new ShareInviteMailRequested(
+                    UUID.randomUUID(), "grantee@modudrive.com", "report.pdf", "VIEWER", linkToken);
 
             mailEventListener.onShareInviteRequested(event);
 
             then(sendShareInviteMailUseCase).should().sendShareInviteMail(
-                    new SendShareInviteMailCommand("grantee@modudrive.com", "report.pdf", "VIEWER"));
+                    new SendShareInviteMailCommand("grantee@modudrive.com", "report.pdf", "VIEWER", linkToken));
         }
     }
 }

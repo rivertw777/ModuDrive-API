@@ -36,11 +36,25 @@ class KafkaMailEventPublisherTest {
             given(kafkaTemplate.send(any(String.class), any(String.class), any()))
                     .willReturn(CompletableFuture.completedFuture(null));
 
-            kafkaMailEventPublisher.publishShareInviteRequested(fileId, "grantee@modudrive.com", "report.pdf", "VIEWER");
+            kafkaMailEventPublisher.publishShareInviteRequested(fileId, "grantee@modudrive.com", "report.pdf", "VIEWER", null);
 
             then(kafkaTemplate).should().send(
                     MailTopics.SHARE_INVITE_REQUESTED, fileId.toString(),
-                    new ShareInviteMailRequested(fileId, "grantee@modudrive.com", "report.pdf", "VIEWER"));
+                    new ShareInviteMailRequested(fileId, "grantee@modudrive.com", "report.pdf", "VIEWER", null));
+        }
+
+        @Test
+        void includesTheLinkTokenForAGuestInvite() {
+            UUID fileId = UUID.randomUUID();
+            UUID linkToken = UUID.randomUUID();
+            given(kafkaTemplate.send(any(String.class), any(String.class), any()))
+                    .willReturn(CompletableFuture.completedFuture(null));
+
+            kafkaMailEventPublisher.publishShareInviteRequested(fileId, "grantee@modudrive.com", "report.pdf", "VIEWER", linkToken);
+
+            then(kafkaTemplate).should().send(
+                    MailTopics.SHARE_INVITE_REQUESTED, fileId.toString(),
+                    new ShareInviteMailRequested(fileId, "grantee@modudrive.com", "report.pdf", "VIEWER", linkToken));
         }
     }
 }

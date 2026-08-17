@@ -10,11 +10,13 @@ import com.moduDrive.member.application.port.out.PublishMailEventPort;
 import com.moduDrive.member.exception.MemberExceptionCase;
 import lombok.RequiredArgsConstructor;
 
-import java.util.UUID;
+import java.security.SecureRandom;
 
 @UseCase
 @RequiredArgsConstructor
 class RequestEmailVerificationService implements RequestEmailVerificationUseCase {
+
+    private final SecureRandom secureRandom = new SecureRandom();
 
     private final CheckEmailExistsPort checkEmailExistsPort;
     private final EmailVerificationTokenPort emailVerificationTokenPort;
@@ -27,8 +29,8 @@ class RequestEmailVerificationService implements RequestEmailVerificationUseCase
             throw new BusinessException(MemberExceptionCase.DUPLICATE_EMAIL);
         }
 
-        String token = UUID.randomUUID().toString();
-        emailVerificationTokenPort.saveToken(token, email);
-        publishMailEventPort.publishVerificationRequested(email, token);
+        String code = String.format("%06d", secureRandom.nextInt(1_000_000));
+        emailVerificationTokenPort.saveCode(email, code);
+        publishMailEventPort.publishVerificationRequested(email, code);
     }
 }

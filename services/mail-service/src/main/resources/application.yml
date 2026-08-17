@@ -25,4 +25,6 @@ spring:
 modudrive:
   mail:
     from: ${MAIL_FROM}
-    verify-base-url: ${MODUDRIVE_MAIL_VERIFY_BASE_URL:http://localhost:10001}
+
+client:
+  url: ${CLIENT_URL}

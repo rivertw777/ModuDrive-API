@@ -16,6 +16,6 @@ class FileShareInvitedEventListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     void onFileShareInvited(FileShareInvitedEvent event) {
         publishMailEventPort.publishShareInviteRequested(
-                event.fileId(), event.granteeEmail(), event.fileName(), event.role().name());
+                event.fileId(), event.granteeEmail(), event.fileName(), event.role().name(), event.linkToken());
     }
 }

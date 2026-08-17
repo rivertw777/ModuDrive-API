@@ -1,4 +1,4 @@
-package com.moduDrive.gateway.adapter.out.auth;
+package com.moduDrive.gateway.adapter.out.client.auth;
 
 import com.moduDrive.common.api.dto.auth.ValidateTokenRequest;
 import com.moduDrive.common.api.dto.auth.ValidateTokenResponse;

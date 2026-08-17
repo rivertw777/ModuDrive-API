@@ -26,4 +26,10 @@ interface FileServiceFeignClient {
     ApiResponse<List<FileVersionDto>> getFileRevisions(@PathVariable String fileId,
                                                        @RequestParam String userId,
                                                        @RequestParam(defaultValue = "1") int limit);
+
+    // Anonymous link-share download: no userId, because there is no authenticated caller — the
+    // link token is the whole credential and file-service validates it (see PublicFileResolver).
+    @GetMapping("/internal/files/public/{token}/revisions")
+    ApiResponse<List<FileVersionDto>> getPublicFileRevisions(@PathVariable String token,
+                                                             @RequestParam(defaultValue = "1") int limit);
 }

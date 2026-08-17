@@ -7,4 +7,10 @@ public interface GetFileVersionPort {
     String getS3Path(UUID fileId, UUID userId);
 
     int getBlockCount(UUID fileId, UUID userId);
+
+    /** Link-token lookups for anonymous visitors: the token identifies the file and authorizes
+     * the read at once, so there is no caller id to pass along. */
+    String getPublicS3Path(String token);
+
+    int getPublicBlockCount(String token);
 }

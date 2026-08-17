@@ -34,11 +34,11 @@ class KafkaMailEventPublisherTest {
             given(kafkaTemplate.send(any(String.class), any(String.class), any()))
                     .willReturn(CompletableFuture.completedFuture(null));
 
-            kafkaMailEventPublisher.publishVerificationRequested("river@modudrive.com", "token");
+            kafkaMailEventPublisher.publishVerificationRequested("river@modudrive.com", "042917");
 
             then(kafkaTemplate).should().send(
                     MailTopics.VERIFICATION_REQUESTED, "river@modudrive.com",
-                    new VerificationMailRequested("river@modudrive.com", "token"));
+                    new VerificationMailRequested("river@modudrive.com", "042917"));
         }
     }
 }

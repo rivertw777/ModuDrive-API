@@ -17,6 +17,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -47,9 +48,9 @@ class MemberClientAdapterTest {
             given(memberClient.findMemberByEmail(EMAIL))
                     .willReturn(ApiResponse.success(new MemberResponse(memberId.toString(), "river", EMAIL)));
 
-            UUID result = memberClientAdapter.findMemberIdByEmail(EMAIL);
+            Optional<UUID> result = memberClientAdapter.findMemberIdByEmail(EMAIL);
 
-            assertThat(result).isEqualTo(memberId);
+            assertThat(result).contains(memberId);
         }
     }
 
@@ -58,15 +59,13 @@ class MemberClientAdapterTest {
     class WhenMemberServiceRejectsWithClientError {
 
         @Test
-        void translatesToShareTargetNotFound() {
+        void resolvesToEmpty() {
             willThrow(new FeignException.BadRequest("member not found", request(), null, Map.of()))
                     .given(memberClient).findMemberByEmail(EMAIL);
 
-            Throwable thrown = catchThrowable(() -> memberClientAdapter.findMemberIdByEmail(EMAIL));
+            Optional<UUID> result = memberClientAdapter.findMemberIdByEmail(EMAIL);
 
-            assertThat(thrown).isInstanceOf(BusinessException.class)
-                    .extracting(e -> ((BusinessException) e).getExceptionCase())
-                    .isEqualTo(FileExceptionCase.SHARE_TARGET_NOT_FOUND);
+            assertThat(result).isEmpty();
         }
     }
 
