@@ -177,7 +177,8 @@ class FilePersistenceAdapter implements
         if (fileShare.getId() == null) {
             FileShareJpaEntity entity = new FileShareJpaEntity(
                     fileShare.getFileId(), fileShare.getOwnerId(),
-                    fileShare.getSharedWithUserId(), rolePermissionPersistenceAdapter.findRoleId(fileShare.getRole())
+                    fileShare.getSharedWithUserId(), rolePermissionPersistenceAdapter.findRoleId(fileShare.getRole()),
+                    fileShare.getToken(), fileShare.getGranteeEmail()
             );
             try {
                 return fileMapper.mapFileShareToDomain(fileShareRepository.save(entity));
@@ -210,6 +211,17 @@ class FilePersistenceAdapter implements
     @Override
     public Optional<FileShare> findByFileIdAndSharedWithUserId(FileId fileId, UUID sharedWithUserId) {
         return fileShareRepository.findByFileIdAndSharedWithUserId(fileId.value(), sharedWithUserId)
+                .map(fileMapper::mapFileShareToDomain);
+    }
+
+    @Override
+    public boolean existsByFileIdAndGranteeEmail(FileId fileId, String granteeEmail) {
+        return fileShareRepository.existsByFileIdAndGranteeEmail(fileId.value(), granteeEmail);
+    }
+
+    @Override
+    public Optional<FileShare> findByToken(UUID token) {
+        return fileShareRepository.findByToken(token)
                 .map(fileMapper::mapFileShareToDomain);
     }
 

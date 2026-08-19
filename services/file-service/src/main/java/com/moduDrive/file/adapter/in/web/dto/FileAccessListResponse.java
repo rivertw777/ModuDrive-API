@@ -21,6 +21,11 @@ public record FileAccessListResponse(
                 view.file().getLinkToken(),
                 view.shares().stream()
                         .map(share -> {
+                            // A pending guest share has no member to look up — its own granteeEmail
+                            // is the display email, and it has no member display name.
+                            if (share.getSharedWithUserId() == null) {
+                                return FileShareResponse.from(share, share.getGranteeEmail(), null);
+                            }
                             var summary = view.memberSummaries().get(share.getSharedWithUserId());
                             return FileShareResponse.from(share, summary.email(), summary.name());
                         })
