@@ -1,8 +1,11 @@
 package com.moduDrive.storage.application.service;
 
+import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.storage.application.port.in.command.DownloadFileCommand;
 import com.moduDrive.storage.application.port.out.GetFileVersionPort;
 import com.moduDrive.storage.application.port.out.RetrieveBlocksPort;
+import com.moduDrive.storage.config.StorageProperties;
+import com.moduDrive.storage.exception.StorageExceptionCase;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -15,15 +18,18 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
 
 @ExtendWith(MockitoExtension.class)
 class DownloadFileServiceTest {
 
     @Mock private GetFileVersionPort getFileVersionPort;
     @Mock private RetrieveBlocksPort retrieveBlocksPort;
+    @Mock private StorageProperties storageProperties;
     @InjectMocks private DownloadFileService downloadFileService;
 
     private final String fileId = UUID.randomUUID().toString();
@@ -55,6 +61,26 @@ class DownloadFileServiceTest {
             byte[] result = downloadFileService.download(new DownloadFileCommand(fileId, userId));
 
             assertThat(result).isEqualTo("data".getBytes());
+        }
+    }
+
+    @Nested
+    @DisplayName("인라인 미리보기 요청의 파일이 용량 제한을 넘을 때")
+    class WhenInlinePreviewExceedsTheSizeCap {
+
+        @Test
+        void rejectsBeforeFetchingAnyBlocks() {
+            given(getFileVersionPort.getS3Path(UUID.fromString(fileId), userId)).willReturn("files/abc/xyz");
+            given(getFileVersionPort.getBlockCount(UUID.fromString(fileId), userId)).willReturn(30);
+            given(storageProperties.getBlockSize()).willReturn(4 * 1024 * 1024);
+
+            Throwable thrown = catchThrowable(() ->
+                    downloadFileService.download(new DownloadFileCommand(fileId, userId, true)));
+
+            assertThat(thrown).isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(StorageExceptionCase.PREVIEW_TOO_LARGE);
+            then(retrieveBlocksPort).shouldHaveNoInteractions();
         }
     }
 }

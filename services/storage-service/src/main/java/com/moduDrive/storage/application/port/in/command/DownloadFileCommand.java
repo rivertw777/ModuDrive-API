@@ -17,9 +17,19 @@ public class DownloadFileCommand extends SelfValidating<DownloadFileCommand> {
     @NotNull
     private final UUID userId;
 
+    /** True only for the inline-preview callers ({@code viewFile}) — subjects the download to
+     * {@link com.moduDrive.storage.application.service.BlockAssembler}'s size cap. Regular
+     * download has no such cap. */
+    private final boolean inlinePreview;
+
     public DownloadFileCommand(String fileId, UUID userId) {
+        this(fileId, userId, false);
+    }
+
+    public DownloadFileCommand(String fileId, UUID userId, boolean inlinePreview) {
         this.fileId = UUID.fromString(fileId);
         this.userId = userId;
+        this.inlinePreview = inlinePreview;
         this.validateSelf();
     }
 }

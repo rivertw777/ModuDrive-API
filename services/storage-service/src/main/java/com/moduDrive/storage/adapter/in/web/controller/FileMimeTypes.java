@@ -8,14 +8,13 @@ import java.util.Map;
 
 /**
  * Extension &rarr; MIME type for the inline preview endpoints. Mirrors file-service's
- * {@code FileCategory.java} IMAGE/AUDIO sets plus DOCUMENT's txt. Anything else — including
- * {@code svg} (active content: executes {@code <script>} when rendered as a top-level document,
- * unlike an {@code <img>}-embedded one) and video (no Range/206 support here yet, so it can't
- * seek and would buffer whole files into heap on an unauthenticated public endpoint) — falls
- * back to octet-stream, which a browser treats as an opaque download even with an
- * {@code inline} disposition.
- * ponytail: video preview needs Range/206 streaming support to be safe; add mp4/webm back once
- * StorageController streams via ResourceRegion instead of buffering byte[].
+ * {@code FileCategory.java} IMAGE/AUDIO/VIDEO sets plus DOCUMENT's txt. This map only decides
+ * whether the browser recognizes the response as playable media at all — the heap/size concern
+ * that used to keep video out of it is handled server-side by
+ * {@link com.moduDrive.storage.application.service.BlockAssembler#requireWithinInlinePreviewLimit},
+ * not by this map. {@code svg} is the deliberate exception: it stays octet-stream because
+ * it's active content (executes {@code <script>} when rendered as a top-level document, unlike
+ * an {@code <img>}-embedded one), so no safe inline preview exists for it regardless of size.
  */
 final class FileMimeTypes {
 
@@ -31,6 +30,11 @@ final class FileMimeTypes {
             Map.entry("flac", MediaType.valueOf("audio/flac")),
             Map.entry("aac", MediaType.valueOf("audio/aac")),
             Map.entry("m4a", MediaType.valueOf("audio/mp4")),
+            Map.entry("mp4", MediaType.valueOf("video/mp4")),
+            Map.entry("webm", MediaType.valueOf("video/webm")),
+            Map.entry("mov", MediaType.valueOf("video/quicktime")),
+            Map.entry("avi", MediaType.valueOf("video/x-msvideo")),
+            Map.entry("mkv", MediaType.valueOf("video/x-matroska")),
             Map.entry("txt", MediaType.valueOf("text/plain;charset=UTF-8"))
     );
 

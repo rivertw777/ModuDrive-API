@@ -5,6 +5,7 @@ import com.moduDrive.storage.application.port.in.command.PublicDownloadFileComma
 import com.moduDrive.storage.application.port.in.usecase.PublicDownloadFileUseCase;
 import com.moduDrive.storage.application.port.out.GetFileVersionPort;
 import com.moduDrive.storage.application.port.out.RetrieveBlocksPort;
+import com.moduDrive.storage.config.StorageProperties;
 import lombok.RequiredArgsConstructor;
 
 import java.util.List;
@@ -18,11 +19,15 @@ class PublicDownloadFileService implements PublicDownloadFileUseCase {
 
     private final GetFileVersionPort getFileVersionPort;
     private final RetrieveBlocksPort retrieveBlocksPort;
+    private final StorageProperties storageProperties;
 
     @Override
     public byte[] downloadPublic(PublicDownloadFileCommand command) {
         String s3Path = getFileVersionPort.getPublicS3Path(command.getToken());
         int blockCount = getFileVersionPort.getPublicBlockCount(command.getToken());
+        if (command.isInlinePreview()) {
+            BlockAssembler.requireWithinInlinePreviewLimit(blockCount, storageProperties.getBlockSize());
+        }
         List<byte[]> blocks = retrieveBlocksPort.retrieveBlocks(s3Path, blockCount);
         return BlockAssembler.assemble(blocks);
     }
