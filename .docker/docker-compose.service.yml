@@ -111,6 +111,9 @@ services:
       - STORAGE_S3_SECRET_KEY=${MINIO_ROOT_PASSWORD}
       - STORAGE_S3_REGION=${STORAGE_S3_REGION}
       - STORAGE_BLOCK_SIZE=${STORAGE_BLOCK_SIZE}
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
     depends_on:
       eureka-server:
         condition: service_started

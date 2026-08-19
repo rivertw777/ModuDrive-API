@@ -14,8 +14,17 @@ public class PublicDownloadFileCommand extends SelfValidating<PublicDownloadFile
     @NotBlank
     private final String token;
 
+    /** True only for the inline-preview caller ({@code viewPublicFile}) — see
+     * {@link DownloadFileCommand#isInlinePreview()}. */
+    private final boolean inlinePreview;
+
     public PublicDownloadFileCommand(String token) {
+        this(token, false);
+    }
+
+    public PublicDownloadFileCommand(String token, boolean inlinePreview) {
         this.token = token;
+        this.inlinePreview = inlinePreview;
         this.validateSelf();
     }
 }

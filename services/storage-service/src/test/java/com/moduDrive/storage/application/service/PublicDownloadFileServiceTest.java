@@ -4,6 +4,7 @@ import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.storage.application.port.in.command.PublicDownloadFileCommand;
 import com.moduDrive.storage.application.port.out.GetFileVersionPort;
 import com.moduDrive.storage.application.port.out.RetrieveBlocksPort;
+import com.moduDrive.storage.config.StorageProperties;
 import com.moduDrive.storage.exception.StorageExceptionCase;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -29,6 +30,7 @@ class PublicDownloadFileServiceTest {
 
     @Mock private GetFileVersionPort getFileVersionPort;
     @Mock private RetrieveBlocksPort retrieveBlocksPort;
+    @Mock private StorageProperties storageProperties;
     @InjectMocks private PublicDownloadFileService publicDownloadFileService;
 
     private final String token = UUID.randomUUID().toString();
@@ -65,6 +67,26 @@ class PublicDownloadFileServiceTest {
             assertThat(thrown).isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
                     .isEqualTo(StorageExceptionCase.FILE_NOT_FOUND_IN_STORAGE);
+            then(retrieveBlocksPort).shouldHaveNoInteractions();
+        }
+    }
+
+    @Nested
+    @DisplayName("인라인 미리보기 요청의 파일이 용량 제한을 넘을 때")
+    class WhenInlinePreviewExceedsTheSizeCap {
+
+        @Test
+        void rejectsBeforeFetchingAnyBlocks() {
+            given(getFileVersionPort.getPublicS3Path(token)).willReturn("files/abc/xyz");
+            given(getFileVersionPort.getPublicBlockCount(token)).willReturn(30);
+            given(storageProperties.getBlockSize()).willReturn(4 * 1024 * 1024);
+
+            Throwable thrown = catchThrowable(() ->
+                    publicDownloadFileService.downloadPublic(new PublicDownloadFileCommand(token, true)));
+
+            assertThat(thrown).isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(StorageExceptionCase.PREVIEW_TOO_LARGE);
             then(retrieveBlocksPort).shouldHaveNoInteractions();
         }
     }

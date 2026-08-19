@@ -3,6 +3,7 @@ spring:
     name: storage-service
   config:
     import:
+      - "classpath:application-redis.yml"
       - "classpath:application-resilience4j.yml"
   servlet:
     multipart:
