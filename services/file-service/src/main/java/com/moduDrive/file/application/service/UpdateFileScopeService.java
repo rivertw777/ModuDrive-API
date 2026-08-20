@@ -4,9 +4,13 @@ import com.moduDrive.common.core.annotation.UseCase;
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.file.application.port.in.command.UpdateFileScopeCommand;
 import com.moduDrive.file.application.port.in.usecase.UpdateFileScopeUseCase;
+import com.moduDrive.file.application.port.out.DeleteFileSharePort;
 import com.moduDrive.file.application.port.out.FindFilePort;
+import com.moduDrive.file.application.port.out.FindFileSharePort;
 import com.moduDrive.file.application.port.out.SaveFilePort;
 import com.moduDrive.file.domain.model.File;
+import com.moduDrive.file.domain.model.FileShare;
+import com.moduDrive.file.domain.model.FileShare.FileShareId;
 import com.moduDrive.file.domain.model.ShareScope;
 import com.moduDrive.file.exception.FileExceptionCase;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +24,8 @@ class UpdateFileScopeService implements UpdateFileScopeUseCase {
 
     private final FindFilePort findFilePort;
     private final SaveFilePort saveFilePort;
+    private final FindFileSharePort findFileSharePort;
+    private final DeleteFileSharePort deleteFileSharePort;
     private final FileAccessGuard fileAccessGuard;
 
     @Transactional
@@ -39,8 +45,19 @@ class UpdateFileScopeService implements UpdateFileScopeUseCase {
             file.enableLinkSharing(UUID.randomUUID(), command.getRole());
         } else {
             file.disableLinkSharing();
+            // Turning sharing off must kill every outstanding capability, not just the file's own
+            // link token — otherwise a guest invite mailed earlier keeps working forever.
+            revokePendingGuestShares(command.getFileId());
         }
 
         return saveFilePort.saveFile(file);
+    }
+
+    private void revokePendingGuestShares(File.FileId fileId) {
+        for (FileShare share : findFileSharePort.findByFileId(fileId)) {
+            if (share.getToken() != null) {
+                deleteFileSharePort.deleteFileShare(new FileShareId(share.getId()));
+            }
+        }
     }
 }
