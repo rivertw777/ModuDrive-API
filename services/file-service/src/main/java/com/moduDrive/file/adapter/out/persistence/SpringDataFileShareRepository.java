@@ -19,4 +19,6 @@ interface SpringDataFileShareRepository extends JpaRepository<FileShareJpaEntity
     List<FileShareJpaEntity> findByFileId(UUID fileId);
 
     List<FileShareJpaEntity> findBySharedWithUserId(UUID sharedWithUserId);
+
+    List<FileShareJpaEntity> findByGranteeEmailAndSharedWithUserIdIsNull(String granteeEmail);
 }

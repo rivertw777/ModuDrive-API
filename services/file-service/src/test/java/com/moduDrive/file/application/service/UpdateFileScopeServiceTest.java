@@ -129,20 +129,27 @@ class UpdateFileScopeServiceTest {
         }
 
         @Test
-        void revokesPendingGuestSharesButKeepsMemberShares() {
+        void revokesPendingGuestSharesButKeepsMemberAndClaimedShares() {
             File linked = makeFile();
             linked.enableLinkSharing(UUID.randomUUID(), Role.VIEWER);
             UUID pendingShareId = UUID.randomUUID();
             UUID memberShareId = UUID.randomUUID();
+            UUID claimedShareId = UUID.randomUUID();
             FileShare pendingGuestShare = FileShare.withId(new FileShareId(pendingShareId),
                     new FileShareFileId(fileId), new FileShareOwnerId(ownerId), null,
                     new FileShareRole(Role.VIEWER), UUID.randomUUID(), "guest@example.com");
             FileShare memberShare = FileShare.withId(new FileShareId(memberShareId),
                     new FileShareFileId(fileId), new FileShareOwnerId(ownerId),
                     new FileShareSharedWithUserId(UUID.randomUUID()), new FileShareRole(Role.VIEWER));
+            // A guest share that has since been claimed (see FileShare#claim): token cleared,
+            // sharedWithUserId filled — must be treated exactly like memberShare, not deleted.
+            FileShare claimedShare = FileShare.withId(new FileShareId(claimedShareId),
+                    new FileShareFileId(fileId), new FileShareOwnerId(ownerId),
+                    new FileShareSharedWithUserId(UUID.randomUUID()), new FileShareRole(Role.VIEWER),
+                    null, null);
             given(findFilePort.findById(new FileId(fileId))).willReturn(Optional.of(linked));
             given(findFileSharePort.findByFileId(new FileId(fileId)))
-                    .willReturn(List.of(pendingGuestShare, memberShare));
+                    .willReturn(List.of(pendingGuestShare, memberShare, claimedShare));
             given(saveFilePort.saveFile(any(File.class))).willAnswer(inv -> inv.getArgument(0));
 
             updateFileScopeService.updateFileScope(command(ShareScope.RESTRICTED));

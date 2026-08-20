@@ -194,6 +194,15 @@ class FilePersistenceAdapter implements
         FileShareJpaEntity entity = fileShareRepository.findById(fileShare.getId())
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_SHARE_NOT_FOUND));
         entity.applyGrantedRoleId(rolePermissionPersistenceAdapter.findRoleId(fileShare.getRole()));
+        // Only a pending→claimed transition (entity still null, incoming now set) should touch
+        // sharedWithUserId here — an ordinary role update on an already-granted share must not
+        // re-run applyClaim's side effect of clearing token/granteeEmail (a no-op for those rows,
+        // but the guard keeps this branch doing only what its caller — ClaimPendingFileSharesService
+        // — asks of it). ClaimPendingFileSharesService pre-checks for a colliding grant before
+        // calling this, so no DataIntegrityViolationException is expected here.
+        if (entity.getSharedWithUserId() == null && fileShare.getSharedWithUserId() != null) {
+            entity.applyClaim(fileShare.getSharedWithUserId());
+        }
 
         return fileMapper.mapFileShareToDomain(fileShareRepository.save(entity));
     }
@@ -242,6 +251,14 @@ class FilePersistenceAdapter implements
     @Override
     public List<FileShare> findBySharedWithUserId(UUID sharedWithUserId) {
         return fileShareRepository.findBySharedWithUserId(sharedWithUserId)
+                .stream()
+                .map(fileMapper::mapFileShareToDomain)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<FileShare> findPendingByGranteeEmail(String granteeEmail) {
+        return fileShareRepository.findByGranteeEmailAndSharedWithUserIdIsNull(granteeEmail)
                 .stream()
                 .map(fileMapper::mapFileShareToDomain)
                 .collect(Collectors.toList());

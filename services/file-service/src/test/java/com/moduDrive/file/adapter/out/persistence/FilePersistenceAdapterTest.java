@@ -185,6 +185,36 @@ class FilePersistenceAdapterTest {
         }
 
         @Test
+        @DisplayName("대기 중인 게스트 공유를 클레임하면 회원 공유로 저장되고 더 이상 대기 목록에 없다")
+        void claimsAPendingGuestShareAndPersistsIt() {
+            UUID fileIdValue = UUID.randomUUID();
+            UUID memberId = UUID.randomUUID();
+            FileShare created = filePersistenceAdapter.saveFileShare(FileShare.createPending(
+                    new FileShareFileId(fileIdValue), new FileShareOwnerId(UUID.randomUUID()),
+                    new FileShareGranteeEmail("guest@example.com"), new FileShareRole(Role.VIEWER)));
+
+            created.claim(memberId);
+            filePersistenceAdapter.saveFileShare(created);
+
+            assertThat(filePersistenceAdapter.findPendingByGranteeEmail("guest@example.com")).isEmpty();
+            assertThat(filePersistenceAdapter.findByFileIdAndSharedWithUserId(new FileId(fileIdValue), memberId))
+                    .get().extracting(FileShare::getRole).isEqualTo(Role.VIEWER);
+        }
+
+        @Test
+        @DisplayName("다른 파일의 대기 공유는 클레임 대상에서 제외된다")
+        void findsPendingSharesOnlyForTheGivenEmail() {
+            filePersistenceAdapter.saveFileShare(FileShare.createPending(
+                    new FileShareFileId(UUID.randomUUID()), new FileShareOwnerId(UUID.randomUUID()),
+                    new FileShareGranteeEmail("guest@example.com"), new FileShareRole(Role.VIEWER)));
+            filePersistenceAdapter.saveFileShare(FileShare.createPending(
+                    new FileShareFileId(UUID.randomUUID()), new FileShareOwnerId(UUID.randomUUID()),
+                    new FileShareGranteeEmail("someone-else@example.com"), new FileShareRole(Role.VIEWER)));
+
+            assertThat(filePersistenceAdapter.findPendingByGranteeEmail("guest@example.com")).hasSize(1);
+        }
+
+        @Test
         @DisplayName("공유를 해제하면 행이 사라진다")
         void deletesShare() {
             UUID fileIdValue = UUID.randomUUID();

@@ -76,4 +76,13 @@ class FileShareJpaEntity {
     void applyGrantedRoleId(UUID grantedRoleId) {
         this.grantedRoleId = grantedRoleId;
     }
+
+    /** Mirrors {@link com.moduDrive.file.domain.model.FileShare#claim}: fills {@code sharedWithUserId}
+     * and clears the now-obsolete guest columns, so {@code token != null} keeps meaning "still a
+     * pending guest share" everywhere it's checked (e.g. the scope-change revocation sweep). */
+    void applyClaim(UUID sharedWithUserId) {
+        this.sharedWithUserId = sharedWithUserId;
+        this.token = null;
+        this.granteeEmail = null;
+    }
 }
