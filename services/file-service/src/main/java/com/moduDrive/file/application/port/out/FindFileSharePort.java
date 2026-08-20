@@ -25,4 +25,8 @@ public interface FindFileSharePort {
     List<FileShare> findByFileId(FileId fileId);
 
     List<FileShare> findBySharedWithUserId(UUID sharedWithUserId);
+
+    /** Pending guest shares (see {@link FileShare#createPending}) invited to this email, waiting
+     * to be claimed by {@link FileShare#claim} once that email signs up. */
+    List<FileShare> findPendingByGranteeEmail(String granteeEmail);
 }

@@ -8,6 +8,7 @@ import com.moduDrive.member.application.port.out.CheckEmailExistsPort;
 import com.moduDrive.member.application.port.out.CreateNamespacePort;
 import com.moduDrive.member.application.port.out.EmailVerificationTokenPort;
 import com.moduDrive.member.application.port.out.EncodePasswordPort;
+import com.moduDrive.member.application.port.out.PublishMemberEventPort;
 import com.moduDrive.member.application.port.out.SignUpMemberPort;
 import com.moduDrive.member.exception.MemberExceptionCase;
 import com.moduDrive.member.domain.model.Member;
@@ -30,6 +31,7 @@ class SignUpMemberService implements SignUpMemberUseCase {
     private final CheckEmailExistsPort checkEmailExistsPort;
     private final CreateNamespacePort createNamespacePort;
     private final EmailVerificationTokenPort emailVerificationTokenPort;
+    private final PublishMemberEventPort publishMemberEventPort;
 
     @Transactional
     @Override
@@ -48,6 +50,8 @@ class SignUpMemberService implements SignUpMemberUseCase {
         );
         Member savedMember = signUpMemberPort.createMember(member);
         createNamespacePort.createNamespace(savedMember.getId());
+        // Lets file-service auto-claim any pending guest share invited to this email before signup.
+        publishMemberEventPort.publishSignedUp(savedMember.getId(), savedMember.getEmail());
     }
 
     private void validateEmailNotDuplicated(MemberEmail memberEmail) {

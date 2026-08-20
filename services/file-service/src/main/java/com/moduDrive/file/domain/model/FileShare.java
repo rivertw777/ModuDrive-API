@@ -14,16 +14,18 @@ public class FileShare {
     private final UUID fileId;
     private final UUID ownerId;
     /** Null for a pending guest share (see {@link #createPending}) — there is no member to point
-     * at yet, only an invited email. */
-    private final UUID sharedWithUserId;
+     * at yet, only an invited email. Filled in later by {@link #claim} once that email signs up. */
+    private UUID sharedWithUserId;
     private Role role;
     /** Non-null only for a pending guest share: the one-time capability token that stands in for
      * membership, minted per invite so each guest can be revoked without touching any other
-     * share or the file's own {@code linkToken}. Null for a real member grant. */
-    private final UUID token;
+     * share or the file's own {@code linkToken}. Null for a real member grant, including a
+     * claimed one — see {@link #claim}. */
+    private UUID token;
     /** Non-null only for a pending guest share — the invited address, kept so the owner's share
-     * list can display it without a member-service lookup. Null for a real member grant. */
-    private final String granteeEmail;
+     * list can display it without a member-service lookup. Null for a real member grant, including
+     * a claimed one — see {@link #claim}. */
+    private String granteeEmail;
 
     public static FileShare create(FileShareFileId fileId,
                                    FileShareOwnerId ownerId,
@@ -68,6 +70,17 @@ public class FileShare {
 
     public void changeRole(FileShareRole role) {
         this.role = role.value();
+    }
+
+    /** Links a pending guest share to the member who just signed up with its {@code granteeEmail}.
+     * Clears {@code token}/{@code granteeEmail} so the row becomes indistinguishable from a normal
+     * member grant: {@code UpdateFileScopeService.revokePendingGuestShares} deletes any share whose
+     * {@code token} is still non-null when sharing is turned off, and a claimed share must survive
+     * that the same way a directly-invited member share does. */
+    public void claim(UUID memberId) {
+        this.sharedWithUserId = memberId;
+        this.token = null;
+        this.granteeEmail = null;
     }
 
     public record FileShareId(UUID value) {}
