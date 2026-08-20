@@ -45,8 +45,12 @@ class ListFileSharesService implements ListFileSharesUseCase {
         // Enrichment is member-service display data, not the file/share data itself — a lookup
         // failure (member deleted, member-service briefly down) must degrade that one row to
         // "unknown", never take down the whole share list an owner needs to see to revoke access.
+        // A pending guest share has no sharedWithUserId to look up at all (Collectors.toMap
+        // rejects a null key outright) — it already carries its own granteeEmail, so it's excluded
+        // here and read directly from the share row instead (see FileAccessListResponse).
         var memberSummaries = shares.stream()
                 .map(FileShare::getSharedWithUserId)
+                .filter(java.util.Objects::nonNull)
                 .distinct()
                 .collect(Collectors.toMap(Function.identity(), this::lookupMemberSummary));
 

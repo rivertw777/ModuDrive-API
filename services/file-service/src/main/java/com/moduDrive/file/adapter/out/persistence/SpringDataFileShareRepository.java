@@ -10,7 +10,11 @@ interface SpringDataFileShareRepository extends JpaRepository<FileShareJpaEntity
 
     boolean existsByFileIdAndSharedWithUserId(UUID fileId, UUID sharedWithUserId);
 
+    boolean existsByFileIdAndGranteeEmail(UUID fileId, String granteeEmail);
+
     Optional<FileShareJpaEntity> findByFileIdAndSharedWithUserId(UUID fileId, UUID sharedWithUserId);
+
+    Optional<FileShareJpaEntity> findByToken(UUID token);
 
     List<FileShareJpaEntity> findByFileId(UUID fileId);
 

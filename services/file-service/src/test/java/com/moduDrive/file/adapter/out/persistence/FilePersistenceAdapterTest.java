@@ -168,6 +168,23 @@ class FilePersistenceAdapterTest {
         }
 
         @Test
+        @DisplayName("비회원 이메일 초대는 자기 토큰을 가진 RESTRICTED 공유로 저장되고 토큰으로 조회된다")
+        void savesAndFindsAPendingGuestShareByItsOwnToken() {
+            UUID fileIdValue = UUID.randomUUID();
+            FileId fileId = new FileId(fileIdValue);
+
+            FileShare created = filePersistenceAdapter.saveFileShare(FileShare.createPending(
+                    new FileShareFileId(fileIdValue), new FileShareOwnerId(UUID.randomUUID()),
+                    new FileShareGranteeEmail("guest@example.com"), new FileShareRole(Role.VIEWER)));
+
+            assertThat(created.getSharedWithUserId()).isNull();
+            assertThat(created.getToken()).isNotNull();
+            assertThat(filePersistenceAdapter.existsByFileIdAndGranteeEmail(fileId, "guest@example.com")).isTrue();
+            assertThat(filePersistenceAdapter.findByToken(created.getToken()))
+                    .get().extracting(FileShare::getGranteeEmail).isEqualTo("guest@example.com");
+        }
+
+        @Test
         @DisplayName("공유를 해제하면 행이 사라진다")
         void deletesShare() {
             UUID fileIdValue = UUID.randomUUID();

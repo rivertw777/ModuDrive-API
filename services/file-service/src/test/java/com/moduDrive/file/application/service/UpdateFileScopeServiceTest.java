@@ -2,10 +2,18 @@ package com.moduDrive.file.application.service;
 
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.file.application.port.in.command.UpdateFileScopeCommand;
+import com.moduDrive.file.application.port.out.DeleteFileSharePort;
 import com.moduDrive.file.application.port.out.FindFilePort;
+import com.moduDrive.file.application.port.out.FindFileSharePort;
 import com.moduDrive.file.application.port.out.SaveFilePort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
+import com.moduDrive.file.domain.model.FileShare;
+import com.moduDrive.file.domain.model.FileShare.FileShareFileId;
+import com.moduDrive.file.domain.model.FileShare.FileShareId;
+import com.moduDrive.file.domain.model.FileShare.FileShareOwnerId;
+import com.moduDrive.file.domain.model.FileShare.FileShareRole;
+import com.moduDrive.file.domain.model.FileShare.FileShareSharedWithUserId;
 import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.Role;
 import com.moduDrive.file.domain.model.ShareScope;
@@ -18,6 +26,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -34,6 +43,8 @@ class UpdateFileScopeServiceTest {
 
     @Mock private FindFilePort findFilePort;
     @Mock private SaveFilePort saveFilePort;
+    @Mock private FindFileSharePort findFileSharePort;
+    @Mock private DeleteFileSharePort deleteFileSharePort;
     @Mock private FileAccessGuard fileAccessGuard;
     @InjectMocks private UpdateFileScopeService updateFileScopeService;
 
@@ -107,6 +118,7 @@ class UpdateFileScopeServiceTest {
             File linked = makeFile();
             linked.enableLinkSharing(UUID.randomUUID(), Role.VIEWER);
             given(findFilePort.findById(new FileId(fileId))).willReturn(Optional.of(linked));
+            given(findFileSharePort.findByFileId(new FileId(fileId))).willReturn(List.of());
             given(saveFilePort.saveFile(any(File.class))).willAnswer(inv -> inv.getArgument(0));
 
             File result = updateFileScopeService.updateFileScope(command(ShareScope.RESTRICTED));
@@ -114,6 +126,29 @@ class UpdateFileScopeServiceTest {
             assertThat(result.getAccessScope()).isEqualTo(ShareScope.RESTRICTED);
             assertThat(result.getLinkToken()).isNull();
             assertThat(result.getLinkRole()).isNull();
+        }
+
+        @Test
+        void revokesPendingGuestSharesButKeepsMemberShares() {
+            File linked = makeFile();
+            linked.enableLinkSharing(UUID.randomUUID(), Role.VIEWER);
+            UUID pendingShareId = UUID.randomUUID();
+            UUID memberShareId = UUID.randomUUID();
+            FileShare pendingGuestShare = FileShare.withId(new FileShareId(pendingShareId),
+                    new FileShareFileId(fileId), new FileShareOwnerId(ownerId), null,
+                    new FileShareRole(Role.VIEWER), UUID.randomUUID(), "guest@example.com");
+            FileShare memberShare = FileShare.withId(new FileShareId(memberShareId),
+                    new FileShareFileId(fileId), new FileShareOwnerId(ownerId),
+                    new FileShareSharedWithUserId(UUID.randomUUID()), new FileShareRole(Role.VIEWER));
+            given(findFilePort.findById(new FileId(fileId))).willReturn(Optional.of(linked));
+            given(findFileSharePort.findByFileId(new FileId(fileId)))
+                    .willReturn(List.of(pendingGuestShare, memberShare));
+            given(saveFilePort.saveFile(any(File.class))).willAnswer(inv -> inv.getArgument(0));
+
+            updateFileScopeService.updateFileScope(command(ShareScope.RESTRICTED));
+
+            then(deleteFileSharePort).should().deleteFileShare(new FileShareId(pendingShareId));
+            then(deleteFileSharePort).shouldHaveNoMoreInteractions();
         }
     }
 

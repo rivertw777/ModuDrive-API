@@ -80,13 +80,15 @@ class FileMapper {
                 new FileShareId(entity.getId()),
                 new FileShareFileId(entity.getFileId()),
                 new FileShareOwnerId(entity.getOwnerId()),
-                new FileShareSharedWithUserId(entity.getSharedWithUserId()),
+                entity.getSharedWithUserId() != null ? new FileShareSharedWithUserId(entity.getSharedWithUserId()) : null,
                 // Rows written before the role→granted_role_id rename read back as null (ddl-auto
                 // can't add a NOT NULL column to a table that already has rows) — same fallback as
                 // the legacy access_scope/link_role columns above.
                 new FileShareRole(entity.getGrantedRoleId() != null
                         ? rolePermissionPersistenceAdapter.findRole(entity.getGrantedRoleId())
-                        : Role.VIEWER)
+                        : Role.VIEWER),
+                entity.getToken(),
+                entity.getGranteeEmail()
         );
     }
 }

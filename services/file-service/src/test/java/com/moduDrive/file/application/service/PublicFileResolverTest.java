@@ -2,8 +2,11 @@ package com.moduDrive.file.application.service;
 
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.file.application.port.out.FindFilePort;
+import com.moduDrive.file.application.port.out.FindFileSharePort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
+import com.moduDrive.file.domain.model.FileShare;
+import com.moduDrive.file.domain.model.FileShare.*;
 import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.Role;
 import com.moduDrive.file.exception.FileExceptionCase;
@@ -26,6 +29,7 @@ import static org.mockito.BDDMockito.given;
 class PublicFileResolverTest {
 
     @Mock private FindFilePort findFilePort;
+    @Mock private FindFileSharePort findFileSharePort;
     @InjectMocks private PublicFileResolver publicFileResolver;
 
     private final UUID token = UUID.randomUUID();
@@ -74,8 +78,29 @@ class PublicFileResolverTest {
         @Test
         void throwsFileNotFoundWithoutLeakingThatTokenMatched() {
             given(findFilePort.findByLinkToken(token)).willReturn(Optional.of(makeFile(FileStatus.UPLOADED)));
+            given(findFileSharePort.findByToken(token)).willReturn(Optional.empty());
 
             assertNotFound(catchThrowable(() -> publicFileResolver.resolve(token.toString())));
+        }
+    }
+
+    @Nested
+    @DisplayName("토큰이 게스트 초대(pending share) 토큰일 때")
+    class WhenTokenMatchesAPendingGuestShare {
+
+        @Test
+        void returnsTheFileEvenThoughItsScopeStaysRestricted() {
+            File file = makeFile(FileStatus.UPLOADED);
+            FileShare pending = FileShare.createPending(new FileShareFileId(file.getId()),
+                    new FileShareOwnerId(file.getOwnerId()), new FileShareGranteeEmail("guest@example.com"),
+                    new FileShareRole(Role.VIEWER));
+            given(findFilePort.findByLinkToken(token)).willReturn(Optional.empty());
+            given(findFileSharePort.findByToken(token)).willReturn(Optional.of(pending));
+            given(findFilePort.findById(new FileId(file.getId()))).willReturn(Optional.of(file));
+
+            File result = publicFileResolver.resolve(token.toString());
+
+            assertThat(result.getName()).isEqualTo("report.pdf");
         }
     }
 
@@ -100,6 +125,7 @@ class PublicFileResolverTest {
         @Test
         void throwsFileNotFound() {
             given(findFilePort.findByLinkToken(token)).willReturn(Optional.empty());
+            given(findFileSharePort.findByToken(token)).willReturn(Optional.empty());
 
             assertNotFound(catchThrowable(() -> publicFileResolver.resolve(token.toString())));
         }

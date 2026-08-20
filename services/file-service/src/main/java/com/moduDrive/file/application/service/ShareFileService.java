@@ -8,13 +8,12 @@ import com.moduDrive.file.application.port.in.usecase.ShareFileUseCase;
 import com.moduDrive.file.application.port.out.FindFilePort;
 import com.moduDrive.file.application.port.out.FindFileSharePort;
 import com.moduDrive.file.application.port.out.FindMemberByEmailPort;
-import com.moduDrive.file.application.port.out.SaveFilePort;
 import com.moduDrive.file.application.port.out.SaveFileSharePort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.FileShare;
 import com.moduDrive.file.domain.model.FileShare.FileShareFileId;
+import com.moduDrive.file.domain.model.FileShare.FileShareGranteeEmail;
 import com.moduDrive.file.domain.model.FileShare.FileShareSharedWithUserId;
-import com.moduDrive.file.domain.model.ShareScope;
 import com.moduDrive.file.exception.FileExceptionCase;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -30,7 +29,6 @@ class ShareFileService implements ShareFileUseCase {
     private final FindFilePort findFilePort;
     private final FindFileSharePort findFileSharePort;
     private final SaveFileSharePort saveFileSharePort;
-    private final SaveFilePort saveFilePort;
     private final FindMemberByEmailPort findMemberByEmailPort;
     private final FileAccessGuard fileAccessGuard;
     private final ApplicationEventPublisher eventPublisher;
@@ -72,21 +70,26 @@ class ShareFileService implements ShareFileUseCase {
         return Optional.of(saved);
     }
 
-    /** No member owns the invited email, so there is no id to attach a {@link FileShare} row to.
-     * Falls back to the file's existing "anyone with the link" mechanism — the mail carries that
-     * link, and every link holder shares the same access; there is no per-guest revoke, only
-     * turning link sharing off entirely. If the file is already link-shared, its live role is kept
-     * rather than reset to the invited role: every existing link holder is on that link too, and a
-     * single guest invite silently promoting or demoting all of them would be a bigger access change
-     * than "invite one more guest". */
+    /** No member owns the invited email, so there is no id to attach a normal {@link FileShare}
+     * row to. Stays a {@code RESTRICTED} grant, scoped to just this one email, via
+     * {@link FileShare#createPending}: the invite gets its own token independent of the file's
+     * {@code linkToken}, so it never turns the file into "anyone with the link" and can be
+     * revoked on its own without touching any other grant. */
     private void inviteGuest(File file, ShareFileCommand command) {
-        if (file.getAccessScope() != ShareScope.LINK) {
-            file.enableLinkSharing(UUID.randomUUID(), command.getRole().value());
+        if (findFileSharePort.existsByFileIdAndGranteeEmail(command.getFileId(), command.getEmail())) {
+            throw new BusinessException(FileExceptionCase.FILE_SHARE_ALREADY_EXISTS);
         }
-        File saved = saveFilePort.saveFile(file);
+
+        FileShare pending = FileShare.createPending(
+                new FileShareFileId(command.getFileId().value()),
+                command.getOwnerId(),
+                new FileShareGranteeEmail(command.getEmail()),
+                command.getRole()
+        );
+        FileShare saved = saveFileSharePort.saveFileShare(pending);
 
         eventPublisher.publishEvent(new FileShareInvitedEvent(
-                saved.getId(), command.getOwnerId().value(), null,
-                command.getEmail(), saved.getName(), saved.getLinkRole(), saved.getLinkToken()));
+                saved.getFileId(), saved.getOwnerId(), null,
+                command.getEmail(), file.getName(), saved.getRole(), saved.getToken()));
     }
 }
