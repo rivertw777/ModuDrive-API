@@ -10,3 +10,4 @@ storage:
     secret-key: test
     region: us-east-1
   block-size: 4194304
+  encryption-key: MBDmFlbqAnqqs/HpwcOPOA==

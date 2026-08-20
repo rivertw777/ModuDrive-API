@@ -25,3 +25,4 @@ storage:
     secret-key: ${STORAGE_S3_SECRET_KEY}
     region: ${STORAGE_S3_REGION}
   block-size: ${STORAGE_BLOCK_SIZE}
+  encryption-key: ${STORAGE_ENCRYPTION_KEY}
