@@ -11,6 +11,8 @@ public class StorageProperties {
 
     private S3Properties s3 = new S3Properties();
     private int blockSize = 4 * 1024 * 1024;
+    /** Base64-encoded AES key (16/24/32 raw bytes), e.g. generated via `openssl rand -base64 32`. */
+    private String encryptionKey;
 
     @Getter
     @Setter
