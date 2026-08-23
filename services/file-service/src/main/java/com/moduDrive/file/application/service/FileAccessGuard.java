@@ -2,7 +2,6 @@ package com.moduDrive.file.application.service;
 
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.file.application.port.out.FindFileSharePort;
-import com.moduDrive.file.application.port.out.FindRolePermissionsPort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.FileId;
 import com.moduDrive.file.domain.model.FileShare;
@@ -24,7 +23,6 @@ import java.util.UUID;
 class FileAccessGuard {
 
     private final FindFileSharePort findFileSharePort;
-    private final FindRolePermissionsPort findRolePermissionsPort;
 
     void requireOwner(File file, UUID callerId) {
         if (!isOwner(file, callerId)) {
@@ -37,7 +35,7 @@ class FileAccessGuard {
             return;
         }
         Role granted = resolveRole(file, callerId);
-        if (granted == null || !findRolePermissionsPort.findByRole(granted).contains(required)) {
+        if (granted == null || !granted.permissions().contains(required)) {
             throw new BusinessException(FileExceptionCase.FILE_ACCESS_DENIED);
         }
     }

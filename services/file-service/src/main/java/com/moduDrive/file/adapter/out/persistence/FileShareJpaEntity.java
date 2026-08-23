@@ -1,5 +1,6 @@
 package com.moduDrive.file.adapter.out.persistence;
 
+import com.moduDrive.file.domain.model.Role;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -41,12 +42,11 @@ class FileShareJpaEntity {
     /** Null for a pending guest share — see {@link com.moduDrive.file.domain.model.FileShare}. */
     private UUID sharedWithUserId;
 
-    /** FK to {@code file_role.id}, resolved to/from a {@link com.moduDrive.file.domain.model.Role}
-     * by {@link FileMapper} and {@link FilePersistenceAdapter} via the role directory cache.
-     * Left DB-nullable on purpose, like {@code file.access_scope}/{@code link_role}: ddl-auto=update
+    /** Left DB-nullable on purpose, like {@code file.access_scope}/{@code link_role}: ddl-auto=update
      * can't add a NOT NULL column to a table that already has rows, so a pre-existing deployment's
      * rows would otherwise fail the migration outright. Application code always sets it on write. */
-    private UUID grantedRoleId;
+    @Enumerated(EnumType.STRING)
+    private Role grantedRole;
 
     /** Non-null only for a pending guest share: the per-invite capability token resolved by the
      * public routes (see {@code PublicFileResolver}). Null for a real member grant. */
@@ -59,22 +59,22 @@ class FileShareJpaEntity {
     @Column(updatable = false)
     private LocalDateTime createdAt;
 
-    FileShareJpaEntity(UUID fileId, UUID ownerId, UUID sharedWithUserId, UUID grantedRoleId) {
-        this(fileId, ownerId, sharedWithUserId, grantedRoleId, null, null);
+    FileShareJpaEntity(UUID fileId, UUID ownerId, UUID sharedWithUserId, Role grantedRole) {
+        this(fileId, ownerId, sharedWithUserId, grantedRole, null, null);
     }
 
-    FileShareJpaEntity(UUID fileId, UUID ownerId, UUID sharedWithUserId, UUID grantedRoleId,
+    FileShareJpaEntity(UUID fileId, UUID ownerId, UUID sharedWithUserId, Role grantedRole,
                        UUID token, String granteeEmail) {
         this.fileId = fileId;
         this.ownerId = ownerId;
         this.sharedWithUserId = sharedWithUserId;
-        this.grantedRoleId = grantedRoleId;
+        this.grantedRole = grantedRole;
         this.token = token;
         this.granteeEmail = granteeEmail;
     }
 
-    void applyGrantedRoleId(UUID grantedRoleId) {
-        this.grantedRoleId = grantedRoleId;
+    void applyGrantedRole(Role grantedRole) {
+        this.grantedRole = grantedRole;
     }
 
     /** Mirrors {@link com.moduDrive.file.domain.model.FileShare#claim}: fills {@code sharedWithUserId}

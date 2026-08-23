@@ -11,7 +11,6 @@ import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.Namespace.NamespaceId;
 import com.moduDrive.file.domain.model.Role;
 import com.moduDrive.file.domain.model.ShareScope;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -27,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
 @DataJpaTest
-@Import({FilePersistenceAdapter.class, FileMapper.class, RolePermissionPersistenceAdapter.class})
+@Import({FilePersistenceAdapter.class, FileMapper.class})
 class FilePersistenceAdapterTest {
 
     @Autowired
@@ -38,19 +37,9 @@ class FilePersistenceAdapterTest {
     private SpringDataFileAccessRepository springDataFileAccessRepository;
     @Autowired
     private SpringDataFileShareRepository springDataFileShareRepository;
-    @Autowired
-    private SpringDataFileRoleRepository springDataFileRoleRepository;
 
     private final UUID namespaceIdValue = UUID.randomUUID();
     private final NamespaceId namespaceId = new NamespaceId(namespaceIdValue);
-    private UUID viewerRoleId;
-    private UUID editorRoleId;
-
-    @BeforeEach
-    void seedRoles() {
-        viewerRoleId = springDataFileRoleRepository.saveAndFlush(new FileRoleJpaEntity(Role.VIEWER)).getId();
-        editorRoleId = springDataFileRoleRepository.saveAndFlush(new FileRoleJpaEntity(Role.EDITOR)).getId();
-    }
 
     private void save(String path, String name) {
         springDataFileRepository.save(new FileJpaEntity(
@@ -157,12 +146,12 @@ class FilePersistenceAdapterTest {
             UUID ownerIdValue = UUID.randomUUID();
             UUID granteeId = UUID.randomUUID();
             springDataFileShareRepository.saveAndFlush(
-                    new FileShareJpaEntity(fileIdValue, ownerIdValue, granteeId, viewerRoleId));
+                    new FileShareJpaEntity(fileIdValue, ownerIdValue, granteeId, Role.VIEWER));
 
             // The app-layer existsBy check can't see a concurrent insert; uk_file_share_file_user is
             // what actually rejects the second row, so assert the constraint exists, not the check.
             Throwable thrown = catchThrowable(() -> springDataFileShareRepository.saveAndFlush(
-                    new FileShareJpaEntity(fileIdValue, ownerIdValue, granteeId, editorRoleId)));
+                    new FileShareJpaEntity(fileIdValue, ownerIdValue, granteeId, Role.EDITOR)));
 
             assertThat(thrown).isInstanceOf(DataIntegrityViolationException.class);
         }

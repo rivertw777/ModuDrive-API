@@ -8,7 +8,6 @@ import com.moduDrive.file.domain.model.FileVersion;
 import com.moduDrive.file.domain.model.Namespace;
 import com.moduDrive.file.domain.model.Role;
 import com.moduDrive.file.domain.model.ShareScope;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import static com.moduDrive.file.domain.model.Block.*;
@@ -19,10 +18,7 @@ import static com.moduDrive.file.domain.model.FileVersion.*;
 import static com.moduDrive.file.domain.model.Namespace.*;
 
 @Component
-@RequiredArgsConstructor
 class FileMapper {
-
-    private final RolePermissionPersistenceAdapter rolePermissionPersistenceAdapter;
 
     Namespace mapNamespaceToDomain(NamespaceJpaEntity entity) {
         return Namespace.withId(
@@ -81,12 +77,10 @@ class FileMapper {
                 new FileShareFileId(entity.getFileId()),
                 new FileShareOwnerId(entity.getOwnerId()),
                 entity.getSharedWithUserId() != null ? new FileShareSharedWithUserId(entity.getSharedWithUserId()) : null,
-                // Rows written before the role→granted_role_id rename read back as null (ddl-auto
-                // can't add a NOT NULL column to a table that already has rows) — same fallback as
-                // the legacy access_scope/link_role columns above.
-                new FileShareRole(entity.getGrantedRoleId() != null
-                        ? rolePermissionPersistenceAdapter.findRole(entity.getGrantedRoleId())
-                        : Role.VIEWER),
+                // Rows written before granted_role existed read back as null (ddl-auto can't add a
+                // NOT NULL column to a table that already has rows) — same fallback as the legacy
+                // access_scope/link_role columns above.
+                new FileShareRole(entity.getGrantedRole() != null ? entity.getGrantedRole() : Role.VIEWER),
                 entity.getToken(),
                 entity.getGranteeEmail()
         );

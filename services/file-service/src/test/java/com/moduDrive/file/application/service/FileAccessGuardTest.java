@@ -2,7 +2,6 @@ package com.moduDrive.file.application.service;
 
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.file.application.port.out.FindFileSharePort;
-import com.moduDrive.file.application.port.out.FindRolePermissionsPort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
 import com.moduDrive.file.domain.model.FileShare;
@@ -20,7 +19,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -33,7 +31,6 @@ import static org.mockito.BDDMockito.then;
 class FileAccessGuardTest {
 
     @Mock private FindFileSharePort findFileSharePort;
-    @Mock private FindRolePermissionsPort findRolePermissionsPort;
     @InjectMocks private FileAccessGuard fileAccessGuard;
 
     private final UUID fileId = UUID.randomUUID();
@@ -61,10 +58,6 @@ class FileAccessGuardTest {
                 .willReturn(Optional.empty());
     }
 
-    private void givenPermissions(Role role, Permission... permissions) {
-        given(findRolePermissionsPort.findByRole(role)).willReturn(Set.of(permissions));
-    }
-
     private void assertDenied(Throwable thrown) {
         assertThat(thrown).isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getExceptionCase())
@@ -82,11 +75,10 @@ class FileAccessGuardTest {
         }
 
         @Test
-        void isGrantedEveryPermissionWithoutHittingShareOrPermissionTables() {
+        void isGrantedEveryPermissionWithoutHittingTheShareTable() {
             assertThatCode(() -> fileAccessGuard.requirePermission(file, ownerId, Permission.RENAME))
                     .doesNotThrowAnyException();
             then(findFileSharePort).shouldHaveNoInteractions();
-            then(findRolePermissionsPort).shouldHaveNoInteractions();
         }
     }
 
@@ -99,7 +91,6 @@ class FileAccessGuardTest {
         @Test
         void isAllowedRename() {
             givenShare(editorId, Role.EDITOR);
-            givenPermissions(Role.EDITOR, Permission.READ, Permission.DOWNLOAD, Permission.RENAME);
 
             assertThatCode(() -> fileAccessGuard.requirePermission(file, editorId, Permission.RENAME))
                     .doesNotThrowAnyException();
@@ -120,7 +111,6 @@ class FileAccessGuardTest {
         @Test
         void isAllowedDownload() {
             givenShare(viewerId, Role.VIEWER);
-            givenPermissions(Role.VIEWER, Permission.READ, Permission.DOWNLOAD);
 
             assertThatCode(() -> fileAccessGuard.requirePermission(file, viewerId, Permission.DOWNLOAD))
                     .doesNotThrowAnyException();
@@ -129,7 +119,6 @@ class FileAccessGuardTest {
         @Test
         void isDeniedRename() {
             givenShare(viewerId, Role.VIEWER);
-            givenPermissions(Role.VIEWER, Permission.READ, Permission.DOWNLOAD);
 
             assertDenied(catchThrowable(() -> fileAccessGuard.requirePermission(file, viewerId, Permission.RENAME)));
         }
@@ -150,7 +139,6 @@ class FileAccessGuardTest {
             givenNoShare(strangerId);
 
             assertDenied(catchThrowable(() -> fileAccessGuard.requirePermission(linked, strangerId, Permission.READ)));
-            then(findRolePermissionsPort).shouldHaveNoInteractions();
         }
 
         @Test
@@ -158,7 +146,6 @@ class FileAccessGuardTest {
             File linked = makeFile();
             linked.enableLinkSharing(UUID.randomUUID(), Role.EDITOR);
             givenShare(strangerId, Role.VIEWER);
-            givenPermissions(Role.VIEWER, Permission.READ, Permission.DOWNLOAD);
 
             assertThatCode(() -> fileAccessGuard.requirePermission(linked, strangerId, Permission.DOWNLOAD))
                     .doesNotThrowAnyException();
@@ -171,7 +158,6 @@ class FileAccessGuardTest {
 
             assertDenied(catchThrowable(() -> fileAccessGuard.requirePermission(linked, null, Permission.READ)));
             then(findFileSharePort).shouldHaveNoInteractions();
-            then(findRolePermissionsPort).shouldHaveNoInteractions();
         }
     }
 
@@ -184,7 +170,6 @@ class FileAccessGuardTest {
             givenNoShare(strangerId);
 
             assertDenied(catchThrowable(() -> fileAccessGuard.requirePermission(file, strangerId, Permission.READ)));
-            then(findRolePermissionsPort).shouldHaveNoInteractions();
         }
 
         @Test
