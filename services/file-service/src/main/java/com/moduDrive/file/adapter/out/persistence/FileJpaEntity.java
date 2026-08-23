@@ -15,8 +15,14 @@ import java.util.UUID;
 @Getter
 @NoArgsConstructor
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
+// Constrained on (namespace_id, path, active_slot_name) rather than plain `name`: a unique index
+// treats NULLs as distinct from one another (standard SQL/Postgres behavior), so any number of
+// DELETED rows — active_slot_name always NULL for those, see activeSlotName() below — can share a
+// namespace/path/name with each other and with one live row. A trashed file therefore never blocks
+// (or gets silently resurrected by) a fresh upload at its old name; only two *active* rows at the
+// same slot collide.
 @Table(name = "file", uniqueConstraints = {
-        @UniqueConstraint(name = "uk_file_namespace_path_name", columnNames = {"namespace_id", "path", "name"})
+        @UniqueConstraint(name = "uk_file_namespace_path_active_name", columnNames = {"namespace_id", "path", "active_slot_name"})
 })
 @Entity
 class FileJpaEntity extends BaseTimeEntity {
@@ -64,6 +70,12 @@ class FileJpaEntity extends BaseTimeEntity {
     @Enumerated(EnumType.STRING)
     private Role linkRole;
 
+    /** {@code name}, mirrored — except NULL while {@code status == DELETED}. Exists purely to
+     * give {@code uk_file_namespace_path_active_name} something that goes NULL on soft-delete;
+     * never read from Java, never exposed on the domain model. */
+    @Column(name = "active_slot_name")
+    private String activeSlotName;
+
     FileJpaEntity(UUID namespaceId, String name, String path, UUID ownerId, FileStatus status, boolean directory) {
         this.namespaceId = namespaceId;
         this.name = name;
@@ -72,6 +84,7 @@ class FileJpaEntity extends BaseTimeEntity {
         this.status = status;
         this.directory = directory;
         this.accessScope = ShareScope.RESTRICTED;
+        this.activeSlotName = activeSlotName(name, status);
     }
 
     void applyChanges(String name, String path, UUID currentVersionId, Long fileSize, FileStatus status,
@@ -85,5 +98,10 @@ class FileJpaEntity extends BaseTimeEntity {
         this.accessScope = accessScope;
         this.linkToken = linkToken;
         this.linkRole = linkRole;
+        this.activeSlotName = activeSlotName(name, status);
+    }
+
+    private static String activeSlotName(String name, FileStatus status) {
+        return status == FileStatus.DELETED ? null : name;
     }
 }

@@ -16,6 +16,9 @@ interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID> {
     List<FileJpaEntity> findByNamespaceIdAndPathAndStatusNot(
             UUID namespaceId, String path, FileStatus status);
 
+    Optional<FileJpaEntity> findByNamespaceIdAndPathAndNameAndStatusNot(
+            UUID namespaceId, String path, String name, FileStatus status);
+
     // Named to avoid Spring Data's "StartingWith" derived-query keyword — losing the @Query here
     // would silently fall back to an unescaped `like 'prefix%'` and reintroduce the prefix-collision
     // bug (e.g. "/foo" matching "/foo2") this hand-written JPQL exists to prevent.

@@ -99,6 +99,15 @@ public class File {
         );
     }
 
+    /** Re-targets this active file for a fresh upload after the caller has explicitly consented
+     * to replacing it (a same-name re-upload becomes a new version, not a new file).
+     * {@code markUploaded} completes it once the new content lands; {@code currentVersionId}/
+     * {@code fileSize} are left as-is until then so the previous version stays visible while the
+     * new one is in flight. */
+    public void restartUpload() {
+        this.status = FileStatus.PENDING;
+    }
+
     public void markUploaded(UUID versionId, Long size) {
         this.status = FileStatus.UPLOADED;
         this.currentVersionId = versionId;

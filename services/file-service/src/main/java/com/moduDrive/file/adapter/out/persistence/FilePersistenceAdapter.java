@@ -59,7 +59,10 @@ class FilePersistenceAdapter implements
                     file.getNamespaceId(), file.getName(), file.getPath(),
                     file.getOwnerId(), file.getStatus(), file.isDirectory()
             );
-            return fileMapper.mapFileToDomain(fileRepository.save(entity));
+            // UploadFileMetadataService/CreateDirectoryService's own same-name pre-check (where
+            // they have one) isn't atomic with this insert, so a concurrent request for the same
+            // new name can still slip through between them.
+            return fileMapper.mapFileToDomain(saveAndTranslateSlotConflict(entity));
         }
 
         FileJpaEntity entity = fileRepository.findById(file.getId())
@@ -68,7 +71,34 @@ class FilePersistenceAdapter implements
         entity.applyChanges(file.getName(), file.getPath(), file.getCurrentVersionId(), file.getFileSize(),
                 file.getStatus(), file.isFavorite(), file.getAccessScope(), file.getLinkToken(), file.getLinkRole());
 
-        return fileMapper.mapFileToDomain(fileRepository.save(entity));
+        // Same conflict, different door: rename/move/restore land here, and none of their callers
+        // pre-check the destination slot either (e.g. RestoreFileService can restore a file back
+        // onto a slot a later upload already took over) — this used to throw a raw
+        // DataIntegrityViolationException out through the transaction commit as a 500.
+        return fileMapper.mapFileToDomain(saveAndTranslateSlotConflict(entity));
+    }
+
+    /** saveAndFlush (not save): forces uk_file_namespace_path_active_name's violation to surface
+     * here, synchronously — a plain save() only persists to the session and defers the actual
+     * insert/update to a later, uncontrolled flush, which this catch would never see. Same
+     * reasoning as recordAccess below. Only that specific constraint is translated to a business
+     * error — a NOT NULL/FK/other integrity violation is a real bug and should surface as-is
+     * rather than being reported to the caller as "already exists". */
+    private FileJpaEntity saveAndTranslateSlotConflict(FileJpaEntity entity) {
+        try {
+            return fileRepository.saveAndFlush(entity);
+        } catch (DataIntegrityViolationException e) {
+            if (isActiveSlotConflict(e)) {
+                throw new BusinessException(FileExceptionCase.FILE_ALREADY_EXISTS);
+            }
+            throw e;
+        }
+    }
+
+    private static boolean isActiveSlotConflict(DataIntegrityViolationException e) {
+        Throwable cause = e.getMostSpecificCause();
+        return cause.getMessage() != null
+                && cause.getMessage().toLowerCase().contains("uk_file_namespace_path_active_name");
     }
 
     @Override
@@ -95,6 +125,13 @@ class FilePersistenceAdapter implements
                 .stream()
                 .map(fileMapper::mapFileToDomain)
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    public Optional<File> findActiveByNamespaceIdAndPathAndName(NamespaceId namespaceId, String path, String name) {
+        return fileRepository
+                .findByNamespaceIdAndPathAndNameAndStatusNot(namespaceId.value(), path, name, FileStatus.DELETED)
+                .map(fileMapper::mapFileToDomain);
     }
 
     @Override
