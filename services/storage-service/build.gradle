@@ -30,7 +30,6 @@ dependencies {
     implementation project(':common:api')
     implementation project(':common:infrastructure:observability')
     implementation project(':common:infrastructure:redis')
-    implementation project(':common:infrastructure:resilience4j')
     implementation project(':common:infrastructure:spring-cloud')
     implementation project(':common:infrastructure:swagger')
 
