@@ -22,6 +22,7 @@ bootBuildImage {
 dependencies {
     implementation project(':common:core')
     implementation project(':common:api')
+    implementation project(':common:infrastructure:observability')
     implementation project(':common:infrastructure:resilience4j')
 
     implementation 'org.springframework.cloud:spring-cloud-starter-gateway-server-webflux'

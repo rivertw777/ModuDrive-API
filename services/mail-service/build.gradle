@@ -24,6 +24,7 @@ dependencies {
     implementation project(':common:event')
     implementation project(':common:infrastructure:jpa')
     implementation project(':common:infrastructure:kafka')
+    implementation project(':common:infrastructure:observability')
     implementation project(':common:infrastructure:resilience4j')
     implementation project(':common:infrastructure:spring-cloud')
     implementation project(':common:infrastructure:swagger')

@@ -4,6 +4,7 @@ spring:
   config:
     import:
       - "classpath:application-jpa.yml"
+      - "classpath:application-observability.yml"
       - "classpath:application-redis.yml"
       - "classpath:application-resilience4j.yml"
   kafka:

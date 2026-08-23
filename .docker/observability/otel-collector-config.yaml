@@ -1,0 +1,45 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch: {}
+  # tail-based sampling: 헤드에서는 전량 export 시키고 여기서 "무엇을 남길지" 결정한다.
+  # 대규모 트래픽에서 고정 비율 head-sampling만 쓰면 에러 trace가 거의 다 누락되기 때문.
+  # decision_wait는 트레이스의 첫 span 기준으로 흐른다 — gateway의 timelimiter(15s)보다는 길게 잡아야
+  # 늦게 도착하는 span(정확히 latency 정책이 노리는 느린 요청들)이 결정 전에 다 모인다.
+  tail_sampling:
+    decision_wait: 30s
+    policies:
+      - name: errors
+        type: status_code
+        status_code:
+          status_codes: [ERROR]
+      - name: slow-requests
+        type: latency
+        latency:
+          threshold_ms: 1000
+      - name: baseline-sample
+        type: probabilistic
+        probabilistic:
+          sampling_percentage: 5
+
+exporters:
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [tail_sampling, batch]
+      exporters: [otlp/tempo]
+    # 메트릭은 각 서비스의 /actuator/prometheus를 Prometheus가 직접 스크레이프한다
+    # (micrometer-registry-otlp를 안 붙였으므로 OTLP로 메트릭을 보내는 앱이 없다) — 여기 metrics
+    # 파이프라인은 만들지 않는다. OTLP 메트릭이 필요해지면 registry 추가 + 여기 파이프라인 추가.
