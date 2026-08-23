@@ -17,6 +17,11 @@ public interface FindFilePort {
 
     List<File> findByNamespaceIdAndPath(NamespaceId namespaceId, String path);
 
+    /** The active (non-deleted) row at this namespace/path/name, if any — the one an upload of
+     * the same name would collide with. A trashed file at that name doesn't occupy the slot (see
+     * {@code uk_file_namespace_path_active_name}), so it's deliberately excluded here. */
+    Optional<File> findActiveByNamespaceIdAndPathAndName(NamespaceId namespaceId, String path, String name);
+
     /** Entries whose {@code path} is {@code pathPrefix} or nested under it — i.e. every
      * descendant of the directory whose full path is {@code pathPrefix}. */
     List<File> findByNamespaceIdAndPathStartingWith(NamespaceId namespaceId, String pathPrefix);

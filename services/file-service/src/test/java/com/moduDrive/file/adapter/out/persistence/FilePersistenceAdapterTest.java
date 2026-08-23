@@ -1,5 +1,6 @@
 package com.moduDrive.file.adapter.out.persistence;
 
+import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
 import com.moduDrive.file.domain.model.FileAccess;
@@ -11,6 +12,7 @@ import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.Namespace.NamespaceId;
 import com.moduDrive.file.domain.model.Role;
 import com.moduDrive.file.domain.model.ShareScope;
+import com.moduDrive.file.exception.FileExceptionCase;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -53,8 +55,12 @@ class FilePersistenceAdapterTest {
     }
 
     private void save(String path, String name) {
+        save(path, name, FileStatus.UPLOADED);
+    }
+
+    private void save(String path, String name, FileStatus status) {
         springDataFileRepository.save(new FileJpaEntity(
-                namespaceIdValue, name, path, UUID.randomUUID(), FileStatus.UPLOADED, false));
+                namespaceIdValue, name, path, UUID.randomUUID(), status, false));
     }
 
     @Nested
@@ -84,6 +90,89 @@ class FilePersistenceAdapterTest {
             var result = filePersistenceAdapter.findByNamespaceIdAndPathStartingWith(namespaceId, "/1/%");
 
             assertThat(result).extracting(File::getPath).containsExactly("/1/%");
+        }
+    }
+
+    @Nested
+    @DisplayName("이름/경로로 활성 파일 충돌을 조회할 때")
+    class WhenFindingByPathAndName {
+
+        @Test
+        @DisplayName("같은 네임스페이스/경로/이름의 활성 파일을 찾는다")
+        void findsTheColldingRow() {
+            save("/1/docs", "report.pdf");
+
+            var result = filePersistenceAdapter.findActiveByNamespaceIdAndPathAndName(namespaceId, "/1/docs", "report.pdf");
+
+            assertThat(result).isPresent();
+        }
+
+        @Test
+        @DisplayName("이름이 다르면 찾지 못한다")
+        void findsNothingForADifferentName() {
+            save("/1/docs", "report.pdf");
+
+            var result = filePersistenceAdapter.findActiveByNamespaceIdAndPathAndName(namespaceId, "/1/docs", "other.pdf");
+
+            assertThat(result).isEmpty();
+        }
+
+        @Test
+        @DisplayName("휴지통(DELETED)에 있는 동일 이름 파일은 충돌로 잡히지 않는다")
+        void doesNotFindADeletedFileAtTheSameSlot() {
+            save("/1/docs", "report.pdf", FileStatus.DELETED);
+
+            var result = filePersistenceAdapter.findActiveByNamespaceIdAndPathAndName(namespaceId, "/1/docs", "report.pdf");
+
+            assertThat(result).isEmpty();
+        }
+
+        @Test
+        @DisplayName("같은 자리에 두 번째 활성 파일을 저장하면 DB 유니크 제약 위반이 비즈니스 예외로 변환된다")
+        void translatesUniqueConstraintViolationToBusinessException() {
+            filePersistenceAdapter.saveFile(File.create(
+                    new FileNamespaceId(namespaceIdValue), new FileName("report.pdf"),
+                    new FilePath("/1/docs"), new FileOwnerId(UUID.randomUUID()), new FileIsDirectory(false)));
+
+            Throwable thrown = catchThrowable(() -> filePersistenceAdapter.saveFile(File.create(
+                    new FileNamespaceId(namespaceIdValue), new FileName("report.pdf"),
+                    new FilePath("/1/docs"), new FileOwnerId(UUID.randomUUID()), new FileIsDirectory(false))));
+
+            assertThat(thrown)
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(FileExceptionCase.FILE_ALREADY_EXISTS);
+        }
+
+        @Test
+        @DisplayName("휴지통에 같은 자리의 파일이 있어도 새 활성 파일 저장은 유니크 제약에 걸리지 않는다")
+        void doesNotCollideWithADeletedFileAtTheSameSlot() {
+            save("/1/docs", "report.pdf", FileStatus.DELETED);
+
+            File saved = filePersistenceAdapter.saveFile(File.create(
+                    new FileNamespaceId(namespaceIdValue), new FileName("report.pdf"),
+                    new FilePath("/1/docs"), new FileOwnerId(UUID.randomUUID()), new FileIsDirectory(false)));
+
+            assertThat(saved.getId()).isNotNull();
+        }
+
+        @Test
+        @DisplayName("update 경로(rename/move/restore)로 다른 활성 파일의 슬롯을 밟아도 비즈니스 예외로 변환된다 — 원본 SQL 예외가 새지 않는다")
+        void translatesUniqueConstraintViolationOnUpdateToo() {
+            filePersistenceAdapter.saveFile(File.create(
+                    new FileNamespaceId(namespaceIdValue), new FileName("report.pdf"),
+                    new FilePath("/1/docs"), new FileOwnerId(UUID.randomUUID()), new FileIsDirectory(false)));
+            File other = filePersistenceAdapter.saveFile(File.create(
+                    new FileNamespaceId(namespaceIdValue), new FileName("draft.pdf"),
+                    new FilePath("/1/docs"), new FileOwnerId(UUID.randomUUID()), new FileIsDirectory(false)));
+            other.rename(new FileName("report.pdf"));
+
+            Throwable thrown = catchThrowable(() -> filePersistenceAdapter.saveFile(other));
+
+            assertThat(thrown)
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(FileExceptionCase.FILE_ALREADY_EXISTS);
         }
     }
 

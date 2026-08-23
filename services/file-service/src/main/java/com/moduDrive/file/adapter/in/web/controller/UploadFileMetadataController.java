@@ -36,7 +36,8 @@ class UploadFileMetadataController {
                         new FileName(request.name()),
                         new FilePath(request.path()),
                         new FileOwnerId(userId),
-                        new FileIsDirectory(Boolean.TRUE.equals(request.directory()))
+                        new FileIsDirectory(Boolean.TRUE.equals(request.directory())),
+                        Boolean.TRUE.equals(request.replaceExisting())
                 )
         );
         return ApiResponse.success(FileResponse.from(file));
