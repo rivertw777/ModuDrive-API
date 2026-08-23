@@ -34,7 +34,6 @@ class FilePersistenceAdapter implements
     private final SpringDataFileShareRepository fileShareRepository;
     private final SpringDataFileAccessRepository fileAccessRepository;
     private final FileMapper fileMapper;
-    private final RolePermissionPersistenceAdapter rolePermissionPersistenceAdapter;
 
     @Override
     public Namespace saveNamespace(Namespace namespace) {
@@ -214,7 +213,7 @@ class FilePersistenceAdapter implements
         if (fileShare.getId() == null) {
             FileShareJpaEntity entity = new FileShareJpaEntity(
                     fileShare.getFileId(), fileShare.getOwnerId(),
-                    fileShare.getSharedWithUserId(), rolePermissionPersistenceAdapter.findRoleId(fileShare.getRole()),
+                    fileShare.getSharedWithUserId(), fileShare.getRole(),
                     fileShare.getToken(), fileShare.getGranteeEmail()
             );
             try {
@@ -230,7 +229,7 @@ class FilePersistenceAdapter implements
 
         FileShareJpaEntity entity = fileShareRepository.findById(fileShare.getId())
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_SHARE_NOT_FOUND));
-        entity.applyGrantedRoleId(rolePermissionPersistenceAdapter.findRoleId(fileShare.getRole()));
+        entity.applyGrantedRole(fileShare.getRole());
         // Only a pending→claimed transition (entity still null, incoming now set) should touch
         // sharedWithUserId here — an ordinary role update on an already-granted share must not
         // re-run applyClaim's side effect of clearing token/granteeEmail (a no-op for those rows,

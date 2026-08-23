@@ -1,17 +1,28 @@
 package com.moduDrive.file.domain.model;
 
+import java.util.Set;
+
 /**
- * What a role may actually do is data, resolved through the {@code file_role}/{@code
- * file_permission}/{@code file_role_permission} tables into a {@link Permission} set — the grant
- * matrix itself is a row change, not a code change. {@link Role} and {@link Permission} stay closed
- * enums on purpose: this repo still needs a fixed, reviewable vocabulary of role/permission names
- * (bound directly from request JSON, matched against a table row by name), not open-ended roles a
- * DB row alone could introduce.
+ * A closed, fixed vocabulary of role/permission names, matched directly against a role name bound
+ * from request JSON — not an open-ended set a DB row alone could introduce. The grant matrix below
+ * is the reference data itself: it only ever changes with a code change, so it lives here rather
+ * than behind a lookup.
  * <p>
  * There is no OWNER role: ownership is {@code file.owner_id}, checked directly rather than
  * granted through a share row, and is never transferable.
  */
 public enum Role {
 
-    VIEWER, EDITOR
+    VIEWER(Set.of(Permission.READ, Permission.DOWNLOAD)),
+    EDITOR(Set.of(Permission.READ, Permission.DOWNLOAD, Permission.RENAME));
+
+    private final Set<Permission> permissions;
+
+    Role(Set<Permission> permissions) {
+        this.permissions = permissions;
+    }
+
+    public Set<Permission> permissions() {
+        return permissions;
+    }
 }
