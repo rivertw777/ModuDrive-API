@@ -1,0 +1,16 @@
+global:
+  scrape_interval: 15s
+
+# 액추에이터는 management.server.port(9464)로 앱 포트와 분리되어 있다 — gateway의 Spring Security
+# 체인은 애플리케이션 포트에만 걸려 있으므로, 여기서 인증 우회 없이 그대로 스크레이프된다.
+scrape_configs:
+  - job_name: services
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets:
+          - gateway-service:9464
+          - member-service:9464
+          - auth-service:9464
+          - file-service:9464
+          - storage-service:9464
+          - mail-service:9464

@@ -1,0 +1,30 @@
+management:
+  # 액추에이터를 애플리케이션 포트와 분리 — Spring Security 체인이 걸린 gateway에서도 인증 없이
+  # 내부 네트워크(prometheus 컨테이너)에서만 스크레이프 가능해진다. 이 포트는 호스트에 퍼블리시하지 않는다.
+  server:
+    port: 9464
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://otel-collector:4318}/v1/traces
+  tracing:
+    sampling:
+      # head 단계는 전량 export (샘플링은 otel-collector의 tail_sampling이 결정).
+      # 실제 저장 보존율을 낮추려면 .docker/observability/otel-collector-config.yaml 튜닝.
+      probability: 1.0
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+
+logging:
+  pattern:
+    # LOG_CORRELATION_PATTERN 슬롯 — 기본 콘솔 패턴의 "---" 뒤, 스레드명 앞에 그대로 삽입된다.
+    correlation: "[${spring.application.name:},%X{traceId:-},%X{spanId:-}] "
+
+# Kafka producer/consumer 자동 계측 (member/file-service 생산, mail-service 소비에만 적용됨, 그 외 서비스는 no-op)
+spring:
+  kafka:
+    template:
+      observation-enabled: true
+    listener:
+      observation-enabled: true

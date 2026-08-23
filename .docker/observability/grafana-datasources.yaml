@@ -1,0 +1,32 @@
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+
+  - name: Tempo
+    type: tempo
+    uid: tempo
+    access: proxy
+    url: http://tempo:3200
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: loki
+        filterByTraceID: true
+
+  - name: Loki
+    type: loki
+    uid: loki
+    access: proxy
+    url: http://loki:3100
+    jsonData:
+      derivedFields:
+        # logging.pattern.correlation이 찍는 "[app,traceId,spanId]" 형식에 맞춘 정규식.
+        # traceId=32자리 hex, spanId=16자리 hex.
+        - datasourceUid: tempo
+          matcherRegex: '\[[^,\]]+,([0-9a-f]{32}),[0-9a-f]{16}\]'
+          name: TraceID
+          url: '$${__value.raw}'

@@ -1,6 +1,9 @@
 spring:
   application:
     name: gateway-service
+  config:
+    import:
+      - "classpath:application-observability.yml"
 
 resilience4j:
   timelimiter:
