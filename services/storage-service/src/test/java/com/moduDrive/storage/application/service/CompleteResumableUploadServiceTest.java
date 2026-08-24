@@ -7,11 +7,11 @@ import com.moduDrive.storage.application.port.out.FindUploadSessionPort;
 import com.moduDrive.storage.application.port.out.StoreBlocksPort;
 import com.moduDrive.storage.domain.model.UploadSession;
 import com.moduDrive.storage.exception.StorageExceptionCase;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -31,10 +31,18 @@ import static org.mockito.BDDMockito.then;
 @ExtendWith(MockitoExtension.class)
 class CompleteResumableUploadServiceTest {
 
+    private static final long TEST_MAX_FILE_SIZE_BYTES = 5_368_709_120L; // 5GB
+
     @Mock private FindUploadSessionPort findUploadSessionPort;
     @Mock private StoreBlocksPort storeBlocksPort;
     @Mock private FileUploadCallbackPort callbackPort;
-    @InjectMocks private CompleteResumableUploadService completeResumableUploadService;
+    private CompleteResumableUploadService completeResumableUploadService;
+
+    @BeforeEach
+    void setUp() {
+        completeResumableUploadService = new CompleteResumableUploadService(
+                findUploadSessionPort, storeBlocksPort, callbackPort, TEST_MAX_FILE_SIZE_BYTES);
+    }
 
     private final UUID userId = UUID.randomUUID();
     // Same value as userId but a different object — regression guard for the reference-equality
@@ -117,6 +125,30 @@ class CompleteResumableUploadServiceTest {
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
                     .isEqualTo(StorageExceptionCase.CHUNKS_INCOMPLETE);
+        }
+    }
+
+    @Nested
+    @DisplayName("실제 업로드된 크기가 상한을 초과할 때")
+    class WhenActualSizeExceedsLimit {
+
+        @Test
+        void throwsFileTooLargeWithoutStoringBlocks() {
+            // InitResumableUploadService only gates on the *declared* fileSize — this re-checks
+            // what was actually assembled from chunks, using a deliberately tiny limit so the
+            // test doesn't need to allocate a multi-GB session.
+            CompleteResumableUploadService serviceWithTinyLimit =
+                    new CompleteResumableUploadService(findUploadSessionPort, storeBlocksPort, callbackPort, 5L);
+            UploadSession session = fullSession(2); // "chunk0" + "chunk1" = 12 bytes > 5
+            given(findUploadSessionPort.findSession(session.getSessionId()))
+                    .willReturn(Optional.of(session));
+
+            assertThatThrownBy(() -> serviceWithTinyLimit.completeResumableUpload(
+                    new CompleteResumableUploadCommand(session.getSessionId().toString(), sameValueDifferentInstance)))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(StorageExceptionCase.FILE_TOO_LARGE);
+            then(storeBlocksPort).shouldHaveNoInteractions();
         }
     }
 
