@@ -95,4 +95,18 @@ class UpdateFileStatusControllerTest {
                     .andExpect(status().isBadRequest());
         }
     }
+
+    @Nested
+    @DisplayName("blockCount가 상한을 초과할 때")
+    class WhenBlockCountExceedsCap {
+
+        @Test
+        void returnsBadRequest() throws Exception {
+            mockMvc.perform(put("/api/v1/files/{fileId}/uploaded", FILE_ID)
+                            .header("X_USER_ID", USER_ID.toString())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"fileSize\":1024,\"blockCount\":100001,\"s3Path\":\"s3://bucket/key\"}"))
+                    .andExpect(status().isBadRequest());
+        }
+    }
 }
