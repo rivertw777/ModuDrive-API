@@ -8,6 +8,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 @FeignClient(name = "file-service")
 interface FileServiceClient {
 
-    @PostMapping("/api/v1/namespaces")
+    @PostMapping("/internal/v1/namespaces")
     void createNamespace(@RequestBody CreateNamespaceRequest request);
 }

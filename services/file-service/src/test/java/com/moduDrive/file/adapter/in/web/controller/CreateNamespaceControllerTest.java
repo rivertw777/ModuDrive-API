@@ -58,7 +58,7 @@ class CreateNamespaceControllerTest {
                             new NamespaceQuotaBytes(21474836480L)
                     ));
 
-            mockMvc.perform(post("/api/v1/namespaces")
+            mockMvc.perform(post("/internal/v1/namespaces")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(REQUEST_JSON))
                     .andExpect(status().isOk())
@@ -73,7 +73,7 @@ class CreateNamespaceControllerTest {
 
         @Test
         void returnsBadRequest() throws Exception {
-            mockMvc.perform(post("/api/v1/namespaces")
+            mockMvc.perform(post("/internal/v1/namespaces")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{}"))
                     .andExpect(status().isBadRequest());
@@ -89,7 +89,7 @@ class CreateNamespaceControllerTest {
             willThrow(new BusinessException(FileExceptionCase.NAMESPACE_ALREADY_EXISTS))
                     .given(createNamespaceUseCase).createNamespace(any(CreateNamespaceCommand.class));
 
-            mockMvc.perform(post("/api/v1/namespaces")
+            mockMvc.perform(post("/internal/v1/namespaces")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(REQUEST_JSON))
                     .andExpect(status().isBadRequest())
