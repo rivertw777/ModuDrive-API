@@ -5,7 +5,6 @@ spring:
     import:
       - "classpath:application-observability.yml"
       - "classpath:application-redis.yml"
-      - "classpath:application-resilience4j.yml"
   servlet:
     multipart:
       # frontend switches to chunked/resumable upload above 20MB (see RESUMABLE_THRESHOLD
