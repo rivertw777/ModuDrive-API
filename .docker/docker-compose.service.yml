@@ -32,8 +32,6 @@ services:
     image: modu-drive-member-service:0.0.1-SNAPSHOT
     networks:
       - modudrive_network
-    ports:
-      - "${MEMBER_SERVER_PORT}:${MEMBER_SERVER_PORT}"
     environment:
       - SERVER_PORT=${MEMBER_SERVER_PORT}
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE}
@@ -55,8 +53,6 @@ services:
     image: modu-drive-auth-service:0.0.1-SNAPSHOT
     networks:
       - modudrive_network
-    ports:
-      - "${AUTH_SERVER_PORT}:${AUTH_SERVER_PORT}"
     environment:
       - SERVER_PORT=${AUTH_SERVER_PORT}
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE}
@@ -76,8 +72,6 @@ services:
     image: modu-drive-file-service:0.0.1-SNAPSHOT
     networks:
       - modudrive_network
-    ports:
-      - "${FILE_SERVER_PORT}:${FILE_SERVER_PORT}"
     environment:
       - SERVER_PORT=${FILE_SERVER_PORT}
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE}
@@ -96,8 +90,6 @@ services:
     image: modu-drive-storage-service:0.0.1-SNAPSHOT
     networks:
       - modudrive_network
-    ports:
-      - "${STORAGE_SERVER_PORT}:${STORAGE_SERVER_PORT}"
     environment:
       - SERVER_PORT=${STORAGE_SERVER_PORT}
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE}
@@ -123,8 +115,6 @@ services:
     image: modu-drive-mail-service:0.0.1-SNAPSHOT
     networks:
       - modudrive_network
-    ports:
-      - "${MAIL_SERVER_PORT}:${MAIL_SERVER_PORT}"
     environment:
       - SERVER_PORT=${MAIL_SERVER_PORT}
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE}
