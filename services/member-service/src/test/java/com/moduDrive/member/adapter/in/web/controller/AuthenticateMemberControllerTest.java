@@ -52,7 +52,7 @@ class AuthenticateMemberControllerTest {
             given(authenticateMemberUseCase.authenticateMember(any(AuthenticateMemberCommand.class)))
                     .willReturn(member);
 
-            mockMvc.perform(post("/api/v1/member/authenticate")
+            mockMvc.perform(post("/internal/v1/member/authenticate")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(REQUEST_JSON))
                     .andExpect(status().isOk())
@@ -70,7 +70,7 @@ class AuthenticateMemberControllerTest {
             willThrow(new BusinessException(MemberExceptionCase.PASSWORD_NOT_MATCHED))
                     .given(authenticateMemberUseCase).authenticateMember(any(AuthenticateMemberCommand.class));
 
-            mockMvc.perform(post("/api/v1/member/authenticate")
+            mockMvc.perform(post("/internal/v1/member/authenticate")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(REQUEST_JSON))
                     .andExpect(status().isBadRequest())

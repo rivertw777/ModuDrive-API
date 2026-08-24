@@ -48,7 +48,7 @@ class GetMemberStatusControllerTest {
             Member member = MemberTestFixture.aMemberWithId(new MemberId(memberId));
             given(findMemberUseCase.findMember(any(FindMemberCommand.class))).willReturn(member);
 
-            mockMvc.perform(get("/api/v1/member/{memberId}/status", memberId))
+            mockMvc.perform(get("/internal/v1/member/{memberId}/status", memberId))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.id").value(memberId.toString()))
                     .andExpect(jsonPath("$.data.email").value("river@modudrive.com"))
@@ -66,7 +66,7 @@ class GetMemberStatusControllerTest {
             willThrow(new BusinessException(MemberExceptionCase.MEMBER_NOT_FOUND))
                     .given(findMemberUseCase).findMember(any(FindMemberCommand.class));
 
-            mockMvc.perform(get("/api/v1/member/{memberId}/status", memberId))
+            mockMvc.perform(get("/internal/v1/member/{memberId}/status", memberId))
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.message").value(MemberExceptionCase.MEMBER_NOT_FOUND.getMessage()));
         }

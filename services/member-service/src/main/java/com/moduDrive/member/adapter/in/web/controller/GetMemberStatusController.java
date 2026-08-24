@@ -23,7 +23,7 @@ class GetMemberStatusController {
     private final FindMemberUseCase findMemberUseCase;
     private final MemberResponseMapper memberResponseMapper;
 
-    @GetMapping("/api/v1/member/{memberId}/status")
+    @GetMapping("/internal/v1/member/{memberId}/status")
     public ApiResponse<AuthenticateMemberResponse> getMemberStatus(@PathVariable String memberId) {
         val command = new FindMemberCommand(
                 new MemberId(UUID.fromString(memberId))
