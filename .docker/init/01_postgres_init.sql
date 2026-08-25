@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS member (
     id         UUID         PRIMARY KEY,
     name       VARCHAR(255),
-    email      VARCHAR(255),
+    email      VARCHAR(255) CONSTRAINT uk_member_email UNIQUE,
     password   VARCHAR(255),
     is_valid   BOOLEAN,
     created_at TIMESTAMP(6),

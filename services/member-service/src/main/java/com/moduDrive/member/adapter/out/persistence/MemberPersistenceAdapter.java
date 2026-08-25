@@ -10,6 +10,7 @@ import com.moduDrive.member.domain.model.Member;
 import com.moduDrive.member.domain.model.Member.MemberEmail;
 import com.moduDrive.member.domain.model.Member.MemberId;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 
 @RequiredArgsConstructor
 @PersistenceAdapter
@@ -29,8 +30,30 @@ class MemberPersistenceAdapter implements
                 member.isValid()
         );
 
-        MemberJpaEntity saved = springDataMemberRepository.save(entity);
+        // existsByEmail in the service layer isn't atomic with this insert, so a concurrent
+        // sign-up for the same email can still slip past it — saveAndFlush forces the unique
+        // constraint violation to surface here (a plain save() only defers to a later,
+        // uncontrolled flush) instead of as a raw 500 at commit time.
+        MemberJpaEntity saved;
+        try {
+            saved = springDataMemberRepository.saveAndFlush(entity);
+        } catch (DataIntegrityViolationException e) {
+            if (isEmailConflict(e)) {
+                throw new BusinessException(MemberExceptionCase.DUPLICATE_EMAIL);
+            }
+            throw e;
+        }
         return memberMapper.mapToDomainEntity(saved);
+    }
+
+    // Only the email uniqueness violation should be reported as "duplicate email" — this insert
+    // also flushes the member_role collection, so a NOT NULL/FK/other integrity violation there
+    // is a real bug and should surface as-is rather than being misreported. Same pattern as
+    // FilePersistenceAdapter.isActiveSlotConflict.
+    private static boolean isEmailConflict(DataIntegrityViolationException e) {
+        Throwable cause = e.getMostSpecificCause();
+        return cause.getMessage() != null
+                && cause.getMessage().toLowerCase().contains("uk_member_email");
     }
 
     @Override

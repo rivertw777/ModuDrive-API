@@ -14,7 +14,11 @@ import java.util.UUID;
 @Getter
 @NoArgsConstructor
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
-@Table(name = "member")
+// Named explicitly (matching the init SQL's own uk_member_email) so
+// MemberPersistenceAdapter can tell this specific violation apart from any other
+// integrity error on this table, the same way FilePersistenceAdapter does for its
+// own unique constraint.
+@Table(name = "member", uniqueConstraints = @UniqueConstraint(name = "uk_member_email", columnNames = "email"))
 @Entity
 class MemberJpaEntity extends BaseTimeEntity {
 
