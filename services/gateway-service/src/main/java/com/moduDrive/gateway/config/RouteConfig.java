@@ -18,7 +18,7 @@ class RouteConfig {
                 .route("auth-service", r -> r.path("/api/v1/auth/**")
                         .filters(f -> addCircuitBreaker(f, "authServiceCircuitBreaker"))
                         .uri("lb://auth-service"))
-                .route("file-service", r -> r.path("/api/v1/files/**", "/api/v1/directories/**", "/api/v1/namespaces/**")
+                .route("file-service", r -> r.path("/api/v1/files/**", "/api/v1/directories/**")
                         .filters(f -> addCircuitBreaker(f, "fileServiceCircuitBreaker"))
                         .uri("lb://file-service"))
                 .route("storage-service", r -> r.path("/api/v1/storage/**")

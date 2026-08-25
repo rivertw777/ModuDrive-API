@@ -21,7 +21,7 @@ class CreateNamespaceController {
 
     private final CreateNamespaceUseCase createNamespaceUseCase;
 
-    @PostMapping("/api/v1/namespaces")
+    @PostMapping("/internal/v1/namespaces")
     public ApiResponse<NamespaceResponse> createNamespace(@Valid @RequestBody CreateNamespaceRequest request) {
         Namespace namespace = createNamespaceUseCase.createNamespace(
                 new CreateNamespaceCommand(new NamespaceUserId(request.userId()))
