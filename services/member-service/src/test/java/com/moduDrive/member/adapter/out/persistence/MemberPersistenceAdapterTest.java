@@ -50,6 +50,18 @@ class MemberPersistenceAdapterTest {
 
             assertThat(memberPersistenceAdapter.existsByEmail(memberEmail)).isTrue();
         }
+
+        @Test
+        void throwsBusinessExceptionWhenEmailAlreadyExists() {
+            memberPersistenceAdapter.createMember(MemberTestFixture.aMember());
+
+            Throwable thrown = catchThrowable(() -> memberPersistenceAdapter.createMember(MemberTestFixture.aMember()));
+
+            assertThat(thrown)
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(MemberExceptionCase.DUPLICATE_EMAIL);
+        }
     }
 
     @Nested
