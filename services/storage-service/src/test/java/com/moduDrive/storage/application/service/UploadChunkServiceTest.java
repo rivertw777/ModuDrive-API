@@ -90,6 +90,25 @@ class UploadChunkServiceTest {
     }
 
     @Nested
+    @DisplayName("chunkIndex가 세션의 totalChunks를 벗어날 때")
+    class WhenChunkIndexOutOfRange {
+
+        @Test
+        void throwsInvalidChunkIndex() {
+            UploadSession session = activeSession(); // totalChunks = 3, valid indices 0..2
+            given(findUploadSessionPort.findSession(session.getSessionId()))
+                    .willReturn(Optional.of(session));
+            UploadChunkCommand command = new UploadChunkCommand(
+                    session.getSessionId().toString(), userId, 3, new byte[1]);
+
+            assertThatThrownBy(() -> uploadChunkService.uploadChunk(command))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(StorageExceptionCase.INVALID_CHUNK_INDEX);
+        }
+    }
+
+    @Nested
     @DisplayName("이미 완료된 세션에 청크를 업로드할 때")
     class WhenSessionCompleted {
 

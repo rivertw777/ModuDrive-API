@@ -26,6 +26,9 @@ class UploadChunkService implements UploadChunkUseCase {
         if (session.isCompleted()) {
             throw new BusinessException(StorageExceptionCase.SESSION_ALREADY_COMPLETED);
         }
+        if (command.getChunkIndex() >= session.getTotalChunks()) {
+            throw new BusinessException(StorageExceptionCase.INVALID_CHUNK_INDEX);
+        }
 
         session.addChunk(command.getChunkIndex(), command.getData());
     }
