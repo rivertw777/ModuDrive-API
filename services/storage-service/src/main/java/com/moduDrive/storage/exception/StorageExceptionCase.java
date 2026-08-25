@@ -17,6 +17,7 @@ public enum StorageExceptionCase implements ExceptionCase {
     FILE_NOT_FOUND_IN_STORAGE(HttpStatus.NOT_FOUND, "스토리지에서 파일을 찾을 수 없습니다."),
     STORAGE_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "스토리지 오류가 발생했습니다."),
     FILE_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "파일 크기는 5GB를 초과할 수 없습니다."),
+    TOO_MANY_BLOCKS(HttpStatus.BAD_REQUEST, "블록 수가 허용 범위를 초과했습니다."),
     /** Same message whether the credential is missing, expired, or was issued for a different
      * file — an anonymous caller must not be able to tell those apart. */
     UNAUTHENTICATED_VIEW_REQUEST(HttpStatus.UNAUTHORIZED, "인증되지 않은 요청입니다."),

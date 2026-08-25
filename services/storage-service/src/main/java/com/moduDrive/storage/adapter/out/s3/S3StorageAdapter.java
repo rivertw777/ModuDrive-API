@@ -1,9 +1,11 @@
 package com.moduDrive.storage.adapter.out.s3;
 
 import com.moduDrive.common.core.annotation.PersistenceAdapter;
+import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.storage.application.port.out.RetrieveBlocksPort;
 import com.moduDrive.storage.application.port.out.StoreBlocksPort;
 import com.moduDrive.storage.config.StorageProperties;
+import com.moduDrive.storage.exception.StorageExceptionCase;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
@@ -30,6 +32,11 @@ class S3StorageAdapter implements StoreBlocksPort, RetrieveBlocksPort {
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final int GCM_IV_LENGTH = 12;
     private static final int GCM_TAG_LENGTH_BITS = 128;
+    // ponytail: hardcoded ceiling, not a config value. 5GB max file / 4MB default block size is
+    // ~1250 blocks in practice; 100k leaves generous headroom for smaller client chunk sizes
+    // while still keeping `new ArrayList<>(blockCount)` bounded (a caller-supplied blockCount
+    // with no cap at all lets one download request pre-allocate an OOM-sized array).
+    private static final int MAX_BLOCK_COUNT = 100_000;
 
     private final S3Client s3Client;
     private final StorageProperties properties;
@@ -82,6 +89,9 @@ class S3StorageAdapter implements StoreBlocksPort, RetrieveBlocksPort {
 
     @Override
     public List<byte[]> retrieveBlocks(String s3BasePath, int blockCount) {
+        if (blockCount > MAX_BLOCK_COUNT) {
+            throw new BusinessException(StorageExceptionCase.TOO_MANY_BLOCKS);
+        }
         List<byte[]> blocks = new ArrayList<>(blockCount);
         for (int i = 0; i < blockCount; i++) {
             String key = s3BasePath + "/block_" + i;

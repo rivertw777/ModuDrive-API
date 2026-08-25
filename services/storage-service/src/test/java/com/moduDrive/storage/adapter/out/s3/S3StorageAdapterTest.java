@@ -1,6 +1,8 @@
 package com.moduDrive.storage.adapter.out.s3;
 
+import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.storage.config.StorageProperties;
+import com.moduDrive.storage.exception.StorageExceptionCase;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -24,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willAnswer;
@@ -70,6 +73,21 @@ class S3StorageAdapterTest {
             byte[] stored0 = fakeBucket.get("path/to/file/block_0");
             byte[] stored1 = fakeBucket.get("path/to/file/block_1");
             assertThat(stored0).isNotEqualTo(stored1); // random IV, not ECB
+        }
+    }
+
+    @Nested
+    @DisplayName("blockCount가 상한을 초과할 때")
+    class WhenBlockCountExceedsCap {
+
+        @Test
+        void throwsBeforeAllocatingAnyArray() {
+            Throwable thrown = catchThrowable(() -> adapter.retrieveBlocks("path/to/file", 100_001));
+
+            assertThat(thrown)
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(StorageExceptionCase.TOO_MANY_BLOCKS);
         }
     }
 
