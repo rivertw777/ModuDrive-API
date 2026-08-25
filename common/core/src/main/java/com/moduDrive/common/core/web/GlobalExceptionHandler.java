@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.moduDrive.common.core.exception.BusinessException;
 import feign.FeignException;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
@@ -21,6 +23,8 @@ import java.util.Map;
 @ControllerAdvice
 @RequiredArgsConstructor
 public class GlobalExceptionHandler {
+
+    private static final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     private final ObjectMapper objectMapper;
 
@@ -66,9 +70,12 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Object>> handleGlobalException(Exception e) {
+        // Never echo e.getMessage() here — it can carry raw infra detail (DB constraint names,
+        // connection failures, etc, CWE-209). Full detail goes to the log only.
+        logger.error("Unhandled exception", e);
         ApiResponse<Object> response = ApiResponse.error(
                 HttpStatus.INTERNAL_SERVER_ERROR,
-                e.getMessage()
+                "서버 오류가 발생했습니다."
         );
         return ResponseEntity
                 .status(response.getStatus())
