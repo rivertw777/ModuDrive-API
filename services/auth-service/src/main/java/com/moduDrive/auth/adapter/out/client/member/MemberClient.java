@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 @FeignClient(name = "member-service")
 interface MemberClient {
 
-    @PostMapping("/api/v1/member/authenticate")
+    @PostMapping("/internal/v1/member/authenticate")
     @CircuitBreaker(name = "memberServiceCircuitBreaker", fallbackMethod = "authenticateMemberFallback")
     @Retry(name = "memberServiceRetry")
     ApiResponse<AuthenticateMemberResponse> authenticateMember(AuthenticateMemberRequest authenticateMemberRequest);
@@ -23,7 +23,7 @@ interface MemberClient {
         return FeignFallbackUtils.handleFallback(cause);
     }
 
-    @GetMapping("/api/v1/member/{memberId}/status")
+    @GetMapping("/internal/v1/member/{memberId}/status")
     @CircuitBreaker(name = "memberServiceCircuitBreaker", fallbackMethod = "fetchMemberStatusFallback")
     @Retry(name = "memberServiceRetry")
     ApiResponse<AuthenticateMemberResponse> fetchMemberStatus(@PathVariable("memberId") String memberId);

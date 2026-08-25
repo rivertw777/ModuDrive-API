@@ -24,7 +24,7 @@ class AuthenticateMemberController {
     private final AuthenticateMemberUseCase authenticateMemberUseCase;
     private final MemberResponseMapper memberResponseMapper;
 
-    @PostMapping("/api/v1/member/authenticate")
+    @PostMapping("/internal/v1/member/authenticate")
     public ApiResponse<AuthenticateMemberResponse> authenticateMember(@Valid @RequestBody AuthenticateMemberRequest request) {
         val command = new AuthenticateMemberCommand(
                 new MemberEmail(request.email()),
