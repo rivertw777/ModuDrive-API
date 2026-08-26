@@ -293,6 +293,23 @@ class FilePersistenceAdapterTest {
         }
 
         @Test
+        @DisplayName("초대 시각이 TTL 컷오프보다 이전이면 토큰으로 더 이상 조회되지 않는다")
+        void expiredGuestInviteTokenIsNoLongerFound() {
+            UUID fileIdValue = UUID.randomUUID();
+            UUID token = UUID.randomUUID();
+            springDataFileShareRepository.save(
+                    new FileShareJpaEntity(fileIdValue, UUID.randomUUID(), null, Role.VIEWER, token, "guest@example.com"));
+
+            // createdAt is auditing-managed (set to "now" on insert) — rather than fight that to
+            // backdate a row, exercise the same query the adapter runs with a cutoff on each side
+            // of "now", which is exactly what distinguishes an expired invite from a live one.
+            assertThat(springDataFileShareRepository.findByTokenAndCreatedAtAfter(token, LocalDateTime.now().minusDays(1)))
+                    .isPresent();
+            assertThat(springDataFileShareRepository.findByTokenAndCreatedAtAfter(token, LocalDateTime.now().plusDays(1)))
+                    .isEmpty();
+        }
+
+        @Test
         @DisplayName("공유를 해제하면 행이 사라진다")
         void deletesShare() {
             UUID fileIdValue = UUID.randomUUID();

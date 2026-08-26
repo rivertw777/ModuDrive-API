@@ -14,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -27,6 +28,10 @@ class FilePersistenceAdapter implements
         SaveFileVersionPort, FindFileVersionsPort,
         SaveFileSharePort, FindFileSharePort, DeleteFileSharePort,
         SaveFileAccessPort, FindFileAccessPort {
+
+    // ponytail: hardcoded TTL, not a config value yet — bump to a @Value if a real need to tune
+    // it per deployment shows up.
+    private static final int GUEST_SHARE_TOKEN_TTL_DAYS = 7;
 
     private final SpringDataNamespaceRepository namespaceRepository;
     private final SpringDataFileRepository fileRepository;
@@ -266,7 +271,8 @@ class FilePersistenceAdapter implements
 
     @Override
     public Optional<FileShare> findByToken(UUID token) {
-        return fileShareRepository.findByToken(token)
+        LocalDateTime cutoff = LocalDateTime.now().minusDays(GUEST_SHARE_TOKEN_TTL_DAYS);
+        return fileShareRepository.findByTokenAndCreatedAtAfter(token, cutoff)
                 .map(fileMapper::mapFileShareToDomain);
     }
 
