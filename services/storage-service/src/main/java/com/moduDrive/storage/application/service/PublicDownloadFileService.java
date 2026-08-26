@@ -8,6 +8,7 @@ import com.moduDrive.storage.application.port.out.RetrieveBlocksPort;
 import com.moduDrive.storage.config.StorageProperties;
 import lombok.RequiredArgsConstructor;
 
+import java.io.OutputStream;
 import java.util.List;
 
 /** The anonymous sibling of {@link DownloadFileService}: identical block assembly, but the file is
@@ -30,5 +31,12 @@ class PublicDownloadFileService implements PublicDownloadFileUseCase {
         }
         List<byte[]> blocks = retrieveBlocksPort.retrieveBlocks(s3Path, blockCount);
         return BlockAssembler.assemble(blocks);
+    }
+
+    @Override
+    public void downloadPublicStream(PublicDownloadFileCommand command, OutputStream out) {
+        String s3Path = getFileVersionPort.getPublicS3Path(command.getToken());
+        int blockCount = getFileVersionPort.getPublicBlockCount(command.getToken());
+        retrieveBlocksPort.streamBlocks(s3Path, blockCount, out);
     }
 }

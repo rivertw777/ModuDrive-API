@@ -14,6 +14,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.io.ByteArrayOutputStream;
 import java.util.List;
 import java.util.UUID;
 
@@ -22,6 +23,7 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.never;
 import static org.mockito.BDDMockito.then;
 
 @ExtendWith(MockitoExtension.class)
@@ -61,6 +63,23 @@ class DownloadFileServiceTest {
             byte[] result = downloadFileService.download(new DownloadFileCommand(fileId, userId));
 
             assertThat(result).isEqualTo("data".getBytes());
+        }
+    }
+
+    @Nested
+    @DisplayName("일반 다운로드를 스트리밍으로 요청할 때")
+    class WhenDownloadingAsStream {
+
+        @Test
+        void delegatesToStreamBlocksWithoutAssemblingAByteArray() {
+            given(getFileVersionPort.getS3Path(UUID.fromString(fileId), userId)).willReturn("files/abc/xyz");
+            given(getFileVersionPort.getBlockCount(UUID.fromString(fileId), userId)).willReturn(2);
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+            downloadFileService.downloadStream(new DownloadFileCommand(fileId, userId), out);
+
+            then(retrieveBlocksPort).should().streamBlocks("files/abc/xyz", 2, out);
+            then(retrieveBlocksPort).should(never()).retrieveBlocks(anyString(), anyInt());
         }
     }
 

@@ -8,6 +8,7 @@ import com.moduDrive.storage.application.port.out.RetrieveBlocksPort;
 import com.moduDrive.storage.config.StorageProperties;
 import lombok.RequiredArgsConstructor;
 
+import java.io.OutputStream;
 import java.util.List;
 
 @UseCase
@@ -27,5 +28,12 @@ class DownloadFileService implements DownloadFileUseCase {
         }
         List<byte[]> blocks = retrieveBlocksPort.retrieveBlocks(s3Path, blockCount);
         return BlockAssembler.assemble(blocks);
+    }
+
+    @Override
+    public void downloadStream(DownloadFileCommand command, OutputStream out) {
+        String s3Path = getFileVersionPort.getS3Path(command.getFileId(), command.getUserId());
+        int blockCount = getFileVersionPort.getBlockCount(command.getFileId(), command.getUserId());
+        retrieveBlocksPort.streamBlocks(s3Path, blockCount, out);
     }
 }

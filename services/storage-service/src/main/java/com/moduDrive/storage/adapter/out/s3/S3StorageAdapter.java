@@ -22,6 +22,7 @@ import javax.crypto.spec.SecretKeySpec;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
@@ -133,16 +134,34 @@ class S3StorageAdapter implements StoreBlocksPort, RetrieveBlocksPort {
         }
         List<byte[]> blocks = new ArrayList<>(blockCount);
         for (int i = 0; i < blockCount; i++) {
-            String key = s3BasePath + "/block_" + i;
-            byte[] encrypted = s3Client.getObjectAsBytes(
-                    GetObjectRequest.builder()
-                            .bucket(properties.getS3().getBucket())
-                            .key(key)
-                            .build()
-            ).asByteArray();
-            blocks.add(decompress(decrypt(encrypted, key)));
+            blocks.add(fetchBlock(s3BasePath, i));
         }
         return blocks;
+    }
+
+    @Override
+    public void streamBlocks(String s3BasePath, int blockCount, OutputStream out) {
+        if (blockCount > MAX_BLOCK_COUNT) {
+            throw new BusinessException(StorageExceptionCase.TOO_MANY_BLOCKS);
+        }
+        try {
+            for (int i = 0; i < blockCount; i++) {
+                out.write(fetchBlock(s3BasePath, i));
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("streaming download failed", e);
+        }
+    }
+
+    private byte[] fetchBlock(String s3BasePath, int index) {
+        String key = s3BasePath + "/block_" + index;
+        byte[] encrypted = s3Client.getObjectAsBytes(
+                GetObjectRequest.builder()
+                        .bucket(properties.getS3().getBucket())
+                        .key(key)
+                        .build()
+        ).asByteArray();
+        return decompress(decrypt(encrypted, key));
     }
 
     private byte[] decrypt(byte[] data, String objectKey) {

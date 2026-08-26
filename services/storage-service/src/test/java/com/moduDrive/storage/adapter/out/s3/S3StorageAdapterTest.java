@@ -20,6 +20,7 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectResponse;
 import software.amazon.awssdk.core.ResponseBytes;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -156,6 +157,35 @@ class S3StorageAdapterTest {
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
                     .isEqualTo(StorageExceptionCase.TOO_MANY_BLOCKS);
+        }
+
+        @Test
+        void streamBlocksAlsoThrowsBeforeFetchingAnything() {
+            Throwable thrown = catchThrowable(
+                    () -> adapter.streamBlocks("path/to/file", 100_001, new ByteArrayOutputStream()));
+
+            assertThat(thrown)
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(StorageExceptionCase.TOO_MANY_BLOCKS);
+        }
+    }
+
+    @Nested
+    @DisplayName("블록을 저장하고 스트림으로 조회할 때")
+    class WhenStoringThenStreaming {
+
+        @Test
+        void writesTheSameBytesAsRetrieveBlocks() throws IOException {
+            stubS3();
+            byte[] block0 = "hello ".getBytes(StandardCharsets.UTF_8);
+            byte[] block1 = "world".getBytes(StandardCharsets.UTF_8);
+            adapter.storeBlocks("path/to/file", List.of(block0, block1));
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+            adapter.streamBlocks("path/to/file", 2, out);
+
+            assertThat(out.toByteArray()).isEqualTo("hello world".getBytes(StandardCharsets.UTF_8));
         }
     }
 
