@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: notification-service
+  config:
+    import:
+      - "classpath:application-jpa.yml"
+      - "classpath:application-observability.yml"
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    consumer:
+      group-id: notification-service
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: com.moduDrive.common.event.notification
+    # Without this, KafkaRetryConfig's DeadLetterPublishingRecoverer falls back to Boot's default
+    # producer (String-only), so publishing a FileSharedNotified to the dead-letter topic throws
+    # SerializationException and the record replays forever instead of landing on the DLT.
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer

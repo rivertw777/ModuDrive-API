@@ -1,5 +1,5 @@
 .PHONY: service infra reset \
-       gateway member auth file storage mail
+       gateway member auth file storage mail notification
 
 BLUE := \033[0;34m
 GREEN := \033[0;32m
@@ -59,3 +59,9 @@ mail:
 	@./gradlew :services:mail-service:test
 	@./gradlew :services:mail-service:docker
 	@docker-compose -f $(SERVICE_COMPOSE_FILE) up -d mail-service
+
+notification:
+	@echo "$(BLUE)🚀 Starting Notification Service...$(NC)"
+	@./gradlew :services:notification-service:test
+	@./gradlew :services:notification-service:docker
+	@docker-compose -f $(SERVICE_COMPOSE_FILE) up -d notification-service
