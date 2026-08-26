@@ -4,6 +4,7 @@ import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.storage.application.port.in.command.CompleteResumableUploadCommand;
 import com.moduDrive.storage.application.port.out.FileUploadCallbackPort;
 import com.moduDrive.storage.application.port.out.FindUploadSessionPort;
+import com.moduDrive.storage.application.port.out.RemoveUploadSessionPort;
 import com.moduDrive.storage.application.port.out.StoreBlocksPort;
 import com.moduDrive.storage.domain.model.UploadSession;
 import com.moduDrive.storage.exception.StorageExceptionCase;
@@ -34,6 +35,7 @@ class CompleteResumableUploadServiceTest {
     private static final long TEST_MAX_FILE_SIZE_BYTES = 5_368_709_120L; // 5GB
 
     @Mock private FindUploadSessionPort findUploadSessionPort;
+    @Mock private RemoveUploadSessionPort removeUploadSessionPort;
     @Mock private StoreBlocksPort storeBlocksPort;
     @Mock private FileUploadCallbackPort callbackPort;
     private CompleteResumableUploadService completeResumableUploadService;
@@ -41,7 +43,7 @@ class CompleteResumableUploadServiceTest {
     @BeforeEach
     void setUp() {
         completeResumableUploadService = new CompleteResumableUploadService(
-                findUploadSessionPort, storeBlocksPort, callbackPort, TEST_MAX_FILE_SIZE_BYTES);
+                findUploadSessionPort, removeUploadSessionPort, storeBlocksPort, callbackPort, TEST_MAX_FILE_SIZE_BYTES);
     }
 
     private final UUID userId = UUID.randomUUID();
@@ -88,6 +90,19 @@ class CompleteResumableUploadServiceTest {
                     new CompleteResumableUploadCommand(session.getSessionId().toString(), sameValueDifferentInstance));
 
             assertThat(session.isCompleted()).isTrue();
+        }
+
+        @Test
+        void removesTheSessionSoItsChunksAreNotHeldForever() {
+            UploadSession session = fullSession(1);
+            given(findUploadSessionPort.findSession(session.getSessionId()))
+                    .willReturn(Optional.of(session));
+            given(storeBlocksPort.storeBlocks(anyString(), anyList())).willReturn(1);
+
+            completeResumableUploadService.completeResumableUpload(
+                    new CompleteResumableUploadCommand(session.getSessionId().toString(), sameValueDifferentInstance));
+
+            then(removeUploadSessionPort).should().removeSession(session.getSessionId());
         }
     }
 
@@ -138,7 +153,8 @@ class CompleteResumableUploadServiceTest {
             // what was actually assembled from chunks, using a deliberately tiny limit so the
             // test doesn't need to allocate a multi-GB session.
             CompleteResumableUploadService serviceWithTinyLimit =
-                    new CompleteResumableUploadService(findUploadSessionPort, storeBlocksPort, callbackPort, 5L);
+                    new CompleteResumableUploadService(
+                            findUploadSessionPort, removeUploadSessionPort, storeBlocksPort, callbackPort, 5L);
             UploadSession session = fullSession(2); // "chunk0" + "chunk1" = 12 bytes > 5
             given(findUploadSessionPort.findSession(session.getSessionId()))
                     .willReturn(Optional.of(session));
