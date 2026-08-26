@@ -10,9 +10,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.lang.reflect.Method;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.then;
@@ -47,6 +50,15 @@ class RecordFileAccessServiceTest {
             willThrow(new RuntimeException("db hiccup")).given(saveFileAccessPort).recordAccess(any(FileAccess.class));
 
             assertThatCode(() -> recordFileAccessService.recordAccess(command)).doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("@Transactional을 붙이지 않는다 (붙이면 커밋 시점에 이 catch를 우회해 UnexpectedRollbackException이 샌다)")
+        void isNotTransactional() throws NoSuchMethodException {
+            Method recordAccess = RecordFileAccessService.class.getMethod("recordAccess", RecordFileAccessCommand.class);
+
+            assertThat(recordAccess.isAnnotationPresent(Transactional.class)).isFalse();
+            assertThat(RecordFileAccessService.class.isAnnotationPresent(Transactional.class)).isFalse();
         }
     }
 }

@@ -7,7 +7,6 @@ import com.moduDrive.file.application.port.out.SaveFileAccessPort;
 import com.moduDrive.file.domain.model.FileAccess;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 
@@ -25,7 +24,12 @@ class RecordFileAccessService implements RecordFileAccessUseCase {
     // the top of "recent"; harmless for this feature. Catching RuntimeException broadly (not
     // just DataAccessException) is what lets every caller add this as a single line with no
     // try/catch of its own — see GetFileController and friends.
-    @Transactional
+    //
+    // Deliberately NOT @Transactional: the adapter's saveAndFlush already runs in its own
+    // Spring Data-managed transaction, and wrapping this method in another one means a
+    // constraint violation marks *that* transaction rollback-only — the catch below swallows
+    // the exception, but the @Transactional proxy then throws UnexpectedRollbackException at
+    // commit time, from outside this try block. That defeats the whole point of catching here.
     @Override
     public void recordAccess(RecordFileAccessCommand command) {
         try {
