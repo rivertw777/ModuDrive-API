@@ -13,8 +13,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.BDDMockito.willThrow;
 
 @ExtendWith(MockitoExtension.class)
 class RecordFileAccessServiceTest {
@@ -33,6 +35,18 @@ class RecordFileAccessServiceTest {
             recordFileAccessService.recordAccess(command);
 
             then(saveFileAccessPort).should().recordAccess(any(FileAccess.class));
+        }
+    }
+
+    @Nested
+    @DisplayName("접근 기록 저장이 실패할 때")
+    class WhenSavingAccessFails {
+
+        @Test
+        void swallowsTheFailure() {
+            willThrow(new RuntimeException("db hiccup")).given(saveFileAccessPort).recordAccess(any(FileAccess.class));
+
+            assertThatCode(() -> recordFileAccessService.recordAccess(command)).doesNotThrowAnyException();
         }
     }
 }

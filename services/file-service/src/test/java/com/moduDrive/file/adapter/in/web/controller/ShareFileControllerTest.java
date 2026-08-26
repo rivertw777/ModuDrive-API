@@ -2,7 +2,9 @@ package com.moduDrive.file.adapter.in.web.controller;
 
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.common.core.web.GlobalExceptionHandler;
+import com.moduDrive.file.application.port.in.command.RecordFileAccessCommand;
 import com.moduDrive.file.application.port.in.command.ShareFileCommand;
+import com.moduDrive.file.application.port.in.usecase.RecordFileAccessUseCase;
 import com.moduDrive.file.application.port.in.usecase.ShareFileUseCase;
 import com.moduDrive.file.domain.model.FileShare;
 import com.moduDrive.file.domain.model.FileShare.*;
@@ -23,6 +25,7 @@ import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -34,6 +37,7 @@ class ShareFileControllerTest {
 
     @Autowired private MockMvc mockMvc;
     @MockitoBean private ShareFileUseCase shareFileUseCase;
+    @MockitoBean private RecordFileAccessUseCase recordFileAccessUseCase;
 
     private static final UUID FILE_ID = UUID.randomUUID();
     private static final String OWNER_ID = "11111111-1111-1111-1111-111111111111";
@@ -61,6 +65,8 @@ class ShareFileControllerTest {
                             .content(REQUEST_JSON))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.role").value("VIEWER"));
+
+            then(recordFileAccessUseCase).should().recordAccess(any(RecordFileAccessCommand.class));
         }
 
         @Test
@@ -108,6 +114,8 @@ class ShareFileControllerTest {
                     .andExpect(status().isForbidden())
                     .andExpect(jsonPath("$.message")
                             .value(FileExceptionCase.FILE_ACCESS_DENIED.getMessage()));
+
+            then(recordFileAccessUseCase).shouldHaveNoInteractions();
         }
     }
 

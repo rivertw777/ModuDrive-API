@@ -4,7 +4,9 @@ import com.moduDrive.common.core.annotation.WebAdapter;
 import com.moduDrive.common.core.web.ApiResponse;
 import com.moduDrive.file.adapter.in.web.dto.FileVersionResponse;
 import com.moduDrive.file.application.port.in.command.GetLatestFileVersionsCommand;
+import com.moduDrive.file.application.port.in.command.RecordFileAccessCommand;
 import com.moduDrive.file.application.port.in.usecase.GetLatestFileVersionsUseCase;
+import com.moduDrive.file.application.port.in.usecase.RecordFileAccessUseCase;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -27,6 +29,7 @@ import java.util.UUID;
 class GetLatestFileVersionsController {
 
     private final GetLatestFileVersionsUseCase getLatestFileVersionsUseCase;
+    private final RecordFileAccessUseCase recordFileAccessUseCase;
 
     @GetMapping("/internal/files/{fileId}/revisions")
     public ApiResponse<List<FileVersionResponse>> getLatestFileVersions(
@@ -38,6 +41,11 @@ class GetLatestFileVersionsController {
                 .stream()
                 .map(FileVersionResponse::from)
                 .toList();
+        // Both storage-service's download and preview/view endpoints resolve the version to
+        // stream through this one internal route, so this is the single choke point where an
+        // actual open/download can be marked recently-accessed. RecordFileAccessUseCase never
+        // throws (see RecordFileAccessService), so a tracking failure can't turn this into a 500.
+        recordFileAccessUseCase.recordAccess(new RecordFileAccessCommand(userId, fileId));
         return ApiResponse.success(revisions);
     }
 }

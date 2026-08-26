@@ -64,22 +64,6 @@ class GetFileControllerTest {
     }
 
     @Nested
-    @DisplayName("접근 기록이 실패할 때")
-    class WhenRecordingAccessFails {
-
-        @Test
-        void stillReturnsFileInfo() throws Exception {
-            given(getFileUseCase.getFile(any(GetFileCommand.class))).willReturn(uploadedFile);
-            willThrow(new RuntimeException("db hiccup"))
-                    .given(recordFileAccessUseCase).recordAccess(any(RecordFileAccessCommand.class));
-
-            mockMvc.perform(get("/api/v1/files/{fileId}", FILE_ID).header("X_USER_ID", USER_ID))
-                    .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.data.name").value("report.pdf"));
-        }
-    }
-
-    @Nested
     @DisplayName("파일이 없을 때")
     class WhenFileNotFound {
 

@@ -7,7 +7,6 @@ import com.moduDrive.file.application.port.out.SaveFileAccessPort;
 import com.moduDrive.file.domain.model.FileAccess;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.dao.DataAccessException;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
@@ -19,17 +18,20 @@ class RecordFileAccessService implements RecordFileAccessUseCase {
 
     private final SaveFileAccessPort saveFileAccessPort;
 
-    // Recency tracking is a side effect of viewing a file, never the reason a view fails —
-    // a lost upsert race or a transient DB error here must not turn a successful GetFile
-    // into a 500. Losing an individual access record just means one open doesn't move that
-    // file to the top of "recent"; harmless for this feature.
+    // Recency tracking is a side effect of touching a file (viewing, downloading, uploading,
+    // renaming, moving, restoring, ...), never the reason that action fails — a lost upsert
+    // race or any other runtime error here must not turn an otherwise-successful call into a
+    // 500. Losing an individual access record just means one action doesn't move that file to
+    // the top of "recent"; harmless for this feature. Catching RuntimeException broadly (not
+    // just DataAccessException) is what lets every caller add this as a single line with no
+    // try/catch of its own — see GetFileController and friends.
     @Transactional
     @Override
     public void recordAccess(RecordFileAccessCommand command) {
         try {
             saveFileAccessPort.recordAccess(
                     FileAccess.of(command.getUserId(), command.getFileId(), LocalDateTime.now()));
-        } catch (DataAccessException e) {
+        } catch (RuntimeException e) {
             log.warn("Failed to record file access for user={} file={}",
                     command.getUserId().value(), command.getFileId().value(), e);
         }
