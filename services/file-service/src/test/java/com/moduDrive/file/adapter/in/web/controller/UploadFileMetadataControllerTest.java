@@ -2,7 +2,9 @@ package com.moduDrive.file.adapter.in.web.controller;
 
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.common.core.web.GlobalExceptionHandler;
+import com.moduDrive.file.application.port.in.command.RecordFileAccessCommand;
 import com.moduDrive.file.application.port.in.command.UploadFileMetadataCommand;
+import com.moduDrive.file.application.port.in.usecase.RecordFileAccessUseCase;
 import com.moduDrive.file.application.port.in.usecase.UploadFileMetadataUseCase;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
@@ -22,6 +24,7 @@ import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -35,6 +38,8 @@ class UploadFileMetadataControllerTest {
     private MockMvc mockMvc;
     @MockitoBean
     private UploadFileMetadataUseCase uploadFileMetadataUseCase;
+    @MockitoBean
+    private RecordFileAccessUseCase recordFileAccessUseCase;
 
     private static final String USER_ID = "11111111-1111-1111-1111-111111111111";
     private static final String REQUEST_JSON = """
@@ -67,6 +72,8 @@ class UploadFileMetadataControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.status").value("PENDING"))
                     .andExpect(jsonPath("$.data.name").value("report.pdf"));
+
+            then(recordFileAccessUseCase).should().recordAccess(any(RecordFileAccessCommand.class));
         }
     }
 
@@ -100,6 +107,8 @@ class UploadFileMetadataControllerTest {
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.message")
                             .value(FileExceptionCase.NAMESPACE_NOT_FOUND.getMessage()));
+
+            then(recordFileAccessUseCase).shouldHaveNoInteractions();
         }
     }
 }

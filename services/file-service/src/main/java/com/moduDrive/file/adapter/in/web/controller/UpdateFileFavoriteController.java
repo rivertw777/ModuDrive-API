@@ -4,7 +4,9 @@ import com.moduDrive.common.core.annotation.WebAdapter;
 import com.moduDrive.common.core.web.ApiResponse;
 import com.moduDrive.file.adapter.in.web.dto.FileResponse;
 import com.moduDrive.file.adapter.in.web.dto.UpdateFileFavoriteRequest;
+import com.moduDrive.file.application.port.in.command.RecordFileAccessCommand;
 import com.moduDrive.file.application.port.in.command.UpdateFileFavoriteCommand;
+import com.moduDrive.file.application.port.in.usecase.RecordFileAccessUseCase;
 import com.moduDrive.file.application.port.in.usecase.UpdateFileFavoriteUseCase;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +24,7 @@ import java.util.UUID;
 class UpdateFileFavoriteController {
 
     private final UpdateFileFavoriteUseCase updateFileFavoriteUseCase;
+    private final RecordFileAccessUseCase recordFileAccessUseCase;
 
     @PatchMapping("/api/v1/files/{fileId}/favorite")
     public ApiResponse<FileResponse> updateFavorite(
@@ -29,6 +32,8 @@ class UpdateFileFavoriteController {
             @PathVariable UUID fileId,
             @Valid @RequestBody UpdateFileFavoriteRequest request) {
         var command = new UpdateFileFavoriteCommand(fileId, callerId, request.favorite());
-        return ApiResponse.success(FileResponse.from(updateFileFavoriteUseCase.updateFavorite(command)));
+        var file = updateFileFavoriteUseCase.updateFavorite(command);
+        recordFileAccessUseCase.recordAccess(new RecordFileAccessCommand(callerId, fileId));
+        return ApiResponse.success(FileResponse.from(file));
     }
 }

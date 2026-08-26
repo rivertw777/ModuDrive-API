@@ -2,7 +2,9 @@ package com.moduDrive.file.adapter.in.web.controller;
 
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.common.core.web.GlobalExceptionHandler;
+import com.moduDrive.file.application.port.in.command.RecordFileAccessCommand;
 import com.moduDrive.file.application.port.in.command.RevokeFileShareCommand;
+import com.moduDrive.file.application.port.in.usecase.RecordFileAccessUseCase;
 import com.moduDrive.file.application.port.in.usecase.RevokeFileShareUseCase;
 import com.moduDrive.file.exception.FileExceptionCase;
 import org.junit.jupiter.api.DisplayName;
@@ -28,6 +30,7 @@ class RevokeFileShareControllerTest {
 
     @Autowired private MockMvc mockMvc;
     @MockitoBean private RevokeFileShareUseCase revokeFileShareUseCase;
+    @MockitoBean private RecordFileAccessUseCase recordFileAccessUseCase;
 
     private static final UUID FILE_ID = UUID.randomUUID();
     private static final UUID SHARE_ID = UUID.randomUUID();
@@ -44,6 +47,7 @@ class RevokeFileShareControllerTest {
                     .andExpect(status().isOk());
 
             then(revokeFileShareUseCase).should().revokeFileShare(any(RevokeFileShareCommand.class));
+            then(recordFileAccessUseCase).should().recordAccess(any(RecordFileAccessCommand.class));
         }
     }
 
@@ -59,6 +63,8 @@ class RevokeFileShareControllerTest {
             mockMvc.perform(delete("/api/v1/files/{fileId}/shares/{shareId}", FILE_ID, SHARE_ID)
                             .header("X_USER_ID", OWNER_ID))
                     .andExpect(status().isForbidden());
+
+            then(recordFileAccessUseCase).shouldHaveNoInteractions();
         }
     }
 }

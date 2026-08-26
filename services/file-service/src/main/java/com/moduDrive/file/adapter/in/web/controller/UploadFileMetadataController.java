@@ -4,7 +4,9 @@ import com.moduDrive.common.core.annotation.WebAdapter;
 import com.moduDrive.common.core.web.ApiResponse;
 import com.moduDrive.file.adapter.in.web.dto.FileResponse;
 import com.moduDrive.file.adapter.in.web.dto.UploadFileMetadataRequest;
+import com.moduDrive.file.application.port.in.command.RecordFileAccessCommand;
 import com.moduDrive.file.application.port.in.command.UploadFileMetadataCommand;
+import com.moduDrive.file.application.port.in.usecase.RecordFileAccessUseCase;
 import com.moduDrive.file.application.port.in.usecase.UploadFileMetadataUseCase;
 import com.moduDrive.file.domain.model.File.FileIsDirectory;
 import com.moduDrive.file.domain.model.File.FileName;
@@ -25,6 +27,7 @@ import java.util.UUID;
 class UploadFileMetadataController {
 
     private final UploadFileMetadataUseCase uploadFileMetadataUseCase;
+    private final RecordFileAccessUseCase recordFileAccessUseCase;
 
     @PostMapping("/api/v1/files/metadata")
     public ApiResponse<FileResponse> uploadFileMetadata(
@@ -40,6 +43,7 @@ class UploadFileMetadataController {
                         Boolean.TRUE.equals(request.replaceExisting())
                 )
         );
+        recordFileAccessUseCase.recordAccess(new RecordFileAccessCommand(userId, file.getId()));
         return ApiResponse.success(FileResponse.from(file));
     }
 }

@@ -3,7 +3,9 @@ package com.moduDrive.file.adapter.in.web.controller;
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.common.core.web.GlobalExceptionHandler;
 import com.moduDrive.file.application.port.in.command.GetLatestFileVersionsCommand;
+import com.moduDrive.file.application.port.in.command.RecordFileAccessCommand;
 import com.moduDrive.file.application.port.in.usecase.GetLatestFileVersionsUseCase;
+import com.moduDrive.file.application.port.in.usecase.RecordFileAccessUseCase;
 import com.moduDrive.file.domain.model.FileVersion;
 import com.moduDrive.file.domain.model.FileVersion.*;
 import com.moduDrive.file.exception.FileExceptionCase;
@@ -21,6 +23,7 @@ import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -32,6 +35,7 @@ class GetLatestFileVersionsControllerTest {
 
     @Autowired private MockMvc mockMvc;
     @MockitoBean private GetLatestFileVersionsUseCase getLatestFileVersionsUseCase;
+    @MockitoBean private RecordFileAccessUseCase recordFileAccessUseCase;
 
     private static final UUID FILE_ID = UUID.randomUUID();
 
@@ -52,6 +56,8 @@ class GetLatestFileVersionsControllerTest {
             mockMvc.perform(get("/internal/files/{fileId}/revisions", FILE_ID).param("userId", USER_ID.toString()))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data[0].s3Path").value("s3://b/k"));
+
+            then(recordFileAccessUseCase).should().recordAccess(any(RecordFileAccessCommand.class));
         }
     }
 
@@ -66,6 +72,8 @@ class GetLatestFileVersionsControllerTest {
 
             mockMvc.perform(get("/internal/files/{fileId}/revisions", FILE_ID).param("userId", USER_ID.toString()))
                     .andExpect(status().isNotFound());
+
+            then(recordFileAccessUseCase).shouldHaveNoInteractions();
         }
     }
 
@@ -80,6 +88,8 @@ class GetLatestFileVersionsControllerTest {
 
             mockMvc.perform(get("/internal/files/{fileId}/revisions", FILE_ID).param("userId", USER_ID.toString()))
                     .andExpect(status().isForbidden());
+
+            then(recordFileAccessUseCase).shouldHaveNoInteractions();
         }
     }
 }
