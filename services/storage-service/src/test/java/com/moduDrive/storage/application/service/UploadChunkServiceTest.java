@@ -5,11 +5,11 @@ import com.moduDrive.storage.application.port.in.command.UploadChunkCommand;
 import com.moduDrive.storage.application.port.out.FindUploadSessionPort;
 import com.moduDrive.storage.domain.model.UploadSession;
 import com.moduDrive.storage.exception.StorageExceptionCase;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -23,10 +23,17 @@ import static org.mockito.BDDMockito.given;
 @ExtendWith(MockitoExtension.class)
 class UploadChunkServiceTest {
 
+    private static final long TEST_MAX_FILE_SIZE_BYTES = 5_368_709_120L; // 5GB
+
     @Mock private FindUploadSessionPort findUploadSessionPort;
-    @InjectMocks private UploadChunkService uploadChunkService;
+    private UploadChunkService uploadChunkService;
 
     private final UUID userId = UUID.randomUUID();
+
+    @BeforeEach
+    void setUp() {
+        uploadChunkService = new UploadChunkService(findUploadSessionPort, TEST_MAX_FILE_SIZE_BYTES);
+    }
 
     private UploadSession activeSession() {
         return UploadSession.create(UUID.randomUUID(), userId, 3);
@@ -105,6 +112,31 @@ class UploadChunkServiceTest {
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
                     .isEqualTo(StorageExceptionCase.INVALID_CHUNK_INDEX);
+        }
+    }
+
+    @Nested
+    @DisplayName("누적 청크 크기가 최대 파일 크기를 초과할 때")
+    class WhenAccumulatedSizeExceedsLimit {
+
+        @Test
+        void throwsFileTooLargeWithoutBufferingTheChunk() {
+            // A small limit here (instead of the class-wide 5GB constant) keeps this test
+            // from actually allocating gigabytes in the test JVM.
+            UploadChunkService smallLimitService = new UploadChunkService(findUploadSessionPort, 15L);
+            UploadSession session = activeSession();
+            session.addChunk(1, new byte[10]);
+            given(findUploadSessionPort.findSession(session.getSessionId()))
+                    .willReturn(Optional.of(session));
+            UploadChunkCommand command = new UploadChunkCommand(
+                    session.getSessionId().toString(), userId, 0, new byte[10]);
+
+            assertThatThrownBy(() -> smallLimitService.uploadChunk(command))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(StorageExceptionCase.FILE_TOO_LARGE);
+            // The chunk that pushed the total over the limit must never land in the session.
+            assertThat(session.getChunks()).doesNotContainKey(0);
         }
     }
 
