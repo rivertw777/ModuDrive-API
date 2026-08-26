@@ -134,6 +134,23 @@ services:
       eureka-server:
         condition: service_started
 
+  notification-service:
+    image: modu-drive-notification-service:0.0.1-SNAPSHOT
+    networks:
+      - modudrive_network
+    environment:
+      - SERVER_PORT=${NOTIFICATION_SERVER_PORT}
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE}
+      - eureka.client.serviceUrl.defaultZone=http://eureka-server:${EUREKA_SERVER_PORT}/eureka/
+      - SPRING_DATASOURCE_URL=${SPRING_DATASOURCE_URL}
+      - SPRING_DATASOURCE_USERNAME=${POSTGRES_USER}
+      - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD}
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=${SPRING_JPA_HIBERNATE_DDL_AUTO}
+      - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS}
+    depends_on:
+      eureka-server:
+        condition: service_started
+
 networks:
   modudrive_network:
     external: true

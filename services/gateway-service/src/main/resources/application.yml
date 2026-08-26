@@ -38,6 +38,8 @@ resilience4j:
         baseConfig: default
       mailServiceCircuitBreaker:
         baseConfig: default
+      notificationServiceCircuitBreaker:
+        baseConfig: default
 
 client:
   url: ${CLIENT_URL}
