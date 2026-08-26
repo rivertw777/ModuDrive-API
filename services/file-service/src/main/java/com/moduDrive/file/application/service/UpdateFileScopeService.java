@@ -11,6 +11,7 @@ import com.moduDrive.file.application.port.out.SaveFilePort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.FileShare;
 import com.moduDrive.file.domain.model.FileShare.FileShareId;
+import com.moduDrive.file.domain.model.Role;
 import com.moduDrive.file.domain.model.ShareScope;
 import com.moduDrive.file.exception.FileExceptionCase;
 import lombok.RequiredArgsConstructor;
@@ -36,8 +37,9 @@ class UpdateFileScopeService implements UpdateFileScopeUseCase {
         fileAccessGuard.requireOwner(file, command.getCallerId());
 
         if (command.getScope() == ShareScope.LINK) {
-            // A link grants a role to whoever holds it, so it must name one.
-            if (command.getRole() == null) {
+            // A link is a bearer credential anyone who obtains it can use, unlike a named
+            // RESTRICTED grant — so it may only ever hand out read-only access.
+            if (command.getRole() != Role.VIEWER) {
                 throw new BusinessException(FileExceptionCase.INVALID_LINK_ROLE);
             }
             // File.enableLinkSharing keeps an existing token, so re-selecting LINK doesn't

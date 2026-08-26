@@ -82,20 +82,6 @@ class UpdateFileScopeServiceTest {
         }
 
         @Test
-        void upgradesTheLinkRoleWithoutRotatingTheToken() {
-            File alreadyLinked = makeFile();
-            UUID existingToken = UUID.randomUUID();
-            alreadyLinked.enableLinkSharing(existingToken, Role.VIEWER);
-            given(findFilePort.findById(new FileId(fileId))).willReturn(Optional.of(alreadyLinked));
-            given(saveFilePort.saveFile(any(File.class))).willAnswer(inv -> inv.getArgument(0));
-
-            File result = updateFileScopeService.updateFileScope(command(ShareScope.LINK, Role.EDITOR));
-
-            assertThat(result.getLinkRole()).isEqualTo(Role.EDITOR);
-            assertThat(result.getLinkToken()).isEqualTo(existingToken);
-        }
-
-        @Test
         void keepsExistingTokenWhenLinkIsReSelected() {
             File alreadyLinked = makeFile();
             UUID existingToken = UUID.randomUUID();
@@ -169,6 +155,19 @@ class UpdateFileScopeServiceTest {
 
             Throwable thrown = catchThrowable(
                     () -> updateFileScopeService.updateFileScope(command(ShareScope.LINK, null)));
+
+            assertThat(thrown).isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(FileExceptionCase.INVALID_LINK_ROLE);
+            then(saveFilePort).shouldHaveNoInteractions();
+        }
+
+        @Test
+        void throwsInvalidLinkRoleWhenRoleIsEditor() {
+            given(findFilePort.findById(new FileId(fileId))).willReturn(Optional.of(makeFile()));
+
+            Throwable thrown = catchThrowable(
+                    () -> updateFileScopeService.updateFileScope(command(ShareScope.LINK, Role.EDITOR)));
 
             assertThat(thrown).isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
