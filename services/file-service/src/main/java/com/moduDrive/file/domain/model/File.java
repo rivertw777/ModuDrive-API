@@ -163,7 +163,19 @@ public class File {
 
     public record FileId(UUID value) {}
     public record FileNamespaceId(UUID value) {}
-    public record FileName(String value) {}
+    public record FileName(String value) {
+        /** Rejects anything that would corrupt {@link #fullPath()} (a path separator embedded in
+         * a name) or that {@code DirectoryCascader.movePath} would misread as a path segment
+         * ("." / ".."), not just for the create-directory entry point that already had this
+         * check, but for every caller — including rename, which had none (#210). */
+        public FileName {
+            if (value == null || value.isBlank()
+                    || value.contains("/") || value.contains("\\")
+                    || value.equals(".") || value.equals("..")) {
+                throw new IllegalArgumentException("파일/디렉토리 이름에 /, \\, ., .. 는 사용할 수 없습니다.");
+            }
+        }
+    }
     public record FilePath(String value) {}
     public record FileOwnerId(UUID value) {}
     public record FileCurrentVersionId(UUID value) {}
