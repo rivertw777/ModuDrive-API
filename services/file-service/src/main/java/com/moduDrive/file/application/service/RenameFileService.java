@@ -28,7 +28,14 @@ class RenameFileService implements RenameFileUseCase {
     public File renameFile(RenameFileCommand command) {
         File file = findFilePort.findById(command.getFileId())
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_NOT_FOUND));
-        fileAccessGuard.requirePermission(file, command.getCallerId(), Permission.RENAME);
+        if (file.isDirectory()) {
+            // A directory rename cascades to every descendant's stored path (see movePath below) —
+            // an EDITOR share on just this directory would otherwise let them rewrite the paths of
+            // child files never individually shared with them (#210).
+            fileAccessGuard.requireOwner(file, command.getCallerId());
+        } else {
+            fileAccessGuard.requirePermission(file, command.getCallerId(), Permission.RENAME);
+        }
 
         if (file.getStatus() == FileStatus.DELETED) {
             throw new BusinessException(FileExceptionCase.FILE_ALREADY_DELETED);
