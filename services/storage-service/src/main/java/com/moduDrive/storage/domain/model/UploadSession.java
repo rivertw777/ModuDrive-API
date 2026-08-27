@@ -2,6 +2,7 @@ package com.moduDrive.storage.domain.model;
 
 import lombok.Getter;
 
+import java.time.Instant;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -17,6 +18,7 @@ public class UploadSession {
     private final int totalChunks;
     private final ConcurrentMap<Integer, byte[]> chunks;
     private final AtomicLong totalBytes;
+    private final Instant createdAt;
     private boolean completed;
 
     private UploadSession(UUID sessionId, UUID fileId, UUID ownerId, int totalChunks) {
@@ -26,6 +28,7 @@ public class UploadSession {
         this.totalChunks = totalChunks;
         this.chunks = new ConcurrentHashMap<>();
         this.totalBytes = new AtomicLong(0);
+        this.createdAt = Instant.now();
         this.completed = false;
     }
 

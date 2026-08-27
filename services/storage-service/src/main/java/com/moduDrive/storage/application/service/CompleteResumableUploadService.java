@@ -6,6 +6,7 @@ import com.moduDrive.storage.application.port.in.command.CompleteResumableUpload
 import com.moduDrive.storage.application.port.in.usecase.CompleteResumableUploadUseCase;
 import com.moduDrive.storage.application.port.out.FileUploadCallbackPort;
 import com.moduDrive.storage.application.port.out.FindUploadSessionPort;
+import com.moduDrive.storage.application.port.out.RemoveUploadSessionPort;
 import com.moduDrive.storage.application.port.out.StoreBlocksPort;
 import com.moduDrive.storage.domain.model.UploadSession;
 import com.moduDrive.storage.exception.StorageExceptionCase;
@@ -19,15 +20,18 @@ import java.util.stream.IntStream;
 class CompleteResumableUploadService implements CompleteResumableUploadUseCase {
 
     private final FindUploadSessionPort findUploadSessionPort;
+    private final RemoveUploadSessionPort removeUploadSessionPort;
     private final StoreBlocksPort storeBlocksPort;
     private final FileUploadCallbackPort callbackPort;
     private final long maxFileSizeBytes;
 
     CompleteResumableUploadService(FindUploadSessionPort findUploadSessionPort,
+                                    RemoveUploadSessionPort removeUploadSessionPort,
                                     StoreBlocksPort storeBlocksPort,
                                     FileUploadCallbackPort callbackPort,
                                     @Value("${modudrive.storage.max-file-size-bytes}") long maxFileSizeBytes) {
         this.findUploadSessionPort = findUploadSessionPort;
+        this.removeUploadSessionPort = removeUploadSessionPort;
         this.storeBlocksPort = storeBlocksPort;
         this.callbackPort = callbackPort;
         this.maxFileSizeBytes = maxFileSizeBytes;
@@ -64,5 +68,8 @@ class CompleteResumableUploadService implements CompleteResumableUploadUseCase {
 
         callbackPort.notifyUploadComplete(session.getFileId(), command.getUserId(), totalSize, blockCount, s3Path);
         session.markCompleted();
+        // Chunks are stored in S3 now; holding them in the in-memory session heap has no more
+        // purpose (#213).
+        removeUploadSessionPort.removeSession(session.getSessionId());
     }
 }
