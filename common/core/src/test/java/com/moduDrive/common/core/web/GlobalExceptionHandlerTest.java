@@ -4,8 +4,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpInputMessage;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -28,6 +31,37 @@ class GlobalExceptionHandlerTest {
             assertThat(response.getBody().getMessage())
                     .isEqualTo("서버 오류가 발생했습니다.")
                     .doesNotContain("uk_member_email");
+        }
+    }
+
+    @Nested
+    @DisplayName("요청 본문을 파싱할 수 없을 때")
+    class WhenRequestBodyIsUnreadable {
+
+        @Test
+        void returns400InsteadOf500() {
+            HttpMessageNotReadableException e =
+                    new HttpMessageNotReadableException("broken json", (HttpInputMessage) null);
+
+            ResponseEntity<ApiResponse<Object>> response = handler.handleHttpMessageNotReadableException(e);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    @Nested
+    @DisplayName("경로/쿼리 파라미터 타입이 맞지 않을 때")
+    class WhenParameterTypeMismatches {
+
+        @Test
+        void returns400InsteadOf500() {
+            MethodArgumentTypeMismatchException e =
+                    new MethodArgumentTypeMismatchException("abc", Integer.class, "chunkIndex", null, null);
+
+            ResponseEntity<ApiResponse<Object>> response = handler.handleMethodArgumentTypeMismatchException(e);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(response.getBody().getMessage()).contains("chunkIndex");
         }
     }
 }
