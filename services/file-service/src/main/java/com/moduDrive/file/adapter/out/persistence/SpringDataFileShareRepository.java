@@ -2,6 +2,7 @@ package com.moduDrive.file.adapter.out.persistence;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -14,7 +15,9 @@ interface SpringDataFileShareRepository extends JpaRepository<FileShareJpaEntity
 
     Optional<FileShareJpaEntity> findByFileIdAndSharedWithUserId(UUID fileId, UUID sharedWithUserId);
 
-    Optional<FileShareJpaEntity> findByToken(UUID token);
+    /** Excludes a pending guest share whose invite is older than {@code createdAfter} — see
+     * {@code FilePersistenceAdapter#findByToken} (#211: this token had no expiry at all). */
+    Optional<FileShareJpaEntity> findByTokenAndCreatedAtAfter(UUID token, LocalDateTime createdAfter);
 
     List<FileShareJpaEntity> findByFileId(UUID fileId);
 
