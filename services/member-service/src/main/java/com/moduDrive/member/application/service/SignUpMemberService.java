@@ -2,13 +2,12 @@ package com.moduDrive.member.application.service;
 
 import com.moduDrive.common.core.annotation.UseCase;
 import com.moduDrive.common.core.exception.BusinessException;
+import com.moduDrive.member.application.event.MemberSignedUpEvent;
 import com.moduDrive.member.application.port.in.command.SignUpMemberCommand;
 import com.moduDrive.member.application.port.in.usecase.SignUpMemberUseCase;
 import com.moduDrive.member.application.port.out.CheckEmailExistsPort;
-import com.moduDrive.member.application.port.out.CreateNamespacePort;
 import com.moduDrive.member.application.port.out.EmailVerificationTokenPort;
 import com.moduDrive.member.application.port.out.EncodePasswordPort;
-import com.moduDrive.member.application.port.out.PublishMemberEventPort;
 import com.moduDrive.member.application.port.out.SignUpMemberPort;
 import com.moduDrive.member.exception.MemberExceptionCase;
 import com.moduDrive.member.domain.model.Member;
@@ -18,6 +17,7 @@ import com.moduDrive.member.domain.model.Member.MemberPassword;
 import com.moduDrive.member.domain.model.Member.MemberRoles;
 import com.moduDrive.member.domain.model.Role;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
@@ -29,9 +29,8 @@ class SignUpMemberService implements SignUpMemberUseCase {
     private final SignUpMemberPort signUpMemberPort;
     private final EncodePasswordPort encodePasswordPort;
     private final CheckEmailExistsPort checkEmailExistsPort;
-    private final CreateNamespacePort createNamespacePort;
     private final EmailVerificationTokenPort emailVerificationTokenPort;
-    private final PublishMemberEventPort publishMemberEventPort;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     @Override
@@ -49,9 +48,11 @@ class SignUpMemberService implements SignUpMemberUseCase {
                 new MemberIsValid(true)
         );
         Member savedMember = signUpMemberPort.createMember(member);
-        createNamespacePort.createNamespace(savedMember.getId());
-        // Lets file-service auto-claim any pending guest share invited to this email before signup.
-        publishMemberEventPort.publishSignedUp(savedMember.getId(), savedMember.getEmail());
+        // The Feign call to file-service and the Kafka publish used to run right here, inside this
+        // @Transactional — holding the DB connection for an HTTP round trip, and (on a later commit
+        // failure) leaving an already-published MemberSignedUp for a member that was never actually
+        // created. MemberSignedUpEventListener runs both AFTER_COMMIT instead (#208).
+        eventPublisher.publishEvent(new MemberSignedUpEvent(savedMember.getId(), savedMember.getEmail()));
     }
 
     private void validateEmailNotDuplicated(MemberEmail memberEmail) {

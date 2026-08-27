@@ -1,12 +1,11 @@
 package com.moduDrive.member.application.service;
 
 import com.moduDrive.common.core.exception.BusinessException;
+import com.moduDrive.member.application.event.MemberSignedUpEvent;
 import com.moduDrive.member.application.port.in.command.SignUpMemberCommand;
 import com.moduDrive.member.application.port.out.CheckEmailExistsPort;
-import com.moduDrive.member.application.port.out.CreateNamespacePort;
 import com.moduDrive.member.application.port.out.EmailVerificationTokenPort;
 import com.moduDrive.member.application.port.out.EncodePasswordPort;
-import com.moduDrive.member.application.port.out.PublishMemberEventPort;
 import com.moduDrive.member.application.port.out.SignUpMemberPort;
 import com.moduDrive.member.domain.model.Member;
 import com.moduDrive.member.domain.model.Member.MemberEmail;
@@ -24,6 +23,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.List;
 import java.util.UUID;
@@ -45,11 +45,9 @@ class SignUpMemberServiceTest {
     @Mock
     private CheckEmailExistsPort checkEmailExistsPort;
     @Mock
-    private CreateNamespacePort createNamespacePort;
-    @Mock
     private EmailVerificationTokenPort emailVerificationTokenPort;
     @Mock
-    private PublishMemberEventPort publishMemberEventPort;
+    private ApplicationEventPublisher eventPublisher;
     @InjectMocks
     private SignUpMemberService signUpMemberService;
 
@@ -80,8 +78,10 @@ class SignUpMemberServiceTest {
 
             then(signUpMemberPort).should().createMember(
                     argThat((Member m) -> m.isValid() && m.getEmail().equals(command.getMemberEmail().emailValue())));
-            then(createNamespacePort).should().createNamespace(memberId);
-            then(publishMemberEventPort).should().publishSignedUp(memberId, command.getMemberEmail().emailValue());
+            // Namespace creation and the Kafka publish are no longer called directly here — they
+            // happen post-commit via MemberSignedUpEventListener (#208). This only publishes the event.
+            then(eventPublisher).should().publishEvent(
+                    new MemberSignedUpEvent(memberId, command.getMemberEmail().emailValue()));
         }
     }
 
