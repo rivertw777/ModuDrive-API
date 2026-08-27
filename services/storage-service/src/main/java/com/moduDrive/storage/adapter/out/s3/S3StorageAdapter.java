@@ -18,6 +18,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
 import java.util.ArrayList;
@@ -51,8 +52,8 @@ class S3StorageAdapter implements StoreBlocksPort, RetrieveBlocksPort {
     @Override
     public int storeBlocks(String s3BasePath, List<byte[]> rawBlocks) {
         for (int i = 0; i < rawBlocks.size(); i++) {
-            byte[] processed = encrypt(compress(rawBlocks.get(i)));
             String key = s3BasePath + "/block_" + i;
+            byte[] processed = encrypt(compress(rawBlocks.get(i)), key);
             s3Client.putObject(
                     PutObjectRequest.builder()
                             .bucket(properties.getS3().getBucket())
@@ -74,12 +75,16 @@ class S3StorageAdapter implements StoreBlocksPort, RetrieveBlocksPort {
         return bos.toByteArray();
     }
 
-    private byte[] encrypt(byte[] data) {
+    private byte[] encrypt(byte[] data, String objectKey) {
         try {
             byte[] iv = new byte[GCM_IV_LENGTH];
             SECURE_RANDOM.nextBytes(iv);
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
             cipher.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(GCM_TAG_LENGTH_BITS, iv));
+            // Binds the ciphertext to the S3 key it's stored under — without this, a block
+            // copied from one object's location to another's would still decrypt cleanly, since
+            // GCM's tag authenticates only the plaintext (#216).
+            cipher.updateAAD(objectKey.getBytes(StandardCharsets.UTF_8));
             byte[] ciphertext = cipher.doFinal(data);
             return ByteBuffer.allocate(iv.length + ciphertext.length).put(iv).put(ciphertext).array();
         } catch (GeneralSecurityException e) {
@@ -101,15 +106,16 @@ class S3StorageAdapter implements StoreBlocksPort, RetrieveBlocksPort {
                             .key(key)
                             .build()
             ).asByteArray();
-            blocks.add(decompress(decrypt(encrypted)));
+            blocks.add(decompress(decrypt(encrypted, key)));
         }
         return blocks;
     }
 
-    private byte[] decrypt(byte[] data) {
+    private byte[] decrypt(byte[] data, String objectKey) {
         try {
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
             cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(GCM_TAG_LENGTH_BITS, data, 0, GCM_IV_LENGTH));
+            cipher.updateAAD(objectKey.getBytes(StandardCharsets.UTF_8));
             return cipher.doFinal(data, GCM_IV_LENGTH, data.length - GCM_IV_LENGTH);
         } catch (GeneralSecurityException e) {
             throw new RuntimeException("decryption failed", e);

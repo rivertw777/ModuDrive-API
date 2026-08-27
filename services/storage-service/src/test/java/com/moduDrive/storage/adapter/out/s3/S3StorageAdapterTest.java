@@ -77,6 +77,25 @@ class S3StorageAdapterTest {
     }
 
     @Nested
+    @DisplayName("암호화된 블록이 다른 위치로 복사되었을 때")
+    class WhenABlockIsCopiedToAnotherLocation {
+
+        @Test
+        void refusesToDecryptAtTheWrongLocation() throws IOException {
+            stubS3();
+            byte[] original = "victim file contents".getBytes(StandardCharsets.UTF_8);
+            adapter.storeBlocks("victim/path", List.of(original));
+            // Same ciphertext (and tag), planted at a different object key — as if an attacker
+            // with bucket write access copied another file's block into this file's location.
+            fakeBucket.put("attacker/path/block_0", fakeBucket.get("victim/path/block_0"));
+
+            Throwable thrown = catchThrowable(() -> adapter.retrieveBlocks("attacker/path", 1));
+
+            assertThat(thrown).isInstanceOf(RuntimeException.class);
+        }
+    }
+
+    @Nested
     @DisplayName("blockCount가 상한을 초과할 때")
     class WhenBlockCountExceedsCap {
 
