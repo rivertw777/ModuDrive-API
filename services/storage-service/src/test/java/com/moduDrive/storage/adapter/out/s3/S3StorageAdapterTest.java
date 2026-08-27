@@ -10,8 +10,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
@@ -29,7 +31,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willAnswer;
+import static org.mockito.BDDMockito.willThrow;
 
 @ExtendWith(MockitoExtension.class)
 class S3StorageAdapterTest {
@@ -92,6 +96,51 @@ class S3StorageAdapterTest {
             Throwable thrown = catchThrowable(() -> adapter.retrieveBlocks("attacker/path", 1));
 
             assertThat(thrown).isInstanceOf(RuntimeException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("업로드 도중 실패했을 때")
+    class WhenUploadFailsPartway {
+
+        @Test
+        void deletesTheAlreadyUploadedBlocksAndThrowsStorageError() throws IOException {
+            stubPut();
+            willThrow(SdkClientException.create("network blip"))
+                    .given(s3Client).putObject(
+                            org.mockito.ArgumentMatchers.argThat(
+                                    (PutObjectRequest r) -> r.key().endsWith("block_2")),
+                            any(RequestBody.class));
+            List<byte[]> blocks = List.of("a".getBytes(), "b".getBytes(), "c".getBytes());
+
+            Throwable thrown = catchThrowable(() -> adapter.storeBlocks("path/to/file", blocks));
+
+            assertThat(thrown)
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(StorageExceptionCase.STORAGE_ERROR);
+            then(s3Client).should().deleteObjects(org.mockito.ArgumentMatchers.argThat(
+                    (DeleteObjectsRequest r) -> r.delete().objects().size() == 2));
+        }
+
+        @Test
+        void cleanupFailureDoesNotHideTheOriginalError() throws IOException {
+            stubPut();
+            willThrow(SdkClientException.create("network blip"))
+                    .given(s3Client).putObject(
+                            org.mockito.ArgumentMatchers.argThat(
+                                    (PutObjectRequest r) -> r.key().endsWith("block_1")),
+                            any(RequestBody.class));
+            willThrow(SdkClientException.create("cleanup also failed"))
+                    .given(s3Client).deleteObjects(any(DeleteObjectsRequest.class));
+            List<byte[]> blocks = List.of("a".getBytes(), "b".getBytes());
+
+            Throwable thrown = catchThrowable(() -> adapter.storeBlocks("path/to/file", blocks));
+
+            assertThat(thrown)
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(StorageExceptionCase.STORAGE_ERROR);
         }
     }
 

@@ -6,9 +6,14 @@ import com.moduDrive.storage.application.port.out.RetrieveBlocksPort;
 import com.moduDrive.storage.application.port.out.StoreBlocksPort;
 import com.moduDrive.storage.config.StorageProperties;
 import com.moduDrive.storage.exception.StorageExceptionCase;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.Delete;
+import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 import javax.crypto.Cipher;
@@ -24,12 +29,14 @@ import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.stream.IntStream;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
 @PersistenceAdapter
 class S3StorageAdapter implements StoreBlocksPort, RetrieveBlocksPort {
 
+    private static final Logger logger = LoggerFactory.getLogger(S3StorageAdapter.class);
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final int GCM_IV_LENGTH = 12;
     private static final int GCM_TAG_LENGTH_BITS = 128;
@@ -51,18 +58,45 @@ class S3StorageAdapter implements StoreBlocksPort, RetrieveBlocksPort {
 
     @Override
     public int storeBlocks(String s3BasePath, List<byte[]> rawBlocks) {
-        for (int i = 0; i < rawBlocks.size(); i++) {
-            String key = s3BasePath + "/block_" + i;
-            byte[] processed = encrypt(compress(rawBlocks.get(i)), key);
-            s3Client.putObject(
-                    PutObjectRequest.builder()
-                            .bucket(properties.getS3().getBucket())
-                            .key(key)
-                            .build(),
-                    RequestBody.fromBytes(processed)
-            );
+        int uploaded = 0;
+        try {
+            for (int i = 0; i < rawBlocks.size(); i++) {
+                String key = s3BasePath + "/block_" + i;
+                byte[] processed = encrypt(compress(rawBlocks.get(i)), key);
+                s3Client.putObject(
+                        PutObjectRequest.builder()
+                                .bucket(properties.getS3().getBucket())
+                                .key(key)
+                                .build(),
+                        RequestBody.fromBytes(processed)
+                );
+                uploaded++;
+            }
+        } catch (RuntimeException e) {
+            // Best-effort cleanup of whatever already landed in the bucket — a failed multi-GB
+            // upload retried a few times would otherwise leave that many GB of unreferenced
+            // blocks behind (#212). Cleanup failing must not hide the original cause.
+            deleteBestEffort(s3BasePath, uploaded);
+            throw new BusinessException(StorageExceptionCase.STORAGE_ERROR);
         }
         return rawBlocks.size();
+    }
+
+    private void deleteBestEffort(String s3BasePath, int uploadedCount) {
+        if (uploadedCount == 0) {
+            return;
+        }
+        try {
+            List<ObjectIdentifier> ids = IntStream.range(0, uploadedCount)
+                    .mapToObj(i -> ObjectIdentifier.builder().key(s3BasePath + "/block_" + i).build())
+                    .toList();
+            s3Client.deleteObjects(DeleteObjectsRequest.builder()
+                    .bucket(properties.getS3().getBucket())
+                    .delete(Delete.builder().objects(ids).build())
+                    .build());
+        } catch (RuntimeException cleanupFailure) {
+            logger.error("Failed to clean up {} orphaned block(s) under {}", uploadedCount, s3BasePath, cleanupFailure);
+        }
     }
 
     private byte[] compress(byte[] data) {
