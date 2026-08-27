@@ -24,21 +24,26 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import java.io.OutputStream;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willAnswer;
 import static org.mockito.BDDMockito.willDoNothing;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.http.HttpMethod.PUT;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @ExtendWith(MockitoExtension.class)
@@ -184,10 +189,18 @@ class StorageControllerTest {
         @Test
         void returnsFileBytesOnSuccess() throws Exception {
             byte[] data = "file content".getBytes();
-            given(downloadFileUseCase.download(any())).willReturn(data);
+            willAnswer(invocation -> {
+                OutputStream out = invocation.getArgument(1);
+                out.write(data);
+                return null;
+            }).given(downloadFileUseCase).downloadStream(any(), any());
 
-            mockMvc.perform(get("/api/v1/storage/download/" + UUID.randomUUID())
+            MvcResult asyncResult = mockMvc.perform(get("/api/v1/storage/download/" + UUID.randomUUID())
                             .header("X_USER_ID", USER_ID))
+                    .andExpect(request().asyncStarted())
+                    .andReturn();
+
+            mockMvc.perform(asyncDispatch(asyncResult))
                     .andExpect(status().isOk())
                     .andExpect(result -> assertThat(result.getResponse().getContentAsByteArray())
                             .isEqualTo(data));
@@ -201,9 +214,17 @@ class StorageControllerTest {
         @Test
         void returnsFileBytesWithoutRequiringAUserHeader() throws Exception {
             byte[] data = "public content".getBytes();
-            given(publicDownloadFileUseCase.downloadPublic(any())).willReturn(data);
+            willAnswer(invocation -> {
+                OutputStream out = invocation.getArgument(1);
+                out.write(data);
+                return null;
+            }).given(publicDownloadFileUseCase).downloadPublicStream(any(), any());
 
-            mockMvc.perform(get("/api/v1/storage/public/" + UUID.randomUUID() + "/download"))
+            MvcResult asyncResult = mockMvc.perform(get("/api/v1/storage/public/" + UUID.randomUUID() + "/download"))
+                    .andExpect(request().asyncStarted())
+                    .andReturn();
+
+            mockMvc.perform(asyncDispatch(asyncResult))
                     .andExpect(status().isOk())
                     .andExpect(result -> assertThat(result.getResponse().getContentAsByteArray())
                             .isEqualTo(data));
@@ -211,9 +232,13 @@ class StorageControllerTest {
 
         @Test
         void marksTheResponseAsAnAttachment() throws Exception {
-            given(publicDownloadFileUseCase.downloadPublic(any())).willReturn("x".getBytes());
+            willDoNothing().given(publicDownloadFileUseCase).downloadPublicStream(any(), any());
 
-            mockMvc.perform(get("/api/v1/storage/public/" + UUID.randomUUID() + "/download"))
+            MvcResult asyncResult = mockMvc.perform(get("/api/v1/storage/public/" + UUID.randomUUID() + "/download"))
+                    .andExpect(request().asyncStarted())
+                    .andReturn();
+
+            mockMvc.perform(asyncDispatch(asyncResult))
                     .andExpect(status().isOk())
                     .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, startsWith("attachment;")));
         }

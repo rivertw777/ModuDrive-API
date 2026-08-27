@@ -37,6 +37,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import java.io.IOException;
 import java.util.Arrays;
@@ -95,26 +96,30 @@ class StorageController {
         return ApiResponse.success();
     }
 
+    /** Streamed block-by-block instead of assembled into one byte[] — a regular download has no
+     * size cap (unlike inline preview), so holding the whole file in memory would let a handful
+     * of concurrent large downloads exhaust the heap. */
     @GetMapping("/api/v1/storage/download/{fileId}")
-    public ResponseEntity<byte[]> downloadFile(
+    public ResponseEntity<StreamingResponseBody> downloadFile(
             @RequestHeader("X_USER_ID") UUID userId,
             @PathVariable String fileId) {
-        byte[] data = downloadFileUseCase.download(new DownloadFileCommand(fileId, userId));
+        StreamingResponseBody body = out -> downloadFileUseCase.downloadStream(new DownloadFileCommand(fileId, userId), out);
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileId + "\"")
-                .body(data);
+                .body(body);
     }
 
     /** Reached through the gateway's permitAll list, so there is deliberately no X_USER_ID —
-     * the link token is the whole credential and file-service is what validates it. */
+     * the link token is the whole credential and file-service is what validates it. Streamed for
+     * the same reason as {@link #downloadFile}. */
     @GetMapping("/api/v1/storage/public/{token}/download")
-    public ResponseEntity<byte[]> publicDownloadFile(@PathVariable String token) {
-        byte[] data = publicDownloadFileUseCase.downloadPublic(new PublicDownloadFileCommand(token));
+    public ResponseEntity<StreamingResponseBody> publicDownloadFile(@PathVariable String token) {
+        StreamingResponseBody body = out -> publicDownloadFileUseCase.downloadPublicStream(new PublicDownloadFileCommand(token), out);
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + token + "\"")
-                .body(data);
+                .body(body);
     }
 
     /** Mints a short-lived, single-file identity token so a native &lt;video&gt;/&lt;audio&gt;

@@ -14,6 +14,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.io.ByteArrayOutputStream;
 import java.util.List;
 import java.util.UUID;
 
@@ -22,6 +23,7 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.never;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willThrow;
 
@@ -68,6 +70,23 @@ class PublicDownloadFileServiceTest {
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
                     .isEqualTo(StorageExceptionCase.FILE_NOT_FOUND_IN_STORAGE);
             then(retrieveBlocksPort).shouldHaveNoInteractions();
+        }
+    }
+
+    @Nested
+    @DisplayName("공개 다운로드를 스트리밍으로 요청할 때")
+    class WhenDownloadingAsStream {
+
+        @Test
+        void delegatesToStreamBlocksWithoutAssemblingAByteArray() {
+            given(getFileVersionPort.getPublicS3Path(token)).willReturn("files/abc/xyz");
+            given(getFileVersionPort.getPublicBlockCount(token)).willReturn(2);
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+            publicDownloadFileService.downloadPublicStream(new PublicDownloadFileCommand(token), out);
+
+            then(retrieveBlocksPort).should().streamBlocks("files/abc/xyz", 2, out);
+            then(retrieveBlocksPort).should(never()).retrieveBlocks(anyString(), anyInt());
         }
     }
 
