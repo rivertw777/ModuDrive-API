@@ -30,6 +30,8 @@ class RedisTokenStoreTest {
     private static final String KEY = "refresh:family-id";
     private static final String BLACKLIST_KEY = "blacklist:access-jti";
     private static final String REVOKED_KEY = "revoked:family-id";
+    private static final String PREV_KEY = "prev:family-id";
+    private static final long GRACE_WINDOW_MS = 10_000L;
 
     private static final TokenFamilyId FAMILY_ID = new TokenFamilyId("family-id");
     private static final TokenJti PRESENTED_JTI = new TokenJti("presented-jti");
@@ -67,12 +69,12 @@ class RedisTokenStoreTest {
             boolean rotated = store().rotateIfCurrent(FAMILY_ID, PRESENTED_JTI, NEW_JTI);
 
             assertThat(rotated).isTrue();
-            // Both the family key and its revocation tombstone key are passed, and the third arg is
-            // the ACCESS-token TTL (tombstone lifetime) — the family's own TTL is carried forward
-            // inside the script, never reset from Java.
+            // The family key, its revocation tombstone key, and the grace-window "prev jti" key are
+            // passed; the third arg is the ACCESS-token TTL (tombstone lifetime, the family's own TTL
+            // is carried forward inside the script), the fourth is the grace window itself.
             then(redisRepository).should().executeScript(any(RedisScript.class),
-                    eq(List.of(KEY, REVOKED_KEY)),
-                    eq("presented-jti"), eq("new-jti"), eq(String.valueOf(ONE_HOUR)));
+                    eq(List.of(KEY, REVOKED_KEY, PREV_KEY)),
+                    eq("presented-jti"), eq("new-jti"), eq(String.valueOf(ONE_HOUR)), eq(String.valueOf(GRACE_WINDOW_MS)));
         }
     }
 
@@ -122,7 +124,11 @@ class RedisTokenStoreTest {
             assertThat(captor.getValue().getScriptAsString())
                     .contains("redis.call('GET', KEYS[1])")
                     .contains("redis.call('PTTL', KEYS[1])")
-                    .contains("redis.call('SET', KEYS[2], '1', 'PX', ARGV[3])");
+                    .contains("redis.call('SET', KEYS[2], '1', 'PX', ARGV[3])")
+                    // Grace-window check (#207): a presented jti that matches KEYS[3] (the jti a
+                    // sibling request just rotated away) is honored instead of destroying the family.
+                    .contains("redis.call('GET', KEYS[3])")
+                    .contains("redis.call('SET', KEYS[3], current, 'PX', ARGV[4])");
         }
     }
 

@@ -24,12 +24,19 @@ class RedisTokenStore implements SaveRefreshTokenPort, RotateRefreshTokenPort, R
     private static final String KEY_PREFIX = "refresh:";
     private static final String BLACKLIST_KEY_PREFIX = "blacklist:";
     private static final String REVOKED_KEY_PREFIX = "revoked:";
+    private static final String PREV_KEY_PREFIX = "prev:";
+
+    // ponytail: hardcoded grace window, not a config value — long enough to absorb concurrent
+    // duplicate requests from the same client, short enough to keep a real reuse-detection window.
+    private static final long ROTATION_GRACE_WINDOW_MS = 10_000;
 
     /**
-     * Compare-and-swap rotation. Swaps in the new jti only when the presented jti is the current
-     * one, carrying the family's remaining TTL forward so rotation never extends the session's
-     * absolute lifetime. Any other case is a reuse of an already-rotated token, which drops the
-     * family key and leaves a revocation tombstone so sibling access tokens stop validating too.
+     * Compare-and-swap rotation. Swaps in the new jti when the presented jti is the current one —
+     * or was the current one within the last {@link #ROTATION_GRACE_WINDOW_MS} (a concurrent
+     * duplicate request, not a replay) — carrying the family's remaining TTL forward so rotation
+     * never extends the session's absolute lifetime. Any other case is a reuse of an
+     * already-rotated token, which drops the family key and leaves a revocation tombstone so
+     * sibling access tokens stop validating too.
      */
     private static final RedisScript<Long> ROTATE_SCRIPT =
             RedisRepository.loadScript("scripts/rotate-refresh-token.lua", Long.class);
@@ -59,10 +66,11 @@ class RedisTokenStore implements SaveRefreshTokenPort, RotateRefreshTokenPort, R
     public boolean rotateIfCurrent(TokenFamilyId familyId, TokenJti presentedJti, TokenJti newJti) {
         Long result = redisRepository.executeScript(
                 ROTATE_SCRIPT,
-                List.of(key(familyId), revokedKey(familyId)),
+                List.of(key(familyId), revokedKey(familyId), prevKey(familyId)),
                 presentedJti.getJtiValue(),
                 newJti.getJtiValue(),
-                String.valueOf(accessTokenExpiration)
+                String.valueOf(accessTokenExpiration),
+                String.valueOf(ROTATION_GRACE_WINDOW_MS)
         );
         return result != null && result == 1L;
     }
@@ -113,6 +121,10 @@ class RedisTokenStore implements SaveRefreshTokenPort, RotateRefreshTokenPort, R
 
     private String revokedKey(TokenFamilyId familyId) {
         return REVOKED_KEY_PREFIX + familyId.getFamilyIdValue();
+    }
+
+    private String prevKey(TokenFamilyId familyId) {
+        return PREV_KEY_PREFIX + familyId.getFamilyIdValue();
     }
 
 }
