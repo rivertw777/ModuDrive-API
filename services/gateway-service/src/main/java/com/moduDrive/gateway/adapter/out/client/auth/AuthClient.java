@@ -10,6 +10,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
+import java.time.Duration;
+
 @RequiredArgsConstructor
 @Component
 public class AuthClient {
@@ -22,6 +24,10 @@ public class AuthClient {
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(request)
                 .retrieve()
-                .bodyToMono(new ParameterizedTypeReference<>() {});
+                .bodyToMono(new ParameterizedTypeReference<ApiResponse<ValidateTokenResponse>>() {})
+                // Backstop above the WebClient's own connect/read timeouts (WebClientConfig) — a
+                // response that starts but stalls partway through (slow body write) is still
+                // bounded here, so a caller waiting on this Mono can never hang indefinitely (#206).
+                .timeout(Duration.ofSeconds(3));
     }
 }
