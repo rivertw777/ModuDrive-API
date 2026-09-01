@@ -55,12 +55,12 @@ class GetFilesByCategoryControllerTest {
 
         @Test
         void invalidTypeIsRejected() throws Exception {
-            // GlobalExceptionHandler has no specific handler for enum conversion
-            // failures, so this falls through to its generic 500 case today.
+            // GlobalExceptionHandler now handles MethodArgumentTypeMismatchException
+            // (enum conversion failures included) with a 400.
             mockMvc.perform(get("/api/v1/files/category")
                             .header("X_USER_ID", USER_ID)
                             .param("type", "NOT_A_CATEGORY"))
-                    .andExpect(status().isInternalServerError());
+                    .andExpect(status().isBadRequest());
         }
     }
 }

@@ -1,6 +1,7 @@
 package com.moduDrive.file.adapter.out.persistence;
 
 import com.moduDrive.common.core.exception.BusinessException;
+import com.moduDrive.common.infrastructure.jpa.config.AuditingConfig;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
 import com.moduDrive.file.domain.model.FileAccess;
@@ -28,7 +29,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
 @DataJpaTest
-@Import({FilePersistenceAdapter.class, FileMapper.class})
+// AuditingConfig is a third-party auto-configuration, so the @DataJpaTest slice drops it —
+// without it @CreatedDate never fires and createdAt reads back null, unlike production.
+@Import({FilePersistenceAdapter.class, FileMapper.class, AuditingConfig.class})
 class FilePersistenceAdapterTest {
 
     @Autowired
