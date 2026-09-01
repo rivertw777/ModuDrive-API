@@ -1,6 +1,7 @@
 package com.moduDrive.file.adapter.in.web.dto;
 
 import com.moduDrive.file.domain.model.File;
+import com.moduDrive.file.domain.model.FileCategory;
 import com.moduDrive.file.domain.model.FileStatus;
 
 import java.time.LocalDateTime;
@@ -17,6 +18,7 @@ public record FileResponse(
         FileStatus status,
         boolean directory,
         boolean favorite,
+        FileCategory category,
         LocalDateTime updatedAt
 ) {
     public static FileResponse from(File file) {
@@ -31,6 +33,7 @@ public record FileResponse(
                 file.getStatus(),
                 file.isDirectory(),
                 file.isFavorite(),
+                FileCategory.of(file.getName()),
                 file.getUpdatedAt()
         );
     }
