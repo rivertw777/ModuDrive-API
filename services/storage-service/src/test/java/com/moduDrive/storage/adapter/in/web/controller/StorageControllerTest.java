@@ -242,6 +242,25 @@ class StorageControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, startsWith("attachment;")));
         }
+
+        @Test
+        void streamsADescendantOfAFolderLinkThroughTheEntryRoute() throws Exception {
+            byte[] data = "nested content".getBytes();
+            willAnswer(invocation -> {
+                OutputStream out = invocation.getArgument(1);
+                out.write(data);
+                return null;
+            }).given(publicDownloadFileUseCase).downloadPublicStream(any(), any());
+
+            MvcResult asyncResult = mockMvc.perform(get("/api/v1/storage/public/" + UUID.randomUUID()
+                            + "/entry/" + UUID.randomUUID() + "/download"))
+                    .andExpect(request().asyncStarted())
+                    .andReturn();
+
+            mockMvc.perform(asyncDispatch(asyncResult))
+                    .andExpect(status().isOk())
+                    .andExpect(result -> assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(data));
+        }
     }
 
     @Nested

@@ -168,6 +168,31 @@ class StorageController {
         return inline(data, fileName, rangeHeader);
     }
 
+    /** {@link #publicDownloadFile} / {@link #viewPublicFile} for one file nested under a
+     * link-shared <b>folder</b>: same permitAll route family, the folder token plus the
+     * descendant's id, file-service checks the entry really is under that folder. */
+    @GetMapping("/api/v1/storage/public/{token}/entry/{entryId}/download")
+    public ResponseEntity<StreamingResponseBody> publicDownloadDescendant(
+            @PathVariable String token,
+            @PathVariable String entryId) {
+        StreamingResponseBody body = out -> publicDownloadFileUseCase.downloadPublicStream(
+                new PublicDownloadFileCommand(token, entryId, false), out);
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + entryId + "\"")
+                .body(body);
+    }
+
+    @GetMapping("/api/v1/storage/public/{token}/entry/{entryId}/view")
+    public ResponseEntity<byte[]> viewPublicDescendant(
+            @PathVariable String token,
+            @PathVariable String entryId,
+            @RequestParam String fileName,
+            @RequestHeader(value = HttpHeaders.RANGE, required = false) String rangeHeader) {
+        byte[] data = publicDownloadFileUseCase.downloadPublic(new PublicDownloadFileCommand(token, entryId, true));
+        return inline(data, fileName, rangeHeader);
+    }
+
     /** No Range header: the full body, exactly as before. With one: the requested byte slice as
      * a {@code 206} — the file is already fully assembled in memory by the time this runs (see
      * {@link com.moduDrive.storage.application.service.DownloadFileService}), so slicing the

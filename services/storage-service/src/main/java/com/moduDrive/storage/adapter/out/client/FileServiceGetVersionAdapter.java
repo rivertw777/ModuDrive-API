@@ -51,6 +51,13 @@ class FileServiceGetVersionAdapter implements GetFileVersionPort {
         return latestPublicVersion(token).blockCount();
     }
 
+    @Override
+    public VersionLocation getPublicDescendantVersion(String token, String entryId) {
+        FileVersionDto version = firstOrThrow(
+                feignClient.getPublicDescendantRevisions(token, entryId, 1).getData());
+        return new VersionLocation(version.s3Path(), version.blockCount());
+    }
+
     private FileVersionDto latestVersion(UUID fileId, UUID userId) {
         return firstOrThrow(feignClient.getFileRevisions(fileId.toString(), userId.toString(), 1).getData());
     }
