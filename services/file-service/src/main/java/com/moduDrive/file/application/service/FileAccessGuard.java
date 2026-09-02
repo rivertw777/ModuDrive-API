@@ -6,6 +6,7 @@ import com.moduDrive.file.application.port.out.FindFileSharePort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.FileId;
 import com.moduDrive.file.domain.model.FileShare;
+import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.Namespace.NamespaceId;
 import com.moduDrive.file.domain.model.Permission;
 import com.moduDrive.file.domain.model.Role;
@@ -42,6 +43,13 @@ class FileAccessGuard {
     void requirePermission(File file, UUID callerId, Permission required) {
         if (isOwner(file, callerId)) {
             return;
+        }
+        // A trashed item is owner-only (restore / purge). To a grantee it's gone — an inherited
+        // grant from a still-live ancestor directory must not keep a soft-deleted descendant
+        // readable or downloadable. The owner short-circuits above, so their own
+        // restore/purge/FILE_ALREADY_DELETED paths are untouched.
+        if (file.getStatus() == FileStatus.DELETED) {
+            throw new BusinessException(FileExceptionCase.FILE_ACCESS_DENIED);
         }
         Role granted = resolveRole(file, callerId);
         if (granted == null || !granted.permissions().contains(required)) {

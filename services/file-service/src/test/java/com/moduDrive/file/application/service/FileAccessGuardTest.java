@@ -53,6 +53,12 @@ class FileAccessGuardTest {
                 null, null, FileStatus.UPLOADED, new FileIsDirectory(true));
     }
 
+    private File linkDirectory(UUID id, String path, String name) {
+        File dir = directory(id, path, name);
+        dir.enableLinkSharing(UUID.randomUUID(), Role.VIEWER);
+        return dir;
+    }
+
     private FileShare grant(UUID targetFileId, UUID grantee, Role role) {
         return FileShare.withId(new FileShareId(UUID.randomUUID()), new FileShareFileId(targetFileId),
                 new FileShareOwnerId(ownerId), new FileShareSharedWithUserId(grantee), new FileShareRole(role));
@@ -134,6 +140,43 @@ class FileAccessGuardTest {
 
             assertThatCode(() -> fileAccessGuard.requirePermission(f, callerId, Permission.RENAME))
                     .doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("조상 폴더가 LINK scope여도 인증 라우트로는 상속되지 않는다 (설계 결정 #3)")
+        void ancestorLinkScopeIsNotInheritedOnAuthenticatedRoutes() {
+            given(findFilePort.findActiveByNamespaceIdAndPathAndName(new NamespaceId(namespaceId), "/", "shared"))
+                    .willReturn(Optional.of(linkDirectory(sharedDirId, "/", "shared")));
+            given(findFilePort.findActiveByNamespaceIdAndPathAndName(new NamespaceId(namespaceId), "/shared", "sub"))
+                    .willReturn(Optional.of(directory(subDirId, "/shared", "sub")));
+            given(findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(fileId), callerId))
+                    .willReturn(Optional.empty());
+            given(findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(sharedDirId), callerId))
+                    .willReturn(Optional.empty());
+            given(findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(subDirId), callerId))
+                    .willReturn(Optional.empty());
+
+            Throwable thrown = catchThrowable(() -> fileAccessGuard.requirePermission(f, callerId, Permission.READ));
+
+            assertThat(thrown).isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(FileExceptionCase.FILE_ACCESS_DENIED);
+        }
+
+        @Test
+        @DisplayName("휴지통에 들어간 하위 파일은 조상 grant가 있어도 접근 거부")
+        void deniesATrashedDescendantEvenWithAnInheritedGrant() {
+            // DELETED is checked before any grant lookup: a still-live ancestor share must not
+            // keep a soft-deleted descendant reachable, so resolveRole is never consulted here.
+            File trashed = File.withId(new FileId(fileId), new FileNamespaceId(namespaceId),
+                    new FileName("report.pdf"), new FilePath("/shared/sub"), new FileOwnerId(ownerId),
+                    null, null, FileStatus.DELETED, new FileIsDirectory(false));
+
+            Throwable thrown = catchThrowable(() -> fileAccessGuard.requirePermission(trashed, callerId, Permission.DOWNLOAD));
+
+            assertThat(thrown).isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(FileExceptionCase.FILE_ACCESS_DENIED);
         }
 
         @Test
