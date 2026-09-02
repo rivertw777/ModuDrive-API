@@ -27,7 +27,11 @@ resilience4j:
     instances:
       memberServiceRetry:
         baseConfig: default
+      storageServiceRetry:
+        baseConfig: default
   circuitbreaker:
     instances:
       memberServiceCircuitBreaker:
+        baseConfig: default
+      storageServiceCircuitBreaker:
         baseConfig: default

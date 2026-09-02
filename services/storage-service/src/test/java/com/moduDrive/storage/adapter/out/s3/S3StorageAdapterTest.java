@@ -14,6 +14,7 @@ import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
+import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
@@ -146,6 +147,60 @@ class S3StorageAdapterTest {
     }
 
     @Nested
+    @DisplayName("휴지통 파일을 영구 삭제할 때")
+    class WhenPurgingAFile {
+
+        @Test
+        void deletesEveryBlockKeyUnderThePrefix() {
+            given(s3Client.deleteObjects(any(DeleteObjectsRequest.class)))
+                    .willReturn(DeleteObjectsResponse.builder().build());
+
+            adapter.deleteBlocks("path/to/file", 3);
+
+            then(s3Client).should().deleteObjects(org.mockito.ArgumentMatchers.argThat(
+                    (DeleteObjectsRequest r) -> r.delete().objects().size() == 3
+                            && r.delete().objects().stream().map(o -> o.key())
+                                    .toList().equals(List.of("path/to/file/block_0", "path/to/file/block_1", "path/to/file/block_2"))));
+        }
+
+        @Test
+        void doesNothingForAZeroBlockVersion() {
+            adapter.deleteBlocks("path/to/file", 0);
+
+            then(s3Client).shouldHaveNoInteractions();
+        }
+
+        @Test
+        void batchesAboveTheS3DeleteObjectsLimit() {
+            given(s3Client.deleteObjects(any(DeleteObjectsRequest.class)))
+                    .willReturn(DeleteObjectsResponse.builder().build());
+
+            // DeleteObjects rejects more than 1000 keys per request — 1001 blocks must split
+            // into a 1000-key batch and a 1-key batch, not one oversized request.
+            adapter.deleteBlocks("path/to/file", 1001);
+
+            then(s3Client).should(org.mockito.Mockito.times(2)).deleteObjects(
+                    org.mockito.ArgumentMatchers.any(DeleteObjectsRequest.class));
+        }
+
+        @Test
+        void throwsWhenS3ReportsPartialFailure() {
+            given(s3Client.deleteObjects(any(DeleteObjectsRequest.class))).willReturn(
+                    DeleteObjectsResponse.builder()
+                            .errors(software.amazon.awssdk.services.s3.model.S3Error.builder()
+                                    .key("path/to/file/block_0").code("AccessDenied").build())
+                            .build());
+
+            Throwable thrown = catchThrowable(() -> adapter.deleteBlocks("path/to/file", 1));
+
+            assertThat(thrown)
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(StorageExceptionCase.STORAGE_ERROR);
+        }
+    }
+
+    @Nested
     @DisplayName("blockCount가 상한을 초과할 때")
     class WhenBlockCountExceedsCap {
 
@@ -157,6 +212,17 @@ class S3StorageAdapterTest {
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
                     .isEqualTo(StorageExceptionCase.TOO_MANY_BLOCKS);
+        }
+
+        @Test
+        void deleteBlocksAlsoThrowsBeforeDeletingAnything() {
+            Throwable thrown = catchThrowable(() -> adapter.deleteBlocks("path/to/file", 100_001));
+
+            assertThat(thrown)
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(StorageExceptionCase.TOO_MANY_BLOCKS);
+            then(s3Client).shouldHaveNoInteractions();
         }
 
         @Test

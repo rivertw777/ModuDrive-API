@@ -2,6 +2,7 @@ package com.moduDrive.storage.adapter.out.s3;
 
 import com.moduDrive.common.core.annotation.PersistenceAdapter;
 import com.moduDrive.common.core.exception.BusinessException;
+import com.moduDrive.storage.application.port.out.DeleteBlocksPort;
 import com.moduDrive.storage.application.port.out.RetrieveBlocksPort;
 import com.moduDrive.storage.application.port.out.StoreBlocksPort;
 import com.moduDrive.storage.config.StorageProperties;
@@ -12,6 +13,7 @@ import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.Delete;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
+import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
@@ -35,7 +37,7 @@ import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
 @PersistenceAdapter
-class S3StorageAdapter implements StoreBlocksPort, RetrieveBlocksPort {
+class S3StorageAdapter implements StoreBlocksPort, RetrieveBlocksPort, DeleteBlocksPort {
 
     private static final Logger logger = LoggerFactory.getLogger(S3StorageAdapter.class);
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
@@ -83,21 +85,53 @@ class S3StorageAdapter implements StoreBlocksPort, RetrieveBlocksPort {
         return rawBlocks.size();
     }
 
+    // S3's (and MinIO's) DeleteObjects rejects more than 1000 keys per request — a multi-GB file
+    // easily has more blocks than that, so a single request would fail outright above this size.
+    private static final int DELETE_BATCH_SIZE = 1000;
+
+    /** A real purge, not best-effort: unlike {@link #deleteBestEffort}, a failure here propagates
+     * so the caller (a trash purge) can roll back rather than silently leave blocks behind while
+     * believing the file is gone. */
+    @Override
+    public void deleteBlocks(String s3BasePath, int blockCount) {
+        if (blockCount == 0) {
+            return;
+        }
+        if (blockCount > MAX_BLOCK_COUNT) {
+            throw new BusinessException(StorageExceptionCase.TOO_MANY_BLOCKS);
+        }
+        List<ObjectIdentifier> ids = blockIdentifiers(s3BasePath, blockCount);
+        for (int from = 0; from < ids.size(); from += DELETE_BATCH_SIZE) {
+            List<ObjectIdentifier> batch = ids.subList(from, Math.min(from + DELETE_BATCH_SIZE, ids.size()));
+            DeleteObjectsResponse response = s3Client.deleteObjects(DeleteObjectsRequest.builder()
+                    .bucket(properties.getS3().getBucket())
+                    .delete(Delete.builder().objects(batch).build())
+                    .build());
+            // DeleteObjects answers 200 even when individual keys failed (permission, legal
+            // hold, transient) — the failed keys ride along in this list instead of an
+            // exception, so a partial failure must be checked for explicitly or it reads as success.
+            if (!response.errors().isEmpty()) {
+                logger.error("Failed to delete {} block(s) under {}: {}", response.errors().size(), s3BasePath, response.errors());
+                throw new BusinessException(StorageExceptionCase.STORAGE_ERROR);
+            }
+        }
+    }
+
     private void deleteBestEffort(String s3BasePath, int uploadedCount) {
         if (uploadedCount == 0) {
             return;
         }
         try {
-            List<ObjectIdentifier> ids = IntStream.range(0, uploadedCount)
-                    .mapToObj(i -> ObjectIdentifier.builder().key(s3BasePath + "/block_" + i).build())
-                    .toList();
-            s3Client.deleteObjects(DeleteObjectsRequest.builder()
-                    .bucket(properties.getS3().getBucket())
-                    .delete(Delete.builder().objects(ids).build())
-                    .build());
+            deleteBlocks(s3BasePath, uploadedCount);
         } catch (RuntimeException cleanupFailure) {
             logger.error("Failed to clean up {} orphaned block(s) under {}", uploadedCount, s3BasePath, cleanupFailure);
         }
+    }
+
+    private static List<ObjectIdentifier> blockIdentifiers(String s3BasePath, int blockCount) {
+        return IntStream.range(0, blockCount)
+                .mapToObj(i -> ObjectIdentifier.builder().key(s3BasePath + "/block_" + i).build())
+                .toList();
     }
 
     private byte[] compress(byte[] data) {
