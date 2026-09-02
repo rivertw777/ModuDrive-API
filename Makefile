@@ -1,4 +1,4 @@
-.PHONY: service infra reset \
+.PHONY: service infra observability network reset \
        gateway member auth file storage mail notification
 
 BLUE := \033[0;34m
@@ -9,18 +9,26 @@ NC := \033[0m
 
 SERVICE_COMPOSE_FILE := .docker/docker-compose.service.yml
 INFRA_COMPOSE_FILE := .docker/docker-compose.infra.yml
+OBSERVABILITY_COMPOSE_FILE := .docker/docker-compose.observability.yml
 
 service:
 	@echo "$(BLUE)🚀 Starting all services...$(NC)"
 	@chmod +x .scripts/start.sh
 	@./.scripts/start.sh
 
-infra:
+network:
+	@docker network inspect modudrive_network >/dev/null 2>&1 || docker network create modudrive_network
+
+infra: network
 	@echo "$(GREEN)🗄️ Starting infrastructure...$(NC)"
-	@docker-compose -f $(INFRA_COMPOSE_FILE) up -d
+	@docker-compose -f $(INFRA_COMPOSE_FILE) up -d --remove-orphans
+
+observability: network
+	@echo "$(GREEN)📊 Starting observability stack...$(NC)"
+	@docker-compose -f $(OBSERVABILITY_COMPOSE_FILE) up -d --remove-orphans
 
 reset:
-	@echo "$(RED)🧨 Wiping infra data volumes and restarting...$(NC)"
+	@echo "$(RED)🧨 Wiping all data volumes (infra + observability) and restarting everything...$(NC)"
 	@chmod +x .scripts/reset.sh
 	@./.scripts/reset.sh
 

@@ -4,9 +4,14 @@ set -e
 
 SERVICE_COMPOSE_FILE=".docker/docker-compose.service.yml"
 INFRA_COMPOSE_FILE=".docker/docker-compose.infra.yml"
+OBSERVABILITY_COMPOSE_FILE=".docker/docker-compose.observability.yml"
+
+echo "➡️ Ensuring the shared network exists..."
+docker network inspect modudrive_network >/dev/null 2>&1 || docker network create modudrive_network
 
 echo "➡️ Ensuring infrastructure is running..."
-docker-compose -f "$INFRA_COMPOSE_FILE" up -d
+docker-compose -f "$INFRA_COMPOSE_FILE" up -d --remove-orphans
+docker-compose -f "$OBSERVABILITY_COMPOSE_FILE" up -d --remove-orphans
 
 echo "➡️ Stopping existing app containers..."
 docker ps -q --filter name=modudrive-service | xargs -r docker rm -f
