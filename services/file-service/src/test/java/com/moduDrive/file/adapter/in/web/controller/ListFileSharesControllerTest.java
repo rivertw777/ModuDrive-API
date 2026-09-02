@@ -59,7 +59,7 @@ class ListFileSharesControllerTest {
                     new FileShareOwnerId(UUID.fromString(OWNER_ID)),
                     new FileShareSharedWithUserId(sharedWithUserId), new FileShareRole(Role.EDITOR));
             given(listFileSharesUseCase.listFileShares(any(ListFileSharesCommand.class)))
-                    .willReturn(new FileSharesView(file, List.of(share),
+                    .willReturn(new FileSharesView(file, List.of(share), List.of(), List.of(),
                             Map.of(sharedWithUserId, new MemberSummary("river", "river@modudrive.com"))));
 
             mockMvc.perform(get("/api/v1/files/{fileId}/shares", FILE_ID)

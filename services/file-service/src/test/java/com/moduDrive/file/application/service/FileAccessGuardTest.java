@@ -1,12 +1,14 @@
 package com.moduDrive.file.application.service;
 
 import com.moduDrive.common.core.exception.BusinessException;
+import com.moduDrive.file.application.port.out.FindFilePort;
 import com.moduDrive.file.application.port.out.FindFileSharePort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
 import com.moduDrive.file.domain.model.FileShare;
 import com.moduDrive.file.domain.model.FileShare.*;
 import com.moduDrive.file.domain.model.FileStatus;
+import com.moduDrive.file.domain.model.Namespace.NamespaceId;
 import com.moduDrive.file.domain.model.Permission;
 import com.moduDrive.file.domain.model.Role;
 import com.moduDrive.file.exception.FileExceptionCase;
@@ -18,6 +20,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -25,166 +28,168 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.BDDMockito.then;
 
 @ExtendWith(MockitoExtension.class)
 class FileAccessGuardTest {
 
     @Mock private FindFileSharePort findFileSharePort;
+    @Mock private FindFilePort findFilePort;
     @InjectMocks private FileAccessGuard fileAccessGuard;
 
-    private final UUID fileId = UUID.randomUUID();
     private final UUID ownerId = UUID.randomUUID();
-    private final UUID strangerId = UUID.randomUUID();
+    private final UUID callerId = UUID.randomUUID();
+    private final UUID namespaceId = UUID.randomUUID();
 
-    private File makeFile() {
-        return File.withId(new FileId(fileId), new FileNamespaceId(UUID.randomUUID()),
-                new FileName("report.pdf"), new FilePath("/1"), new FileOwnerId(ownerId),
+    /** A file two directories deep: /shared/sub/report.pdf */
+    private File file(UUID id, String path) {
+        return File.withId(new FileId(id), new FileNamespaceId(namespaceId),
+                new FileName("report.pdf"), new FilePath(path), new FileOwnerId(ownerId),
                 null, null, FileStatus.UPLOADED, new FileIsDirectory(false));
     }
 
-    private final File file = makeFile();
-
-    private void givenShare(UUID userId, Role role) {
-        given(findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(fileId), userId))
-                .willReturn(Optional.of(FileShare.withId(
-                        new FileShareId(UUID.randomUUID()), new FileShareFileId(fileId),
-                        new FileShareOwnerId(ownerId), new FileShareSharedWithUserId(userId),
-                        new FileShareRole(role))));
+    private File directory(UUID id, String path, String name) {
+        return File.withId(new FileId(id), new FileNamespaceId(namespaceId),
+                new FileName(name), new FilePath(path), new FileOwnerId(ownerId),
+                null, null, FileStatus.UPLOADED, new FileIsDirectory(true));
     }
 
-    private void givenNoShare(UUID userId) {
-        given(findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(fileId), userId))
-                .willReturn(Optional.empty());
-    }
-
-    private void assertDenied(Throwable thrown) {
-        assertThat(thrown).isInstanceOf(BusinessException.class)
-                .extracting(e -> ((BusinessException) e).getExceptionCase())
-                .isEqualTo(FileExceptionCase.FILE_ACCESS_DENIED);
+    private FileShare grant(UUID targetFileId, UUID grantee, Role role) {
+        return FileShare.withId(new FileShareId(UUID.randomUUID()), new FileShareFileId(targetFileId),
+                new FileShareOwnerId(ownerId), new FileShareSharedWithUserId(grantee), new FileShareRole(role));
     }
 
     @Nested
-    @DisplayName("호출자가 파일 소유자일 때")
-    class WhenCallerIsOwner {
+    @DisplayName("소유자는")
+    class Owner {
 
         @Test
-        void passesOwnerCheckWithoutHittingShareTable() {
-            assertThatCode(() -> fileAccessGuard.requireOwner(file, ownerId)).doesNotThrowAnyException();
-            then(findFileSharePort).shouldHaveNoInteractions();
-        }
+        void alwaysPasses() {
+            File f = file(UUID.randomUUID(), "/");
 
-        @Test
-        void isGrantedEveryPermissionWithoutHittingTheShareTable() {
-            assertThatCode(() -> fileAccessGuard.requirePermission(file, ownerId, Permission.RENAME))
-                    .doesNotThrowAnyException();
-            then(findFileSharePort).shouldHaveNoInteractions();
-        }
-    }
-
-    @Nested
-    @DisplayName("호출자가 EDITOR로 공유받았을 때")
-    class WhenCallerIsEditor {
-
-        private final UUID editorId = UUID.randomUUID();
-
-        @Test
-        void isAllowedRename() {
-            givenShare(editorId, Role.EDITOR);
-
-            assertThatCode(() -> fileAccessGuard.requirePermission(file, editorId, Permission.RENAME))
+            assertThatCode(() -> fileAccessGuard.requirePermission(f, ownerId, Permission.RENAME))
                     .doesNotThrowAnyException();
         }
-
-        @Test
-        void isStillDeniedOwnerOnlyActions() {
-            assertDenied(catchThrowable(() -> fileAccessGuard.requireOwner(file, editorId)));
-        }
     }
 
     @Nested
-    @DisplayName("호출자가 VIEWER로 공유받았을 때")
-    class WhenCallerIsViewer {
-
-        private final UUID viewerId = UUID.randomUUID();
+    @DisplayName("파일에 직접 공유가 있을 때")
+    class DirectShare {
 
         @Test
-        void isAllowedDownload() {
-            givenShare(viewerId, Role.VIEWER);
+        void viewerCanReadButNotRename() {
+            UUID fileId = UUID.randomUUID();
+            File f = file(fileId, "/");
+            given(findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(fileId), callerId))
+                    .willReturn(Optional.of(grant(fileId, callerId, Role.VIEWER)));
 
-            assertThatCode(() -> fileAccessGuard.requirePermission(file, viewerId, Permission.DOWNLOAD))
+            assertThatCode(() -> fileAccessGuard.requirePermission(f, callerId, Permission.READ))
                     .doesNotThrowAnyException();
-        }
 
-        @Test
-        void isDeniedRename() {
-            givenShare(viewerId, Role.VIEWER);
-
-            assertDenied(catchThrowable(() -> fileAccessGuard.requirePermission(file, viewerId, Permission.RENAME)));
+            Throwable thrown = catchThrowable(() -> fileAccessGuard.requirePermission(f, callerId, Permission.RENAME));
+            assertThat(thrown).isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(FileExceptionCase.FILE_ACCESS_DENIED);
         }
     }
 
     @Nested
-    @DisplayName("공유받지 않은 로그인 사용자가 LINK 파일에 접근할 때")
-    class WhenCallerIsLinkVisitor {
+    @DisplayName("상위 디렉토리에서 상속될 때")
+    class InheritedFromAncestor {
 
-        /** These are the authenticated, fileId-only routes — they never see the link token, so
-         * "signed in" must not be treated as "holds the link". A signed-in non-sharee gets nothing
-         * here regardless of the file's LINK role; anonymous/token holders go through the public
-         * routes, which do check the token. */
-        @Test
-        void isDeniedRegardlessOfTheLinkRole() {
-            File linked = makeFile();
-            linked.enableLinkSharing(UUID.randomUUID(), Role.EDITOR);
-            givenNoShare(strangerId);
+        private final UUID fileId = UUID.randomUUID();
+        private final UUID sharedDirId = UUID.randomUUID();
+        private final UUID subDirId = UUID.randomUUID();
+        private final File f = file(fileId, "/shared/sub");
 
-            assertDenied(catchThrowable(() -> fileAccessGuard.requirePermission(linked, strangerId, Permission.READ)));
+        private void ancestorsExist() {
+            given(findFilePort.findActiveByNamespaceIdAndPathAndName(new NamespaceId(namespaceId), "/", "shared"))
+                    .willReturn(Optional.of(directory(sharedDirId, "/", "shared")));
+            given(findFilePort.findActiveByNamespaceIdAndPathAndName(new NamespaceId(namespaceId), "/shared", "sub"))
+                    .willReturn(Optional.of(directory(subDirId, "/shared", "sub")));
         }
 
         @Test
-        void anExplicitShareStillGrantsAccessOnALinkFile() {
-            File linked = makeFile();
-            linked.enableLinkSharing(UUID.randomUUID(), Role.EDITOR);
-            givenShare(strangerId, Role.VIEWER);
+        void grantOnAncestorDirectoryReachesTheFile() {
+            ancestorsExist();
+            given(findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(fileId), callerId))
+                    .willReturn(Optional.empty());
+            given(findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(sharedDirId), callerId))
+                    .willReturn(Optional.of(grant(sharedDirId, callerId, Role.VIEWER)));
+            given(findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(subDirId), callerId))
+                    .willReturn(Optional.empty());
 
-            assertThatCode(() -> fileAccessGuard.requirePermission(linked, strangerId, Permission.DOWNLOAD))
+            assertThatCode(() -> fileAccessGuard.requirePermission(f, callerId, Permission.READ))
                     .doesNotThrowAnyException();
         }
 
         @Test
-        void isDeniedWhenTheVisitorIsAnonymousWithoutEvenQueryingTheShareTable() {
-            File linked = makeFile();
-            linked.enableLinkSharing(UUID.randomUUID(), Role.EDITOR);
+        void takesTheMostGenerousRoleAcrossDirectAndInheritedGrants() {
+            ancestorsExist();
+            given(findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(fileId), callerId))
+                    .willReturn(Optional.of(grant(fileId, callerId, Role.VIEWER)));
+            given(findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(sharedDirId), callerId))
+                    .willReturn(Optional.of(grant(sharedDirId, callerId, Role.EDITOR)));
+            given(findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(subDirId), callerId))
+                    .willReturn(Optional.empty());
 
-            assertDenied(catchThrowable(() -> fileAccessGuard.requirePermission(linked, null, Permission.READ)));
-            then(findFileSharePort).shouldHaveNoInteractions();
+            assertThatCode(() -> fileAccessGuard.requirePermission(f, callerId, Permission.RENAME))
+                    .doesNotThrowAnyException();
+        }
+
+        @Test
+        void deniesWhenNoGrantAnywhereOnThePath() {
+            ancestorsExist();
+            given(findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(fileId), callerId))
+                    .willReturn(Optional.empty());
+            given(findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(sharedDirId), callerId))
+                    .willReturn(Optional.empty());
+            given(findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(subDirId), callerId))
+                    .willReturn(Optional.empty());
+
+            Throwable thrown = catchThrowable(() -> fileAccessGuard.requirePermission(f, callerId, Permission.READ));
+
+            assertThat(thrown).isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(FileExceptionCase.FILE_ACCESS_DENIED);
         }
     }
 
     @Nested
-    @DisplayName("호출자가 공유받지 않은 제3자일 때")
-    class WhenCallerIsStranger {
+    @DisplayName("익명 호출자(callerId=null)는")
+    class AnonymousCaller {
 
         @Test
-        void isDeniedEveryPermission() {
-            givenNoShare(strangerId);
+        void alwaysDenied() {
+            File f = file(UUID.randomUUID(), "/");
 
-            assertDenied(catchThrowable(() -> fileAccessGuard.requirePermission(file, strangerId, Permission.READ)));
-        }
+            Throwable thrown = catchThrowable(() -> fileAccessGuard.requirePermission(f, null, Permission.READ));
 
-        @Test
-        void isDeniedOwnerCheck() {
-            assertDenied(catchThrowable(() -> fileAccessGuard.requireOwner(file, strangerId)));
+            assertThat(thrown).isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(FileExceptionCase.FILE_ACCESS_DENIED);
         }
     }
 
     @Nested
-    @DisplayName("호출자 식별자가 없을 때")
-    class WhenCallerIdIsNull {
+    @DisplayName("ancestorDirectories 는")
+    class AncestorDirectories {
 
         @Test
-        void isDeniedOwnerCheck() {
-            assertDenied(catchThrowable(() -> fileAccessGuard.requireOwner(file, null)));
+        void isEmptyForARootLevelFile() {
+            assertThat(fileAccessGuard.ancestorDirectories(file(UUID.randomUUID(), "/"))).isEmpty();
+        }
+
+        @Test
+        void returnsEachDirectoryOnThePathRootMostFirst() {
+            File f = file(UUID.randomUUID(), "/shared/sub");
+            File shared = directory(UUID.randomUUID(), "/", "shared");
+            File sub = directory(UUID.randomUUID(), "/shared", "sub");
+            given(findFilePort.findActiveByNamespaceIdAndPathAndName(new NamespaceId(namespaceId), "/", "shared"))
+                    .willReturn(Optional.of(shared));
+            given(findFilePort.findActiveByNamespaceIdAndPathAndName(new NamespaceId(namespaceId), "/shared", "sub"))
+                    .willReturn(Optional.of(sub));
+
+            assertThat(fileAccessGuard.ancestorDirectories(f)).containsExactly(shared, sub);
         }
     }
 }
