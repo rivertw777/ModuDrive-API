@@ -196,6 +196,30 @@ class PublicFileResolverTest {
         }
 
         @Test
+        @DisplayName("이름이 공유 폴더명으로 시작하는 형제 폴더의 파일은 거부 (prefix 충돌)")
+        void rejectsASiblingWhosePathMerelySharesAPrefix() {
+            given(findFilePort.findByLinkToken(token)).willReturn(Optional.of(folder()));
+            File sibling = entry("secret.txt", "/sharedX", false, FileStatus.UPLOADED);
+            given(findFilePort.findById(new FileId(sibling.getId()))).willReturn(Optional.of(sibling));
+
+            assertNotFound(catchThrowable(
+                    () -> publicFileResolver.resolveDescendant(token.toString(), sibling.getId().toString())));
+        }
+
+        @Test
+        @DisplayName("경로는 같지만 다른 namespace의 파일은 거부")
+        void rejectsAnEntryWithTheSamePathInAnotherNamespace() {
+            given(findFilePort.findByLinkToken(token)).willReturn(Optional.of(folder()));
+            File otherNs = File.withId(new FileId(UUID.randomUUID()), new FileNamespaceId(UUID.randomUUID()),
+                    new FileName("a.txt"), new FilePath("/shared"), new FileOwnerId(UUID.randomUUID()),
+                    null, null, FileStatus.UPLOADED, new FileIsDirectory(false));
+            given(findFilePort.findById(new FileId(otherNs.getId()))).willReturn(Optional.of(otherNs));
+
+            assertNotFound(catchThrowable(
+                    () -> publicFileResolver.resolveDescendant(token.toString(), otherNs.getId().toString())));
+        }
+
+        @Test
         void rejectsWhenTheFolderIsNotLinkShared() {
             File folder = File.withId(new FileId(UUID.randomUUID()), new FileNamespaceId(namespaceId),
                     new FileName("shared"), new FilePath("/"), new FileOwnerId(UUID.randomUUID()),
