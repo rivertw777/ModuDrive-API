@@ -21,17 +21,23 @@ ModuDrive is a cloud-drive microservices backend built with **Spring Boot 4.0.0*
 # Run tests for a single service
 ./gradlew :services:member-service:test
 
-# Start infra (Postgres)
+# Start infra only (Postgres, Redis, Kafka, MinIO)
 make infra
 
-# Test + build image + start all services
+# Start the observability stack only (otel-collector, Tempo, Loki, Promtail, Prometheus, Grafana)
+make observability
+
+# Wipe every data volume (infra + observability) and restart infra + observability + services
+make reset
+
+# Test + build image + start all services (also brings up infra + observability)
 make service
 
 # Test + build image + start a single service
 make member   # or: make gateway, make auth, make file, make storage, make mail
 ```
 
-Docker Compose files are at `.docker/docker-compose.service.yml` (services) and `.docker/docker-compose.infra.yml` (Postgres, MinIO). The shared `Dockerfile` lives at `.docker/Dockerfile`, referenced by every service's `build.gradle` via its `docker` task.
+Docker Compose files are at `.docker/docker-compose.service.yml` (services), `.docker/docker-compose.infra.yml` (Postgres, Redis, Kafka, MinIO), and `.docker/docker-compose.observability.yml` (Grafana/Tempo/Loki/Prometheus/OTel). All three attach to `modudrive_network` as an **external** network, created by the `network` Make target (a prerequisite of `infra`/`observability`; `start.sh` creates it inline). The shared `Dockerfile` lives at `.docker/Dockerfile`, referenced by every service's `build.gradle` via its `docker` task.
 
 The active Spring profile (`dev`) is injected via `SPRING_PROFILES_ACTIVE` in `docker-compose.service.yml`, not hardcoded in `application.yml`.
 

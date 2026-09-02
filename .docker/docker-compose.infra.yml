@@ -88,96 +88,16 @@ services:
       retries: 5
     restart: unless-stopped
 
-  otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.159.0
-    networks:
-      - modudrive_network
-    ports:
-      # 서비스는 전부 modudrive_network 안에서 otel-collector:4318로 붙는다.
-      # 호스트 바인딩은 IDE에서 직접 띄운 서비스를 로컬로 붙일 때만 필요 — loopback만 연다.
-      - "127.0.0.1:4317:4317"   # OTLP gRPC
-      - "127.0.0.1:4318:4318"   # OTLP HTTP
-    volumes:
-      - ./observability/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
-    restart: unless-stopped
-
-  tempo:
-    image: grafana/tempo:3.0.0
-    networks:
-      - modudrive_network
-    command: ["-config.file=/etc/tempo.yaml"]
-    volumes:
-      - ./observability/tempo.yaml:/etc/tempo.yaml:ro
-      - tempo_data:/var/tempo
-    restart: unless-stopped
-
-  loki:
-    image: grafana/loki:3.7.6
-    networks:
-      - modudrive_network
-    command: ["-config.file=/etc/loki/config.yaml"]
-    volumes:
-      - ./observability/loki-config.yaml:/etc/loki/config.yaml:ro
-      - loki_data:/loki
-    restart: unless-stopped
-
-  promtail:
-    image: grafana/promtail:3.6.8
-    networks:
-      - modudrive_network
-    command: ["-config.file=/etc/promtail/config.yaml"]
-    volumes:
-      - ./observability/promtail-config.yaml:/etc/promtail/config.yaml:ro
-      # docker.sock을 :ro로 마운트해도 Docker Engine API 자체는 전부 열린다(호스트 root 상당 권한).
-      # 로컬 dev compose 전용 트레이드오프 — 공유 호스트/서버로 절대 승격하지 말 것.
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
-    depends_on:
-      loki:
-        condition: service_started
-    restart: unless-stopped
-
-  prometheus:
-    image: prom/prometheus:v3.14.0
-    networks:
-      - modudrive_network
-    ports:
-      - "127.0.0.1:9090:9090"
-    volumes:
-      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus_data:/prometheus
-    restart: unless-stopped
-
-  grafana:
-    image: grafana/grafana:13.2.0
-    networks:
-      - modudrive_network
-    ports:
-      - "127.0.0.1:3001:3000"   # 3000은 ModuDrive-WEB(Vite) dev server가 씀
-    environment:
-      - GF_AUTH_ANONYMOUS_ENABLED=true
-      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
-    volumes:
-      - ./observability/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
-      - grafana_data:/var/lib/grafana
-    depends_on:
-      - prometheus
-      - tempo
-      - loki
-    restart: unless-stopped
+# Observability (otel-collector, tempo, loki, promtail, prometheus, grafana) lives
+# in docker-compose.observability.yml — run `make observability` after `make infra`.
 
 networks:
   modudrive_network:
     name: modudrive_network
-    driver: bridge
+    external: true
 
 volumes:
   postgres_data:
   redis_data:
   minio_data:
   kafka_data:
-  tempo_data:
-  loki_data:
-  prometheus_data:
-  grafana_data:
