@@ -156,6 +156,32 @@ class ListFileSharesServiceTest {
         }
 
         @Test
+        @DisplayName("조상 둘이 같은 멤버에게 다른 role을 주면 가장 관대한 role의 행 하나만 (가까운 조상 출처)")
+        void collapsesToTheMostGenerousRoleWhenTwoAncestorsGrantTheSameMember() {
+            UUID nearId = UUID.randomUUID();
+            File nearDir = File.withId(new FileId(nearId), new FileNamespaceId(file.getNamespaceId()),
+                    new FileName("sub"), new FilePath("/shared-folder"), new FileOwnerId(ownerId),
+                    null, null, FileStatus.UPLOADED, new FileIsDirectory(true));
+            UUID grantee = UUID.randomUUID();
+            FileShare rootGrant = memberShare(parentId, grantee, Role.VIEWER);
+            FileShare nearGrant = memberShare(nearId, grantee, Role.EDITOR);
+            given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(file));
+            given(findFileSharePort.findByFileId(command.getFileId())).willReturn(List.of());
+            // ancestorDirectories returns root-most first
+            given(fileAccessGuard.ancestorDirectories(any(File.class))).willReturn(List.of(parentDir, nearDir));
+            given(findFileSharePort.findByFileId(new FileId(parentId))).willReturn(List.of(rootGrant));
+            given(findFileSharePort.findByFileId(new FileId(nearId))).willReturn(List.of(nearGrant));
+            given(findMemberByIdPort.findMemberById(grantee))
+                    .willReturn(new MemberSummary("guest", "guest@modudrive.com"));
+
+            FileSharesView result = listFileSharesService.listFileShares(command);
+
+            assertThat(result.inheritedShares()).hasSize(1);
+            assertThat(result.inheritedShares().get(0).share().getRole()).isEqualTo(Role.EDITOR);
+            assertThat(result.inheritedShares().get(0).source()).isEqualTo(nearDir);
+        }
+
+        @Test
         void reportsLinkSharedAncestorAsInheritedLinkSource() {
             parentDir.enableLinkSharing(UUID.randomUUID(), Role.VIEWER);
             given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(file));

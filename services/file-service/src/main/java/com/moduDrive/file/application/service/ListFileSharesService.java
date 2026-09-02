@@ -11,6 +11,7 @@ import com.moduDrive.file.application.port.out.FindMemberByIdPort;
 import com.moduDrive.file.application.port.out.FindMemberByIdPort.MemberSummary;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.FileShare;
+import com.moduDrive.file.domain.model.Role;
 import com.moduDrive.file.domain.model.ShareScope;
 import com.moduDrive.file.exception.FileExceptionCase;
 import lombok.RequiredArgsConstructor;
@@ -18,7 +19,9 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -57,19 +60,28 @@ class ListFileSharesService implements ListFileSharesUseCase {
                 .filter(Objects::nonNull)
                 .collect(Collectors.toCollection(HashSet::new));
 
-        List<InheritedShare> inheritedShares = new ArrayList<>();
         List<File> inheritedLinkSources = new ArrayList<>();
+        // One row per inherited grantee. Ancestors arrive root-most first; keep the most generous
+        // role (that's the effective access FileAccessGuard resolves) and, on a tie, the nearest
+        // ancestor — matching Drive's "상속됨: <가장 가까운 폴더>".
+        Map<UUID, InheritedShare> inheritedByGrantee = new LinkedHashMap<>();
         for (File ancestor : fileAccessGuard.ancestorDirectories(file)) {
             if (ancestor.getAccessScope() == ShareScope.LINK) {
                 inheritedLinkSources.add(ancestor);
             }
             for (FileShare ancestorShare : findFileSharePort.findByFileId(new File.FileId(ancestor.getId()))) {
                 UUID grantee = ancestorShare.getSharedWithUserId();
-                if (grantee != null && directGrantees.add(grantee)) {
-                    inheritedShares.add(new InheritedShare(ancestorShare, ancestor));
+                if (grantee == null || directGrantees.contains(grantee)) {
+                    continue;
                 }
+                inheritedByGrantee.merge(grantee, new InheritedShare(ancestorShare, ancestor), (existing, candidate) -> {
+                    Role kept = existing.share().getRole();
+                    Role incoming = candidate.share().getRole();
+                    return kept == Role.EDITOR && incoming != Role.EDITOR ? existing : candidate;
+                });
             }
         }
+        List<InheritedShare> inheritedShares = new ArrayList<>(inheritedByGrantee.values());
 
         // Enrichment is member-service display data, not the file/share data itself — a lookup
         // failure (member deleted, member-service briefly down) must degrade that one row to
