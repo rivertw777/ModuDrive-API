@@ -51,6 +51,11 @@ class ListFileSharesServiceTest {
             new FileName("report.pdf"), new FilePath("/1"), new FileOwnerId(ownerId),
             null, null, FileStatus.UPLOADED, new FileIsDirectory(false));
 
+    private FileShare memberShare(UUID targetFileId, UUID grantee, Role role) {
+        return FileShare.withId(new FileShareId(UUID.randomUUID()), new FileShareFileId(targetFileId),
+                new FileShareOwnerId(ownerId), new FileShareSharedWithUserId(grantee), new FileShareRole(role));
+    }
+
     @Nested
     @DisplayName("소유자가 공유 목록을 조회할 때")
     class WhenOwnerLists {
@@ -58,18 +63,19 @@ class ListFileSharesServiceTest {
         @Test
         void returnsFileWithItsSharesAndMemberSummaries() {
             UUID sharedWithUserId = UUID.randomUUID();
-            FileShare share = FileShare.withId(new FileShareId(UUID.randomUUID()), new FileShareFileId(fileId),
-                    new FileShareOwnerId(ownerId), new FileShareSharedWithUserId(sharedWithUserId),
-                    new FileShareRole(Role.EDITOR));
+            FileShare share = memberShare(fileId, sharedWithUserId, Role.EDITOR);
             MemberSummary summary = new MemberSummary("river", "river@modudrive.com");
             given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(file));
             given(findFileSharePort.findByFileId(command.getFileId())).willReturn(List.of(share));
+            given(fileAccessGuard.ancestorDirectories(any(File.class))).willReturn(List.of());
             given(findMemberByIdPort.findMemberById(sharedWithUserId)).willReturn(summary);
 
             FileSharesView result = listFileSharesService.listFileShares(command);
 
             assertThat(result.file().getOwnerId()).isEqualTo(ownerId);
             assertThat(result.shares()).containsExactly(share);
+            assertThat(result.inheritedShares()).isEmpty();
+            assertThat(result.inheritedLinkSources()).isEmpty();
             assertThat(result.memberSummaries()).containsEntry(sharedWithUserId, summary);
         }
 
@@ -77,6 +83,7 @@ class ListFileSharesServiceTest {
         void returnsEmptyShareListWhenNobodyWasInvited() {
             given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(file));
             given(findFileSharePort.findByFileId(command.getFileId())).willReturn(List.of());
+            given(fileAccessGuard.ancestorDirectories(any(File.class))).willReturn(List.of());
 
             FileSharesView result = listFileSharesService.listFileShares(command);
 
@@ -87,11 +94,10 @@ class ListFileSharesServiceTest {
         @Test
         void degradesToUnknownWhenMemberLookupFails() {
             UUID sharedWithUserId = UUID.randomUUID();
-            FileShare share = FileShare.withId(new FileShareId(UUID.randomUUID()), new FileShareFileId(fileId),
-                    new FileShareOwnerId(ownerId), new FileShareSharedWithUserId(sharedWithUserId),
-                    new FileShareRole(Role.VIEWER));
+            FileShare share = memberShare(fileId, sharedWithUserId, Role.VIEWER);
             given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(file));
             given(findFileSharePort.findByFileId(command.getFileId())).willReturn(List.of(share));
+            given(fileAccessGuard.ancestorDirectories(any(File.class))).willReturn(List.of());
             willThrow(new BusinessException(FileExceptionCase.SHARE_TARGET_NOT_FOUND))
                     .given(findMemberByIdPort).findMemberById(sharedWithUserId);
 
@@ -100,6 +106,66 @@ class ListFileSharesServiceTest {
             assertThat(result.shares()).containsExactly(share);
             assertThat(result.memberSummaries().get(sharedWithUserId))
                     .isEqualTo(new MemberSummary(null, null));
+        }
+    }
+
+    @Nested
+    @DisplayName("상위 디렉토리에 공유가 있을 때")
+    class WhenAncestorDirectoryIsShared {
+
+        private final UUID parentId = UUID.randomUUID();
+        private final File parentDir = File.withId(new FileId(parentId), new FileNamespaceId(file.getNamespaceId()),
+                new FileName("shared-folder"), new FilePath("/"), new FileOwnerId(ownerId),
+                null, null, FileStatus.UPLOADED, new FileIsDirectory(true));
+
+        @Test
+        void includesInheritedMemberGrantTaggedWithSourceDirectory() {
+            UUID grantee = UUID.randomUUID();
+            FileShare inherited = memberShare(parentId, grantee, Role.VIEWER);
+            given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(file));
+            given(findFileSharePort.findByFileId(command.getFileId())).willReturn(List.of());
+            given(fileAccessGuard.ancestorDirectories(any(File.class))).willReturn(List.of(parentDir));
+            given(findFileSharePort.findByFileId(new FileId(parentId))).willReturn(List.of(inherited));
+            given(findMemberByIdPort.findMemberById(grantee))
+                    .willReturn(new MemberSummary("guest", "guest@modudrive.com"));
+
+            FileSharesView result = listFileSharesService.listFileShares(command);
+
+            assertThat(result.shares()).isEmpty();
+            assertThat(result.inheritedShares()).hasSize(1);
+            assertThat(result.inheritedShares().get(0).share()).isEqualTo(inherited);
+            assertThat(result.inheritedShares().get(0).source()).isEqualTo(parentDir);
+        }
+
+        @Test
+        void skipsInheritedGrantWhenSameMemberIsAlsoSharedDirectly() {
+            UUID grantee = UUID.randomUUID();
+            FileShare direct = memberShare(fileId, grantee, Role.EDITOR);
+            FileShare inherited = memberShare(parentId, grantee, Role.VIEWER);
+            given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(file));
+            given(findFileSharePort.findByFileId(command.getFileId())).willReturn(List.of(direct));
+            given(fileAccessGuard.ancestorDirectories(any(File.class))).willReturn(List.of(parentDir));
+            given(findFileSharePort.findByFileId(new FileId(parentId))).willReturn(List.of(inherited));
+            given(findMemberByIdPort.findMemberById(grantee))
+                    .willReturn(new MemberSummary("guest", "guest@modudrive.com"));
+
+            FileSharesView result = listFileSharesService.listFileShares(command);
+
+            assertThat(result.shares()).containsExactly(direct);
+            assertThat(result.inheritedShares()).isEmpty();
+        }
+
+        @Test
+        void reportsLinkSharedAncestorAsInheritedLinkSource() {
+            parentDir.enableLinkSharing(UUID.randomUUID(), Role.VIEWER);
+            given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(file));
+            given(findFileSharePort.findByFileId(command.getFileId())).willReturn(List.of());
+            given(fileAccessGuard.ancestorDirectories(any(File.class))).willReturn(List.of(parentDir));
+            given(findFileSharePort.findByFileId(new FileId(parentId))).willReturn(List.of());
+
+            FileSharesView result = listFileSharesService.listFileShares(command);
+
+            assertThat(result.inheritedLinkSources()).containsExactly(parentDir);
         }
     }
 
