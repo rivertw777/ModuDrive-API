@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS namespace (
 WITH inserted AS (
     INSERT INTO member (id, name, email, password, is_valid, created_at, updated_at, is_deleted)
     VALUES (
-        gen_random_uuid(),
+        uuidv7(),
         'test',
         'test@naver.com',
         '$2b$10$3GYoSaQvZ7CONpKRijBv5eE8/bcIn1oAXQhI8/a3Ml9RVMjWSR44C',
@@ -49,13 +49,13 @@ role_inserted AS (
     SELECT id, 'MEMBER' FROM inserted
 )
 INSERT INTO namespace (id, user_id, root_path, quota_bytes, created_at, updated_at)
-SELECT gen_random_uuid(), id, '/' || id, 21474836480, NOW(), NOW() FROM inserted;
+SELECT uuidv7(), id, '/' || id, 21474836480, NOW(), NOW() FROM inserted;
 
 -- test2 유저 생성
 WITH inserted AS (
 INSERT INTO member (id, name, email, password, is_valid, created_at, updated_at, is_deleted)
 VALUES (
-    gen_random_uuid(),
+    uuidv7(),
     'test2',
     'test2@naver.com',
     '$2b$10$3GYoSaQvZ7CONpKRijBv5eE8/bcIn1oAXQhI8/a3Ml9RVMjWSR44C',
@@ -71,4 +71,4 @@ INSERT INTO member_role (member_id, role)
 SELECT id, 'MEMBER' FROM inserted
     )
 INSERT INTO namespace (id, user_id, root_path, quota_bytes, created_at, updated_at)
-SELECT gen_random_uuid(), id, '/' || id, 21474836480, NOW(), NOW() FROM inserted;
+SELECT uuidv7(), id, '/' || id, 21474836480, NOW(), NOW() FROM inserted;
