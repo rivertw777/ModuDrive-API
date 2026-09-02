@@ -2,6 +2,7 @@ package com.moduDrive.storage.application.service;
 
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.storage.application.port.in.command.PublicDownloadFileCommand;
+import com.moduDrive.storage.application.port.out.DownloadQuotaPort;
 import com.moduDrive.storage.application.port.out.GetFileVersionPort;
 import com.moduDrive.storage.application.port.out.RetrieveBlocksPort;
 import com.moduDrive.storage.config.StorageProperties;
@@ -21,6 +22,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.never;
@@ -32,6 +34,7 @@ class PublicDownloadFileServiceTest {
 
     @Mock private GetFileVersionPort getFileVersionPort;
     @Mock private RetrieveBlocksPort retrieveBlocksPort;
+    @Mock private DownloadQuotaPort downloadQuotaPort;
     @Mock private StorageProperties storageProperties;
     @InjectMocks private PublicDownloadFileService publicDownloadFileService;
 
@@ -87,6 +90,51 @@ class PublicDownloadFileServiceTest {
 
             then(retrieveBlocksPort).should().streamBlocks("files/abc/xyz", 2, out);
             then(retrieveBlocksPort).should(never()).retrieveBlocks(anyString(), anyInt());
+        }
+
+        @Test
+        void chargesTheTokenScopedQuotaSoAllRecipientsOfOneLinkShareAWindow() {
+            given(getFileVersionPort.getPublicS3Path(token)).willReturn("files/abc/xyz");
+            given(getFileVersionPort.getPublicBlockCount(token)).willReturn(2);
+            given(storageProperties.getBlockSize()).willReturn(4 * 1024 * 1024);
+
+            publicDownloadFileService.downloadPublicStream(new PublicDownloadFileCommand(token), new ByteArrayOutputStream());
+
+            then(downloadQuotaPort).should().recordAndEnforce(token, "files/abc/xyz", 8_388_608L);
+        }
+
+        @Test
+        void rejectsBeforeStreamingWhenTheFileIsOverItsDownloadQuota() {
+            given(getFileVersionPort.getPublicS3Path(token)).willReturn("files/abc/xyz");
+            given(getFileVersionPort.getPublicBlockCount(token)).willReturn(2);
+            willThrow(new BusinessException(StorageExceptionCase.DOWNLOAD_QUOTA_EXCEEDED))
+                    .given(downloadQuotaPort).recordAndEnforce(anyString(), anyString(), anyLong());
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+            Throwable thrown = catchThrowable(() -> publicDownloadFileService.downloadPublicStream(
+                    new PublicDownloadFileCommand(token), out));
+
+            assertThat(thrown).isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(StorageExceptionCase.DOWNLOAD_QUOTA_EXCEEDED);
+            then(retrieveBlocksPort).shouldHaveNoInteractions();
+        }
+    }
+
+    @Nested
+    @DisplayName("공개 인라인 미리보기(view)로 요청할 때")
+    class WhenRequestedAsPublicInlinePreview {
+
+        @Test
+        void alsoChargesTheQuotaSoTheViewRouteCannotBypassTheLimit() {
+            given(getFileVersionPort.getPublicS3Path(token)).willReturn("files/abc/xyz");
+            given(getFileVersionPort.getPublicBlockCount(token)).willReturn(1);
+            given(storageProperties.getBlockSize()).willReturn(4 * 1024 * 1024);
+            given(retrieveBlocksPort.retrieveBlocks(anyString(), anyInt())).willReturn(List.of("data".getBytes()));
+
+            publicDownloadFileService.downloadPublic(new PublicDownloadFileCommand(token, true));
+
+            then(downloadQuotaPort).should().recordAndEnforce(token, "files/abc/xyz", 4_194_304L);
         }
     }
 
