@@ -1,6 +1,7 @@
 package com.moduDrive.file.application.service;
 
 import com.moduDrive.file.application.port.out.FindFilePort;
+import com.moduDrive.file.application.port.out.PurgeStorageBlocksPort;
 import com.moduDrive.file.application.port.out.SaveFilePort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
@@ -15,6 +16,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -29,18 +31,26 @@ class DirectoryCascaderTest {
 
     @Mock private FindFilePort findFilePort;
     @Mock private SaveFilePort saveFilePort;
+    @Mock private PurgeStorageBlocksPort purgeStorageBlocksPort;
     @InjectMocks private DirectoryCascader directoryCascader;
 
     private final NamespaceId namespaceId = new NamespaceId(UUID.randomUUID());
+    private final LocalDateTime trashedAt = LocalDateTime.now();
 
     private File childAt(String path, String name) {
         return childAt(path, name, FileStatus.UPLOADED);
     }
 
     private File childAt(String path, String name, FileStatus status) {
-        return File.withId(new FileId(UUID.randomUUID()), new FileNamespaceId(namespaceId.value()),
+        return childAt(path, name, status, trashedAt);
+    }
+
+    private File childAt(String path, String name, FileStatus status, LocalDateTime updatedAt) {
+        File file = File.withId(new FileId(UUID.randomUUID()), new FileNamespaceId(namespaceId.value()),
                 new FileName(name), new FilePath(path),
                 new FileOwnerId(UUID.randomUUID()), null, null, status, new FileIsDirectory(false));
+        file.markUpdatedAt(updatedAt);
+        return file;
     }
 
     @Nested
@@ -110,9 +120,46 @@ class DirectoryCascaderTest {
         given(findFilePort.findByNamespaceIdAndPathStartingWith(namespaceId, "/A"))
                 .willReturn(List.of(deleted, restoredEarly));
 
-        directoryCascader.purge(namespaceId, "/A");
+        directoryCascader.purge(namespaceId, "/A", trashedAt);
 
         then(saveFilePort).should(times(1)).deleteFile(new FileId(deleted.getId()));
         then(saveFilePort).should(times(0)).deleteFile(new FileId(restoredEarly.getId()));
+        then(purgeStorageBlocksPort).should(times(1))
+                .purgeBlocks(new FileId(deleted.getId()), deleted.getOwnerId());
+        then(purgeStorageBlocksPort).should(times(0)).purgeBlocks(new FileId(restoredEarly.getId()), restoredEarly.getOwnerId());
+    }
+
+    @Test
+    @DisplayName("영구 삭제할 때 삭제된 하위 디렉토리는 자신의 블록을 지우지 않는다")
+    void purgeSkipsBlockDeletionForADirectoryDescendant() {
+        File deletedDirectory = File.withId(new FileId(UUID.randomUUID()), new FileNamespaceId(namespaceId.value()),
+                new FileName("하위폴더"), new FilePath("/A"),
+                new FileOwnerId(UUID.randomUUID()), null, null, FileStatus.DELETED, new FileIsDirectory(true));
+        deletedDirectory.markUpdatedAt(trashedAt);
+        given(findFilePort.findByNamespaceIdAndPathStartingWith(namespaceId, "/A"))
+                .willReturn(List.of(deletedDirectory));
+
+        directoryCascader.purge(namespaceId, "/A", trashedAt);
+
+        then(saveFilePort).should(times(1)).deleteFile(new FileId(deletedDirectory.getId()));
+        then(purgeStorageBlocksPort).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("같은 경로를 나중에 재사용한, 아직 보존 기간이 남은 다른 디렉토리는 건드리지 않는다")
+    void purgeSkipsADescendantTrashedLaterAtTheSamePath() {
+        // The root being purged was trashed at `trashedAt`. A namesake directory at the same
+        // path was created and trashed independently, later — its descendant must survive.
+        File ownDescendant = childAt("/A", "b.txt", FileStatus.DELETED, trashedAt);
+        File unrelatedNamesakeDescendant = childAt("/A", "c.txt", FileStatus.DELETED, trashedAt.plusDays(29));
+        given(findFilePort.findByNamespaceIdAndPathStartingWith(namespaceId, "/A"))
+                .willReturn(List.of(ownDescendant, unrelatedNamesakeDescendant));
+
+        directoryCascader.purge(namespaceId, "/A", trashedAt);
+
+        then(saveFilePort).should(times(1)).deleteFile(new FileId(ownDescendant.getId()));
+        then(saveFilePort).should(times(0)).deleteFile(new FileId(unrelatedNamesakeDescendant.getId()));
+        then(purgeStorageBlocksPort).should(times(0))
+                .purgeBlocks(new FileId(unrelatedNamesakeDescendant.getId()), unrelatedNamesakeDescendant.getOwnerId());
     }
 }

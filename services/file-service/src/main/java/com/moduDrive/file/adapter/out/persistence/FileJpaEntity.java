@@ -24,6 +24,10 @@ import java.util.UUID;
 // same slot collide.
 @Table(name = "file", uniqueConstraints = {
         @UniqueConstraint(name = "uk_file_namespace_path_active_name", columnNames = {"namespace_id", "path", "active_slot_name"})
+}, indexes = {
+        // Backs the trash-retention sweep's findByStatusAndUpdatedAtBefore, which scans every
+        // namespace — without this it's a full table scan every night.
+        @Index(name = "ix_file_status_updated_at", columnList = "status, updated_at")
 })
 @Entity
 class FileJpaEntity extends BaseTimeEntity {

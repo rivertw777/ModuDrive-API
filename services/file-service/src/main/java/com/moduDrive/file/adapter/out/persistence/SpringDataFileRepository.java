@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -32,6 +33,8 @@ interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID> {
             @Param("escapedPrefix") String escapedPrefix);
 
     List<FileJpaEntity> findByNamespaceIdAndStatus(UUID namespaceId, FileStatus status);
+
+    List<FileJpaEntity> findByStatusAndUpdatedAtBefore(FileStatus status, LocalDateTime cutoff);
 
     List<FileJpaEntity> findByNamespaceIdAndFavoriteTrueAndStatusNot(UUID namespaceId, FileStatus status);
 

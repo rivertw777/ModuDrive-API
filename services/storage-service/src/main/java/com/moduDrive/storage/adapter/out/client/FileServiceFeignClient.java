@@ -27,6 +27,13 @@ interface FileServiceFeignClient {
                                                        @RequestParam String userId,
                                                        @RequestParam(defaultValue = "1") int limit);
 
+    // Purge-only route (see file-service's GetAllFileVersionsController) — every version, not
+    // just the latest, and gated on ownership rather than DOWNLOAD permission since this feeds
+    // a permanent delete.
+    @GetMapping("/internal/files/{fileId}/versions/all")
+    ApiResponse<List<FileVersionDto>> getAllFileVersions(@PathVariable String fileId,
+                                                         @RequestParam String userId);
+
     // Anonymous link-share download: no userId, because there is no authenticated caller — the
     // link token is the whole credential and file-service validates it (see PublicFileResolver).
     @GetMapping("/internal/files/public/{token}/revisions")

@@ -42,6 +42,8 @@ class FilePersistenceAdapterTest {
     private SpringDataFileAccessRepository springDataFileAccessRepository;
     @Autowired
     private SpringDataFileShareRepository springDataFileShareRepository;
+    @Autowired
+    private SpringDataFileVersionRepository springDataFileVersionRepository;
 
     private final UUID namespaceIdValue = UUID.randomUUID();
     private final NamespaceId namespaceId = new NamespaceId(namespaceIdValue);
@@ -324,6 +326,27 @@ class FilePersistenceAdapterTest {
             filePersistenceAdapter.deleteFileShare(new FileShareId(created.getId()));
 
             assertThat(filePersistenceAdapter.findByFileId(new FileId(fileIdValue))).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("파일을 영구 삭제할 때")
+    class WhenDeletingAFile {
+
+        @Test
+        @DisplayName("파일 행과 함께 그 파일의 버전 행도 모두 지워진다")
+        void deletesFileVersionsToo() {
+            FileJpaEntity saved = springDataFileRepository.save(new FileJpaEntity(
+                    namespaceIdValue, "report.pdf", "/1", UUID.randomUUID(), FileStatus.DELETED, false));
+            UUID fileIdValue = saved.getId();
+            springDataFileVersionRepository.save(new FileVersionJpaEntity(fileIdValue, 10L, 1, "s3://b/v1"));
+            springDataFileVersionRepository.save(new FileVersionJpaEntity(fileIdValue, 20L, 2, "s3://b/v2"));
+
+            filePersistenceAdapter.deleteFile(new FileId(fileIdValue));
+
+            assertThat(springDataFileVersionRepository.findByFileIdOrderByCreatedAtDesc(
+                    fileIdValue, org.springframework.data.domain.PageRequest.of(0, 10))).isEmpty();
+            assertThat(springDataFileRepository.findById(fileIdValue)).isEmpty();
         }
     }
 

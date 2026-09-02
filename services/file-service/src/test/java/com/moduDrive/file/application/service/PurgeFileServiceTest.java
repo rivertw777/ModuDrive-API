@@ -3,7 +3,6 @@ package com.moduDrive.file.application.service;
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.file.application.port.in.command.PurgeFileCommand;
 import com.moduDrive.file.application.port.out.FindFilePort;
-import com.moduDrive.file.application.port.out.SaveFilePort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
 import com.moduDrive.file.domain.model.FileStatus;
@@ -34,9 +33,8 @@ import static org.mockito.BDDMockito.willThrow;
 class PurgeFileServiceTest {
 
     @Mock private FindFilePort findFilePort;
-    @Mock private SaveFilePort saveFilePort;
-    @Mock private DirectoryCascader directoryCascader;
     @Mock private FileAccessGuard fileAccessGuard;
+    @Mock private FilePurger filePurger;
     @InjectMocks private PurgeFileService purgeFileService;
 
     private final UUID fileId = UUID.randomUUID();
@@ -59,28 +57,12 @@ class PurgeFileServiceTest {
 
         @Test
         void purgesFile() {
-            given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(makeFile(FileStatus.DELETED)));
+            File file = makeFile(FileStatus.DELETED);
+            given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(file));
 
             purgeFileService.purgeFile(command);
 
-            then(saveFilePort).should().deleteFile(command.getFileId());
-            then(directoryCascader).shouldHaveNoInteractions();
-        }
-    }
-
-    @Nested
-    @DisplayName("삭제 대상이 디렉토리일 때")
-    class WhenFileIsDirectory {
-
-        @Test
-        void cascadesPurgeToDescendants() {
-            given(findFilePort.findById(command.getFileId()))
-                    .willReturn(Optional.of(makeFile(FileStatus.DELETED, new FileIsDirectory(true))));
-
-            purgeFileService.purgeFile(command);
-
-            then(directoryCascader).should().purge(any(), eq("/1/docs/report.pdf"));
-            then(saveFilePort).should().deleteFile(command.getFileId());
+            then(filePurger).should().purgeRoot(file);
         }
     }
 
@@ -97,7 +79,7 @@ class PurgeFileServiceTest {
             assertThat(thrown).isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
                     .isEqualTo(FileExceptionCase.FILE_NOT_FOUND);
-            then(saveFilePort).shouldHaveNoInteractions();
+            then(filePurger).shouldHaveNoInteractions();
         }
     }
 
@@ -114,7 +96,7 @@ class PurgeFileServiceTest {
             assertThat(thrown).isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
                     .isEqualTo(FileExceptionCase.FILE_NOT_DELETED);
-            then(saveFilePort).shouldHaveNoInteractions();
+            then(filePurger).shouldHaveNoInteractions();
         }
     }
 
@@ -133,7 +115,7 @@ class PurgeFileServiceTest {
             assertThat(thrown).isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
                     .isEqualTo(FileExceptionCase.FILE_ACCESS_DENIED);
-            then(saveFilePort).shouldHaveNoInteractions();
+            then(filePurger).shouldHaveNoInteractions();
         }
     }
 }

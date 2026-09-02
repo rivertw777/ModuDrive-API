@@ -5,6 +5,7 @@ import com.moduDrive.file.domain.model.File.FileId;
 import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.Namespace.NamespaceId;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -35,4 +36,10 @@ public interface FindFilePort {
     List<File> findByNamespaceId(NamespaceId namespaceId);
 
     long sumFileSizeByNamespaceId(NamespaceId namespaceId);
+
+    /** Every DELETED file across every namespace whose {@code updatedAt} — i.e. the moment it
+     * was trashed, since nothing else touches a DELETED row — is older than {@code cutoff}.
+     * Used by the trash-retention sweep; unlike the rest of this port, deliberately not scoped
+     * to one namespace. */
+    List<File> findByStatusAndUpdatedAtBefore(FileStatus status, LocalDateTime cutoff);
 }

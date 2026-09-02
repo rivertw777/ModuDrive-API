@@ -9,4 +9,6 @@ import java.util.UUID;
 interface SpringDataFileVersionRepository extends JpaRepository<FileVersionJpaEntity, UUID> {
 
     List<FileVersionJpaEntity> findByFileIdOrderByCreatedAtDesc(UUID fileId, Pageable pageable);
+
+    void deleteByFileId(UUID fileId);
 }

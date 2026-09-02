@@ -108,6 +108,9 @@ class FilePersistenceAdapter implements
 
     @Override
     public void deleteFile(FileId fileId) {
+        // A purged file's versions would otherwise dangle forever, pointing at S3 prefixes that
+        // FilePurger/DirectoryCascader already deleted the blocks under.
+        fileVersionRepository.deleteByFileId(fileId.value());
         fileRepository.deleteById(fileId.value());
     }
 
@@ -193,6 +196,14 @@ class FilePersistenceAdapter implements
     @Override
     public long sumFileSizeByNamespaceId(NamespaceId namespaceId) {
         return fileRepository.sumFileSizeByNamespaceId(namespaceId.value());
+    }
+
+    @Override
+    public List<File> findByStatusAndUpdatedAtBefore(FileStatus status, LocalDateTime cutoff) {
+        return fileRepository.findByStatusAndUpdatedAtBefore(status, cutoff)
+                .stream()
+                .map(fileMapper::mapFileToDomain)
+                .collect(Collectors.toList());
     }
 
     @Override

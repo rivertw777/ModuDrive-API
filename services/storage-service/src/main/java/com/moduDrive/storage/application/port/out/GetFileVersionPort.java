@@ -1,5 +1,6 @@
 package com.moduDrive.storage.application.port.out;
 
+import java.util.List;
 import java.util.UUID;
 
 public interface GetFileVersionPort {
@@ -13,4 +14,10 @@ public interface GetFileVersionPort {
     String getPublicS3Path(String token);
 
     int getPublicBlockCount(String token);
+
+    /** Every version ever uploaded for this file, not just the latest — a purge has to delete
+     * every version's blocks, not only the one a download would resolve to. */
+    List<VersionLocation> getAllVersions(UUID fileId, UUID userId);
+
+    record VersionLocation(String s3Path, int blockCount) {}
 }
