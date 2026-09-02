@@ -231,6 +231,25 @@ class StorageControllerTest {
         }
 
         @Test
+        void returnsTooManyRequestsAsCleanJsonWhenTheFileIsOverItsDownloadQuota() throws Exception {
+            willAnswer(invocation -> { throw new BusinessException(StorageExceptionCase.DOWNLOAD_QUOTA_EXCEEDED); })
+                    .given(publicDownloadFileUseCase).downloadPublicStream(any(), any());
+
+            MvcResult asyncResult = mockMvc.perform(get("/api/v1/storage/public/" + UUID.randomUUID() + "/download"))
+                    .andExpect(request().asyncStarted())
+                    .andReturn();
+
+            // The quota check runs inside the StreamingResponseBody lambda, before any byte is
+            // written — so the response is still uncommitted and GlobalExceptionHandler can replace
+            // the staged 200/attachment with a real 429 JSON body.
+            mockMvc.perform(asyncDispatch(asyncResult))
+                    .andExpect(status().isTooManyRequests())
+                    .andExpect(header().string(HttpHeaders.CONTENT_TYPE, startsWith("application/json")))
+                    .andExpect(header().doesNotExist(HttpHeaders.CONTENT_DISPOSITION))
+                    .andExpect(jsonPath("$.status").value("429 TOO_MANY_REQUESTS"));
+        }
+
+        @Test
         void marksTheResponseAsAnAttachment() throws Exception {
             willDoNothing().given(publicDownloadFileUseCase).downloadPublicStream(any(), any());
 
@@ -458,6 +477,17 @@ class StorageControllerTest {
                     .andExpect(header().string(HttpHeaders.CONTENT_RANGE, "bytes 2-4/10"))
                     .andExpect(result -> assertThat(result.getResponse().getContentAsByteArray())
                             .isEqualTo("234".getBytes()));
+        }
+
+        @Test
+        void returnsTooManyRequestsWhenTheViewRouteIsOverItsDownloadQuota() throws Exception {
+            given(publicDownloadFileUseCase.downloadPublic(any()))
+                    .willThrow(new BusinessException(StorageExceptionCase.DOWNLOAD_QUOTA_EXCEEDED));
+
+            mockMvc.perform(get("/api/v1/storage/public/" + UUID.randomUUID() + "/view")
+                            .param("fileName", "song.mp3"))
+                    .andExpect(status().isTooManyRequests())
+                    .andExpect(header().doesNotExist(HttpHeaders.CONTENT_DISPOSITION));
         }
     }
 }

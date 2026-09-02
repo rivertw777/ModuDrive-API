@@ -26,3 +26,7 @@ storage:
     region: ${STORAGE_S3_REGION}
   block-size: ${STORAGE_BLOCK_SIZE}
   encryption-key: ${STORAGE_ENCRYPTION_KEY}
+  # Per-file download volume per rolling window before that file is blocked (Google Drive style).
+  # 0 or negative disables the quota.
+  download-quota-per-file-bytes: ${STORAGE_DOWNLOAD_QUOTA_PER_FILE_BYTES:10737418240}
+  download-quota-window: ${STORAGE_DOWNLOAD_QUOTA_WINDOW:PT24H}

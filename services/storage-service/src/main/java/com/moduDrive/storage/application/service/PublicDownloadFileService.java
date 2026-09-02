@@ -3,6 +3,7 @@ package com.moduDrive.storage.application.service;
 import com.moduDrive.common.core.annotation.UseCase;
 import com.moduDrive.storage.application.port.in.command.PublicDownloadFileCommand;
 import com.moduDrive.storage.application.port.in.usecase.PublicDownloadFileUseCase;
+import com.moduDrive.storage.application.port.out.DownloadQuotaPort;
 import com.moduDrive.storage.application.port.out.GetFileVersionPort;
 import com.moduDrive.storage.application.port.out.RetrieveBlocksPort;
 import com.moduDrive.storage.config.StorageProperties;
@@ -20,6 +21,7 @@ class PublicDownloadFileService implements PublicDownloadFileUseCase {
 
     private final GetFileVersionPort getFileVersionPort;
     private final RetrieveBlocksPort retrieveBlocksPort;
+    private final DownloadQuotaPort downloadQuotaPort;
     private final StorageProperties storageProperties;
 
     @Override
@@ -28,14 +30,25 @@ class PublicDownloadFileService implements PublicDownloadFileUseCase {
         if (command.isInlinePreview()) {
             BlockAssembler.requireWithinInlinePreviewLimit(version.blockCount(), storageProperties.getBlockSize());
         }
+        // Anonymous fetches meter per link token: every recipient of one shared link draws on the
+        // same window, but a stranger's traffic can't spend the owner's own (user-scoped) quota.
+        downloadQuotaPort.checkWithinQuota(command.getToken(), version.s3Path());
         List<byte[]> blocks = retrieveBlocksPort.retrieveBlocks(version.s3Path(), version.blockCount());
-        return BlockAssembler.assemble(blocks);
+        byte[] assembled = BlockAssembler.assemble(blocks);
+        downloadQuotaPort.recordUsage(command.getToken(), version.s3Path(), assembled.length);
+        return assembled;
     }
 
     @Override
     public void downloadPublicStream(PublicDownloadFileCommand command, OutputStream out) {
         GetFileVersionPort.VersionLocation version = locate(command);
-        retrieveBlocksPort.streamBlocks(version.s3Path(), version.blockCount(), out);
+        downloadQuotaPort.checkWithinQuota(command.getToken(), version.s3Path());
+        CountingOutputStream counting = new CountingOutputStream(out);
+        try {
+            retrieveBlocksPort.streamBlocks(version.s3Path(), version.blockCount(), counting);
+        } finally {
+            downloadQuotaPort.recordUsage(command.getToken(), version.s3Path(), counting.count());
+        }
     }
 
     /** A folder link token needs the descendant's id to pick a file; a direct file link doesn't. */
