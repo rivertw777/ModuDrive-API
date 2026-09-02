@@ -91,6 +91,39 @@ class PublicDownloadFileServiceTest {
     }
 
     @Nested
+    @DisplayName("토큰이 폴더를 가리키고 entryId가 함께 올 때")
+    class WhenTokenIsAFolderLinkWithAnEntry {
+
+        private final String entryId = UUID.randomUUID().toString();
+
+        @Test
+        void resolvesTheDescendantVersionInOneLookup() {
+            given(getFileVersionPort.getPublicDescendantVersion(token, entryId))
+                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", 2));
+            given(retrieveBlocksPort.retrieveBlocks(anyString(), anyInt()))
+                    .willReturn(List.of("hello ".getBytes(), "world".getBytes()));
+
+            byte[] result = publicDownloadFileService.downloadPublic(
+                    new PublicDownloadFileCommand(token, entryId, false));
+
+            assertThat(new String(result)).isEqualTo("hello world");
+            then(getFileVersionPort).should(never()).getPublicS3Path(anyString());
+        }
+
+        @Test
+        void streamsTheDescendantWithoutAssembling() {
+            given(getFileVersionPort.getPublicDescendantVersion(token, entryId))
+                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", 2));
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+            publicDownloadFileService.downloadPublicStream(
+                    new PublicDownloadFileCommand(token, entryId, false), out);
+
+            then(retrieveBlocksPort).should().streamBlocks("files/abc/xyz", 2, out);
+        }
+    }
+
+    @Nested
     @DisplayName("인라인 미리보기 요청의 파일이 용량 제한을 넘을 때")
     class WhenInlinePreviewExceedsTheSizeCap {
 

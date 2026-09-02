@@ -18,11 +18,14 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 
 @ExtendWith(MockitoExtension.class)
@@ -138,6 +141,91 @@ class PublicFileResolverTest {
         @Test
         void throwsFileNotFoundWithoutLeakingAFormatError() {
             assertNotFound(catchThrowable(() -> publicFileResolver.resolve("not-a-uuid")));
+        }
+    }
+
+    @Nested
+    @DisplayName("토큰이 LINK 공개 폴더를 가리킬 때")
+    class WhenTokenMatchesLinkSharedFolder {
+
+        private final UUID namespaceId = UUID.randomUUID();
+
+        private File folder() {
+            File folder = File.withId(new FileId(UUID.randomUUID()), new FileNamespaceId(namespaceId),
+                    new FileName("shared"), new FilePath("/"), new FileOwnerId(UUID.randomUUID()),
+                    null, null, FileStatus.UPLOADED, new FileIsDirectory(true));
+            folder.enableLinkSharing(token, Role.VIEWER);
+            return folder;
+        }
+
+        private File entry(String name, String path, boolean directory, FileStatus status) {
+            return File.withId(new FileId(UUID.randomUUID()), new FileNamespaceId(namespaceId),
+                    new FileName(name), new FilePath(path), new FileOwnerId(UUID.randomUUID()),
+                    null, null, status, new FileIsDirectory(directory));
+        }
+
+        @Test
+        void listsTheFoldersOwnNonDeletedChildren() {
+            given(findFilePort.findByLinkToken(token)).willReturn(Optional.of(folder()));
+            File child = entry("a.txt", "/shared", false, FileStatus.UPLOADED);
+            File trashed = entry("b.txt", "/shared", false, FileStatus.DELETED);
+            given(findFilePort.findByNamespaceIdAndPath(any(), eq("/shared")))
+                    .willReturn(List.of(child, trashed));
+
+            assertThat(publicFileResolver.resolveChildren(token.toString(), null)).containsExactly(child);
+        }
+
+        @Test
+        void resolvesADescendantUnderTheFolder() {
+            given(findFilePort.findByLinkToken(token)).willReturn(Optional.of(folder()));
+            File child = entry("a.txt", "/shared", false, FileStatus.UPLOADED);
+            given(findFilePort.findById(new FileId(child.getId()))).willReturn(Optional.of(child));
+
+            assertThat(publicFileResolver.resolveDescendant(token.toString(), child.getId().toString()))
+                    .isEqualTo(child);
+        }
+
+        @Test
+        void rejectsAnEntryThatIsNotUnderTheFolder() {
+            given(findFilePort.findByLinkToken(token)).willReturn(Optional.of(folder()));
+            File outsider = entry("x.txt", "/other", false, FileStatus.UPLOADED);
+            given(findFilePort.findById(new FileId(outsider.getId()))).willReturn(Optional.of(outsider));
+
+            assertNotFound(catchThrowable(
+                    () -> publicFileResolver.resolveDescendant(token.toString(), outsider.getId().toString())));
+        }
+
+        @Test
+        void rejectsWhenTheFolderIsNotLinkShared() {
+            File folder = File.withId(new FileId(UUID.randomUUID()), new FileNamespaceId(namespaceId),
+                    new FileName("shared"), new FilePath("/"), new FileOwnerId(UUID.randomUUID()),
+                    null, null, FileStatus.UPLOADED, new FileIsDirectory(true));
+            given(findFilePort.findByLinkToken(token)).willReturn(Optional.of(folder));
+
+            assertNotFound(catchThrowable(() -> publicFileResolver.resolveChildren(token.toString(), null)));
+        }
+
+        @Test
+        void rejectsWhenTheLinkTokenBelongsToAFileNotAFolder() {
+            File file = makeFile(FileStatus.UPLOADED);
+            file.enableLinkSharing(token, Role.VIEWER);
+            given(findFilePort.findByLinkToken(token)).willReturn(Optional.of(file));
+
+            assertNotFound(catchThrowable(
+                    () -> publicFileResolver.resolveDescendant(token.toString(), UUID.randomUUID().toString())));
+        }
+
+        @Test
+        void listsASubDirectoryWhenParentIdIsGiven() {
+            given(findFilePort.findByLinkToken(token)).willReturn(Optional.of(folder()));
+            File sub = entry("sub", "/shared", true, FileStatus.UPLOADED);
+            given(findFilePort.findById(new FileId(sub.getId()))).willReturn(Optional.of(sub));
+            File nested = entry("c.txt", "/shared/sub", false, FileStatus.UPLOADED);
+            given(findFilePort.findByNamespaceIdAndPath(any(), eq("/shared/sub")))
+                    .willReturn(List.of(nested));
+
+            assertThat(publicFileResolver.resolveChildren(token.toString(), sub.getId().toString()))
+                    .containsExactly(nested);
         }
     }
 }

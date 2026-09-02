@@ -39,4 +39,11 @@ interface FileServiceFeignClient {
     @GetMapping("/internal/files/public/{token}/revisions")
     ApiResponse<List<FileVersionDto>> getPublicFileRevisions(@PathVariable String token,
                                                              @RequestParam(defaultValue = "1") int limit);
+
+    // Same as above for a file nested under a link-shared folder: the folder token plus the
+    // descendant's id, file-service checks the entry really is under that folder.
+    @GetMapping("/internal/files/public/{token}/entry/{entryId}/revisions")
+    ApiResponse<List<FileVersionDto>> getPublicDescendantRevisions(@PathVariable String token,
+                                                                   @PathVariable String entryId,
+                                                                   @RequestParam(defaultValue = "1") int limit);
 }

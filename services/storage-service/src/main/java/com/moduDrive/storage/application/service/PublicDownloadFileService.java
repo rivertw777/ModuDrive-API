@@ -24,19 +24,27 @@ class PublicDownloadFileService implements PublicDownloadFileUseCase {
 
     @Override
     public byte[] downloadPublic(PublicDownloadFileCommand command) {
-        String s3Path = getFileVersionPort.getPublicS3Path(command.getToken());
-        int blockCount = getFileVersionPort.getPublicBlockCount(command.getToken());
+        GetFileVersionPort.VersionLocation version = locate(command);
         if (command.isInlinePreview()) {
-            BlockAssembler.requireWithinInlinePreviewLimit(blockCount, storageProperties.getBlockSize());
+            BlockAssembler.requireWithinInlinePreviewLimit(version.blockCount(), storageProperties.getBlockSize());
         }
-        List<byte[]> blocks = retrieveBlocksPort.retrieveBlocks(s3Path, blockCount);
+        List<byte[]> blocks = retrieveBlocksPort.retrieveBlocks(version.s3Path(), version.blockCount());
         return BlockAssembler.assemble(blocks);
     }
 
     @Override
     public void downloadPublicStream(PublicDownloadFileCommand command, OutputStream out) {
-        String s3Path = getFileVersionPort.getPublicS3Path(command.getToken());
-        int blockCount = getFileVersionPort.getPublicBlockCount(command.getToken());
-        retrieveBlocksPort.streamBlocks(s3Path, blockCount, out);
+        GetFileVersionPort.VersionLocation version = locate(command);
+        retrieveBlocksPort.streamBlocks(version.s3Path(), version.blockCount(), out);
+    }
+
+    /** A folder link token needs the descendant's id to pick a file; a direct file link doesn't. */
+    private GetFileVersionPort.VersionLocation locate(PublicDownloadFileCommand command) {
+        if (command.hasEntry()) {
+            return getFileVersionPort.getPublicDescendantVersion(command.getToken(), command.getEntryId());
+        }
+        return new GetFileVersionPort.VersionLocation(
+                getFileVersionPort.getPublicS3Path(command.getToken()),
+                getFileVersionPort.getPublicBlockCount(command.getToken()));
     }
 }

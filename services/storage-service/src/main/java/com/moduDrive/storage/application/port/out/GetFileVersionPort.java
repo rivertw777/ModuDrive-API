@@ -15,6 +15,11 @@ public interface GetFileVersionPort {
 
     int getPublicBlockCount(String token);
 
+    /** Same as the two above but for a file reached through a link-shared <b>folder</b>: the
+     * folder token plus the descendant's id. One lookup, since both fields come from the same
+     * response. */
+    VersionLocation getPublicDescendantVersion(String token, String entryId);
+
     /** Every version ever uploaded for this file, not just the latest — a purge has to delete
      * every version's blocks, not only the one a download would resolve to. */
     List<VersionLocation> getAllVersions(UUID fileId, UUID userId);
