@@ -30,23 +30,25 @@ class PublicDownloadFileService implements PublicDownloadFileUseCase {
         if (command.isInlinePreview()) {
             BlockAssembler.requireWithinInlinePreviewLimit(version.blockCount(), storageProperties.getBlockSize());
         }
-        charge(command.getToken(), version);
+        // Anonymous fetches meter per link token: every recipient of one shared link draws on the
+        // same window, but a stranger's traffic can't spend the owner's own (user-scoped) quota.
+        downloadQuotaPort.checkWithinQuota(command.getToken(), version.s3Path());
         List<byte[]> blocks = retrieveBlocksPort.retrieveBlocks(version.s3Path(), version.blockCount());
-        return BlockAssembler.assemble(blocks);
+        byte[] assembled = BlockAssembler.assemble(blocks);
+        downloadQuotaPort.recordUsage(command.getToken(), version.s3Path(), assembled.length);
+        return assembled;
     }
 
     @Override
     public void downloadPublicStream(PublicDownloadFileCommand command, OutputStream out) {
         GetFileVersionPort.VersionLocation version = locate(command);
-        charge(command.getToken(), version);
-        retrieveBlocksPort.streamBlocks(version.s3Path(), version.blockCount(), out);
-    }
-
-    /** Anonymous fetches meter per link token: every recipient of one shared link draws on the
-     * same window, but a stranger's traffic can't spend the owner's own (user-scoped) quota. */
-    private void charge(String token, GetFileVersionPort.VersionLocation version) {
-        downloadQuotaPort.recordAndEnforce(
-                token, version.s3Path(), (long) version.blockCount() * storageProperties.getBlockSize());
+        downloadQuotaPort.checkWithinQuota(command.getToken(), version.s3Path());
+        CountingOutputStream counting = new CountingOutputStream(out);
+        try {
+            retrieveBlocksPort.streamBlocks(version.s3Path(), version.blockCount(), counting);
+        } finally {
+            downloadQuotaPort.recordUsage(command.getToken(), version.s3Path(), counting.count());
+        }
     }
 
     /** A folder link token needs the descendant's id to pick a file; a direct file link doesn't. */

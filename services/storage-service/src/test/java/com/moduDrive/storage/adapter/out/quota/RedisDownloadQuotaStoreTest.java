@@ -35,81 +35,109 @@ class RedisDownloadQuotaStoreTest {
     @InjectMocks private RedisDownloadQuotaStore store;
 
     private static final long QUOTA = 10L * 1024 * 1024 * 1024;
+    private static final String KEY = "download-quota:user-1:files/abc/xyz";
 
     @BeforeEach
     void stubQuotaConfig() {
-        // lenient: the "quota disabled" path returns before reading the window.
+        // lenient: the "quota disabled" paths return before reading either value.
         lenient().when(storageProperties.getDownloadQuotaPerFileBytes()).thenReturn(QUOTA);
         lenient().when(storageProperties.getDownloadQuotaWindow()).thenReturn(Duration.ofHours(24));
     }
 
     @Nested
-    @DisplayName("파일이 아직 한도 내일 때")
-    class WhenWithinQuota {
+    @DisplayName("남은 한도를 확인할 때")
+    class WhenCheckingQuota {
 
         @Test
-        void recordsAgainstAScopedKeyAndDoesNotThrow() {
-            given(redisRepository.<Long>executeScript(any(), any(), any(), any(), any())).willReturn(1L);
+        void passesWhenTheWindowHasNotBeenOpenedYet() {
+            given(redisRepository.get(KEY)).willReturn(null);
 
-            assertThatCode(() -> store.recordAndEnforce("user-1", "files/abc/xyz", 4_194_304L))
+            assertThatCode(() -> store.checkWithinQuota("user-1", "files/abc/xyz"))
                     .doesNotThrowAnyException();
-
-            then(redisRepository).should().executeScript(
-                    any(),
-                    eq(List.of("download-quota:user-1:files/abc/xyz")),
-                    eq("4194304"), eq("86400"), eq(String.valueOf(QUOTA)));
         }
-    }
-
-    @Nested
-    @DisplayName("이번 요청이 한도를 넘길 때")
-    class WhenQuotaExceeded {
 
         @Test
-        void throwsDownloadQuotaExceeded() {
-            given(redisRepository.<Long>executeScript(any(), any(), any(), any(), any())).willReturn(0L);
+        void passesWhileTheRecordedVolumeIsUnderTheLimit() {
+            given(redisRepository.get(KEY)).willReturn(String.valueOf(QUOTA - 1));
 
-            Throwable thrown = catchThrowable(() -> store.recordAndEnforce("tok-1", "files/abc/xyz", 4_194_304L));
+            assertThatCode(() -> store.checkWithinQuota("user-1", "files/abc/xyz"))
+                    .doesNotThrowAnyException();
+        }
+
+        @Test
+        void throwsOnceTheRecordedVolumeReachesTheLimit() {
+            given(redisRepository.get(KEY)).willReturn(String.valueOf(QUOTA));
+
+            Throwable thrown = catchThrowable(() -> store.checkWithinQuota("user-1", "files/abc/xyz"));
 
             assertThat(thrown).isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
                     .isEqualTo(StorageExceptionCase.DOWNLOAD_QUOTA_EXCEEDED);
         }
-    }
-
-    @Nested
-    @DisplayName("쿼터 카운터를 신뢰할 수 없을 때 — 다운로드를 막지 않는다")
-    class WhenTheCounterIsUnreliable {
 
         @Test
         void failsOpenWhenRedisIsUnavailable() {
-            given(redisRepository.<Long>executeScript(any(), any(), any(), any(), any()))
-                    .willThrow(new QueryTimeoutException("redis down"));
+            given(redisRepository.get(KEY)).willThrow(new QueryTimeoutException("redis down"));
 
-            assertThatCode(() -> store.recordAndEnforce("user-1", "files/abc/xyz", 1L))
+            assertThatCode(() -> store.checkWithinQuota("user-1", "files/abc/xyz"))
                     .doesNotThrowAnyException();
         }
 
         @Test
-        void failsOpenWhenTheScriptReturnsNoResult() {
-            given(redisRepository.<Long>executeScript(any(), any(), any(), any(), any())).willReturn(null);
+        void failsOpenWhenTheCounterIsNotANumber() {
+            given(redisRepository.get(KEY)).willReturn("garbage");
 
-            assertThatCode(() -> store.recordAndEnforce("user-1", "files/abc/xyz", 1L))
+            assertThatCode(() -> store.checkWithinQuota("user-1", "files/abc/xyz"))
                     .doesNotThrowAnyException();
+        }
+
+        @Test
+        void skipsRedisWhenTheQuotaIsDisabled() {
+            given(storageProperties.getDownloadQuotaPerFileBytes()).willReturn(0L);
+
+            store.checkWithinQuota("user-1", "files/abc/xyz");
+
+            then(redisRepository).should(never()).get(any());
         }
     }
 
     @Nested
-    @DisplayName("쿼터가 비활성화되어 있을 때 (0 이하)")
-    class WhenQuotaDisabled {
+    @DisplayName("사용량을 기록할 때")
+    class WhenRecordingUsage {
 
         @Test
-        void skipsRedisEntirely() {
+        void incrementsTheScopedCounterByTheBytesServedWithTheWindowTtl() {
+            given(redisRepository.<Long>executeScript(any(), any(), any(), any())).willReturn(1L);
+
+            store.recordUsage("user-1", "files/abc/xyz", 4_194_304L);
+
+            then(redisRepository).should().executeScript(
+                    any(), eq(List.of(KEY)), eq("4194304"), eq("86400"));
+        }
+
+        @Test
+        void recordsNothingForANonPositiveByteCount() {
+            store.recordUsage("user-1", "files/abc/xyz", 0L);
+
+            then(redisRepository).should(never()).executeScript(any(), any(), any(), any());
+        }
+
+        @Test
+        void recordsNothingWhenTheQuotaIsDisabled() {
             given(storageProperties.getDownloadQuotaPerFileBytes()).willReturn(0L);
 
-            store.recordAndEnforce("user-1", "files/abc/xyz", 4_194_304L);
+            store.recordUsage("user-1", "files/abc/xyz", 4_194_304L);
 
-            then(redisRepository).should(never()).executeScript(any(), any(), any(), any(), any());
+            then(redisRepository).should(never()).executeScript(any(), any(), any(), any());
+        }
+
+        @Test
+        void swallowsARedisFailureRatherThanFailingTheDownload() {
+            given(redisRepository.<Long>executeScript(any(), any(), any(), any()))
+                    .willThrow(new QueryTimeoutException("redis down"));
+
+            assertThatCode(() -> store.recordUsage("user-1", "files/abc/xyz", 1L))
+                    .doesNotThrowAnyException();
         }
     }
 }

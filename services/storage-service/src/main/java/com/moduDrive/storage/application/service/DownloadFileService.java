@@ -11,7 +11,6 @@ import lombok.RequiredArgsConstructor;
 
 import java.io.OutputStream;
 import java.util.List;
-import java.util.UUID;
 
 @UseCase
 @RequiredArgsConstructor
@@ -24,28 +23,31 @@ class DownloadFileService implements DownloadFileUseCase {
 
     @Override
     public byte[] download(DownloadFileCommand command) {
+        String scope = command.getUserId().toString();
         String s3Path = getFileVersionPort.getS3Path(command.getFileId(), command.getUserId());
         int blockCount = getFileVersionPort.getBlockCount(command.getFileId(), command.getUserId());
         if (command.isInlinePreview()) {
             BlockAssembler.requireWithinInlinePreviewLimit(blockCount, storageProperties.getBlockSize());
         }
-        charge(command.getUserId(), s3Path, blockCount);
+        downloadQuotaPort.checkWithinQuota(scope, s3Path);
         List<byte[]> blocks = retrieveBlocksPort.retrieveBlocks(s3Path, blockCount);
-        return BlockAssembler.assemble(blocks);
+        byte[] assembled = BlockAssembler.assemble(blocks);
+        // Inline preview counts too — same bytes leave the building either way.
+        downloadQuotaPort.recordUsage(scope, s3Path, assembled.length);
+        return assembled;
     }
 
     @Override
     public void downloadStream(DownloadFileCommand command, OutputStream out) {
+        String scope = command.getUserId().toString();
         String s3Path = getFileVersionPort.getS3Path(command.getFileId(), command.getUserId());
         int blockCount = getFileVersionPort.getBlockCount(command.getFileId(), command.getUserId());
-        charge(command.getUserId(), s3Path, blockCount);
-        retrieveBlocksPort.streamBlocks(s3Path, blockCount, out);
-    }
-
-    /** Meter this fetch against the file's per-user download quota; throws once the window is
-     * spent. Inline preview counts too — same bytes leave the building either way. */
-    private void charge(UUID userId, String s3Path, int blockCount) {
-        downloadQuotaPort.recordAndEnforce(
-                userId.toString(), s3Path, (long) blockCount * storageProperties.getBlockSize());
+        downloadQuotaPort.checkWithinQuota(scope, s3Path);
+        CountingOutputStream counting = new CountingOutputStream(out);
+        try {
+            retrieveBlocksPort.streamBlocks(s3Path, blockCount, counting);
+        } finally {
+            downloadQuotaPort.recordUsage(scope, s3Path, counting.count());
+        }
     }
 }

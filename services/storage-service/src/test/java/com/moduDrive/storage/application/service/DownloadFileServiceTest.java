@@ -16,17 +16,23 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.io.UncheckedIOException;
 import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.never;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.BDDMockito.willAnswer;
 import static org.mockito.BDDMockito.willThrow;
 
 @ExtendWith(MockitoExtension.class)
@@ -78,23 +84,48 @@ class DownloadFileServiceTest {
         void delegatesToStreamBlocksWithoutAssemblingAByteArray() {
             given(getFileVersionPort.getS3Path(UUID.fromString(fileId), userId)).willReturn("files/abc/xyz");
             given(getFileVersionPort.getBlockCount(UUID.fromString(fileId), userId)).willReturn(2);
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
 
-            downloadFileService.downloadStream(new DownloadFileCommand(fileId, userId), out);
+            downloadFileService.downloadStream(new DownloadFileCommand(fileId, userId), new ByteArrayOutputStream());
 
-            then(retrieveBlocksPort).should().streamBlocks("files/abc/xyz", 2, out);
+            then(retrieveBlocksPort).should().streamBlocks(eq("files/abc/xyz"), eq(2), any(OutputStream.class));
             then(retrieveBlocksPort).should(never()).retrieveBlocks(anyString(), anyInt());
         }
 
         @Test
-        void chargesTheUserScopedQuotaTheNominalBlockPaddedSize() {
+        void checksTheUserScopedQuotaBeforeStreaming() {
             given(getFileVersionPort.getS3Path(UUID.fromString(fileId), userId)).willReturn("files/abc/xyz");
             given(getFileVersionPort.getBlockCount(UUID.fromString(fileId), userId)).willReturn(2);
-            given(storageProperties.getBlockSize()).willReturn(4 * 1024 * 1024);
 
             downloadFileService.downloadStream(new DownloadFileCommand(fileId, userId), new ByteArrayOutputStream());
 
-            then(downloadQuotaPort).should().recordAndEnforce(userId.toString(), "files/abc/xyz", 8_388_608L);
+            then(downloadQuotaPort).should().checkWithinQuota(userId.toString(), "files/abc/xyz");
+        }
+
+        @Test
+        void recordsOnlyTheBytesThatActuallyReachedTheClient() {
+            given(getFileVersionPort.getS3Path(UUID.fromString(fileId), userId)).willReturn("files/abc/xyz");
+            given(getFileVersionPort.getBlockCount(UUID.fromString(fileId), userId)).willReturn(2);
+            willAnswer(inv -> { ((OutputStream) inv.getArgument(2)).write(new byte[512]); return null; })
+                    .given(retrieveBlocksPort).streamBlocks(anyString(), anyInt(), any());
+
+            downloadFileService.downloadStream(new DownloadFileCommand(fileId, userId), new ByteArrayOutputStream());
+
+            then(downloadQuotaPort).should().recordUsage(userId.toString(), "files/abc/xyz", 512L);
+        }
+
+        @Test
+        void stillRecordsWhatWasSentWhenStreamingAbortsPartway() {
+            given(getFileVersionPort.getS3Path(UUID.fromString(fileId), userId)).willReturn("files/abc/xyz");
+            given(getFileVersionPort.getBlockCount(UUID.fromString(fileId), userId)).willReturn(2);
+            willAnswer(inv -> {
+                ((OutputStream) inv.getArgument(2)).write(new byte[100]);
+                throw new UncheckedIOException(new IOException("client gone"));
+            }).given(retrieveBlocksPort).streamBlocks(anyString(), anyInt(), any());
+
+            catchThrowable(() -> downloadFileService.downloadStream(
+                    new DownloadFileCommand(fileId, userId), new ByteArrayOutputStream()));
+
+            then(downloadQuotaPort).should().recordUsage(userId.toString(), "files/abc/xyz", 100L);
         }
 
         @Test
@@ -102,16 +133,16 @@ class DownloadFileServiceTest {
             given(getFileVersionPort.getS3Path(UUID.fromString(fileId), userId)).willReturn("files/abc/xyz");
             given(getFileVersionPort.getBlockCount(UUID.fromString(fileId), userId)).willReturn(2);
             willThrow(new BusinessException(StorageExceptionCase.DOWNLOAD_QUOTA_EXCEEDED))
-                    .given(downloadQuotaPort).recordAndEnforce(anyString(), anyString(), anyLong());
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
+                    .given(downloadQuotaPort).checkWithinQuota(anyString(), anyString());
 
-            Throwable thrown = catchThrowable(() ->
-                    downloadFileService.downloadStream(new DownloadFileCommand(fileId, userId), out));
+            Throwable thrown = catchThrowable(() -> downloadFileService.downloadStream(
+                    new DownloadFileCommand(fileId, userId), new ByteArrayOutputStream()));
 
             assertThat(thrown).isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
                     .isEqualTo(StorageExceptionCase.DOWNLOAD_QUOTA_EXCEEDED);
             then(retrieveBlocksPort).shouldHaveNoInteractions();
+            then(downloadQuotaPort).should(never()).recordUsage(anyString(), anyString(), anyLong());
         }
     }
 
@@ -120,7 +151,7 @@ class DownloadFileServiceTest {
     class WhenRequestedAsInlinePreview {
 
         @Test
-        void alsoChargesTheDownloadQuotaSoItCannotBeUsedToBypassTheLimit() {
+        void alsoMetersTheQuotaByRealSizeSoItCannotBeUsedToBypassTheLimit() {
             given(getFileVersionPort.getS3Path(UUID.fromString(fileId), userId)).willReturn("files/abc/xyz");
             given(getFileVersionPort.getBlockCount(UUID.fromString(fileId), userId)).willReturn(1);
             given(storageProperties.getBlockSize()).willReturn(4 * 1024 * 1024);
@@ -128,7 +159,8 @@ class DownloadFileServiceTest {
 
             downloadFileService.download(new DownloadFileCommand(fileId, userId, true));
 
-            then(downloadQuotaPort).should().recordAndEnforce(userId.toString(), "files/abc/xyz", 4_194_304L);
+            then(downloadQuotaPort).should().checkWithinQuota(userId.toString(), "files/abc/xyz");
+            then(downloadQuotaPort).should().recordUsage(userId.toString(), "files/abc/xyz", 4L);
         }
 
         @Test
@@ -137,7 +169,7 @@ class DownloadFileServiceTest {
             given(getFileVersionPort.getBlockCount(UUID.fromString(fileId), userId)).willReturn(1);
             given(storageProperties.getBlockSize()).willReturn(4 * 1024 * 1024);
             willThrow(new BusinessException(StorageExceptionCase.DOWNLOAD_QUOTA_EXCEEDED))
-                    .given(downloadQuotaPort).recordAndEnforce(anyString(), anyString(), anyLong());
+                    .given(downloadQuotaPort).checkWithinQuota(anyString(), anyString());
 
             Throwable thrown = catchThrowable(() ->
                     downloadFileService.download(new DownloadFileCommand(fileId, userId, true)));
