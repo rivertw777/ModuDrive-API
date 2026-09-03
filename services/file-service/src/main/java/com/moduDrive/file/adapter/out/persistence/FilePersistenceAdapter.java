@@ -2,6 +2,7 @@ package com.moduDrive.file.adapter.out.persistence;
 
 import com.moduDrive.common.core.annotation.PersistenceAdapter;
 import com.moduDrive.common.core.exception.BusinessException;
+import com.moduDrive.file.application.port.in.usecase.DirectoryPage;
 import com.moduDrive.file.application.port.out.*;
 import com.moduDrive.file.domain.model.*;
 import com.moduDrive.file.domain.model.File;
@@ -13,6 +14,10 @@ import com.moduDrive.file.exception.FileExceptionCase;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.ScrollPosition;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.Window;
+import org.springframework.data.jpa.domain.Specification;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -133,6 +138,47 @@ class FilePersistenceAdapter implements
                 .stream()
                 .map(fileMapper::mapFileToDomain)
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    public DirectoryPage findDirectoryPage(NamespaceId namespaceId, String path, DirectorySort sort,
+                                           String cursor, int limit) {
+        Window<FileJpaEntity> window = fileRepository.findBy(
+                directoryListingSpec(namespaceId.value(), path),
+                query -> query
+                        .sortBy(directoryListingSort(sort))
+                        .limit(limit)
+                        .scroll(DirectoryCursorCodec.decode(cursor, sort)));
+
+        List<File> content = window.getContent().stream()
+                .map(fileMapper::mapFileToDomain)
+                .collect(Collectors.toList());
+
+        String nextCursor = !window.isEmpty() && window.hasNext()
+                ? DirectoryCursorCodec.encode(window.positionAt(window.size() - 1), sort)
+                : null;
+
+        return new DirectoryPage(content, nextCursor, window.hasNext());
+    }
+
+    private static Specification<FileJpaEntity> directoryListingSpec(UUID namespaceId, String path) {
+        return (root, query, cb) -> cb.and(
+                cb.equal(root.get("namespaceId"), namespaceId),
+                cb.equal(root.get("path"), path),
+                cb.notEqual(root.get("status"), FileStatus.DELETED));
+    }
+
+    /** Directories first (regardless of the chosen field), then the field, then the entity id
+     * itself (appended by Spring Data) as the final keyset tie-breaker. Every column used here is
+     * non-null — a keyset scroll drops and repeats rows if it keysets on a null value. */
+    private static Sort directoryListingSort(DirectorySort sort) {
+        Sort.Order directoriesFirst = Sort.Order.desc("directory");
+        return switch (sort) {
+            case NAME_ASC -> Sort.by(directoriesFirst, Sort.Order.asc("name"));
+            case NAME_DESC -> Sort.by(directoriesFirst, Sort.Order.desc("name"));
+            case MODIFIED_ASC -> Sort.by(directoriesFirst, Sort.Order.asc("updatedAt"));
+            case MODIFIED_DESC -> Sort.by(directoriesFirst, Sort.Order.desc("updatedAt"));
+        };
     }
 
     @Override

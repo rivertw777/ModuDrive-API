@@ -2,6 +2,7 @@ package com.moduDrive.file.adapter.out.persistence;
 
 import com.moduDrive.file.domain.model.FileStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -10,7 +11,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID> {
+interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID>, JpaSpecificationExecutor<FileJpaEntity> {
 
     Optional<FileJpaEntity> findByLinkToken(UUID linkToken);
 
