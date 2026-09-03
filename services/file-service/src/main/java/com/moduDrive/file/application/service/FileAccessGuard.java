@@ -34,6 +34,15 @@ class FileAccessGuard {
     private final FindFileSharePort findFileSharePort;
     private final FindFilePort findFilePort;
 
+    /** The caller's effective role on this file — their own grant or the most generous one
+     * inherited from a directory above it. Null when they own it or have no grant at all. */
+    Role effectiveRole(File file, UUID callerId) {
+        if (isOwner(file, callerId)) {
+            return null;
+        }
+        return resolveRole(file, callerId);
+    }
+
     void requireOwner(File file, UUID callerId) {
         if (!isOwner(file, callerId)) {
             throw new BusinessException(FileExceptionCase.FILE_ACCESS_DENIED);

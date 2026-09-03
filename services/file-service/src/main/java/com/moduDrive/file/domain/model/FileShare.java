@@ -4,6 +4,7 @@ import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Getter
@@ -26,12 +27,15 @@ public class FileShare {
      * list can display it without a member-service lookup. Null for a real member grant, including
      * a claimed one — see {@link #claim}. */
     private String granteeEmail;
+    /** Null until the row is persisted — filled in by JPA auditing. "Shared on" date. */
+    private LocalDateTime createdAt;
 
     public static FileShare create(FileShareFileId fileId,
                                    FileShareOwnerId ownerId,
                                    FileShareSharedWithUserId sharedWithUserId,
                                    FileShareRole role) {
-        return new FileShare(null, fileId.value(), ownerId.value(), sharedWithUserId.value(), role.value(), null, null);
+        return new FileShare(null, fileId.value(), ownerId.value(), sharedWithUserId.value(), role.value(),
+                null, null, null);
     }
 
     /** A restricted share for an email nobody has registered yet. Kept as {@code RESTRICTED},
@@ -43,7 +47,7 @@ public class FileShare {
                                           FileShareGranteeEmail granteeEmail,
                                           FileShareRole role) {
         return new FileShare(null, fileId.value(), ownerId.value(), null, role.value(),
-                UUID.randomUUID(), granteeEmail.value());
+                UUID.randomUUID(), granteeEmail.value(), null);
     }
 
     public static FileShare withId(FileShareId id,
@@ -51,7 +55,20 @@ public class FileShare {
                                    FileShareOwnerId ownerId,
                                    FileShareSharedWithUserId sharedWithUserId,
                                    FileShareRole role) {
-        return new FileShare(id.value(), fileId.value(), ownerId.value(), sharedWithUserId.value(), role.value(), null, null);
+        return new FileShare(id.value(), fileId.value(), ownerId.value(), sharedWithUserId.value(), role.value(),
+                null, null, null);
+    }
+
+    /** As {@link #withId(FileShareId, FileShareFileId, FileShareOwnerId, FileShareSharedWithUserId,
+     * FileShareRole)}, plus the "shared on" date — for lists that show when a grant was made. */
+    public static FileShare withId(FileShareId id,
+                                   FileShareFileId fileId,
+                                   FileShareOwnerId ownerId,
+                                   FileShareSharedWithUserId sharedWithUserId,
+                                   FileShareRole role,
+                                   LocalDateTime createdAt) {
+        return new FileShare(id.value(), fileId.value(), ownerId.value(), sharedWithUserId.value(), role.value(),
+                null, null, createdAt);
     }
 
     /** Same as {@link #withId(FileShareId, FileShareFileId, FileShareOwnerId,
@@ -63,9 +80,10 @@ public class FileShare {
                             FileShareSharedWithUserId sharedWithUserId,
                             FileShareRole role,
                             UUID token,
-                            String granteeEmail) {
+                            String granteeEmail,
+                            LocalDateTime createdAt) {
         return new FileShare(id.value(), fileId.value(), ownerId.value(),
-                sharedWithUserId != null ? sharedWithUserId.value() : null, role.value(), token, granteeEmail);
+                sharedWithUserId != null ? sharedWithUserId.value() : null, role.value(), token, granteeEmail, createdAt);
     }
 
     public void changeRole(FileShareRole role) {

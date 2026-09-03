@@ -82,7 +82,8 @@ class FileMapper {
                 // access_scope/link_role columns above.
                 new FileShareRole(entity.getGrantedRole() != null ? entity.getGrantedRole() : Role.VIEWER),
                 entity.getToken(),
-                entity.getGranteeEmail()
+                entity.getGranteeEmail(),
+                entity.getCreatedAt()
         );
     }
 }

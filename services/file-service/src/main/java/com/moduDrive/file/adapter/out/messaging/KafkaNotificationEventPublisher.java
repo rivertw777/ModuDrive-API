@@ -21,10 +21,12 @@ class KafkaNotificationEventPublisher implements PublishNotificationEventPort {
      * across partitions per person, and per-recipient ordering is the only ordering that matters
      * for a notification feed. */
     @Override
-    public void publishFileShared(UUID fileId, UUID recipientId, String fileName, String role) {
+    public void publishFileShared(UUID fileId, UUID recipientId, String fileName, String role,
+                                  boolean directory, String sharerName, String sharerEmail) {
         UUID eventId = UUID.randomUUID();
         kafkaTemplate.send(NotificationTopics.FILE_SHARED, recipientId.toString(),
-                        new FileSharedNotified(eventId, fileId, recipientId, fileName, role))
+                        new FileSharedNotified(eventId, fileId, recipientId, fileName, role, directory,
+                                sharerName, sharerEmail))
                 .whenComplete((result, ex) -> {
                     if (ex != null) {
                         log.error("Failed to publish file shared notification event: fileId={}, recipientId={}",

@@ -123,7 +123,7 @@ class UpdateFileScopeServiceTest {
             UUID claimedShareId = UUID.randomUUID();
             FileShare pendingGuestShare = FileShare.withId(new FileShareId(pendingShareId),
                     new FileShareFileId(fileId), new FileShareOwnerId(ownerId), null,
-                    new FileShareRole(Role.VIEWER), UUID.randomUUID(), "guest@example.com");
+                    new FileShareRole(Role.VIEWER), UUID.randomUUID(), "guest@example.com", null);
             FileShare memberShare = FileShare.withId(new FileShareId(memberShareId),
                     new FileShareFileId(fileId), new FileShareOwnerId(ownerId),
                     new FileShareSharedWithUserId(UUID.randomUUID()), new FileShareRole(Role.VIEWER));
@@ -132,7 +132,7 @@ class UpdateFileScopeServiceTest {
             FileShare claimedShare = FileShare.withId(new FileShareId(claimedShareId),
                     new FileShareFileId(fileId), new FileShareOwnerId(ownerId),
                     new FileShareSharedWithUserId(UUID.randomUUID()), new FileShareRole(Role.VIEWER),
-                    null, null);
+                    (UUID) null, null, null);
             given(findFilePort.findById(new FileId(fileId))).willReturn(Optional.of(linked));
             given(findFileSharePort.findByFileId(new FileId(fileId)))
                     .willReturn(List.of(pendingGuestShare, memberShare, claimedShare));

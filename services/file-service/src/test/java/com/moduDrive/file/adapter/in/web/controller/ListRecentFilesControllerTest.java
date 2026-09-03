@@ -3,6 +3,7 @@ package com.moduDrive.file.adapter.in.web.controller;
 import com.moduDrive.common.core.web.GlobalExceptionHandler;
 import com.moduDrive.file.application.port.in.command.ListRecentFilesCommand;
 import com.moduDrive.file.application.port.in.usecase.ListRecentFilesUseCase;
+import com.moduDrive.file.application.port.in.usecase.FileView;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
 import com.moduDrive.file.domain.model.FileStatus;
@@ -46,7 +47,7 @@ class ListRecentFilesControllerTest {
                     new FileOwnerId(UUID.fromString(USER_ID)), null, null, FileStatus.UPLOADED,
                     new FileIsDirectory(false));
             given(listRecentFilesUseCase.listRecentFiles(any(ListRecentFilesCommand.class)))
-                    .willReturn(List.of(recent));
+                    .willReturn(List.of(FileView.owned(recent)));
 
             mockMvc.perform(get("/api/v1/files/recent").header("X_USER_ID", USER_ID))
                     .andExpect(status().isOk())

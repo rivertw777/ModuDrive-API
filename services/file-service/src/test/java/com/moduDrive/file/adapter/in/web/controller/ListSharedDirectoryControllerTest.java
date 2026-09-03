@@ -4,6 +4,7 @@ import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.common.core.web.GlobalExceptionHandler;
 import com.moduDrive.file.application.port.in.command.ListSharedDirectoryCommand;
 import com.moduDrive.file.application.port.in.usecase.ListSharedDirectoryUseCase;
+import com.moduDrive.file.application.port.in.usecase.FileView;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
 import com.moduDrive.file.domain.model.FileStatus;
@@ -47,7 +48,7 @@ class ListSharedDirectoryControllerTest {
                     new FileName("a.txt"), new FilePath("/shared"), new FileOwnerId(UUID.randomUUID()),
                     null, null, FileStatus.UPLOADED, new FileIsDirectory(false));
             given(listSharedDirectoryUseCase.listSharedDirectory(any(ListSharedDirectoryCommand.class)))
-                    .willReturn(List.of(child));
+                    .willReturn(List.of(FileView.owned(child)));
 
             mockMvc.perform(get("/api/v1/files/{fileId}/children", DIR_ID).header("X_USER_ID", CALLER_ID))
                     .andExpect(status().isOk())

@@ -49,6 +49,13 @@ class NotificationJpaEntity {
     @Column(nullable = false)
     private String role;
 
+    /** Nullable only for rows recorded before this column existed — treated as a file (false) then. */
+    private Boolean directory;
+
+    /** Nullable — file-service may not have resolved them, and pre-existing rows predate the columns. */
+    private String sharerName;
+    private String sharerEmail;
+
     /** Null while unread. */
     private LocalDateTime readAt;
 
@@ -56,12 +63,16 @@ class NotificationJpaEntity {
     @Column(updatable = false)
     private LocalDateTime createdAt;
 
-    NotificationJpaEntity(UUID eventId, UUID recipientId, UUID fileId, String fileName, String role) {
+    NotificationJpaEntity(UUID eventId, UUID recipientId, UUID fileId, String fileName, String role,
+                          boolean directory, String sharerName, String sharerEmail) {
         this.eventId = eventId;
         this.recipientId = recipientId;
         this.fileId = fileId;
         this.fileName = fileName;
         this.role = role;
+        this.directory = directory;
+        this.sharerName = sharerName;
+        this.sharerEmail = sharerEmail;
     }
 
     void applyReadAt(LocalDateTime readAt) {

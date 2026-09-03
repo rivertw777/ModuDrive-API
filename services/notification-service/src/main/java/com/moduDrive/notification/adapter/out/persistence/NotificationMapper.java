@@ -3,12 +3,15 @@ package com.moduDrive.notification.adapter.out.persistence;
 import com.moduDrive.notification.domain.model.Notification;
 import org.springframework.stereotype.Component;
 
+import static com.moduDrive.notification.domain.model.Notification.NotificationDirectory;
 import static com.moduDrive.notification.domain.model.Notification.NotificationEventId;
 import static com.moduDrive.notification.domain.model.Notification.NotificationFileId;
 import static com.moduDrive.notification.domain.model.Notification.NotificationFileName;
 import static com.moduDrive.notification.domain.model.Notification.NotificationId;
 import static com.moduDrive.notification.domain.model.Notification.NotificationRecipientId;
 import static com.moduDrive.notification.domain.model.Notification.NotificationRole;
+import static com.moduDrive.notification.domain.model.Notification.NotificationSharerEmail;
+import static com.moduDrive.notification.domain.model.Notification.NotificationSharerName;
 
 @Component
 class NotificationMapper {
@@ -21,6 +24,9 @@ class NotificationMapper {
                 new NotificationFileId(entity.getFileId()),
                 new NotificationFileName(entity.getFileName()),
                 new NotificationRole(entity.getRole()),
+                new NotificationDirectory(Boolean.TRUE.equals(entity.getDirectory())),
+                new NotificationSharerName(entity.getSharerName()),
+                new NotificationSharerEmail(entity.getSharerEmail()),
                 entity.getReadAt(),
                 entity.getCreatedAt()
         );
@@ -29,6 +35,7 @@ class NotificationMapper {
     NotificationJpaEntity mapToEntity(Notification notification) {
         return new NotificationJpaEntity(
                 notification.getEventId(), notification.getRecipientId(),
-                notification.getFileId(), notification.getFileName(), notification.getRole());
+                notification.getFileId(), notification.getFileName(), notification.getRole(),
+                notification.isDirectory(), notification.getSharerName(), notification.getSharerEmail());
     }
 }

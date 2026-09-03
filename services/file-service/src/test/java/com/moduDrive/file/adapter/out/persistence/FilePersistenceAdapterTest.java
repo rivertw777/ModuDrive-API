@@ -351,6 +351,23 @@ class FilePersistenceAdapterTest {
                     fileIdValue, org.springframework.data.domain.PageRequest.of(0, 10))).isEmpty();
             assertThat(springDataFileRepository.findById(fileIdValue)).isEmpty();
         }
+
+        @Test
+        @DisplayName("파일 행과 함께 그 파일의 공유 행도 모두 지워진다 (고아 방지)")
+        void deletesFileSharesToo() {
+            FileJpaEntity saved = springDataFileRepository.save(new FileJpaEntity(
+                    namespaceIdValue, "report.pdf", "/1", UUID.randomUUID(), FileStatus.DELETED, false));
+            UUID fileIdValue = saved.getId();
+            springDataFileShareRepository.save(
+                    new FileShareJpaEntity(fileIdValue, UUID.randomUUID(), UUID.randomUUID(), Role.VIEWER));
+            springDataFileShareRepository.save(
+                    new FileShareJpaEntity(fileIdValue, UUID.randomUUID(), UUID.randomUUID(), Role.EDITOR));
+
+            filePersistenceAdapter.deleteFile(new FileId(fileIdValue));
+
+            assertThat(springDataFileShareRepository.findByFileId(fileIdValue)).isEmpty();
+            assertThat(springDataFileRepository.findById(fileIdValue)).isEmpty();
+        }
     }
 
     @Nested

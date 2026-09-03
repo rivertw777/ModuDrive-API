@@ -2,6 +2,8 @@ package com.moduDrive.file.application.service;
 
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.file.application.port.in.command.ListSharedDirectoryCommand;
+import com.moduDrive.file.application.port.in.usecase.FileView;
+import com.moduDrive.file.application.port.out.FileFavoritePort;
 import com.moduDrive.file.application.port.out.FindFilePort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
@@ -9,6 +11,7 @@ import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.Namespace.NamespaceId;
 import com.moduDrive.file.domain.model.Permission;
 import com.moduDrive.file.exception.FileExceptionCase;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -19,6 +22,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -27,13 +31,21 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.lenient;
 
 @ExtendWith(MockitoExtension.class)
 class ListSharedDirectoryServiceTest {
 
     @Mock private FindFilePort findFilePort;
+    @Mock private FileFavoritePort fileFavoritePort;
     @Mock private FileAccessGuard fileAccessGuard;
     @InjectMocks private ListSharedDirectoryService listSharedDirectoryService;
+
+    @BeforeEach
+    void defaults() {
+        lenient().when(fileFavoritePort.favoriteFileIds(any())).thenReturn(Set.of());
+        lenient().when(fileAccessGuard.effectiveRole(any(), any())).thenReturn(null);
+    }
 
     private final UUID dirId = UUID.randomUUID();
     private final UUID callerId = UUID.randomUUID();
@@ -64,9 +76,9 @@ class ListSharedDirectoryServiceTest {
             given(findFilePort.findByNamespaceIdAndPath(new NamespaceId(namespaceId), "/shared"))
                     .willReturn(List.of(child, trashed));
 
-            List<File> result = listSharedDirectoryService.listSharedDirectory(command);
+            List<FileView> result = listSharedDirectoryService.listSharedDirectory(command);
 
-            assertThat(result).containsExactly(child);
+            assertThat(result).extracting(FileView::file).containsExactly(child);
         }
     }
 

@@ -52,6 +52,7 @@ The active Spring profile (`dev`) is injected via `SPRING_PROFILES_ACTIVE` in `d
 | file-service          | 10012 | File metadata, versioning, sharing, directory management |
 | storage-service       | 10013 | Block-level file storage — split, compress, encrypt, upload/download via S3/MinIO |
 | mail-service           | 10014 | Async mail sending (Kafka consumer)      |
+| notification-service   | 10015 | In-app notification feed — records file-share events (Kafka consumer), list/mark-read API |
 
 Swagger UI for all services is aggregated at the gateway: `http://localhost:10001/swagger-ui.html`.
 
@@ -67,9 +68,9 @@ For the full layer breakdown, naming conventions, dependency-direction rules, an
 |-------------------------------------|--------------------------------------------------------------|
 | `common:core`                       | `@UseCase`/`@WebAdapter`/`@PersistenceAdapter`, `ApiResponse<T>`, `BusinessException`, `ExceptionCase` interface, `SelfValidating`, `LoggingAspect` |
 | `common:api`                        | Shared DTOs for cross-service calls (auth, member)           |
-| `common:event`                      | Kafka mail event DTOs (`VerificationMailRequested`, `ShareInviteMailRequested`) and `MailTopics` — used by member/file-service (producers) and mail-service (consumer) |
+| `common:event`                      | Kafka event DTOs + topic constants for async cross-service messaging: mail (`VerificationMailRequested`, `ShareInviteMailRequested`, `MailTopics` — member/file-service produce, mail-service consumes), notification (`FileSharedNotified`, `NotificationTopics` — file-service produces, notification-service consumes), member (`MemberSignedUp`) |
 | `common:infrastructure:jpa`         | `BaseTimeEntity` (JPA auditing), `AuditingConfig`            |
-| `common:infrastructure:kafka`       | `spring-boot-starter-kafka` — used by member/file-service (producers) and mail-service (consumer) for async mail events |
+| `common:infrastructure:kafka`       | `spring-boot-starter-kafka` — used by member/file-service (producers) and mail-service / notification-service (consumers) for async mail and in-app notification events |
 | `common:infrastructure:redis`       | `spring-boot-starter-data-redis` — used by auth-service for token storage, member-service for email verification tokens |
 | `common:infrastructure:resilience4j`| `CircuitBreakerEventConfig`, `RetryEventConfig`, `FeignFallbackUtils` |
 | `common:infrastructure:spring-cloud`| `spring-cloud-starter-netflix-eureka-client`, `spring-cloud-starter-openfeign` — all services that register with Eureka or use Feign depend on this module |

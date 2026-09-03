@@ -10,12 +10,17 @@ public record NotificationResponse(
         UUID fileId,
         String fileName,
         String role,
+        boolean directory,
+        String sharerName,
+        String sharerEmail,
         boolean read,
         LocalDateTime createdAt
 ) {
     public static NotificationResponse from(Notification notification) {
         return new NotificationResponse(
                 notification.getId(), notification.getFileId(), notification.getFileName(),
-                notification.getRole(), notification.isRead(), notification.getCreatedAt());
+                notification.getRole(), notification.isDirectory(),
+                notification.getSharerName(), notification.getSharerEmail(),
+                notification.isRead(), notification.getCreatedAt());
     }
 }

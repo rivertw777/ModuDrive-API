@@ -20,6 +20,12 @@ public class Notification {
     private final UUID fileId;
     private final String fileName;
     private final String role;
+    /** Whether the shared item is a folder — lets the feed say "폴더" vs "파일" and pick the icon. */
+    private final boolean directory;
+    /** Name/email of the member who shared the file. Null when file-service could not resolve them,
+     * or on notifications recorded before these fields existed. */
+    private final String sharerName;
+    private final String sharerEmail;
     /** Null while unread. */
     private final LocalDateTime readAt;
     /** Null until the row is persisted — filled in by JPA auditing. */
@@ -29,9 +35,12 @@ public class Notification {
                                       NotificationRecipientId recipientId,
                                       NotificationFileId fileId,
                                       NotificationFileName fileName,
-                                      NotificationRole role) {
+                                      NotificationRole role,
+                                      NotificationDirectory directory,
+                                      NotificationSharerName sharerName,
+                                      NotificationSharerEmail sharerEmail) {
         return new Notification(null, eventId.value(), recipientId.value(), fileId.value(),
-                fileName.value(), role.value(), null, null);
+                fileName.value(), role.value(), directory.value(), sharerName.value(), sharerEmail.value(), null, null);
     }
 
     public static Notification withId(NotificationId id,
@@ -40,10 +49,14 @@ public class Notification {
                                       NotificationFileId fileId,
                                       NotificationFileName fileName,
                                       NotificationRole role,
+                                      NotificationDirectory directory,
+                                      NotificationSharerName sharerName,
+                                      NotificationSharerEmail sharerEmail,
                                       LocalDateTime readAt,
                                       LocalDateTime createdAt) {
         return new Notification(id.value(), eventId.value(), recipientId.value(), fileId.value(),
-                fileName.value(), role.value(), readAt, createdAt);
+                fileName.value(), role.value(), directory.value(), sharerName.value(), sharerEmail.value(),
+                readAt, createdAt);
     }
 
     /** Returns a read copy; already-read notifications keep their original {@code readAt} so a
@@ -52,7 +65,7 @@ public class Notification {
         if (isRead()) {
             return this;
         }
-        return new Notification(id, eventId, recipientId, fileId, fileName, role, readAt, createdAt);
+        return new Notification(id, eventId, recipientId, fileId, fileName, role, directory, sharerName, sharerEmail, readAt, createdAt);
     }
 
     public boolean isRead() {
@@ -65,4 +78,8 @@ public class Notification {
     public record NotificationFileId(UUID value) {}
     public record NotificationFileName(String value) {}
     public record NotificationRole(String value) {}
+    public record NotificationDirectory(boolean value) {}
+    /** Nullable — see the {@code sharerName}/{@code sharerEmail} fields. */
+    public record NotificationSharerName(String value) {}
+    public record NotificationSharerEmail(String value) {}
 }

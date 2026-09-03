@@ -11,5 +11,5 @@ import java.util.UUID;
  * a no-login link scoped to just that one invite — despite the field's name, it is never the
  * file's own {@code linkToken}. */
 public record FileShareInvitedEvent(
-        UUID fileId, UUID granterId, UUID granteeId, String granteeEmail, String fileName, Role role,
-        UUID linkToken) {}
+        UUID fileId, UUID granterId, String granterName, String granterEmail, UUID granteeId, String granteeEmail,
+        String fileName, boolean directory, Role role, UUID linkToken) {}

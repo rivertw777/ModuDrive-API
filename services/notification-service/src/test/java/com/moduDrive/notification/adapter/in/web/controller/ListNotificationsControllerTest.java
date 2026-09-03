@@ -55,6 +55,8 @@ class ListNotificationsControllerTest {
                     .andExpect(jsonPath("$.data.content[0].id").value(notificationId.toString()))
                     .andExpect(jsonPath("$.data.content[0].fileName").value("report.pdf"))
                     .andExpect(jsonPath("$.data.content[0].role").value("EDITOR"))
+                    .andExpect(jsonPath("$.data.content[0].sharerName").value("홍길동"))
+                    .andExpect(jsonPath("$.data.content[0].sharerEmail").value("owner@modudrive.com"))
                     .andExpect(jsonPath("$.data.content[0].read").value(false))
                     .andExpect(jsonPath("$.data.totalElements").value(1));
         }

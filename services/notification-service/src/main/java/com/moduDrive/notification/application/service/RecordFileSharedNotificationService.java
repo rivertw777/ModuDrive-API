@@ -38,7 +38,8 @@ class RecordFileSharedNotificationService implements RecordFileSharedNotificatio
 
         Notification notification = Notification.create(
                 command.getEventId(), command.getRecipientId(), command.getFileId(),
-                command.getFileName(), command.getRole());
+                command.getFileName(), command.getRole(), command.getDirectory(),
+                command.getSharerName(), command.getSharerEmail());
         try {
             saveNotificationPort.insertNotification(notification);
         } catch (DuplicateKeyException e) {

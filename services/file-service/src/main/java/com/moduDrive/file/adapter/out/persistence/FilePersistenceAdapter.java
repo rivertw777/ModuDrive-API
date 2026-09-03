@@ -114,8 +114,11 @@ class FilePersistenceAdapter implements
     @Override
     public void deleteFile(FileId fileId) {
         // A purged file's versions would otherwise dangle forever, pointing at S3 prefixes that
-        // FilePurger/DirectoryCascader already deleted the blocks under.
+        // FilePurger/DirectoryCascader already deleted the blocks under. Its share rows likewise —
+        // there is no FK cascade, so a grant on a permanently-deleted file/folder would linger and
+        // only ever get filtered out at read time (ListSharedWithMeService).
         fileVersionRepository.deleteByFileId(fileId.value());
+        fileShareRepository.deleteByFileId(fileId.value());
         fileRepository.deleteById(fileId.value());
     }
 

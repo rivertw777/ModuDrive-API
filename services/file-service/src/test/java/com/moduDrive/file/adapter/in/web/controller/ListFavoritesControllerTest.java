@@ -3,6 +3,7 @@ package com.moduDrive.file.adapter.in.web.controller;
 import com.moduDrive.common.core.web.GlobalExceptionHandler;
 import com.moduDrive.file.application.port.in.command.ListFavoritesCommand;
 import com.moduDrive.file.application.port.in.usecase.ListFavoritesUseCase;
+import com.moduDrive.file.application.port.in.usecase.FileView;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
 import com.moduDrive.file.domain.model.FileStatus;
@@ -44,7 +45,8 @@ class ListFavoritesControllerTest {
                     new FileOwnerId(UUID.fromString(USER_ID)), null, null, FileStatus.UPLOADED,
                     new FileIsDirectory(false));
             favorite.markFavorite(true);
-            given(listFavoritesUseCase.listFavorites(any(ListFavoritesCommand.class))).willReturn(List.of(favorite));
+            given(listFavoritesUseCase.listFavorites(any(ListFavoritesCommand.class)))
+                    .willReturn(List.of(FileView.owned(favorite)));
 
             mockMvc.perform(get("/api/v1/files/favorites").header("X_USER_ID", USER_ID))
                     .andExpect(status().isOk())
