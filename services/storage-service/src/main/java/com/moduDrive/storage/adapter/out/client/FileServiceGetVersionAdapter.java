@@ -32,13 +32,10 @@ class FileServiceGetVersionAdapter implements GetFileVersionPort {
     }
 
     @Override
-    public String getS3Path(UUID fileId, UUID userId) {
-        return latestVersion(fileId, userId).s3Path();
-    }
-
-    @Override
-    public int getBlockCount(UUID fileId, UUID userId) {
-        return latestVersion(fileId, userId).blockCount();
+    public VersionLocation getLatestVersion(UUID fileId, UUID userId, boolean markAccessed) {
+        FileVersionDto v = firstOrThrow(
+                feignClient.getFileRevisions(fileId.toString(), userId.toString(), 1, markAccessed).getData());
+        return new VersionLocation(v.s3Path(), v.blockCount());
     }
 
     @Override
@@ -56,10 +53,6 @@ class FileServiceGetVersionAdapter implements GetFileVersionPort {
         FileVersionDto version = firstOrThrow(
                 feignClient.getPublicDescendantRevisions(token, entryId, 1).getData());
         return new VersionLocation(version.s3Path(), version.blockCount());
-    }
-
-    private FileVersionDto latestVersion(UUID fileId, UUID userId) {
-        return firstOrThrow(feignClient.getFileRevisions(fileId.toString(), userId.toString(), 1).getData());
     }
 
     private FileVersionDto latestPublicVersion(String token) {

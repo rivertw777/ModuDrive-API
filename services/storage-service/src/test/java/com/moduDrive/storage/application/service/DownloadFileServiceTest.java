@@ -4,6 +4,7 @@ import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.storage.application.port.in.command.DownloadFileCommand;
 import com.moduDrive.storage.application.port.out.DownloadQuotaPort;
 import com.moduDrive.storage.application.port.out.GetFileVersionPort;
+import com.moduDrive.storage.application.port.out.GetFileVersionPort.VersionLocation;
 import com.moduDrive.storage.application.port.out.RetrieveBlocksPort;
 import com.moduDrive.storage.config.StorageProperties;
 import com.moduDrive.storage.exception.StorageExceptionCase;
@@ -25,6 +26,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -53,8 +55,7 @@ class DownloadFileServiceTest {
 
         @Test
         void returnsAssembledBytes() {
-            given(getFileVersionPort.getS3Path(UUID.fromString(fileId), userId)).willReturn("files/abc/xyz");
-            given(getFileVersionPort.getBlockCount(UUID.fromString(fileId), userId)).willReturn(2);
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", 2));
             given(retrieveBlocksPort.retrieveBlocks(anyString(), anyInt()))
                     .willReturn(List.of("hello ".getBytes(), "world".getBytes()));
 
@@ -65,8 +66,7 @@ class DownloadFileServiceTest {
 
         @Test
         void assembleSingleBlockCorrectly() {
-            given(getFileVersionPort.getS3Path(UUID.fromString(fileId), userId)).willReturn("files/abc/xyz");
-            given(getFileVersionPort.getBlockCount(UUID.fromString(fileId), userId)).willReturn(1);
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", 1));
             given(retrieveBlocksPort.retrieveBlocks(anyString(), anyInt()))
                     .willReturn(List.of("data".getBytes()));
 
@@ -82,8 +82,7 @@ class DownloadFileServiceTest {
 
         @Test
         void delegatesToStreamBlocksWithoutAssemblingAByteArray() {
-            given(getFileVersionPort.getS3Path(UUID.fromString(fileId), userId)).willReturn("files/abc/xyz");
-            given(getFileVersionPort.getBlockCount(UUID.fromString(fileId), userId)).willReturn(2);
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", 2));
 
             downloadFileService.downloadStream(new DownloadFileCommand(fileId, userId), new ByteArrayOutputStream());
 
@@ -92,9 +91,17 @@ class DownloadFileServiceTest {
         }
 
         @Test
+        void doesNotMarkTheFileAsRecentlyAccessed() {
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", 2));
+
+            downloadFileService.downloadStream(new DownloadFileCommand(fileId, userId), new ByteArrayOutputStream());
+
+            then(getFileVersionPort).should().getLatestVersion(UUID.fromString(fileId), userId, false);
+        }
+
+        @Test
         void checksTheUserScopedQuotaBeforeStreaming() {
-            given(getFileVersionPort.getS3Path(UUID.fromString(fileId), userId)).willReturn("files/abc/xyz");
-            given(getFileVersionPort.getBlockCount(UUID.fromString(fileId), userId)).willReturn(2);
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", 2));
 
             downloadFileService.downloadStream(new DownloadFileCommand(fileId, userId), new ByteArrayOutputStream());
 
@@ -103,8 +110,7 @@ class DownloadFileServiceTest {
 
         @Test
         void recordsOnlyTheBytesThatActuallyReachedTheClient() {
-            given(getFileVersionPort.getS3Path(UUID.fromString(fileId), userId)).willReturn("files/abc/xyz");
-            given(getFileVersionPort.getBlockCount(UUID.fromString(fileId), userId)).willReturn(2);
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", 2));
             willAnswer(inv -> { ((OutputStream) inv.getArgument(2)).write(new byte[512]); return null; })
                     .given(retrieveBlocksPort).streamBlocks(anyString(), anyInt(), any());
 
@@ -115,8 +121,7 @@ class DownloadFileServiceTest {
 
         @Test
         void stillRecordsWhatWasSentWhenStreamingAbortsPartway() {
-            given(getFileVersionPort.getS3Path(UUID.fromString(fileId), userId)).willReturn("files/abc/xyz");
-            given(getFileVersionPort.getBlockCount(UUID.fromString(fileId), userId)).willReturn(2);
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", 2));
             willAnswer(inv -> {
                 ((OutputStream) inv.getArgument(2)).write(new byte[100]);
                 throw new UncheckedIOException(new IOException("client gone"));
@@ -130,8 +135,7 @@ class DownloadFileServiceTest {
 
         @Test
         void rejectsBeforeStreamingWhenTheFileIsOverItsDownloadQuota() {
-            given(getFileVersionPort.getS3Path(UUID.fromString(fileId), userId)).willReturn("files/abc/xyz");
-            given(getFileVersionPort.getBlockCount(UUID.fromString(fileId), userId)).willReturn(2);
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", 2));
             willThrow(new BusinessException(StorageExceptionCase.DOWNLOAD_QUOTA_EXCEEDED))
                     .given(downloadQuotaPort).checkWithinQuota(anyString(), anyString());
 
@@ -152,8 +156,7 @@ class DownloadFileServiceTest {
 
         @Test
         void alsoMetersTheQuotaByRealSizeSoItCannotBeUsedToBypassTheLimit() {
-            given(getFileVersionPort.getS3Path(UUID.fromString(fileId), userId)).willReturn("files/abc/xyz");
-            given(getFileVersionPort.getBlockCount(UUID.fromString(fileId), userId)).willReturn(1);
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", 1));
             given(storageProperties.getBlockSize()).willReturn(4 * 1024 * 1024);
             given(retrieveBlocksPort.retrieveBlocks(anyString(), anyInt())).willReturn(List.of("data".getBytes()));
 
@@ -164,9 +167,19 @@ class DownloadFileServiceTest {
         }
 
         @Test
+        void marksTheFileAsRecentlyAccessed() {
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", 1));
+            given(storageProperties.getBlockSize()).willReturn(4 * 1024 * 1024);
+            given(retrieveBlocksPort.retrieveBlocks(anyString(), anyInt())).willReturn(List.of("data".getBytes()));
+
+            downloadFileService.download(new DownloadFileCommand(fileId, userId, true));
+
+            then(getFileVersionPort).should().getLatestVersion(UUID.fromString(fileId), userId, true);
+        }
+
+        @Test
         void rejectsWithoutFetchingBlocksWhenOverQuota() {
-            given(getFileVersionPort.getS3Path(UUID.fromString(fileId), userId)).willReturn("files/abc/xyz");
-            given(getFileVersionPort.getBlockCount(UUID.fromString(fileId), userId)).willReturn(1);
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", 1));
             given(storageProperties.getBlockSize()).willReturn(4 * 1024 * 1024);
             willThrow(new BusinessException(StorageExceptionCase.DOWNLOAD_QUOTA_EXCEEDED))
                     .given(downloadQuotaPort).checkWithinQuota(anyString(), anyString());
@@ -187,8 +200,7 @@ class DownloadFileServiceTest {
 
         @Test
         void rejectsBeforeFetchingAnyBlocks() {
-            given(getFileVersionPort.getS3Path(UUID.fromString(fileId), userId)).willReturn("files/abc/xyz");
-            given(getFileVersionPort.getBlockCount(UUID.fromString(fileId), userId)).willReturn(30);
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", 30));
             given(storageProperties.getBlockSize()).willReturn(4 * 1024 * 1024);
 
             Throwable thrown = catchThrowable(() ->

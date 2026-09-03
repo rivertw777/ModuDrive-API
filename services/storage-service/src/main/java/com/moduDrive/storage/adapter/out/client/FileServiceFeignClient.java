@@ -25,7 +25,8 @@ interface FileServiceFeignClient {
     @GetMapping("/internal/files/{fileId}/revisions")
     ApiResponse<List<FileVersionDto>> getFileRevisions(@PathVariable String fileId,
                                                        @RequestParam String userId,
-                                                       @RequestParam(defaultValue = "1") int limit);
+                                                       @RequestParam(defaultValue = "1") int limit,
+                                                       @RequestParam boolean markAccessed);
 
     // Purge-only route (see file-service's GetAllFileVersionsController) — every version, not
     // just the latest, and gated on ownership rather than DOWNLOAD permission since this feeds
