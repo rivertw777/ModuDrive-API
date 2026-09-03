@@ -17,6 +17,7 @@ import com.moduDrive.file.exception.FileExceptionCase;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import jakarta.persistence.EntityManager;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.context.annotation.Import;
@@ -44,6 +45,8 @@ class FilePersistenceAdapterTest {
     private SpringDataFileShareRepository springDataFileShareRepository;
     @Autowired
     private SpringDataFileVersionRepository springDataFileVersionRepository;
+    @Autowired
+    private EntityManager entityManager;
 
     private final UUID namespaceIdValue = UUID.randomUUID();
     private final NamespaceId namespaceId = new NamespaceId(namespaceIdValue);
@@ -389,6 +392,115 @@ class FilePersistenceAdapterTest {
             var result = filePersistenceAdapter.findByUserIdOrderByAccessedAtDesc(userId, 1);
 
             assertThat(result).extracting(FileAccess::getFileId).containsExactly(newerFileId);
+        }
+    }
+
+    @Nested
+    @DisplayName("디렉토리를 커서 페이지네이션으로 조회할 때")
+    class WhenScrollingADirectoryPage {
+
+        private void saveEntry(String path, String name, boolean directory, FileStatus status) {
+            springDataFileRepository.save(new FileJpaEntity(
+                    namespaceIdValue, name, path, UUID.randomUUID(), status, directory));
+            // Force a DB round trip so the cursor is built from persisted column values (timestamp
+            // precision, NULL ordering) rather than the identity-mapped entity — matches production,
+            // where the listing runs in its own read-only transaction.
+            entityManager.flush();
+            entityManager.clear();
+        }
+
+        private java.util.List<String> drainNames(com.moduDrive.file.domain.model.DirectorySort sort, int pageSize) {
+            java.util.List<String> names = new java.util.ArrayList<>();
+            String cursor = null;
+            for (int guard = 0; guard < 1000; guard++) {
+                var page = filePersistenceAdapter.findDirectoryPage(namespaceId, "/1", sort, cursor, pageSize);
+                page.content().forEach(f -> names.add(f.getName()));
+                if (!page.hasNext()) {
+                    return names;
+                }
+                cursor = page.nextCursor();
+            }
+            throw new AssertionError("pagination did not terminate for sort " + sort);
+        }
+
+        @Test
+        @DisplayName("디렉토리가 파일보다 먼저, 그 다음 이름순 — 페이지를 이어붙이면 전체가 중복/누락 없이 정렬된다")
+        void keysetPagesCoverEveryEntryDirectoriesFirstThenByName() {
+            saveEntry("/1", "b-dir", true, FileStatus.UPLOADED);
+            saveEntry("/1", "a-dir", true, FileStatus.UPLOADED);
+            saveEntry("/1", "e.txt", false, FileStatus.UPLOADED);
+            saveEntry("/1", "c.txt", false, FileStatus.UPLOADED);
+            saveEntry("/1", "d.txt", false, FileStatus.UPLOADED);
+
+            var names = drainNames(com.moduDrive.file.domain.model.DirectorySort.NAME_ASC, 2);
+
+            assertThat(names).containsExactly("a-dir", "b-dir", "c.txt", "d.txt", "e.txt");
+        }
+
+        @Test
+        @DisplayName("첫 페이지는 hasNext=true 와 nextCursor 를, 마지막 페이지는 hasNext=false 를 준다")
+        void reportsHasNextAndACursorUntilTheLastPage() {
+            saveEntry("/1", "a.txt", false, FileStatus.UPLOADED);
+            saveEntry("/1", "b.txt", false, FileStatus.UPLOADED);
+            saveEntry("/1", "c.txt", false, FileStatus.UPLOADED);
+
+            var first = filePersistenceAdapter.findDirectoryPage(
+                    namespaceId, "/1", com.moduDrive.file.domain.model.DirectorySort.NAME_ASC, null, 2);
+            assertThat(first.content()).extracting(File::getName).containsExactly("a.txt", "b.txt");
+            assertThat(first.hasNext()).isTrue();
+            assertThat(first.nextCursor()).isNotBlank();
+
+            var second = filePersistenceAdapter.findDirectoryPage(
+                    namespaceId, "/1", com.moduDrive.file.domain.model.DirectorySort.NAME_ASC, first.nextCursor(), 2);
+            assertThat(second.content()).extracting(File::getName).containsExactly("c.txt");
+            assertThat(second.hasNext()).isFalse();
+            assertThat(second.nextCursor()).isNull();
+        }
+
+        @Test
+        @DisplayName("NAME_DESC 는 각 그룹 안에서 역순 — 디렉토리는 여전히 먼저")
+        void nameDescReversesWithinEachGroup() {
+            saveEntry("/1", "a-dir", true, FileStatus.UPLOADED);
+            saveEntry("/1", "b-dir", true, FileStatus.UPLOADED);
+            saveEntry("/1", "x.txt", false, FileStatus.UPLOADED);
+            saveEntry("/1", "y.txt", false, FileStatus.UPLOADED);
+
+            var names = drainNames(com.moduDrive.file.domain.model.DirectorySort.NAME_DESC, 10);
+
+            assertThat(names).containsExactly("b-dir", "a-dir", "y.txt", "x.txt");
+        }
+
+        @org.junit.jupiter.params.ParameterizedTest
+        @org.junit.jupiter.params.provider.EnumSource(com.moduDrive.file.domain.model.DirectorySort.class)
+        @DisplayName("어떤 정렬이든 페이지를 이어붙이면 전체가 중복·누락 없이 나온다")
+        void keysetPagingIsExhaustiveForEverySort(com.moduDrive.file.domain.model.DirectorySort sort) {
+            saveEntry("/1", "a-dir", true, FileStatus.UPLOADED);
+            saveEntry("/1", "b-dir", true, FileStatus.UPLOADED);
+            saveEntry("/1", "p.txt", false, FileStatus.UPLOADED);
+            saveEntry("/1", "q.txt", false, FileStatus.PENDING);
+            saveEntry("/1", "r.txt", false, FileStatus.UPLOADED);
+            saveEntry("/1", "s.txt", false, FileStatus.UPLOADED);
+            saveEntry("/1", "t.txt", false, FileStatus.UPLOADED);
+
+            var names = drainNames(sort, 2);
+
+            assertThat(names).containsExactlyInAnyOrder(
+                    "a-dir", "b-dir", "p.txt", "q.txt", "r.txt", "s.txt", "t.txt");
+        }
+
+        @Test
+        @DisplayName("DELETED 항목과 다른 경로/네임스페이스의 항목은 제외된다")
+        void excludesDeletedAndOutOfScopeEntries() {
+            saveEntry("/1", "keep.txt", false, FileStatus.UPLOADED);
+            saveEntry("/1", "trashed.txt", false, FileStatus.DELETED);
+            saveEntry("/1/sub", "elsewhere.txt", false, FileStatus.UPLOADED);
+            springDataFileRepository.save(new FileJpaEntity(
+                    UUID.randomUUID(), "other-ns.txt", "/1", UUID.randomUUID(), FileStatus.UPLOADED, false));
+
+            var page = filePersistenceAdapter.findDirectoryPage(
+                    namespaceId, "/1", com.moduDrive.file.domain.model.DirectorySort.NAME_ASC, null, 50);
+
+            assertThat(page.content()).extracting(File::getName).containsExactly("keep.txt");
         }
     }
 }

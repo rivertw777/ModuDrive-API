@@ -1,5 +1,7 @@
 package com.moduDrive.file.application.port.out;
 
+import com.moduDrive.file.application.port.in.usecase.DirectoryPage;
+import com.moduDrive.file.domain.model.DirectorySort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.FileId;
 import com.moduDrive.file.domain.model.FileStatus;
@@ -17,6 +19,11 @@ public interface FindFilePort {
     Optional<File> findByLinkToken(UUID linkToken);
 
     List<File> findByNamespaceIdAndPath(NamespaceId namespaceId, String path);
+
+    /** One keyset-scrolled page of a directory's direct children (DELETED excluded), ordered
+     * directories-first then by {@code sort}. {@code cursor} is a token from a previous page's
+     * {@link DirectoryPage#nextCursor()}, or null for the first page. */
+    DirectoryPage findDirectoryPage(NamespaceId namespaceId, String path, DirectorySort sort, String cursor, int limit);
 
     /** The active (non-deleted) row at this namespace/path/name, if any — the one an upload of
      * the same name would collide with. A trashed file at that name doesn't occupy the slot (see
