@@ -5,9 +5,9 @@ import com.moduDrive.common.core.web.ApiResponse;
 import com.moduDrive.file.adapter.in.web.dto.FileResponse;
 import com.moduDrive.file.application.port.in.command.GetFileCommand;
 import com.moduDrive.file.application.port.in.command.RecordFileAccessCommand;
+import com.moduDrive.file.application.port.in.usecase.FileView;
 import com.moduDrive.file.application.port.in.usecase.GetFileUseCase;
 import com.moduDrive.file.application.port.in.usecase.RecordFileAccessUseCase;
-import com.moduDrive.file.domain.model.File;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -28,10 +28,14 @@ class GetFileController {
     public ApiResponse<FileResponse> getFile(
             @RequestHeader("X_USER_ID") UUID userId,
             @PathVariable UUID fileId) {
-        File file = getFileUseCase.getFile(new GetFileCommand(fileId, userId));
-        // RecordFileAccessUseCase never throws (see RecordFileAccessService) — a tracking
-        // failure must never turn an already-successful read into a 500.
-        recordFileAccessUseCase.recordAccess(new RecordFileAccessCommand(userId, fileId));
-        return ApiResponse.success(FileResponse.from(file));
+        FileView view = getFileUseCase.getFile(new GetFileCommand(fileId, userId));
+        // Folders are kept out of "recent" (Google-Drive-style — recent is for documents you
+        // opened, not folders you browsed). RecordFileAccessUseCase never throws (see
+        // RecordFileAccessService) — a tracking failure must never turn an already-successful
+        // read into a 500.
+        if (!view.file().isDirectory()) {
+            recordFileAccessUseCase.recordAccess(new RecordFileAccessCommand(userId, fileId));
+        }
+        return ApiResponse.success(FileResponse.from(view));
     }
 }

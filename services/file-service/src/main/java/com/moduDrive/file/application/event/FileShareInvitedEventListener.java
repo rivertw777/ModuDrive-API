@@ -24,7 +24,8 @@ class FileShareInvitedEventListener {
         // so there is no account to hang an in-app notification off. The mail is all they get.
         if (event.granteeId() != null) {
             publishNotificationEventPort.publishFileShared(
-                    event.fileId(), event.granteeId(), event.fileName(), event.role().name());
+                    event.fileId(), event.granteeId(), event.fileName(), event.role().name(),
+                    event.directory(), event.granterName(), event.granterEmail());
         }
     }
 }

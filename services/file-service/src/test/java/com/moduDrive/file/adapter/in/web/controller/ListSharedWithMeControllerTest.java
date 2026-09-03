@@ -3,9 +3,11 @@ package com.moduDrive.file.adapter.in.web.controller;
 import com.moduDrive.common.core.web.GlobalExceptionHandler;
 import com.moduDrive.file.application.port.in.command.ListSharedWithMeCommand;
 import com.moduDrive.file.application.port.in.usecase.ListSharedWithMeUseCase;
+import com.moduDrive.file.application.port.in.usecase.FileView;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
 import com.moduDrive.file.domain.model.FileStatus;
+import com.moduDrive.file.domain.model.Role;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -15,6 +17,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -44,11 +47,16 @@ class ListSharedWithMeControllerTest {
                     new FileOwnerId(UUID.randomUUID()), null, null, FileStatus.UPLOADED,
                     new FileIsDirectory(false));
             given(listSharedWithMeUseCase.listSharedWithMe(any(ListSharedWithMeCommand.class)))
-                    .willReturn(List.of(file));
+                    .willReturn(List.of(new FileView(
+                            file, Role.EDITOR, "홍길동", "owner@modudrive.com", LocalDateTime.of(2026, 9, 1, 9, 0))));
 
             mockMvc.perform(get("/api/v1/files/shared-with-me").header("X_USER_ID", USER_ID))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.data[0].name").value("shared.pdf"));
+                    .andExpect(jsonPath("$.data[0].name").value("shared.pdf"))
+                    .andExpect(jsonPath("$.data[0].sharedByName").value("홍길동"))
+                    .andExpect(jsonPath("$.data[0].sharedByEmail").value("owner@modudrive.com"))
+                    .andExpect(jsonPath("$.data[0].role").value("EDITOR"))
+                    .andExpect(jsonPath("$.data[0].sharedAt").exists());
         }
     }
 }

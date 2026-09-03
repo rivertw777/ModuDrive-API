@@ -88,26 +88,26 @@ class RenameFileServiceTest {
         }
 
         @Test
-        @DisplayName("RENAME 권한이 아니라 소유자 여부로 검사한다 (#210)")
-        void requiresOwnershipRatherThanTheRenamePermission() {
+        @DisplayName("소유자가 아니어도 RENAME 권한(EDITOR)이 있으면 허용된다")
+        void allowsAFolderEditorWithTheRenamePermission() {
             given(findFilePort.findById(command.getFileId()))
                     .willReturn(Optional.of(makeFile(FileStatus.UPLOADED, new FileIsDirectory(true))));
             given(saveFilePort.saveFile(any())).willAnswer(inv -> inv.getArgument(0));
 
             renameFileService.renameFile(command);
 
-            then(fileAccessGuard).should().requireOwner(any(File.class), eq(callerId));
+            then(fileAccessGuard).should().requirePermission(any(File.class), eq(callerId), eq(Permission.RENAME));
             then(fileAccessGuard).should(org.mockito.BDDMockito.never())
-                    .requirePermission(any(File.class), any(), any());
+                    .requireOwner(any(File.class), any());
         }
 
         @Test
-        @DisplayName("소유자가 아니면 EDITOR 권한이 있어도 거부된다 (#210)")
-        void deniesANonOwnerEvenWithEditorRole() {
+        @DisplayName("RENAME 권한이 없으면 거부된다")
+        void deniesWithoutTheRenamePermission() {
             given(findFilePort.findById(command.getFileId()))
                     .willReturn(Optional.of(makeFile(FileStatus.UPLOADED, new FileIsDirectory(true))));
             willThrow(new BusinessException(FileExceptionCase.FILE_ACCESS_DENIED))
-                    .given(fileAccessGuard).requireOwner(any(File.class), eq(callerId));
+                    .given(fileAccessGuard).requirePermission(any(File.class), eq(callerId), eq(Permission.RENAME));
 
             Throwable thrown = catchThrowable(() -> renameFileService.renameFile(command));
 

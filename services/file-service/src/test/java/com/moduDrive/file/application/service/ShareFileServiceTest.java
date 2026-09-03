@@ -6,6 +6,8 @@ import com.moduDrive.file.application.port.in.command.ShareFileCommand;
 import com.moduDrive.file.application.port.out.FindFilePort;
 import com.moduDrive.file.application.port.out.FindFileSharePort;
 import com.moduDrive.file.application.port.out.FindMemberByEmailPort;
+import com.moduDrive.file.application.port.out.FindMemberByIdPort;
+import com.moduDrive.file.application.port.out.FindMemberByIdPort.MemberSummary;
 import com.moduDrive.file.application.port.out.SaveFileSharePort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
@@ -42,6 +44,7 @@ class ShareFileServiceTest {
     @Mock private FindFileSharePort findFileSharePort;
     @Mock private SaveFileSharePort saveFileSharePort;
     @Mock private FindMemberByEmailPort findMemberByEmailPort;
+    @Mock private FindMemberByIdPort findMemberByIdPort;
     @Mock private FileAccessGuard fileAccessGuard;
     @Mock private ApplicationEventPublisher eventPublisher;
     @InjectMocks private ShareFileService shareFileService;
@@ -50,6 +53,8 @@ class ShareFileServiceTest {
     private final UUID ownerId = UUID.randomUUID();
     private final UUID granteeId = UUID.randomUUID();
     private static final String EMAIL = "river@modudrive.com";
+    private static final String OWNER_NAME = "홍길동";
+    private static final String OWNER_EMAIL = "owner@modudrive.com";
     private final ShareFileCommand command = new ShareFileCommand(fileId, ownerId, EMAIL, Role.VIEWER);
 
     private final File file = File.withId(new FileId(fileId), new FileNamespaceId(UUID.randomUUID()),
@@ -67,6 +72,7 @@ class ShareFileServiceTest {
             given(findFileSharePort.existsByFileIdAndSharedWithUserId(command.getFileId(), granteeId))
                     .willReturn(false);
             given(saveFileSharePort.saveFileShare(any(FileShare.class))).willAnswer(inv -> inv.getArgument(0));
+            given(findMemberByIdPort.findMemberById(ownerId)).willReturn(new MemberSummary(OWNER_NAME, OWNER_EMAIL));
 
             Optional<FileShare> result = shareFileService.shareFile(command);
 
@@ -74,7 +80,7 @@ class ShareFileServiceTest {
             assertThat(result.get().getSharedWithUserId()).isEqualTo(granteeId);
             assertThat(result.get().getRole()).isEqualTo(Role.VIEWER);
             then(eventPublisher).should().publishEvent(
-                    new FileShareInvitedEvent(fileId, ownerId, granteeId, EMAIL, "report.pdf", Role.VIEWER, null));
+                    new FileShareInvitedEvent(fileId, ownerId, OWNER_NAME, OWNER_EMAIL, granteeId, EMAIL, "report.pdf", false, Role.VIEWER, null));
         }
     }
 
@@ -108,6 +114,7 @@ class ShareFileServiceTest {
             given(findMemberByEmailPort.findMemberIdByEmail(EMAIL)).willReturn(Optional.empty());
             given(findFileSharePort.existsByFileIdAndGranteeEmail(command.getFileId(), EMAIL)).willReturn(false);
             given(saveFileSharePort.saveFileShare(any(FileShare.class))).willAnswer(inv -> inv.getArgument(0));
+            given(findMemberByIdPort.findMemberById(ownerId)).willReturn(new MemberSummary(OWNER_NAME, OWNER_EMAIL));
 
             Optional<FileShare> result = shareFileService.shareFile(command);
 
@@ -122,7 +129,7 @@ class ShareFileServiceTest {
             assertThat(pending.getGranteeEmail()).isEqualTo(EMAIL);
             assertThat(pending.getToken()).isNotNull();
             then(eventPublisher).should().publishEvent(
-                    new FileShareInvitedEvent(fileId, ownerId, null, EMAIL, "report.pdf", Role.VIEWER, pending.getToken()));
+                    new FileShareInvitedEvent(fileId, ownerId, OWNER_NAME, OWNER_EMAIL, null, EMAIL, "report.pdf", false, Role.VIEWER, pending.getToken()));
         }
     }
 

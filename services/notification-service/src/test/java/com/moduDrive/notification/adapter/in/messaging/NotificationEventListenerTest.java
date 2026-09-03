@@ -32,12 +32,14 @@ class NotificationEventListenerTest {
             UUID eventId = UUID.randomUUID();
             UUID fileId = UUID.randomUUID();
             UUID recipientId = UUID.randomUUID();
-            FileSharedNotified event = new FileSharedNotified(eventId, fileId, recipientId, "report.pdf", "EDITOR");
+            FileSharedNotified event = new FileSharedNotified(
+                    eventId, fileId, recipientId, "report.pdf", "EDITOR", true, "홍길동", "owner@modudrive.com");
 
             notificationEventListener.onFileShared(event);
 
             then(recordFileSharedNotificationUseCase).should().recordFileSharedNotification(
-                    new RecordFileSharedNotificationCommand(eventId, recipientId, fileId, "report.pdf", "EDITOR"));
+                    new RecordFileSharedNotificationCommand(
+                            eventId, recipientId, fileId, "report.pdf", "EDITOR", true, "홍길동", "owner@modudrive.com"));
         }
     }
 }

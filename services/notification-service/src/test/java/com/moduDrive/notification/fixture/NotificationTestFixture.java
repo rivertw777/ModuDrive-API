@@ -1,12 +1,15 @@
 package com.moduDrive.notification.fixture;
 
 import com.moduDrive.notification.domain.model.Notification;
+import com.moduDrive.notification.domain.model.Notification.NotificationDirectory;
 import com.moduDrive.notification.domain.model.Notification.NotificationEventId;
 import com.moduDrive.notification.domain.model.Notification.NotificationFileId;
 import com.moduDrive.notification.domain.model.Notification.NotificationFileName;
 import com.moduDrive.notification.domain.model.Notification.NotificationId;
 import com.moduDrive.notification.domain.model.Notification.NotificationRecipientId;
 import com.moduDrive.notification.domain.model.Notification.NotificationRole;
+import com.moduDrive.notification.domain.model.Notification.NotificationSharerEmail;
+import com.moduDrive.notification.domain.model.Notification.NotificationSharerName;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -14,6 +17,8 @@ import java.util.UUID;
 public final class NotificationTestFixture {
 
     public static final LocalDateTime CREATED_AT = LocalDateTime.of(2026, 8, 25, 10, 0);
+    public static final String SHARER_NAME = "홍길동";
+    public static final String SHARER_EMAIL = "owner@modudrive.com";
 
     private NotificationTestFixture() {
     }
@@ -34,6 +39,9 @@ public final class NotificationTestFixture {
                 new NotificationFileId(UUID.randomUUID()),
                 new NotificationFileName("report.pdf"),
                 new NotificationRole("EDITOR"),
+                new NotificationDirectory(false),
+                new NotificationSharerName(SHARER_NAME),
+                new NotificationSharerEmail(SHARER_EMAIL),
                 readAt,
                 CREATED_AT);
     }

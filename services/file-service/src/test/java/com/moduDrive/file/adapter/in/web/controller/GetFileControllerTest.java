@@ -6,6 +6,7 @@ import com.moduDrive.file.application.port.in.command.GetFileCommand;
 import com.moduDrive.file.application.port.in.command.RecordFileAccessCommand;
 import com.moduDrive.file.application.port.in.usecase.GetFileUseCase;
 import com.moduDrive.file.application.port.in.usecase.RecordFileAccessUseCase;
+import com.moduDrive.file.application.port.in.usecase.FileView;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
 import com.moduDrive.file.domain.model.FileStatus;
@@ -52,7 +53,7 @@ class GetFileControllerTest {
 
         @Test
         void returnsFileInfo() throws Exception {
-            given(getFileUseCase.getFile(any(GetFileCommand.class))).willReturn(uploadedFile);
+            given(getFileUseCase.getFile(any(GetFileCommand.class))).willReturn(FileView.owned(uploadedFile));
 
             mockMvc.perform(get("/api/v1/files/{fileId}", FILE_ID).header("X_USER_ID", USER_ID))
                     .andExpect(status().isOk())
@@ -60,6 +61,22 @@ class GetFileControllerTest {
                     .andExpect(jsonPath("$.data.status").value("UPLOADED"));
 
             then(recordFileAccessUseCase).should().recordAccess(any(RecordFileAccessCommand.class));
+        }
+
+        @Test
+        @DisplayName("디렉토리 조회는 최근 문서함에 기록하지 않는다")
+        void doesNotRecordAccessForADirectory() throws Exception {
+            File directory = File.withId(
+                    new FileId(FILE_ID), new FileNamespaceId(UUID.randomUUID()),
+                    new FileName("docs"), new FilePath("/1"),
+                    new FileOwnerId(UUID.randomUUID()), null, null,
+                    FileStatus.UPLOADED, new FileIsDirectory(true));
+            given(getFileUseCase.getFile(any(GetFileCommand.class))).willReturn(FileView.owned(directory));
+
+            mockMvc.perform(get("/api/v1/files/{fileId}", FILE_ID).header("X_USER_ID", USER_ID))
+                    .andExpect(status().isOk());
+
+            then(recordFileAccessUseCase).shouldHaveNoInteractions();
         }
     }
 

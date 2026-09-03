@@ -2,7 +2,10 @@ package com.moduDrive.file.application.service;
 
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.file.application.port.in.command.ListFavoritesCommand;
+import com.moduDrive.file.application.port.in.usecase.FileView;
+import com.moduDrive.file.application.port.out.FileFavoritePort;
 import com.moduDrive.file.application.port.out.FindFilePort;
+import com.moduDrive.file.application.port.out.FindFileSharePort;
 import com.moduDrive.file.application.port.out.FindNamespacePort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
@@ -10,6 +13,7 @@ import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.Namespace;
 import com.moduDrive.file.domain.model.Namespace.*;
 import com.moduDrive.file.exception.FileExceptionCase;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -20,19 +24,29 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
 
 @ExtendWith(MockitoExtension.class)
 class ListFavoritesServiceTest {
 
     @Mock private FindNamespacePort findNamespacePort;
     @Mock private FindFilePort findFilePort;
+    @Mock private FindFileSharePort findFileSharePort;
+    @Mock private FileFavoritePort fileFavoritePort;
+    @Mock private FileAccessGuard fileAccessGuard;
     @InjectMocks private ListFavoritesService listFavoritesService;
+
+    @BeforeEach
+    void noSharedFavoritesByDefault() {
+        lenient().when(fileFavoritePort.favoriteFileIds(any())).thenReturn(Set.of());
+    }
 
     private static final long TEST_QUOTA_BYTES = 21474836480L;
 
@@ -55,10 +69,10 @@ class ListFavoritesServiceTest {
             given(findNamespacePort.findByUserId(any())).willReturn(Optional.of(namespace));
             given(findFilePort.findByNamespaceIdAndFavorite(any())).willReturn(List.of(file));
 
-            List<File> result = listFavoritesService.listFavorites(command);
+            List<FileView> result = listFavoritesService.listFavorites(command);
 
             assertThat(result).hasSize(1);
-            assertThat(result.get(0).isFavorite()).isTrue();
+            assertThat(result.get(0).file().isFavorite()).isTrue();
         }
     }
 

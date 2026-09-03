@@ -2,12 +2,15 @@ package com.moduDrive.notification.adapter.out.persistence;
 
 import com.moduDrive.common.infrastructure.jpa.config.AuditingConfig;
 import com.moduDrive.notification.domain.model.Notification;
+import com.moduDrive.notification.domain.model.Notification.NotificationDirectory;
 import com.moduDrive.notification.domain.model.Notification.NotificationEventId;
 import com.moduDrive.notification.domain.model.Notification.NotificationFileId;
 import com.moduDrive.notification.domain.model.Notification.NotificationFileName;
 import com.moduDrive.notification.domain.model.Notification.NotificationId;
 import com.moduDrive.notification.domain.model.Notification.NotificationRecipientId;
 import com.moduDrive.notification.domain.model.Notification.NotificationRole;
+import com.moduDrive.notification.domain.model.Notification.NotificationSharerEmail;
+import com.moduDrive.notification.domain.model.Notification.NotificationSharerName;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -47,7 +50,10 @@ class NotificationPersistenceAdapterTest {
                 new NotificationRecipientId(recipientId),
                 new NotificationFileId(UUID.randomUUID()),
                 new NotificationFileName("report.pdf"),
-                new NotificationRole("EDITOR"));
+                new NotificationRole("EDITOR"),
+                new NotificationDirectory(false),
+                new NotificationSharerName("홍길동"),
+                new NotificationSharerEmail("owner@modudrive.com"));
     }
 
     @Nested
@@ -62,6 +68,8 @@ class NotificationPersistenceAdapterTest {
             assertThat(saved.getCreatedAt()).isNotNull();
             assertThat(saved.isRead()).isFalse();
             assertThat(saved.getFileName()).isEqualTo("report.pdf");
+            assertThat(saved.getSharerName()).isEqualTo("홍길동");
+            assertThat(saved.getSharerEmail()).isEqualTo("owner@modudrive.com");
         }
 
         @Test

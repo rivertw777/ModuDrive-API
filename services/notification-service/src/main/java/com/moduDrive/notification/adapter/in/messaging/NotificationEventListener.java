@@ -18,6 +18,7 @@ class NotificationEventListener {
     void onFileShared(FileSharedNotified event) {
         recordFileSharedNotificationUseCase.recordFileSharedNotification(
                 new RecordFileSharedNotificationCommand(
-                        event.eventId(), event.recipientId(), event.fileId(), event.fileName(), event.role()));
+                        event.eventId(), event.recipientId(), event.fileId(), event.fileName(), event.role(),
+                        event.directory(), event.sharerName(), event.sharerEmail()));
     }
 }

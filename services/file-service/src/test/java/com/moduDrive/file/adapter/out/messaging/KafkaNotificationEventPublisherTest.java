@@ -44,7 +44,7 @@ class KafkaNotificationEventPublisherTest {
             given(kafkaTemplate.send(any(String.class), any(String.class), any()))
                     .willReturn(CompletableFuture.completedFuture(null));
 
-            kafkaNotificationEventPublisher.publishFileShared(fileId, recipientId, "report.pdf", "EDITOR");
+            kafkaNotificationEventPublisher.publishFileShared(fileId, recipientId, "report.pdf", "EDITOR", true, "홍길동", "owner@modudrive.com");
 
             then(kafkaTemplate).should().send(
                     eq(NotificationTopics.FILE_SHARED), eq(recipientId.toString()), payloadCaptor.capture());
@@ -57,6 +57,9 @@ class KafkaNotificationEventPublisherTest {
                         assertThat(event.recipientId()).isEqualTo(recipientId);
                         assertThat(event.fileName()).isEqualTo("report.pdf");
                         assertThat(event.role()).isEqualTo("EDITOR");
+                        assertThat(event.directory()).isTrue();
+                        assertThat(event.sharerName()).isEqualTo("홍길동");
+                        assertThat(event.sharerEmail()).isEqualTo("owner@modudrive.com");
                     });
         }
 
@@ -68,8 +71,8 @@ class KafkaNotificationEventPublisherTest {
             given(kafkaTemplate.send(any(String.class), any(String.class), any()))
                     .willReturn(CompletableFuture.completedFuture(null));
 
-            kafkaNotificationEventPublisher.publishFileShared(fileId, recipientId, "report.pdf", "EDITOR");
-            kafkaNotificationEventPublisher.publishFileShared(fileId, recipientId, "report.pdf", "EDITOR");
+            kafkaNotificationEventPublisher.publishFileShared(fileId, recipientId, "report.pdf", "EDITOR", true, "홍길동", "owner@modudrive.com");
+            kafkaNotificationEventPublisher.publishFileShared(fileId, recipientId, "report.pdf", "EDITOR", true, "홍길동", "owner@modudrive.com");
 
             then(kafkaTemplate).should(org.mockito.Mockito.times(2)).send(
                     eq(NotificationTopics.FILE_SHARED), eq(recipientId.toString()), payloadCaptor.capture());

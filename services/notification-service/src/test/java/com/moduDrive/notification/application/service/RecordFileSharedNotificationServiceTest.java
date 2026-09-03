@@ -42,7 +42,8 @@ class RecordFileSharedNotificationServiceTest {
     private final UUID recipientId = UUID.randomUUID();
     private final UUID fileId = UUID.randomUUID();
     private final RecordFileSharedNotificationCommand command =
-            new RecordFileSharedNotificationCommand(eventId, recipientId, fileId, "report.pdf", "EDITOR");
+            new RecordFileSharedNotificationCommand(eventId, recipientId, fileId, "report.pdf", "EDITOR",
+                    true, "홍길동", "owner@modudrive.com");
 
     @Nested
     @DisplayName("처음 수신한 이벤트일 때")
@@ -61,6 +62,8 @@ class RecordFileSharedNotificationServiceTest {
             assertThat(saved.getFileId()).isEqualTo(fileId);
             assertThat(saved.getFileName()).isEqualTo("report.pdf");
             assertThat(saved.getRole()).isEqualTo("EDITOR");
+            assertThat(saved.getSharerName()).isEqualTo("홍길동");
+            assertThat(saved.getSharerEmail()).isEqualTo("owner@modudrive.com");
             assertThat(saved.isRead()).isFalse();
         }
     }
