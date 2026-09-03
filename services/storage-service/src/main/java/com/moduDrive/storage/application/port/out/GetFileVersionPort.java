@@ -5,9 +5,10 @@ import java.util.UUID;
 
 public interface GetFileVersionPort {
 
-    String getS3Path(UUID fileId, UUID userId);
-
-    int getBlockCount(UUID fileId, UUID userId);
+    /** {@code markAccessed} true records a file-access (moves the file to the top of the user's
+     * "recent") — set it only for an inline preview/open, not a plain download, to match Google
+     * Drive's behaviour. One lookup, since s3Path and blockCount come from the same response. */
+    VersionLocation getLatestVersion(UUID fileId, UUID userId, boolean markAccessed);
 
     /** Link-token lookups for anonymous visitors: the token identifies the file and authorizes
      * the read at once, so there is no caller id to pass along. */

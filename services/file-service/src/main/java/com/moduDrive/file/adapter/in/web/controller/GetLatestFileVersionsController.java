@@ -22,7 +22,10 @@ import java.util.UUID;
  * directly — but the original caller's id still rides along as {@code userId} so
  * FileAccessGuard can verify that user actually holds DOWNLOAD permission before the download
  * proceeds (see #152). Same response shape as the tenant-facing {@code GET /api/v1/files/{fileId}/revisions}
- * so storage-service's DTO didn't need to change. */
+ * so storage-service's DTO didn't need to change.
+ *
+ * <p>Callers opt into recent-access tracking with {@code markAccessed} (default off): storage-service
+ * sets it only on the inline-preview path, so a plain download doesn't touch "recent". */
 @WebAdapter
 @RestController
 @RequiredArgsConstructor
@@ -35,17 +38,21 @@ class GetLatestFileVersionsController {
     public ApiResponse<List<FileVersionResponse>> getLatestFileVersions(
             @PathVariable UUID fileId,
             @RequestParam UUID userId,
-            @RequestParam(defaultValue = "1") int limit) {
+            @RequestParam(defaultValue = "1") int limit,
+            @RequestParam(defaultValue = "false") boolean markAccessed) {
         List<FileVersionResponse> revisions = getLatestFileVersionsUseCase
                 .getLatestFileVersions(new GetLatestFileVersionsCommand(fileId, limit, userId))
                 .stream()
                 .map(FileVersionResponse::from)
                 .toList();
-        // Both storage-service's download and preview/view endpoints resolve the version to
-        // stream through this one internal route, so this is the single choke point where an
-        // actual open/download can be marked recently-accessed. RecordFileAccessUseCase never
-        // throws (see RecordFileAccessService), so a tracking failure can't turn this into a 500.
-        recordFileAccessUseCase.recordAccess(new RecordFileAccessCommand(userId, fileId));
+        // Both storage-service's download and preview/view endpoints resolve the version through
+        // this one route, but only an inline preview counts as "opening" the file (Google
+        // Drive-style: a plain download doesn't touch "recent") — storage-service passes
+        // markAccessed=true only from the preview path. RecordFileAccessUseCase never throws
+        // (see RecordFileAccessService), so a tracking failure can't turn this into a 500.
+        if (markAccessed) {
+            recordFileAccessUseCase.recordAccess(new RecordFileAccessCommand(userId, fileId));
+        }
         return ApiResponse.success(revisions);
     }
 }

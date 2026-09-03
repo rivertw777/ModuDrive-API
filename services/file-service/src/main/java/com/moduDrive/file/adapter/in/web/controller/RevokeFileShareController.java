@@ -2,9 +2,7 @@ package com.moduDrive.file.adapter.in.web.controller;
 
 import com.moduDrive.common.core.annotation.WebAdapter;
 import com.moduDrive.common.core.web.ApiResponse;
-import com.moduDrive.file.application.port.in.command.RecordFileAccessCommand;
 import com.moduDrive.file.application.port.in.command.RevokeFileShareCommand;
-import com.moduDrive.file.application.port.in.usecase.RecordFileAccessUseCase;
 import com.moduDrive.file.application.port.in.usecase.RevokeFileShareUseCase;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -20,7 +18,6 @@ import java.util.UUID;
 class RevokeFileShareController {
 
     private final RevokeFileShareUseCase revokeFileShareUseCase;
-    private final RecordFileAccessUseCase recordFileAccessUseCase;
 
     @DeleteMapping("/api/v1/files/{fileId}/shares/{shareId}")
     public ApiResponse<Void> revokeFileShare(
@@ -28,7 +25,6 @@ class RevokeFileShareController {
             @PathVariable UUID fileId,
             @PathVariable UUID shareId) {
         revokeFileShareUseCase.revokeFileShare(new RevokeFileShareCommand(fileId, shareId, callerId));
-        recordFileAccessUseCase.recordAccess(new RecordFileAccessCommand(callerId, fileId));
         return ApiResponse.success();
     }
 }

@@ -17,9 +17,11 @@ public class DownloadFileCommand extends SelfValidating<DownloadFileCommand> {
     @NotNull
     private final UUID userId;
 
-    /** True only for the inline-preview callers ({@code viewFile}) — subjects the download to
-     * {@link com.moduDrive.storage.application.service.BlockAssembler}'s size cap. Regular
-     * download has no such cap. */
+    /** True only for the inline-preview callers ({@code viewFile}). Two independent effects that
+     * happen to align today: (1) subjects the download to
+     * {@link com.moduDrive.storage.application.service.BlockAssembler}'s size cap (a regular
+     * download has no such cap), and (2) marks the file as recently accessed — a Drive-style
+     * "open" — whereas a plain download does not. */
     private final boolean inlinePreview;
 
     public DownloadFileCommand(String fileId, UUID userId) {

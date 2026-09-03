@@ -24,8 +24,11 @@ class DownloadFileService implements DownloadFileUseCase {
     @Override
     public byte[] download(DownloadFileCommand command) {
         String scope = command.getUserId().toString();
-        String s3Path = getFileVersionPort.getS3Path(command.getFileId(), command.getUserId());
-        int blockCount = getFileVersionPort.getBlockCount(command.getFileId(), command.getUserId());
+        // Only an inline preview counts as "opening" the file for the recent list (Drive-style).
+        var version = getFileVersionPort.getLatestVersion(
+                command.getFileId(), command.getUserId(), command.isInlinePreview());
+        String s3Path = version.s3Path();
+        int blockCount = version.blockCount();
         if (command.isInlinePreview()) {
             BlockAssembler.requireWithinInlinePreviewLimit(blockCount, storageProperties.getBlockSize());
         }
@@ -40,8 +43,10 @@ class DownloadFileService implements DownloadFileUseCase {
     @Override
     public void downloadStream(DownloadFileCommand command, OutputStream out) {
         String scope = command.getUserId().toString();
-        String s3Path = getFileVersionPort.getS3Path(command.getFileId(), command.getUserId());
-        int blockCount = getFileVersionPort.getBlockCount(command.getFileId(), command.getUserId());
+        // A plain download never touches "recent" — markAccessed=false.
+        var version = getFileVersionPort.getLatestVersion(command.getFileId(), command.getUserId(), false);
+        String s3Path = version.s3Path();
+        int blockCount = version.blockCount();
         downloadQuotaPort.checkWithinQuota(scope, s3Path);
         CountingOutputStream counting = new CountingOutputStream(out);
         try {

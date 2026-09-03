@@ -17,13 +17,15 @@ class RecordFileAccessService implements RecordFileAccessUseCase {
 
     private final SaveFileAccessPort saveFileAccessPort;
 
-    // Recency tracking is a side effect of touching a file (viewing, downloading, uploading,
-    // renaming, moving, restoring, ...), never the reason that action fails — a lost upsert
-    // race or any other runtime error here must not turn an otherwise-successful call into a
-    // 500. Losing an individual access record just means one action doesn't move that file to
-    // the top of "recent"; harmless for this feature. Catching RuntimeException broadly (not
-    // just DataAccessException) is what lets every caller add this as a single line with no
-    // try/catch of its own — see GetFileController and friends.
+    // Recency tracking is a side effect of "opening" a file — inline preview/view, upload, and
+    // fetching its detail metadata (Google Drive-style: a plain download or a metadata edit like
+    // rename/move/share does NOT touch "recent"). It is never the reason that action fails — a
+    // lost upsert race or any other runtime error here must not turn an otherwise-successful
+    // call into a 500. Losing an individual access record just means one action doesn't move
+    // that file to the top of "recent"; harmless for this feature. Catching RuntimeException
+    // broadly (not just DataAccessException) is what lets every caller add this as a single line
+    // with no try/catch of its own — see GetFileController, UploadFileMetadataController and
+    // GetLatestFileVersionsController (the storage-service preview path).
     //
     // Deliberately NOT @Transactional: the adapter's saveAndFlush already runs in its own
     // Spring Data-managed transaction, and wrapping this method in another one means a

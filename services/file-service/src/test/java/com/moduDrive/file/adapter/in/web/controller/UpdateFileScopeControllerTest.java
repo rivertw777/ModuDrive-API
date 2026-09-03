@@ -2,9 +2,7 @@ package com.moduDrive.file.adapter.in.web.controller;
 
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.common.core.web.GlobalExceptionHandler;
-import com.moduDrive.file.application.port.in.command.RecordFileAccessCommand;
 import com.moduDrive.file.application.port.in.command.UpdateFileScopeCommand;
-import com.moduDrive.file.application.port.in.usecase.RecordFileAccessUseCase;
 import com.moduDrive.file.application.port.in.usecase.UpdateFileScopeUseCase;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
@@ -25,7 +23,6 @@ import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -37,7 +34,6 @@ class UpdateFileScopeControllerTest {
 
     @Autowired private MockMvc mockMvc;
     @MockitoBean private UpdateFileScopeUseCase updateFileScopeUseCase;
-    @MockitoBean private RecordFileAccessUseCase recordFileAccessUseCase;
 
     private static final UUID FILE_ID = UUID.randomUUID();
     private static final String OWNER_ID = "11111111-1111-1111-1111-111111111111";
@@ -71,8 +67,6 @@ class UpdateFileScopeControllerTest {
                     .andExpect(jsonPath("$.data.scope").value("LINK"))
                     .andExpect(jsonPath("$.data.linkToken").value(token.toString()))
                     .andExpect(jsonPath("$.data.role").value("VIEWER"));
-
-            then(recordFileAccessUseCase).should().recordAccess(any(RecordFileAccessCommand.class));
         }
 
         @Test
@@ -99,8 +93,6 @@ class UpdateFileScopeControllerTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(LINK_JSON))
                     .andExpect(status().isForbidden());
-
-            then(recordFileAccessUseCase).shouldHaveNoInteractions();
         }
     }
 }

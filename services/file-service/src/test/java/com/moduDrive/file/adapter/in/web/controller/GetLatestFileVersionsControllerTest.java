@@ -53,11 +53,27 @@ class GetLatestFileVersionsControllerTest {
             given(getLatestFileVersionsUseCase.getLatestFileVersions(any(GetLatestFileVersionsCommand.class)))
                     .willReturn(List.of(v));
 
-            mockMvc.perform(get("/internal/files/{fileId}/revisions", FILE_ID).param("userId", USER_ID.toString()))
+            mockMvc.perform(get("/internal/files/{fileId}/revisions", FILE_ID)
+                            .param("userId", USER_ID.toString())
+                            .param("markAccessed", "true"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data[0].s3Path").value("s3://b/k"));
 
             then(recordFileAccessUseCase).should().recordAccess(any(RecordFileAccessCommand.class));
+        }
+
+        @Test
+        void doesNotRecordAccessWhenMarkAccessedOmitted() throws Exception {
+            FileVersion v = FileVersion.withId(new FileVersionId(UUID.randomUUID()),
+                    new FileVersionFileId(FILE_ID), new FileVersionFileSize(512L),
+                    new FileVersionBlockCount(1), new FileVersionS3Path("s3://b/k"));
+            given(getLatestFileVersionsUseCase.getLatestFileVersions(any(GetLatestFileVersionsCommand.class)))
+                    .willReturn(List.of(v));
+
+            mockMvc.perform(get("/internal/files/{fileId}/revisions", FILE_ID).param("userId", USER_ID.toString()))
+                    .andExpect(status().isOk());
+
+            then(recordFileAccessUseCase).shouldHaveNoInteractions();
         }
     }
 

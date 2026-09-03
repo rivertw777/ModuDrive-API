@@ -17,9 +17,11 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
 
 @ExtendWith(MockitoExtension.class)
 class FileServiceGetVersionAdapterTest {
@@ -63,15 +65,32 @@ class FileServiceGetVersionAdapterTest {
     }
 
     @Nested
+    @DisplayName("최신 버전을 조회할 때")
+    class WhenResolvingLatestVersion {
+
+        @Test
+        void mapsTheLatestVersionAndForwardsMarkAccessed() {
+            given(feignClient.getFileRevisions(anyString(), anyString(), anyInt(), anyBoolean()))
+                    .willReturn(ApiResponse.success(List.of(
+                            new FileVersionDto(UUID.randomUUID(), fileId, 10L, 3, "path/v1"))));
+
+            VersionLocation result = adapter.getLatestVersion(fileId, userId, true);
+
+            assertThat(result).isEqualTo(new VersionLocation("path/v1", 3));
+            then(feignClient).should().getFileRevisions(fileId.toString(), userId.toString(), 1, true);
+        }
+    }
+
+    @Nested
     @DisplayName("최신 버전을 조회했는데 파일에 버전이 없을 때")
     class WhenLatestVersionMissing {
 
         @Test
         void throwsFileNotFoundInStorage() {
-            given(feignClient.getFileRevisions(anyString(), anyString(), anyInt()))
+            given(feignClient.getFileRevisions(anyString(), anyString(), anyInt(), anyBoolean()))
                     .willReturn(ApiResponse.success(List.of()));
 
-            Throwable thrown = catchThrowable(() -> adapter.getS3Path(fileId, userId));
+            Throwable thrown = catchThrowable(() -> adapter.getLatestVersion(fileId, userId, false));
 
             assertThat(thrown).isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())

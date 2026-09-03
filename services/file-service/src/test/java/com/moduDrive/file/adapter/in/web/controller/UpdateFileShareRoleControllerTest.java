@@ -2,9 +2,7 @@ package com.moduDrive.file.adapter.in.web.controller;
 
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.common.core.web.GlobalExceptionHandler;
-import com.moduDrive.file.application.port.in.command.RecordFileAccessCommand;
 import com.moduDrive.file.application.port.in.command.UpdateFileShareRoleCommand;
-import com.moduDrive.file.application.port.in.usecase.RecordFileAccessUseCase;
 import com.moduDrive.file.application.port.in.usecase.UpdateFileShareRoleUseCase;
 import com.moduDrive.file.domain.model.FileShare;
 import com.moduDrive.file.domain.model.FileShare.*;
@@ -24,7 +22,6 @@ import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -36,7 +33,6 @@ class UpdateFileShareRoleControllerTest {
 
     @Autowired private MockMvc mockMvc;
     @MockitoBean private UpdateFileShareRoleUseCase updateFileShareRoleUseCase;
-    @MockitoBean private RecordFileAccessUseCase recordFileAccessUseCase;
 
     private static final UUID FILE_ID = UUID.randomUUID();
     private static final UUID SHARE_ID = UUID.randomUUID();
@@ -63,8 +59,6 @@ class UpdateFileShareRoleControllerTest {
                             .content(REQUEST_JSON))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.role").value("EDITOR"));
-
-            then(recordFileAccessUseCase).should().recordAccess(any(RecordFileAccessCommand.class));
         }
 
         @Test
@@ -91,8 +85,6 @@ class UpdateFileShareRoleControllerTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(REQUEST_JSON))
                     .andExpect(status().isNotFound());
-
-            then(recordFileAccessUseCase).shouldHaveNoInteractions();
         }
     }
 }
