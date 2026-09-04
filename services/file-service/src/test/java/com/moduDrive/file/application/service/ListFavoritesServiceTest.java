@@ -5,7 +5,6 @@ import com.moduDrive.file.application.port.in.command.ListFavoritesCommand;
 import com.moduDrive.file.application.port.in.usecase.FileView;
 import com.moduDrive.file.application.port.out.FileFavoritePort;
 import com.moduDrive.file.application.port.out.FindFilePort;
-import com.moduDrive.file.application.port.out.FindFileSharePort;
 import com.moduDrive.file.application.port.out.FindNamespacePort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
@@ -38,7 +37,6 @@ class ListFavoritesServiceTest {
 
     @Mock private FindNamespacePort findNamespacePort;
     @Mock private FindFilePort findFilePort;
-    @Mock private FindFileSharePort findFileSharePort;
     @Mock private FileFavoritePort fileFavoritePort;
     @Mock private FileAccessGuard fileAccessGuard;
     @InjectMocks private ListFavoritesService listFavoritesService;
@@ -73,8 +71,7 @@ class ListFavoritesServiceTest {
                     .willReturn(Optional.of(file(sharedId, UUID.randomUUID(), FileStatus.UPLOADED)));
             given(findFilePort.findById(new FileId(ownedId)))
                     .willReturn(Optional.of(file(ownedId, userId, FileStatus.UPLOADED)));
-            given(findFileSharePort.existsByFileIdAndSharedWithUserId(new FileId(sharedId), userId))
-                    .willReturn(true);
+            // Non-null role = still reachable (a direct or an inherited folder grant).
             given(fileAccessGuard.effectiveRole(any(File.class), eq(userId))).willReturn(Role.EDITOR);
 
             List<FileView> result = listFavoritesService.listFavorites(command);
@@ -98,15 +95,14 @@ class ListFavoritesServiceTest {
         }
 
         @Test
-        @DisplayName("공유가 해제된 파일은 별표가 남아 있어도 제외한다")
-        void dropsStarredFileWhoseShareWasRevoked() {
+        @DisplayName("더 이상 접근 불가한 파일(공유 해제 등)은 별표가 남아 있어도 제외한다")
+        void dropsStarredFileNoLongerReachable() {
             UUID sharedId = UUID.randomUUID();
             given(findNamespacePort.findByUserId(any())).willReturn(Optional.of(namespace));
             given(fileFavoritePort.favoriteFileIds(userId)).willReturn(new LinkedHashSet<>(List.of(sharedId)));
             given(findFilePort.findById(new FileId(sharedId)))
                     .willReturn(Optional.of(file(sharedId, UUID.randomUUID(), FileStatus.UPLOADED)));
-            given(findFileSharePort.existsByFileIdAndSharedWithUserId(new FileId(sharedId), userId))
-                    .willReturn(false);
+            given(fileAccessGuard.effectiveRole(any(File.class), eq(userId))).willReturn(null);
 
             assertThat(listFavoritesService.listFavorites(command)).isEmpty();
         }
