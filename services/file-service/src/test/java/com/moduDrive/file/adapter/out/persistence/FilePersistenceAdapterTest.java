@@ -46,6 +46,8 @@ class FilePersistenceAdapterTest {
     @Autowired
     private SpringDataFileVersionRepository springDataFileVersionRepository;
     @Autowired
+    private SpringDataFileFavoriteRepository springDataFileFavoriteRepository;
+    @Autowired
     private EntityManager entityManager;
 
     private final UUID namespaceIdValue = UUID.randomUUID();
@@ -352,31 +354,6 @@ class FilePersistenceAdapterTest {
     }
 
     @Nested
-    @DisplayName("소유자의 즐겨찾기 파일을 조회할 때")
-    class WhenListingOwnerFavorites {
-
-        @Test
-        @DisplayName("최근 갱신된 순으로 반환한다")
-        void listsMostRecentlyUpdatedFirst() {
-            File older = filePersistenceAdapter.saveFile(File.create(
-                    new FileNamespaceId(namespaceIdValue), new FileName("a.pdf"), new FilePath("/1"),
-                    new FileOwnerId(UUID.randomUUID()), new FileIsDirectory(false)));
-            older.markFavorite(true);
-            filePersistenceAdapter.saveFile(older);
-
-            File newer = filePersistenceAdapter.saveFile(File.create(
-                    new FileNamespaceId(namespaceIdValue), new FileName("b.pdf"), new FilePath("/1"),
-                    new FileOwnerId(UUID.randomUUID()), new FileIsDirectory(false)));
-            newer.markFavorite(true);
-            filePersistenceAdapter.saveFile(newer);
-
-            assertThat(filePersistenceAdapter.findByNamespaceIdAndFavorite(namespaceId))
-                    .extracting(File::getId)
-                    .containsExactly(newer.getId(), older.getId());
-        }
-    }
-
-    @Nested
     @DisplayName("파일을 영구 삭제할 때")
     class WhenDeletingAFile {
 
@@ -410,6 +387,20 @@ class FilePersistenceAdapterTest {
             filePersistenceAdapter.deleteFile(new FileId(fileIdValue));
 
             assertThat(springDataFileShareRepository.findByFileId(fileIdValue)).isEmpty();
+            assertThat(springDataFileRepository.findById(fileIdValue)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("파일 행과 함께 그 파일의 즐겨찾기 행도 모두 지워진다 (고아 방지)")
+        void deletesFileFavoritesToo() {
+            UUID fileIdValue = springDataFileRepository.save(new FileJpaEntity(
+                    namespaceIdValue, "report.pdf", "/1", UUID.randomUUID(), FileStatus.DELETED, false)).getId();
+            springDataFileFavoriteRepository.save(new FileFavoriteJpaEntity(UUID.randomUUID(), fileIdValue));
+            springDataFileFavoriteRepository.save(new FileFavoriteJpaEntity(UUID.randomUUID(), fileIdValue));
+
+            filePersistenceAdapter.deleteFile(new FileId(fileIdValue));
+
+            assertThat(springDataFileFavoriteRepository.count()).isZero();
             assertThat(springDataFileRepository.findById(fileIdValue)).isEmpty();
         }
     }

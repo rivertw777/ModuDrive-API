@@ -43,6 +43,7 @@ class FilePersistenceAdapter implements
     private final SpringDataFileVersionRepository fileVersionRepository;
     private final SpringDataFileShareRepository fileShareRepository;
     private final SpringDataFileAccessRepository fileAccessRepository;
+    private final SpringDataFileFavoriteRepository fileFavoriteRepository;
     private final FileMapper fileMapper;
 
     @Override
@@ -114,11 +115,13 @@ class FilePersistenceAdapter implements
     @Override
     public void deleteFile(FileId fileId) {
         // A purged file's versions would otherwise dangle forever, pointing at S3 prefixes that
-        // FilePurger/DirectoryCascader already deleted the blocks under. Its share rows likewise —
-        // there is no FK cascade, so a grant on a permanently-deleted file/folder would linger and
-        // only ever get filtered out at read time (ListSharedWithMeService).
+        // FilePurger/DirectoryCascader already deleted the blocks under. Its share and favorite
+        // rows likewise — there is no FK cascade, so a grant or a star on a permanently-deleted
+        // file/folder would linger and only ever get filtered out at read time
+        // (ListSharedWithMeService / ListFavoritesService).
         fileVersionRepository.deleteByFileId(fileId.value());
         fileShareRepository.deleteByFileId(fileId.value());
+        fileFavoriteRepository.deleteByFileId(fileId.value());
         fileRepository.deleteById(fileId.value());
     }
 
@@ -210,15 +213,6 @@ class FilePersistenceAdapter implements
     public List<File> findByNamespaceIdAndStatus(NamespaceId namespaceId, FileStatus status) {
         return fileRepository
                 .findByNamespaceIdAndStatus(namespaceId.value(), status)
-                .stream()
-                .map(fileMapper::mapFileToDomain)
-                .collect(Collectors.toList());
-    }
-
-    @Override
-    public List<File> findByNamespaceIdAndFavorite(NamespaceId namespaceId) {
-        return fileRepository
-                .findByNamespaceIdAndFavoriteTrueAndStatusNotOrderByUpdatedAtDesc(namespaceId.value(), FileStatus.DELETED)
                 .stream()
                 .map(fileMapper::mapFileToDomain)
                 .collect(Collectors.toList());

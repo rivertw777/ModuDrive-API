@@ -5,9 +5,10 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Per-user favorites for files the user does not own. The owner's own favorites stay on
- * {@code file.favorite}; a shared VIEWER/EDITOR can't touch that column, so their stars live here
- * instead, one row per (user, file).
+ * Per-user favorites: one row per (user, file), for every user including the file's owner — this
+ * is the source of truth the "즐겨찾기" list reads and orders by. The owner's row is additionally
+ * mirrored onto the {@code file.favorite} flag that owner-facing listings read cheaply; a
+ * non-owner's star never touches that column.
  */
 public interface FileFavoritePort {
 

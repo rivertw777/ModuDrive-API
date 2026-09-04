@@ -28,22 +28,25 @@ class UpdateFileFavoriteService implements UpdateFileFavoriteUseCase {
         File file = findFilePort.findById(command.getFileId())
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_NOT_FOUND));
 
-        if (file.getOwnerId().equals(command.getCallerId())) {
-            // The owner's favorite is a column on their own file row.
-            file.markFavorite(command.isFavorite());
-            return saveFilePort.saveFile(file);
+        // Anyone who can read the file may star it — for themselves only. A non-owner needs a
+        // share; the owner always passes.
+        if (!file.getOwnerId().equals(command.getCallerId())) {
+            fileAccessGuard.requirePermission(file, command.getCallerId(), Permission.READ);
         }
 
-        // A shared file: favorite is per-user (see FileFavoritePort), so any grantee who can read
-        // it may star it — for themselves only, never touching the owner's column.
-        fileAccessGuard.requirePermission(file, command.getCallerId(), Permission.READ);
+        // Every star is a file_favorite row (the list orders by its created_at). The owner's row
+        // is also mirrored onto file.favorite, the cheap flag every owner-facing listing already
+        // reads without a per-file lookup.
         if (command.isFavorite()) {
             fileFavoritePort.favorite(command.getCallerId(), file.getId());
         } else {
             fileFavoritePort.unfavorite(command.getCallerId(), file.getId());
         }
-        // Reflect the caller's new state in the response; not persisted onto the file row.
         file.markFavorite(command.isFavorite());
+        if (file.getOwnerId().equals(command.getCallerId())) {
+            return saveFilePort.saveFile(file);
+        }
+        // Non-owner: file.favorite is set only to echo the caller's new state, not persisted.
         return file;
     }
 }

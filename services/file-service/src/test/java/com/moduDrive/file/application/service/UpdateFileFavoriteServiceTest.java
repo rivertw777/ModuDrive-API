@@ -53,7 +53,7 @@ class UpdateFileFavoriteServiceTest {
     class WhenOwnerFavoritesOwnFile {
 
         @Test
-        void marksFileAsFavoriteOnTheFileRow() {
+        void writesTheFileFavoriteRowAndMirrorsTheFileRowFlag() {
             UpdateFileFavoriteCommand command = new UpdateFileFavoriteCommand(fileId, callerId, true);
             given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(fileOwnedBy(callerId)));
             given(saveFilePort.saveFile(any())).willAnswer(inv -> inv.getArgument(0));
@@ -61,12 +61,12 @@ class UpdateFileFavoriteServiceTest {
             File result = updateFileFavoriteService.updateFavorite(command);
 
             assertThat(result.isFavorite()).isTrue();
+            then(fileFavoritePort).should().favorite(callerId, fileId);
             then(saveFilePort).should().saveFile(any(File.class));
-            then(fileFavoritePort).shouldHaveNoInteractions();
         }
 
         @Test
-        void unmarksFileAsFavorite() {
+        void removesTheFileFavoriteRowAndClearsTheFlag() {
             UpdateFileFavoriteCommand command = new UpdateFileFavoriteCommand(fileId, callerId, false);
             given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(fileOwnedBy(callerId)));
             given(saveFilePort.saveFile(any())).willAnswer(inv -> inv.getArgument(0));
@@ -74,6 +74,7 @@ class UpdateFileFavoriteServiceTest {
             File result = updateFileFavoriteService.updateFavorite(command);
 
             assertThat(result.isFavorite()).isFalse();
+            then(fileFavoritePort).should().unfavorite(callerId, fileId);
         }
     }
 

@@ -7,9 +7,9 @@ import lombok.Getter;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
-/** Records that a user opened a file, so "recent files" can be listed per viewer — separate
- * from {@link File#isFavorite()}, which is owner-scoped and lives on the namespace owner's
- * own file row. A shared file can be "recent" independently for each of its viewers. */
+/** Records that a user opened a file, so "recent files" can be listed per viewer — the same
+ * per-user shape as a favorite (see {@code FileFavoritePort}). A shared file can be "recent"
+ * independently for each of its viewers. */
 @Getter
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class FileAccess {
