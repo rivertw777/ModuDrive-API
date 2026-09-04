@@ -37,7 +37,9 @@ interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID>, J
 
     List<FileJpaEntity> findByStatusAndUpdatedAtBefore(FileStatus status, LocalDateTime cutoff);
 
-    List<FileJpaEntity> findByNamespaceIdAndFavoriteTrueAndStatusNot(UUID namespaceId, FileStatus status);
+    // Most recently touched first — the owner's own stars have no "starred at", so updatedAt is
+    // the closest signal for the "즐겨찾기" list order.
+    List<FileJpaEntity> findByNamespaceIdAndFavoriteTrueAndStatusNotOrderByUpdatedAtDesc(UUID namespaceId, FileStatus status);
 
     List<FileJpaEntity> findByNamespaceIdAndNameContainingIgnoreCaseAndStatusNot(
             UUID namespaceId, String name, FileStatus status);

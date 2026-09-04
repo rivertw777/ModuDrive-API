@@ -61,8 +61,8 @@ class ListFavoritesService implements ListFavoritesUseCase {
                     return FileView.shared(file, fileAccessGuard.effectiveRole(file, userId));
                 });
 
-        // Owned favorites first (their query order — the file row has no "starred at"), then the
-        // shared ones most-recently-starred first.
+        // Owned favorites first (most recently updated — the file row has no "starred at"), then
+        // the shared ones most-recently-starred first.
         return Stream.concat(owned.stream().map(FileView::owned), shared).toList();
     }
 }

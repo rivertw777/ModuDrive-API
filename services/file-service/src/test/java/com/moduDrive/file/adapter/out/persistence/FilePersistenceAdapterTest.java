@@ -237,6 +237,25 @@ class FilePersistenceAdapterTest {
         }
 
         @Test
+        @DisplayName("사용자 단위 조회는 최근 공유받은 순으로 반환한다")
+        void listsSharesForUserMostRecentFirst() {
+            UUID granteeId = UUID.randomUUID();
+            UUID olderFileId = UUID.randomUUID();
+            UUID newerFileId = UUID.randomUUID();
+
+            filePersistenceAdapter.saveFileShare(FileShare.create(
+                    new FileShareFileId(olderFileId), new FileShareOwnerId(UUID.randomUUID()),
+                    new FileShareSharedWithUserId(granteeId), new FileShareRole(Role.VIEWER)));
+            filePersistenceAdapter.saveFileShare(FileShare.create(
+                    new FileShareFileId(newerFileId), new FileShareOwnerId(UUID.randomUUID()),
+                    new FileShareSharedWithUserId(granteeId), new FileShareRole(Role.VIEWER)));
+
+            assertThat(filePersistenceAdapter.findBySharedWithUserId(granteeId))
+                    .extracting(FileShare::getFileId)
+                    .containsExactly(newerFileId, olderFileId);
+        }
+
+        @Test
         @DisplayName("같은 파일-사용자 조합은 DB 유니크 제약으로 두 번 저장되지 않는다")
         void rejectsDuplicateShareRowAtTheDatabaseLevel() {
             UUID fileIdValue = UUID.randomUUID();
@@ -329,6 +348,31 @@ class FilePersistenceAdapterTest {
             filePersistenceAdapter.deleteFileShare(new FileShareId(created.getId()));
 
             assertThat(filePersistenceAdapter.findByFileId(new FileId(fileIdValue))).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("소유자의 즐겨찾기 파일을 조회할 때")
+    class WhenListingOwnerFavorites {
+
+        @Test
+        @DisplayName("최근 갱신된 순으로 반환한다")
+        void listsMostRecentlyUpdatedFirst() {
+            File older = filePersistenceAdapter.saveFile(File.create(
+                    new FileNamespaceId(namespaceIdValue), new FileName("a.pdf"), new FilePath("/1"),
+                    new FileOwnerId(UUID.randomUUID()), new FileIsDirectory(false)));
+            older.markFavorite(true);
+            filePersistenceAdapter.saveFile(older);
+
+            File newer = filePersistenceAdapter.saveFile(File.create(
+                    new FileNamespaceId(namespaceIdValue), new FileName("b.pdf"), new FilePath("/1"),
+                    new FileOwnerId(UUID.randomUUID()), new FileIsDirectory(false)));
+            newer.markFavorite(true);
+            filePersistenceAdapter.saveFile(newer);
+
+            assertThat(filePersistenceAdapter.findByNamespaceIdAndFavorite(namespaceId))
+                    .extracting(File::getId)
+                    .containsExactly(newer.getId(), older.getId());
         }
     }
 

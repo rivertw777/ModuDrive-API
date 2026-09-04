@@ -218,7 +218,7 @@ class FilePersistenceAdapter implements
     @Override
     public List<File> findByNamespaceIdAndFavorite(NamespaceId namespaceId) {
         return fileRepository
-                .findByNamespaceIdAndFavoriteTrueAndStatusNot(namespaceId.value(), FileStatus.DELETED)
+                .findByNamespaceIdAndFavoriteTrueAndStatusNotOrderByUpdatedAtDesc(namespaceId.value(), FileStatus.DELETED)
                 .stream()
                 .map(fileMapper::mapFileToDomain)
                 .collect(Collectors.toList());
@@ -352,7 +352,7 @@ class FilePersistenceAdapter implements
 
     @Override
     public List<FileShare> findBySharedWithUserId(UUID sharedWithUserId) {
-        return fileShareRepository.findBySharedWithUserId(sharedWithUserId)
+        return fileShareRepository.findBySharedWithUserIdOrderByCreatedAtDesc(sharedWithUserId)
                 .stream()
                 .map(fileMapper::mapFileShareToDomain)
                 .collect(Collectors.toList());
