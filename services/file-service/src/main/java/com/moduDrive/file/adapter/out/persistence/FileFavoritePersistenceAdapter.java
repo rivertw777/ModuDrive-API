@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -43,8 +44,10 @@ class FileFavoritePersistenceAdapter implements FileFavoritePort {
 
     @Override
     public Set<UUID> favoriteFileIds(UUID userId) {
-        return fileFavoriteRepository.findByUserId(userId).stream()
+        // LinkedHashSet so the most-recently-starred-first order from the query survives — the
+        // favorites list relies on it; the membership-check callers don't care.
+        return fileFavoriteRepository.findByUserIdOrderByRecency(userId).stream()
                 .map(FileFavoriteJpaEntity::getFileId)
-                .collect(Collectors.toSet());
+                .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 }

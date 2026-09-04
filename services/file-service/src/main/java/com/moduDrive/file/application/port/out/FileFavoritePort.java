@@ -1,5 +1,6 @@
 package com.moduDrive.file.application.port.out;
 
+import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.UUID;
 
@@ -16,5 +17,8 @@ public interface FileFavoritePort {
 
     boolean isFavorite(UUID userId, UUID fileId);
 
+    /** File ids the user has starred. Iteration order is most-recently-starred first (a
+     * {@link LinkedHashSet}) so the favorites list can rely on it; membership-check callers
+     * can ignore the order. */
     Set<UUID> favoriteFileIds(UUID userId);
 }

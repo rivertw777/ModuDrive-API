@@ -45,9 +45,10 @@ class ListFavoritesService implements ListFavoritesUseCase {
         List<File> owned = findFilePort.findByNamespaceIdAndFavorite(new NamespaceId(namespace.getId()));
         Set<UUID> ownedIds = owned.stream().map(File::getId).collect(Collectors.toSet());
 
-        // Files the user starred but doesn't own — per-user favorites. Skip any whose share has
-        // since been revoked (the favorite row is then orphaned); mark the star, and carry the
-        // caller's role so the client knows which actions to offer.
+        // Files the user starred but doesn't own — per-user favorites, most recently starred
+        // first (favoriteFileIds keeps that order). Skip any whose share has since been revoked
+        // (the favorite row is then orphaned); mark the star, and carry the caller's role so the
+        // client knows which actions to offer.
         Stream<FileView> shared = fileFavoritePort.favoriteFileIds(userId).stream()
                 .filter(id -> !ownedIds.contains(id))
                 .map(id -> findFilePort.findById(new FileId(id)))
@@ -60,6 +61,8 @@ class ListFavoritesService implements ListFavoritesUseCase {
                     return FileView.shared(file, fileAccessGuard.effectiveRole(file, userId));
                 });
 
+        // Owned favorites first (their query order — the file row has no "starred at"), then the
+        // shared ones most-recently-starred first.
         return Stream.concat(owned.stream().map(FileView::owned), shared).toList();
     }
 }
