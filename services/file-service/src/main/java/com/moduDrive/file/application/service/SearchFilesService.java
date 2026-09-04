@@ -21,6 +21,7 @@ class SearchFilesService implements SearchFilesUseCase {
 
     private final FindNamespacePort findNamespacePort;
     private final FindFilePort findFilePort;
+    private final FavoriteEnricher favoriteEnricher;
 
     @Transactional(readOnly = true)
     @Override
@@ -28,6 +29,7 @@ class SearchFilesService implements SearchFilesUseCase {
         Namespace namespace = findNamespacePort.findByUserId(command.getUserId())
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.NAMESPACE_NOT_FOUND));
 
-        return findFilePort.findByNamespaceIdAndNameContaining(new NamespaceId(namespace.getId()), command.getQuery());
+        return favoriteEnricher.withFavorites(command.getUserId().value(),
+                findFilePort.findByNamespaceIdAndNameContaining(new NamespaceId(namespace.getId()), command.getQuery()));
     }
 }

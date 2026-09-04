@@ -80,7 +80,7 @@ class FilePersistenceAdapter implements
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_NOT_FOUND));
 
         entity.applyChanges(file.getName(), file.getPath(), file.getCurrentVersionId(), file.getFileSize(),
-                file.getStatus(), file.isFavorite(), file.getAccessScope(), file.getLinkToken(), file.getLinkRole());
+                file.getStatus(), file.getAccessScope(), file.getLinkToken(), file.getLinkRole());
 
         // Same conflict, different door: rename/move/restore land here, and none of their callers
         // pre-check the destination slot either (e.g. RestoreFileService can restore a file back

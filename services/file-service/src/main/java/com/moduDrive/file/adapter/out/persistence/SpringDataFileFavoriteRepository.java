@@ -4,7 +4,9 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 interface SpringDataFileFavoriteRepository extends JpaRepository<FileFavoriteJpaEntity, UUID> {
@@ -22,4 +24,8 @@ interface SpringDataFileFavoriteRepository extends JpaRepository<FileFavoriteJpa
     @Query("select f from FileFavoriteJpaEntity f where f.userId = :userId "
             + "order by f.createdAt desc nulls last, f.id desc")
     List<FileFavoriteJpaEntity> findByUserIdOrderByRecency(@Param("userId") UUID userId);
+
+    @Query("select f.fileId from FileFavoriteJpaEntity f "
+            + "where f.userId = :userId and f.fileId in :fileIds")
+    Set<UUID> findFileIdsByUserIdAndFileIdIn(@Param("userId") UUID userId, @Param("fileIds") Collection<UUID> fileIds);
 }

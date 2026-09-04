@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.UUID;
@@ -49,5 +50,13 @@ class FileFavoritePersistenceAdapter implements FileFavoritePort {
         return fileFavoriteRepository.findByUserIdOrderByRecency(userId).stream()
                 .map(FileFavoriteJpaEntity::getFileId)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    @Override
+    public Set<UUID> favoriteFileIdsAmong(UUID userId, Collection<UUID> fileIds) {
+        if (fileIds.isEmpty()) {
+            return Set.of();
+        }
+        return fileFavoriteRepository.findFileIdsByUserIdAndFileIdIn(userId, fileIds);
     }
 }

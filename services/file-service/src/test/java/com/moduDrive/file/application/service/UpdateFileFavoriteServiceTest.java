@@ -4,7 +4,6 @@ import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.file.application.port.in.command.UpdateFileFavoriteCommand;
 import com.moduDrive.file.application.port.out.FileFavoritePort;
 import com.moduDrive.file.application.port.out.FindFilePort;
-import com.moduDrive.file.application.port.out.SaveFilePort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
 import com.moduDrive.file.domain.model.FileStatus;
@@ -33,7 +32,6 @@ import static org.mockito.BDDMockito.willThrow;
 class UpdateFileFavoriteServiceTest {
 
     @Mock private FindFilePort findFilePort;
-    @Mock private SaveFilePort saveFilePort;
     @Mock private FileFavoritePort fileFavoritePort;
     @Mock private FileAccessGuard fileAccessGuard;
     @InjectMocks private UpdateFileFavoriteService updateFileFavoriteService;
@@ -53,28 +51,26 @@ class UpdateFileFavoriteServiceTest {
     class WhenOwnerFavoritesOwnFile {
 
         @Test
-        void writesTheFileFavoriteRowAndMirrorsTheFileRowFlag() {
-            UpdateFileFavoriteCommand command = new UpdateFileFavoriteCommand(fileId, callerId, true);
+        void writesAFileFavoriteRowWithoutTouchingTheFile() {
+            var command = new UpdateFileFavoriteCommand(fileId, callerId, true);
             given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(fileOwnedBy(callerId)));
-            given(saveFilePort.saveFile(any())).willAnswer(inv -> inv.getArgument(0));
 
             File result = updateFileFavoriteService.updateFavorite(command);
 
-            assertThat(result.isFavorite()).isTrue();
             then(fileFavoritePort).should().favorite(callerId, fileId);
-            then(saveFilePort).should().saveFile(any(File.class));
+            then(fileAccessGuard).shouldHaveNoInteractions();
+            assertThat(result.isFavorite()).isTrue();
         }
 
         @Test
-        void removesTheFileFavoriteRowAndClearsTheFlag() {
-            UpdateFileFavoriteCommand command = new UpdateFileFavoriteCommand(fileId, callerId, false);
+        void removesTheFileFavoriteRowWhenUnstarring() {
+            var command = new UpdateFileFavoriteCommand(fileId, callerId, false);
             given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(fileOwnedBy(callerId)));
-            given(saveFilePort.saveFile(any())).willAnswer(inv -> inv.getArgument(0));
 
             File result = updateFileFavoriteService.updateFavorite(command);
 
-            assertThat(result.isFavorite()).isFalse();
             then(fileFavoritePort).should().unfavorite(callerId, fileId);
+            assertThat(result.isFavorite()).isFalse();
         }
     }
 
@@ -83,32 +79,20 @@ class UpdateFileFavoriteServiceTest {
     class WhenGranteeFavoritesSharedFile {
 
         @Test
-        void storesAPerUserFavoriteWithoutTouchingTheFileRow() {
-            UpdateFileFavoriteCommand command = new UpdateFileFavoriteCommand(fileId, callerId, true);
+        void requiresReadPermissionThenWritesAPerUserFavorite() {
+            var command = new UpdateFileFavoriteCommand(fileId, callerId, true);
             given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(fileOwnedBy(otherOwnerId)));
 
             File result = updateFileFavoriteService.updateFavorite(command);
 
             then(fileAccessGuard).should().requirePermission(any(File.class), eq(callerId), eq(Permission.READ));
             then(fileFavoritePort).should().favorite(callerId, fileId);
-            then(saveFilePort).shouldHaveNoInteractions();
             assertThat(result.isFavorite()).isTrue();
         }
 
         @Test
-        void removesThePerUserFavorite() {
-            UpdateFileFavoriteCommand command = new UpdateFileFavoriteCommand(fileId, callerId, false);
-            given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(fileOwnedBy(otherOwnerId)));
-
-            File result = updateFileFavoriteService.updateFavorite(command);
-
-            then(fileFavoritePort).should().unfavorite(callerId, fileId);
-            assertThat(result.isFavorite()).isFalse();
-        }
-
-        @Test
         void throwsFileAccessDeniedWhenCallerCannotReadTheFile() {
-            UpdateFileFavoriteCommand command = new UpdateFileFavoriteCommand(fileId, callerId, true);
+            var command = new UpdateFileFavoriteCommand(fileId, callerId, true);
             given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(fileOwnedBy(otherOwnerId)));
             willThrow(new BusinessException(FileExceptionCase.FILE_ACCESS_DENIED))
                     .given(fileAccessGuard).requirePermission(any(File.class), eq(callerId), eq(Permission.READ));
@@ -119,7 +103,6 @@ class UpdateFileFavoriteServiceTest {
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
                     .isEqualTo(FileExceptionCase.FILE_ACCESS_DENIED);
             then(fileFavoritePort).shouldHaveNoInteractions();
-            then(saveFilePort).shouldHaveNoInteractions();
         }
     }
 
@@ -129,7 +112,7 @@ class UpdateFileFavoriteServiceTest {
 
         @Test
         void throwsFileNotFound() {
-            UpdateFileFavoriteCommand command = new UpdateFileFavoriteCommand(fileId, callerId, true);
+            var command = new UpdateFileFavoriteCommand(fileId, callerId, true);
             given(findFilePort.findById(command.getFileId())).willReturn(Optional.empty());
 
             Throwable thrown = catchThrowable(() -> updateFileFavoriteService.updateFavorite(command));
@@ -137,7 +120,7 @@ class UpdateFileFavoriteServiceTest {
             assertThat(thrown).isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
                     .isEqualTo(FileExceptionCase.FILE_NOT_FOUND);
-            then(saveFilePort).shouldHaveNoInteractions();
+            then(fileFavoritePort).shouldHaveNoInteractions();
         }
     }
 }

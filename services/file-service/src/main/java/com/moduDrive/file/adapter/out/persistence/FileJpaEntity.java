@@ -59,9 +59,6 @@ class FileJpaEntity extends BaseTimeEntity {
     @Column(nullable = false)
     private boolean directory;
 
-    @Column(nullable = false)
-    private boolean favorite;
-
     // Left DB-nullable on purpose: ddl-auto=update can't add a NOT NULL column to a table that
     // already has rows, so pre-existing files would break the migration. FileMapper reads a null
     // back as RESTRICTED (the safe default).
@@ -93,13 +90,12 @@ class FileJpaEntity extends BaseTimeEntity {
     }
 
     void applyChanges(String name, String path, UUID currentVersionId, Long fileSize, FileStatus status,
-                      boolean favorite, ShareScope accessScope, UUID linkToken, Role linkRole) {
+                      ShareScope accessScope, UUID linkToken, Role linkRole) {
         this.name = name;
         this.path = path;
         this.currentVersionId = currentVersionId;
         this.fileSize = fileSize;
         this.status = status;
-        this.favorite = favorite;
         this.accessScope = accessScope;
         this.linkToken = linkToken;
         this.linkRole = linkRole;

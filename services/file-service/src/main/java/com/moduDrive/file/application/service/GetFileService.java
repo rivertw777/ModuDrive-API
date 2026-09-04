@@ -46,13 +46,15 @@ class GetFileService implements GetFileUseCase {
         if (file.getStatus() == FileStatus.DELETED) {
             throw new BusinessException(FileExceptionCase.FILE_ALREADY_DELETED);
         }
+
+        // Per-viewer star (owner's or a grantee's — same file_favorite lookup either way).
+        file.markFavorite(fileFavoritePort.isFavorite(command.getCallerId(), file.getId()));
         if (file.getOwnerId().equals(command.getCallerId())) {
             return FileView.owned(file);
         }
 
-        // The caller doesn't own it: the star is their per-user favorite, and the detail panel
-        // shows the full "shared with me" context — same as 공유 문서함 — wherever it opens.
-        file.markFavorite(fileFavoritePort.isFavorite(command.getCallerId(), file.getId()));
+        // The caller doesn't own it: the detail panel shows the full "shared with me" context —
+        // same as 공유 문서함 — wherever it opens.
         MemberSummary sharedBy = lookupMember(file.getOwnerId());
         LocalDateTime sharedAt = findFileSharePort
                 .findByFileIdAndSharedWithUserId(new FileId(file.getId()), command.getCallerId())

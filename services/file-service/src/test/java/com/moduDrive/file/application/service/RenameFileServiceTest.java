@@ -8,6 +8,7 @@ import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
 import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.exception.FileExceptionCase;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -24,6 +25,7 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.BDDMockito.then;
 
 import com.moduDrive.file.domain.model.Permission;
@@ -37,7 +39,13 @@ class RenameFileServiceTest {
     @Mock private SaveFilePort saveFilePort;
     @Mock private DirectoryCascader directoryCascader;
     @Mock private FileAccessGuard fileAccessGuard;
+    @Mock private FavoriteEnricher favoriteEnricher;
     @InjectMocks private RenameFileService renameFileService;
+
+    @BeforeEach
+    void passThroughFavoriteEnricher() {
+        lenient().when(favoriteEnricher.withFavorite(any(), any())).thenAnswer(inv -> inv.getArgument(1));
+    }
 
     private final UUID fileId = UUID.randomUUID();
     private final UUID callerId = UUID.randomUUID();

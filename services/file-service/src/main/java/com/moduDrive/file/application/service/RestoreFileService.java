@@ -21,6 +21,7 @@ class RestoreFileService implements RestoreFileUseCase {
     private final SaveFilePort saveFilePort;
     private final DirectoryCascader directoryCascader;
     private final FileAccessGuard fileAccessGuard;
+    private final FavoriteEnricher favoriteEnricher;
 
     @Transactional
     @Override
@@ -40,6 +41,6 @@ class RestoreFileService implements RestoreFileUseCase {
             directoryCascader.restore(new NamespaceId(saved.getNamespaceId()), saved.fullPath());
         }
 
-        return saved;
+        return favoriteEnricher.withFavorite(command.getCallerId(), saved);
     }
 }

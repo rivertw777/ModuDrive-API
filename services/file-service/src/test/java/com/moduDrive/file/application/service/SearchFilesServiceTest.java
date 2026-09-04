@@ -10,6 +10,7 @@ import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.Namespace;
 import com.moduDrive.file.domain.model.Namespace.*;
 import com.moduDrive.file.exception.FileExceptionCase;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -26,13 +27,20 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
 
 @ExtendWith(MockitoExtension.class)
 class SearchFilesServiceTest {
 
     @Mock private FindNamespacePort findNamespacePort;
     @Mock private FindFilePort findFilePort;
+    @Mock private FavoriteEnricher favoriteEnricher;
     @InjectMocks private SearchFilesService searchFilesService;
+
+    @BeforeEach
+    void passThroughFavoriteEnricher() {
+        lenient().when(favoriteEnricher.withFavorites(any(), any())).thenAnswer(inv -> inv.getArgument(1));
+    }
 
     private static final long TEST_QUOTA_BYTES = 21474836480L;
 

@@ -24,6 +24,7 @@ class ListTrashService implements ListTrashUseCase {
 
     private final FindNamespacePort findNamespacePort;
     private final FindFilePort findFilePort;
+    private final FavoriteEnricher favoriteEnricher;
 
     @Transactional(readOnly = true)
     @Override
@@ -31,7 +32,8 @@ class ListTrashService implements ListTrashUseCase {
         Namespace namespace = findNamespacePort.findByUserId(command.getUserId())
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.NAMESPACE_NOT_FOUND));
 
-        List<File> deleted = findFilePort.findByNamespaceIdAndStatus(new NamespaceId(namespace.getId()), FileStatus.DELETED);
+        List<File> deleted = favoriteEnricher.withFavorites(command.getUserId().value(),
+                findFilePort.findByNamespaceIdAndStatus(new NamespaceId(namespace.getId()), FileStatus.DELETED));
 
         // Deleting a directory cascades DELETED onto every descendant, so trash would otherwise
         // list each nested file/folder too — keep only the roots of each deleted subtree.

@@ -12,6 +12,7 @@ import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.Namespace;
 import com.moduDrive.file.domain.model.Namespace.*;
 import com.moduDrive.file.exception.FileExceptionCase;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -32,12 +33,14 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.lenient;
 
 @ExtendWith(MockitoExtension.class)
 class ListDirectoryServiceTest {
 
     @Mock private FindNamespacePort findNamespacePort;
     @Mock private FindFilePort findFilePort;
+    @Mock private FavoriteEnricher favoriteEnricher;
     @InjectMocks private ListDirectoryService listDirectoryService;
 
     private static final long TEST_QUOTA_BYTES = 21474836480L;
