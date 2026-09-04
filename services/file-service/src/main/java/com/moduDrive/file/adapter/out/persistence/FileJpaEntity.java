@@ -56,7 +56,11 @@ class FileJpaEntity extends BaseTimeEntity {
     @Column(nullable = false)
     private FileStatus status;
 
-    @Column(nullable = false)
+    // Column is `is_directory`; the Java side stays `directory` / `isDirectory()`. Left
+    // DB-nullable for the same reason as access_scope below — ddl-auto=update can't add a NOT
+    // NULL column to a populated table (the rename is a add-nullable + backfill + drop-old, see
+    // FileDirectoryColumnRenameMigration). Application code always sets it.
+    @Column(name = "is_directory")
     private boolean directory;
 
     // Left DB-nullable on purpose: ddl-auto=update can't add a NOT NULL column to a table that
