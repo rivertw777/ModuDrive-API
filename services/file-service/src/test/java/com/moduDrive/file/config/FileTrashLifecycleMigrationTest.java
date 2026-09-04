@@ -33,17 +33,18 @@ class FileTrashLifecycleMigrationTest {
 
         @BeforeEach
         void seedLegacySchema() {
-            // ddl-auto already added trashed_at / deleted_at; is_deleted is the BaseTimeEntity leftover.
+            // ddl-auto has already added trashed_at; the pre-trashed_at retention-sweep index is
+            // still around.
             jdbcTemplate.execute("""
                     CREATE TABLE file (
-                        id UUID PRIMARY KEY, status VARCHAR(20), updated_at TIMESTAMP,
-                        trashed_at TIMESTAMP, deleted_at TIMESTAMP, is_deleted BOOLEAN)
+                        id UUID PRIMARY KEY, status VARCHAR(20), updated_at TIMESTAMP, trashed_at TIMESTAMP)
                     """);
+            jdbcTemplate.execute("CREATE INDEX ix_file_status_updated_at ON file (status, updated_at)");
         }
 
         @Test
-        @DisplayName("휴지통에 있는 파일의 trashed_at을 updated_at으로 채우고 is_deleted 컬럼을 드롭한다")
-        void backfillsTrashedAtAndDropsIsDeleted() {
+        @DisplayName("휴지통에 있는 파일의 trashed_at을 updated_at으로 채우고 구 인덱스를 드롭한다")
+        void backfillsTrashedAtAndDropsStaleIndex() {
             UUID trashed = UUID.randomUUID();
             UUID active = UUID.randomUUID();
             LocalDateTime trashedOn = LocalDateTime.now().minusDays(2).withNano(0);
@@ -61,8 +62,8 @@ class FileTrashLifecycleMigrationTest {
             assertThat(jdbcTemplate.queryForObject(
                     "SELECT trashed_at FROM file WHERE id = ?", LocalDateTime.class, active)).isNull();
             assertThat(jdbcTemplate.queryForList(
-                    "SELECT column_name FROM information_schema.columns WHERE table_name = 'FILE'", String.class))
-                    .doesNotContain("IS_DELETED");
+                    "SELECT index_name FROM information_schema.indexes WHERE table_name = 'FILE'", String.class))
+                    .doesNotContain("IX_FILE_STATUS_UPDATED_AT");
         }
 
         @Test

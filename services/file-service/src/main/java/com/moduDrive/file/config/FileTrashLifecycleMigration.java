@@ -12,13 +12,13 @@ import org.springframework.stereotype.Component;
  * <ol>
  *   <li>Backfills {@code trashed_at} for files already in the trash — before this column existed
  *       the retention sweep used {@code updated_at}, so that's the best available "trashed on"
- *       value. Without it every pre-existing trashed file drops out of the trash view
- *       (which now filters on {@code trashed_at}).</li>
- *   <li>Drops the {@code is_deleted} column left behind by {@code BaseTimeEntity} — nothing reads
- *       it any more (a tombstone is {@code deleted_at IS NOT NULL}).</li>
+ *       value. Without it every pre-existing trashed file drops out of both the trash view and
+ *       the retention sweep (both now key on {@code trashed_at}).</li>
+ *   <li>Drops {@code ix_file_status_updated_at} — the sweep keys on {@code trashed_at} now, so
+ *       that index is dead weight ({@code ddl-auto=update} never drops an index).</li>
  * </ol>
- * This repo has no Flyway/Liquibase (see CLAUDE.md), and {@code ddl-auto=update} adds columns
- * but never backfills or drops them. Each statement is a no-op once applied; safe on every boot.
+ * This repo has no Flyway/Liquibase (see CLAUDE.md), and {@code ddl-auto=update} adds columns but
+ * never backfills. Each statement is a no-op once applied; safe on every boot.
  */
 @Slf4j
 @Component
@@ -30,7 +30,7 @@ class FileTrashLifecycleMigration implements ApplicationRunner {
     @Override
     public void run(ApplicationArguments args) {
         backfillTrashedAt();
-        dropIsDeletedColumn();
+        dropStaleIndex();
     }
 
     private void backfillTrashedAt() {
@@ -48,14 +48,12 @@ class FileTrashLifecycleMigration implements ApplicationRunner {
         }
     }
 
-    private void dropIsDeletedColumn() {
+    private void dropStaleIndex() {
         try {
-            jdbcTemplate.execute("ALTER TABLE file DROP COLUMN IF EXISTS is_deleted");
-            // The retention sweep now keys on trashed_at, not updated_at — drop the stale index.
             jdbcTemplate.execute("DROP INDEX IF EXISTS ix_file_status_updated_at");
         } catch (Exception e) {
-            // Harmless leftovers that nothing reads — log and move on.
-            log.warn("file.is_deleted / ix_file_status_updated_at cleanup skipped", e);
+            // A leftover index that nothing uses — log and move on.
+            log.warn("ix_file_status_updated_at drop skipped", e);
         }
     }
 }

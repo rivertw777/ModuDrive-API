@@ -40,11 +40,12 @@ interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID>, J
     // Retention sweep: in-trash long enough, not already purged.
     List<FileJpaEntity> findByStatusAndDeletedAtIsNullAndTrashedAtBefore(FileStatus status, LocalDateTime cutoff);
 
-    // Tombstone stamp — a plain UPDATE, no @LastModifiedDate bump (see FilePersistenceAdapter.purgeFile).
-    // flush first so the version/share/favorite deletes in the same purgeFile call are committed;
-    // clear after so a stale managed FileJpaEntity isn't read back with the old deletedAt.
+    // Tombstone stamp — BaseTimeEntity's deletedAt/isDeleted, but via a plain UPDATE so no
+    // @LastModifiedDate bump (see FilePersistenceAdapter.purgeFile). flush first so the
+    // version/share/favorite deletes in the same purgeFile call are committed; clear after so a
+    // stale managed FileJpaEntity isn't read back with the old value.
     @Modifying(flushAutomatically = true, clearAutomatically = true)
-    @Query("update FileJpaEntity f set f.deletedAt = :now "
+    @Query("update FileJpaEntity f set f.deletedAt = :now, f.isDeleted = true "
             + "where f.id = :id and f.deletedAt is null and f.status = 'DELETED'")
     void markPurged(@Param("id") UUID id, @Param("now") LocalDateTime now);
 

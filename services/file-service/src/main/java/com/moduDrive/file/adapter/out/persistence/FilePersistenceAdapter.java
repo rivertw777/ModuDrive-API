@@ -79,9 +79,11 @@ class FilePersistenceAdapter implements
         FileJpaEntity entity = fileRepository.findById(file.getId())
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_NOT_FOUND));
 
+        // deletedAt isn't passed: it is only ever stamped by a purge (markPurged), never by a
+        // domain-driven save.
         entity.applyChanges(file.getName(), file.getPath(), file.getCurrentVersionId(), file.getFileSize(),
                 file.getStatus(), file.getAccessScope(), file.getLinkToken(), file.getLinkRole(),
-                file.getTrashedAt(), file.getDeletedAt());
+                file.getTrashedAt());
 
         // Same conflict, different door: rename/move/restore land here, and none of their callers
         // pre-check the destination slot either (e.g. RestoreFileService can restore a file back

@@ -1,5 +1,6 @@
 package com.moduDrive.file.adapter.out.persistence;
 
+import com.moduDrive.common.infrastructure.jpa.audit.BaseTimeEntity;
 import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.Role;
 import com.moduDrive.file.domain.model.ShareScope;
@@ -9,9 +10,6 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.UuidGenerator;
-import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.annotation.LastModifiedDate;
-import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -33,8 +31,7 @@ import java.util.UUID;
         @Index(name = "ix_file_status_trashed_at", columnList = "status, trashed_at")
 })
 @Entity
-@EntityListeners(AuditingEntityListener.class)
-class FileJpaEntity {
+class FileJpaEntity extends BaseTimeEntity {
 
     @Id
     @UuidGenerator(style = UuidGenerator.Style.VERSION_7)
@@ -86,18 +83,10 @@ class FileJpaEntity {
     @Column(name = "active_slot_name")
     private String activeSlotName;
 
-    @CreatedDate
-    @Column(updatable = false)
-    private LocalDateTime createdAt;
-
-    @LastModifiedDate
-    private LocalDateTime updatedAt;
-
-    /** Set when the file is sent to trash, cleared on restore. */
+    /** Set when the file is sent to trash, cleared on restore. Distinct from {@code BaseTimeEntity}'s
+     * {@code deletedAt}, which this project only stamps on a *purge* (tombstone) — see
+     * {@code SpringDataFileRepository.markPurged}. */
     private LocalDateTime trashedAt;
-
-    /** Set when the file is purged from trash — the row then lives on only as a tombstone. */
-    private LocalDateTime deletedAt;
 
     FileJpaEntity(UUID namespaceId, String name, String path, UUID ownerId, FileStatus status, boolean directory) {
         this.namespaceId = namespaceId;
@@ -111,8 +100,7 @@ class FileJpaEntity {
     }
 
     void applyChanges(String name, String path, UUID currentVersionId, Long fileSize, FileStatus status,
-                      ShareScope accessScope, UUID linkToken, Role linkRole,
-                      LocalDateTime trashedAt, LocalDateTime deletedAt) {
+                      ShareScope accessScope, UUID linkToken, Role linkRole, LocalDateTime trashedAt) {
         this.name = name;
         this.path = path;
         this.currentVersionId = currentVersionId;
@@ -122,7 +110,6 @@ class FileJpaEntity {
         this.linkToken = linkToken;
         this.linkRole = linkRole;
         this.trashedAt = trashedAt;
-        this.deletedAt = deletedAt;
         this.activeSlotName = activeSlotName(name, status);
     }
 
