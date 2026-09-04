@@ -18,6 +18,6 @@ class ListPublicDirectoryService implements ListPublicDirectoryUseCase {
     @Transactional(readOnly = true)
     @Override
     public List<File> listPublicDirectory(ListPublicDirectoryCommand command) {
-        return publicFileResolver.resolveChildren(command.getToken(), command.getParentId());
+        return publicFileResolver.resolveChildren(command.getFileId(), command.getKey());
     }
 }

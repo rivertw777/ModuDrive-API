@@ -111,14 +111,16 @@ class StorageController {
     }
 
     /** Reached through the gateway's permitAll list, so there is deliberately no X_USER_ID —
-     * the link token is the whole credential and file-service is what validates it. Streamed for
-     * the same reason as {@link #downloadFile}. */
-    @GetMapping("/api/v1/storage/public/{token}/download")
-    public ResponseEntity<StreamingResponseBody> publicDownloadFile(@PathVariable String token) {
-        StreamingResponseBody body = out -> publicDownloadFileUseCase.downloadPublicStream(new PublicDownloadFileCommand(token), out);
+     * the {@code key} is the whole credential and file-service is what validates it against
+     * {@code fileId}. Streamed for the same reason as {@link #downloadFile}. */
+    @GetMapping("/api/v1/storage/public/{fileId}/download")
+    public ResponseEntity<StreamingResponseBody> publicDownloadFile(@PathVariable String fileId,
+                                                                    @RequestParam(required = false) String key) {
+        StreamingResponseBody body = out -> publicDownloadFileUseCase.downloadPublicStream(
+                new PublicDownloadFileCommand(fileId, key), out);
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + token + "\"")
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileId + "\"")
                 .body(body);
     }
 
@@ -157,39 +159,15 @@ class StorageController {
     }
 
     /** Inline counterpart to {@link #publicDownloadFile}, same relationship as {@link #viewFile}
-     * is to {@link #downloadFile}. The link token already is the full credential, so no
+     * is to {@link #downloadFile}. The {@code key} already is the full credential, so no
      * streamToken dance is needed here — it goes straight in the URL either way. */
-    @GetMapping("/api/v1/storage/public/{token}/view")
+    @GetMapping("/api/v1/storage/public/{fileId}/view")
     public ResponseEntity<byte[]> viewPublicFile(
-            @PathVariable String token,
+            @PathVariable String fileId,
+            @RequestParam(required = false) String key,
             @RequestParam String fileName,
             @RequestHeader(value = HttpHeaders.RANGE, required = false) String rangeHeader) {
-        byte[] data = publicDownloadFileUseCase.downloadPublic(new PublicDownloadFileCommand(token, true));
-        return inline(data, fileName, rangeHeader);
-    }
-
-    /** {@link #publicDownloadFile} / {@link #viewPublicFile} for one file nested under a
-     * link-shared <b>folder</b>: same permitAll route family, the folder token plus the
-     * descendant's id, file-service checks the entry really is under that folder. */
-    @GetMapping("/api/v1/storage/public/{token}/entry/{entryId}/download")
-    public ResponseEntity<StreamingResponseBody> publicDownloadDescendant(
-            @PathVariable String token,
-            @PathVariable String entryId) {
-        StreamingResponseBody body = out -> publicDownloadFileUseCase.downloadPublicStream(
-                new PublicDownloadFileCommand(token, entryId, false), out);
-        return ResponseEntity.ok()
-                .contentType(MediaType.APPLICATION_OCTET_STREAM)
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + entryId + "\"")
-                .body(body);
-    }
-
-    @GetMapping("/api/v1/storage/public/{token}/entry/{entryId}/view")
-    public ResponseEntity<byte[]> viewPublicDescendant(
-            @PathVariable String token,
-            @PathVariable String entryId,
-            @RequestParam String fileName,
-            @RequestHeader(value = HttpHeaders.RANGE, required = false) String rangeHeader) {
-        byte[] data = publicDownloadFileUseCase.downloadPublic(new PublicDownloadFileCommand(token, entryId, true));
+        byte[] data = publicDownloadFileUseCase.downloadPublic(new PublicDownloadFileCommand(fileId, key, true));
         return inline(data, fileName, rangeHeader);
     }
 

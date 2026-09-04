@@ -8,6 +8,7 @@ import com.moduDrive.file.application.port.out.DeleteFileSharePort;
 import com.moduDrive.file.application.port.out.FindFilePort;
 import com.moduDrive.file.application.port.out.FindFileSharePort;
 import com.moduDrive.file.application.port.out.SaveFilePort;
+import com.moduDrive.file.application.port.out.SaveFileSharePort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.FileShare;
 import com.moduDrive.file.domain.model.FileShare.FileShareId;
@@ -27,6 +28,7 @@ class UpdateFileScopeService implements UpdateFileScopeUseCase {
     private final SaveFilePort saveFilePort;
     private final FindFileSharePort findFileSharePort;
     private final DeleteFileSharePort deleteFileSharePort;
+    private final SaveFileSharePort saveFileSharePort;
     private final FileAccessGuard fileAccessGuard;
 
     @Transactional
@@ -47,18 +49,24 @@ class UpdateFileScopeService implements UpdateFileScopeUseCase {
             file.enableLinkSharing(UUID.randomUUID(), command.getRole());
         } else {
             file.disableLinkSharing();
-            // Turning sharing off must kill every outstanding capability, not just the file's own
-            // link token — otherwise a guest invite mailed earlier keeps working forever.
-            revokePendingGuestShares(command.getFileId());
+            // Turning sharing off must kill every outstanding anonymous capability, not just the
+            // file's own link token — otherwise a guest invite mailed earlier keeps working forever.
+            revokeGuestCapabilities(command.getFileId());
         }
 
         return saveFilePort.saveFile(file);
     }
 
-    private void revokePendingGuestShares(File.FileId fileId) {
+    private void revokeGuestCapabilities(File.FileId fileId) {
         for (FileShare share : findFileSharePort.findByFileId(fileId)) {
-            if (share.getToken() != null) {
+            if (share.getSharedWithUserId() == null) {
+                // An invite nobody has claimed — no member behind it, so the whole row goes.
                 deleteFileSharePort.deleteFileShare(new FileShareId(share.getId()));
+            } else if (share.getToken() != null) {
+                // A claimed guest share: keep the member grant, drop only the anonymous bearer
+                // link so it dies with the scope change like the file's own link token does.
+                share.revokeToken();
+                saveFileSharePort.saveFileShare(share);
             }
         }
     }

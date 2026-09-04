@@ -34,15 +34,16 @@ class GetPublicFileRevisionsServiceTest {
     @InjectMocks private GetPublicFileRevisionsService getPublicFileRevisionsService;
 
     private final UUID fileId = UUID.randomUUID();
-    private final String token = UUID.randomUUID().toString();
-    private final GetPublicFileRevisionsCommand command = new GetPublicFileRevisionsCommand(token, 1);
+    private final String key = UUID.randomUUID().toString();
+    private final GetPublicFileRevisionsCommand command =
+            new GetPublicFileRevisionsCommand(fileId.toString(), key, 1);
 
     private final File file = File.withId(new FileId(fileId), new FileNamespaceId(UUID.randomUUID()),
             new FileName("report.pdf"), new FilePath("/1"), new FileOwnerId(UUID.randomUUID()),
             null, null, FileStatus.UPLOADED, new FileIsDirectory(false));
 
     @Nested
-    @DisplayName("토큰이 공개 파일을 가리킬 때")
+    @DisplayName("fileId/key가 공개 파일을 가리킬 때")
     class WhenTokenResolves {
 
         @Test
@@ -50,7 +51,7 @@ class GetPublicFileRevisionsServiceTest {
             FileVersion version = FileVersion.withId(new FileVersionId(UUID.randomUUID()),
                     new FileVersionFileId(fileId), new FileVersionFileSize(512L),
                     new FileVersionBlockCount(1), new FileVersionS3Path("s3://b/k"));
-            given(publicFileResolver.resolve(token)).willReturn(file);
+            given(publicFileResolver.resolve(fileId.toString(), key)).willReturn(file);
             given(findFileVersionsPort.findByFileIdOrderByCreatedAtDesc(new FileId(fileId), 1))
                     .willReturn(List.of(version));
 
@@ -61,13 +62,13 @@ class GetPublicFileRevisionsServiceTest {
     }
 
     @Nested
-    @DisplayName("토큰이 더 이상 유효하지 않을 때")
+    @DisplayName("key가 더 이상 유효하지 않을 때")
     class WhenTokenIsRejected {
 
         @Test
         void propagatesFileNotFoundWithoutReadingVersions() {
             willThrow(new BusinessException(FileExceptionCase.FILE_NOT_FOUND))
-                    .given(publicFileResolver).resolve(token);
+                    .given(publicFileResolver).resolve(fileId.toString(), key);
 
             Throwable thrown = catchThrowable(() -> getPublicFileRevisionsService.getPublicFileRevisions(command));
 

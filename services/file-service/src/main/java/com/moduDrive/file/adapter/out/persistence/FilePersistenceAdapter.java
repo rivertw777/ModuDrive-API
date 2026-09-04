@@ -310,12 +310,17 @@ class FilePersistenceAdapter implements
         entity.applyGrantedRole(fileShare.getRole());
         // Only a pending→claimed transition (entity still null, incoming now set) should touch
         // sharedWithUserId here — an ordinary role update on an already-granted share must not
-        // re-run applyClaim's side effect of clearing token/granteeEmail (a no-op for those rows,
-        // but the guard keeps this branch doing only what its caller — ClaimPendingFileSharesService
+        // re-run applyClaim's side effect of clearing granteeEmail (a no-op for those rows, but
+        // the guard keeps this branch doing only what its caller — ClaimPendingFileSharesService
         // — asks of it). ClaimPendingFileSharesService pre-checks for a colliding grant before
         // calling this, so no DataIntegrityViolationException is expected here.
         if (entity.getSharedWithUserId() == null && fileShare.getSharedWithUserId() != null) {
             entity.applyClaim(fileShare.getSharedWithUserId());
+        }
+        // A claimed guest share whose token the caller (UpdateFileScopeService) just dropped —
+        // link sharing was turned off, so the anonymous capability dies while the member grant stays.
+        if (entity.getToken() != null && fileShare.getToken() == null && fileShare.getSharedWithUserId() != null) {
+            entity.applyRevokeToken();
         }
 
         return fileMapper.mapFileShareToDomain(fileShareRepository.save(entity));

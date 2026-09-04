@@ -17,21 +17,25 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Turns a token into a file for the unauthenticated routes. Two independent token spaces share
- * this one path: a file's own {@code linkToken} ("anyone with the link", scope LINK) and a
- * pending guest share's per-invite {@code token} (one specific invited email, scope stays
- * RESTRICTED — see {@link com.moduDrive.file.domain.model.FileShare#createPending}). Every
- * rejection is the same FILE_NOT_FOUND regardless of which space almost matched: an anonymous
- * caller must not be able to tell "malformed token" from "wrong token" from "right token, sharing
- * switched off" from "right token, file trashed" from "right token, invite revoked".
- * <p>
- * When the link token belongs to a <b>directory</b>, everything nested under it is reachable
- * through the same token (Google-Drive-style folder link): {@link #resolveChildren} lists a
- * level, {@link #resolveDescendant} resolves one entry, and both check the entry really is under
- * that folder so one folder's token can never reach another's contents.
+ * Turns a {@code (fileId, key)} pair into a file for the unauthenticated routes — the
+ * Google-Drive-style stable link {@code /public/{fileId}?key={token}}. {@code fileId} identifies
+ * the entry; {@code key} is the capability that authorizes it and comes from one of two
+ * independent spaces:
+ * <ul>
+ *   <li>a file's or folder's own {@code linkToken} ("anyone with the link", scope LINK) — opens
+ *       that entry <b>and everything nested under it</b>;</li>
+ *   <li>a pending/claimed guest share's per-invite {@code token} (see
+ *       {@link com.moduDrive.file.domain.model.FileShare#createPending}) — opens <b>only the one
+ *       entry it was minted for</b>, never a subtree or a directory listing.</li>
+ * </ul>
+ * The requested {@code fileId} is allowed only if it is the entry the key unlocks or (for a link
+ * token) nested under it, so one folder's key can never reach another's contents. Every rejection
+ * is the same FILE_NOT_FOUND regardless of which check almost passed: an anonymous caller must
+ * not be able to tell "malformed" from "wrong key" from "right key, sharing switched off" from
+ * "right key, file trashed" from "right key, wrong fileId".
  * <p>
  * Shared by every public route so the metadata and the download paths can never disagree about
- * which tokens are live.
+ * which links are live.
  */
 @Component
 @RequiredArgsConstructor
@@ -40,77 +44,75 @@ class PublicFileResolver {
     private final FindFilePort findFilePort;
     private final FindFileSharePort findFileSharePort;
 
-    File resolve(String token) {
-        return parseUuid(token)
-                .flatMap(this::resolveByToken)
-                .filter(file -> file.getStatus() != FileStatus.DELETED)
-                .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_NOT_FOUND));
+    /** The entry at {@code fileId}, provided {@code key} unlocks it (or, for a link token, an
+     * ancestor folder). */
+    File resolve(String fileId, String key) {
+        Unlocked unlocked = unlockRoot(key);
+        File target = target(fileId);
+        if (!unlocks(unlocked, target)) {
+            throw notFound();
+        }
+        return target;
     }
 
-    /** Children of the folder {@code token} link-shares, or of {@code parentId} when that is a
-     * directory nested under it. {@code parentId} may be null / blank (the folder itself) or the
-     * folder's own id. */
-    List<File> resolveChildren(String token, String parentId) {
-        File folder = requireLinkFolder(token);
-        File parent = folder;
-        Optional<UUID> requestedParent = parseUuid(parentId);
-        if (requestedParent.isPresent() && !requestedParent.get().equals(folder.getId())) {
-            parent = findFilePort.findById(new FileId(requestedParent.get()))
-                    .filter(f -> f.getStatus() != FileStatus.DELETED)
-                    .filter(File::isDirectory)
-                    .filter(f -> isWithin(folder, f))
-                    .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_NOT_FOUND));
-        } else if (parentId != null && !parentId.isBlank() && requestedParent.isEmpty()) {
-            // A non-blank parentId that isn't even a UUID is a wrong value, not "list the root".
-            throw new BusinessException(FileExceptionCase.FILE_NOT_FOUND);
+    /** Direct children of the directory at {@code fileId} (a link-shared folder, or one nested
+     * under it), DELETED entries excluded. A per-invite guest token cannot reach this — listing a
+     * folder needs the folder itself to be "anyone with the link". */
+    List<File> resolveChildren(String fileId, String key) {
+        Unlocked unlocked = unlockRoot(key);
+        if (!unlocked.subtree()) {
+            throw notFound();
+        }
+        File dir = target(fileId);
+        if (!unlocks(unlocked, dir) || !dir.isDirectory()) {
+            throw notFound();
         }
         return findFilePort
-                .findByNamespaceIdAndPath(new NamespaceId(parent.getNamespaceId()), parent.fullPath())
+                .findByNamespaceIdAndPath(new NamespaceId(dir.getNamespaceId()), dir.fullPath())
                 .stream()
                 .filter(f -> f.getStatus() != FileStatus.DELETED)
                 .toList();
     }
 
-    /** One file or directory nested under the folder {@code token} link-shares. */
-    File resolveDescendant(String token, String descendantId) {
-        File folder = requireLinkFolder(token);
-        UUID id = parseUuid(descendantId)
-                .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_NOT_FOUND));
-        return findFilePort.findById(new FileId(id))
-                .filter(f -> f.getStatus() != FileStatus.DELETED)
-                .filter(f -> isWithin(folder, f))
-                .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_NOT_FOUND));
+    private File target(String fileId) {
+        return parseUuid(fileId)
+                .flatMap(id -> findFilePort.findById(new FileId(id)))
+                .filter(file -> file.getStatus() != FileStatus.DELETED)
+                .orElseThrow(this::notFound);
     }
 
-    private File requireLinkFolder(String token) {
-        return parseUuid(token)
-                .flatMap(findFilePort::findByLinkToken)
+    /** What {@code key} was minted for: a live LINK-scoped {@code linkToken} (subtree reachable),
+     * or a guest share's {@code token} — valid independently of the file's own scope, but scoped
+     * to that one entry. */
+    private Unlocked unlockRoot(String key) {
+        UUID capability = parseUuid(key).orElseThrow(this::notFound);
+        Optional<File> linkShared = findFilePort.findByLinkToken(capability)
                 .filter(f -> f.getStatus() != FileStatus.DELETED)
-                .filter(f -> f.getAccessScope() == ShareScope.LINK)
-                .filter(File::isDirectory)
-                .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_NOT_FOUND));
+                .filter(f -> f.getAccessScope() == ShareScope.LINK);
+        if (linkShared.isPresent()) {
+            return new Unlocked(linkShared.get(), true);
+        }
+        File guestRoot = findFileSharePort.findByToken(capability)
+                .flatMap(share -> findFilePort.findById(new FileId(share.getFileId())))
+                .filter(f -> f.getStatus() != FileStatus.DELETED)
+                .orElseThrow(this::notFound);
+        return new Unlocked(guestRoot, false);
     }
 
-    /** {@code folder.fullPath()} is the string prefix every descendant stores as (or under) its
-     * own {@code path} — see {@code DirectoryCascader}. */
-    private boolean isWithin(File folder, File candidate) {
-        if (!folder.getNamespaceId().equals(candidate.getNamespaceId())) {
+    /** True when {@code target} is the unlocked entry itself, or — for a link token on a
+     * directory — an entry nested under it. {@code root.fullPath()} is the string prefix every
+     * descendant stores as (or under) its own {@code path}; see {@code DirectoryCascader}. */
+    private boolean unlocks(Unlocked unlocked, File target) {
+        File root = unlocked.root();
+        if (root.getId().equals(target.getId())) {
+            return true;
+        }
+        if (!unlocked.subtree() || !root.isDirectory()
+                || !root.getNamespaceId().equals(target.getNamespaceId())) {
             return false;
         }
-        String base = folder.fullPath();
-        return candidate.getPath().equals(base) || candidate.getPath().startsWith(base + "/");
-    }
-
-    private Optional<File> resolveByToken(UUID token) {
-        Optional<File> linkShared = findFilePort.findByLinkToken(token)
-                .filter(file -> file.getAccessScope() == ShareScope.LINK);
-        if (linkShared.isPresent()) {
-            return linkShared;
-        }
-        // A pending guest share's token stays live independently of the file's own accessScope —
-        // it is not affected by the file ever having been, or never being, LINK-shared.
-        return findFileSharePort.findByToken(token)
-                .flatMap(share -> findFilePort.findById(new FileId(share.getFileId())));
+        String base = root.fullPath();
+        return target.getPath().equals(base) || target.getPath().startsWith(base + "/");
     }
 
     private Optional<UUID> parseUuid(String value) {
@@ -123,4 +125,10 @@ class PublicFileResolver {
             return Optional.empty();
         }
     }
+
+    private BusinessException notFound() {
+        return new BusinessException(FileExceptionCase.FILE_NOT_FOUND);
+    }
+
+    private record Unlocked(File root, boolean subtree) {}
 }

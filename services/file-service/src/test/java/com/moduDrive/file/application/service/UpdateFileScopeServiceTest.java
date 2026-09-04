@@ -6,6 +6,7 @@ import com.moduDrive.file.application.port.out.DeleteFileSharePort;
 import com.moduDrive.file.application.port.out.FindFilePort;
 import com.moduDrive.file.application.port.out.FindFileSharePort;
 import com.moduDrive.file.application.port.out.SaveFilePort;
+import com.moduDrive.file.application.port.out.SaveFileSharePort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
 import com.moduDrive.file.domain.model.FileShare;
@@ -45,6 +46,7 @@ class UpdateFileScopeServiceTest {
     @Mock private SaveFilePort saveFilePort;
     @Mock private FindFileSharePort findFileSharePort;
     @Mock private DeleteFileSharePort deleteFileSharePort;
+    @Mock private SaveFileSharePort saveFileSharePort;
     @Mock private FileAccessGuard fileAccessGuard;
     @InjectMocks private UpdateFileScopeService updateFileScopeService;
 
@@ -115,7 +117,7 @@ class UpdateFileScopeServiceTest {
         }
 
         @Test
-        void revokesPendingGuestSharesButKeepsMemberAndClaimedShares() {
+        void deletesUnclaimedInvitesAndStripsTheAnonymousTokenFromClaimedOnes() {
             File linked = makeFile();
             linked.enableLinkSharing(UUID.randomUUID(), Role.VIEWER);
             UUID pendingShareId = UUID.randomUUID();
@@ -127,12 +129,12 @@ class UpdateFileScopeServiceTest {
             FileShare memberShare = FileShare.withId(new FileShareId(memberShareId),
                     new FileShareFileId(fileId), new FileShareOwnerId(ownerId),
                     new FileShareSharedWithUserId(UUID.randomUUID()), new FileShareRole(Role.VIEWER));
-            // A guest share that has since been claimed (see FileShare#claim): token cleared,
-            // sharedWithUserId filled — must be treated exactly like memberShare, not deleted.
+            // A claimed guest share: sharedWithUserId filled + token still live. Turning link
+            // sharing off keeps the member grant but must kill its anonymous bearer link.
             FileShare claimedShare = FileShare.withId(new FileShareId(claimedShareId),
                     new FileShareFileId(fileId), new FileShareOwnerId(ownerId),
                     new FileShareSharedWithUserId(UUID.randomUUID()), new FileShareRole(Role.VIEWER),
-                    (UUID) null, null, null);
+                    UUID.randomUUID(), null, null);
             given(findFilePort.findById(new FileId(fileId))).willReturn(Optional.of(linked));
             given(findFileSharePort.findByFileId(new FileId(fileId)))
                     .willReturn(List.of(pendingGuestShare, memberShare, claimedShare));
@@ -142,6 +144,10 @@ class UpdateFileScopeServiceTest {
 
             then(deleteFileSharePort).should().deleteFileShare(new FileShareId(pendingShareId));
             then(deleteFileSharePort).shouldHaveNoMoreInteractions();
+            then(saveFileSharePort).should().saveFileShare(claimedShare);
+            then(saveFileSharePort).shouldHaveNoMoreInteractions();
+            assertThat(claimedShare.getToken()).isNull();
+            assertThat(memberShare.getToken()).isNull(); // was already null; untouched
         }
     }
 

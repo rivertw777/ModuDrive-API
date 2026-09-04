@@ -19,19 +19,20 @@ class FileShareTest {
     class WhenClaimingAPendingShare {
 
         @Test
-        void fillsSharedWithUserIdAndClearsTokenAndEmail() {
+        void fillsSharedWithUserIdAndClearsEmailButKeepsToken() {
             FileShare pending = FileShare.createPending(
                     new FileShareFileId(UUID.randomUUID()), new FileShareOwnerId(UUID.randomUUID()),
                     new FileShareGranteeEmail("river@modudrive.com"), new FileShareRole(Role.VIEWER));
+            UUID token = pending.getToken();
             UUID memberId = UUID.randomUUID();
 
             pending.claim(memberId);
 
             assertThat(pending.getSharedWithUserId()).isEqualTo(memberId);
-            // Cleared, not kept: a claimed share must read as an ordinary member grant everywhere
-            // token/granteeEmail non-null used to mean "still a pending guest share" (see
-            // UpdateFileScopeService.revokePendingGuestShares).
-            assertThat(pending.getToken()).isNull();
+            // granteeEmail is cleared (there's a real member behind it now), but the token is
+            // kept so the /public/{fileId}?key= link the guest was emailed keeps working. "Still
+            // pending" is now sharedWithUserId == null (see UpdateFileScopeService).
+            assertThat(pending.getToken()).isEqualTo(token);
             assertThat(pending.getGranteeEmail()).isNull();
         }
     }

@@ -61,7 +61,7 @@ class ClaimPendingFileSharesServiceTest {
 
             then(saveFileSharePort).should().saveFileShare(pending);
             assertThat(pending.getSharedWithUserId()).isEqualTo(memberId);
-            assertThat(pending.getToken()).isNull();
+            assertThat(pending.getToken()).isNotNull(); // kept so the emailed link keeps working
             assertThat(pending.getGranteeEmail()).isNull();
         }
 

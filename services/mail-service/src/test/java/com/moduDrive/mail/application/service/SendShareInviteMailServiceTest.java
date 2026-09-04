@@ -36,8 +36,8 @@ class SendShareInviteMailServiceTest {
 
         @Test
         void sendsMailContainingFileNameAndRoleWithoutALink() {
-            SendShareInviteMailCommand command =
-                    new SendShareInviteMailCommand("grantee@modudrive.com", "report.pdf", "VIEWER", null);
+            SendShareInviteMailCommand command = new SendShareInviteMailCommand(
+                    "grantee@modudrive.com", "report.pdf", "VIEWER", UUID.randomUUID(), null);
 
             sendShareInviteMailService.sendShareInviteMail(command);
 
@@ -52,15 +52,16 @@ class SendShareInviteMailServiceTest {
 
         @Test
         void sendsMailContainingTheNoLoginLink() {
+            UUID fileId = UUID.randomUUID();
             UUID linkToken = UUID.randomUUID();
-            SendShareInviteMailCommand command =
-                    new SendShareInviteMailCommand("grantee@modudrive.com", "report.pdf", "VIEWER", linkToken);
+            SendShareInviteMailCommand command = new SendShareInviteMailCommand(
+                    "grantee@modudrive.com", "report.pdf", "VIEWER", fileId, linkToken);
 
             sendShareInviteMailService.sendShareInviteMail(command);
 
             then(sendMailPort).should().send(
                     eq("grantee@modudrive.com"), contains("공유"),
-                    contains(CLIENT_URL + "/public/" + linkToken));
+                    contains(CLIENT_URL + "/public/" + fileId + "?key=" + linkToken));
         }
     }
 }

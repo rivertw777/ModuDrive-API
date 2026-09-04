@@ -49,11 +49,13 @@ class FileShareJpaEntity {
     @Enumerated(EnumType.STRING)
     private Role grantedRole;
 
-    /** Non-null only for a pending guest share: the per-invite capability token resolved by the
-     * public routes (see {@code PublicFileResolver}). Null for a real member grant. */
+    /** The per-invite capability token resolved by the public routes (see {@code PublicFileResolver}).
+     * Kept alive after {@link #applyClaim} so an emailed link survives the invitee signing up.
+     * Null only for a share created directly for an existing member. */
     private UUID token;
 
-    /** Non-null only for a pending guest share — the invited email. Null for a real member grant. */
+    /** Non-null only while a guest share is unclaimed — the invited email. Cleared by
+     * {@link #applyClaim}; null for a direct member grant. */
     private String granteeEmail;
 
     @CreatedDate
@@ -78,12 +80,17 @@ class FileShareJpaEntity {
         this.grantedRole = grantedRole;
     }
 
-    /** Mirrors {@link com.moduDrive.file.domain.model.FileShare#claim}: fills {@code sharedWithUserId}
-     * and clears the now-obsolete guest columns, so {@code token != null} keeps meaning "still a
-     * pending guest share" everywhere it's checked (e.g. the scope-change revocation sweep). */
+    /** Mirrors {@link com.moduDrive.file.domain.model.FileShare#claim}: fills
+     * {@code sharedWithUserId} and clears {@code granteeEmail}, but keeps {@code token} so the
+     * emailed link keeps resolving. "Still unclaimed" is {@code sharedWithUserId == null} from
+     * here on. */
     void applyClaim(UUID sharedWithUserId) {
         this.sharedWithUserId = sharedWithUserId;
-        this.token = null;
         this.granteeEmail = null;
+    }
+
+    /** Mirrors {@link com.moduDrive.file.domain.model.FileShare#revokeToken}. */
+    void applyRevokeToken() {
+        this.token = null;
     }
 }

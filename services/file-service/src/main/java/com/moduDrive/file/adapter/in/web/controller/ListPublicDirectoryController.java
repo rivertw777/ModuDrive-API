@@ -14,9 +14,9 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /** Reached through the gateway's {@code GET /api/v1/files/public/**} permitAll list — no
- * X_USER_ID, the directory link token is the whole credential. {@code parentId} narrows the
- * listing to a sub-directory; bound as String (like {@code token}) so a malformed value 404s
- * out of the resolver rather than 500ing on path-variable conversion. */
+ * X_USER_ID, the {@code key} is the whole credential. {@code fileId} is the directory to list
+ * (the link's own folder or one nested under it); both it and {@code key} are bound as String
+ * so a malformed value 404s out of the resolver rather than 500ing on type conversion. */
 @WebAdapter
 @RestController
 @RequiredArgsConstructor
@@ -24,12 +24,12 @@ class ListPublicDirectoryController {
 
     private final ListPublicDirectoryUseCase listPublicDirectoryUseCase;
 
-    @GetMapping("/api/v1/files/public/{token}/children")
+    @GetMapping("/api/v1/files/public/{fileId}/children")
     public ApiResponse<List<PublicFileResponse>> listChildren(
-            @PathVariable String token,
-            @RequestParam(required = false) String parentId) {
+            @PathVariable String fileId,
+            @RequestParam(required = false) String key) {
         List<PublicFileResponse> children = listPublicDirectoryUseCase
-                .listPublicDirectory(new ListPublicDirectoryCommand(token, parentId))
+                .listPublicDirectory(new ListPublicDirectoryCommand(fileId, key))
                 .stream()
                 .map(PublicFileResponse::from)
                 .toList();

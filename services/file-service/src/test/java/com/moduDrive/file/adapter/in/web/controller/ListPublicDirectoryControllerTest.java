@@ -48,7 +48,7 @@ class ListPublicDirectoryControllerTest {
             given(listPublicDirectoryUseCase.listPublicDirectory(any(ListPublicDirectoryCommand.class)))
                     .willReturn(List.of(child));
 
-            mockMvc.perform(get("/api/v1/files/public/{token}/children", TOKEN))
+            mockMvc.perform(get("/api/v1/files/public/{fileId}/children", TOKEN))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data[0].name").value("a.txt"))
                     .andExpect(jsonPath("$.data[0].ownerId").doesNotExist());
@@ -64,7 +64,7 @@ class ListPublicDirectoryControllerTest {
             willThrow(new BusinessException(FileExceptionCase.FILE_NOT_FOUND))
                     .given(listPublicDirectoryUseCase).listPublicDirectory(any(ListPublicDirectoryCommand.class));
 
-            mockMvc.perform(get("/api/v1/files/public/{token}/children", "not-a-uuid"))
+            mockMvc.perform(get("/api/v1/files/public/{fileId}/children", "not-a-uuid"))
                     .andExpect(status().isNotFound());
         }
     }

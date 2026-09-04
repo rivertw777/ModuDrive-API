@@ -25,7 +25,7 @@ class GetPublicFileRevisionsService implements GetPublicFileRevisionsUseCase {
     @Transactional(readOnly = true)
     @Override
     public List<FileVersion> getPublicFileRevisions(GetPublicFileRevisionsCommand command) {
-        File file = publicFileResolver.resolve(command.getToken());
+        File file = publicFileResolver.resolve(command.getFileId(), command.getKey());
         return findFileVersionsPort.findByFileIdOrderByCreatedAtDesc(new FileId(file.getId()), command.getLimit());
     }
 }

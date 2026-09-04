@@ -15,7 +15,7 @@ import java.util.List;
 
 /** Service-to-service counterpart of {@link GetLatestFileVersionsController} for anonymous link
  * visitors: storage-service resolves the blocks to stream through this route. Same response shape
- * and {@code limit} parameter, but no {@code userId} — the token is the whole credential. */
+ * and {@code limit} parameter, but no {@code userId} — the {@code key} is the whole credential. */
 @WebAdapter
 @RestController
 @RequiredArgsConstructor
@@ -23,12 +23,13 @@ class GetPublicFileRevisionsController {
 
     private final GetPublicFileRevisionsUseCase getPublicFileRevisionsUseCase;
 
-    @GetMapping("/internal/files/public/{token}/revisions")
+    @GetMapping("/internal/files/public/{fileId}/revisions")
     public ApiResponse<List<FileVersionResponse>> getPublicFileRevisions(
-            @PathVariable String token,
+            @PathVariable String fileId,
+            @RequestParam(required = false) String key,
             @RequestParam(defaultValue = "1") int limit) {
         List<FileVersionResponse> revisions = getPublicFileRevisionsUseCase
-                .getPublicFileRevisions(new GetPublicFileRevisionsCommand(token, limit))
+                .getPublicFileRevisions(new GetPublicFileRevisionsCommand(fileId, key, limit))
                 .stream()
                 .map(FileVersionResponse::from)
                 .toList();

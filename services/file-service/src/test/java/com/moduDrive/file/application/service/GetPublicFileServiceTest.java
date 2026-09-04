@@ -29,11 +29,12 @@ class GetPublicFileServiceTest {
     @Mock private PublicFileResolver publicFileResolver;
     @InjectMocks private GetPublicFileService getPublicFileService;
 
-    private final String token = UUID.randomUUID().toString();
-    private final GetPublicFileCommand command = new GetPublicFileCommand(token);
+    private final String fileId = UUID.randomUUID().toString();
+    private final String key = UUID.randomUUID().toString();
+    private final GetPublicFileCommand command = new GetPublicFileCommand(fileId, key);
 
     @Nested
-    @DisplayName("토큰이 공개 파일을 가리킬 때")
+    @DisplayName("fileId/key가 공개 파일을 가리킬 때")
     class WhenTokenResolves {
 
         @Test
@@ -41,20 +42,20 @@ class GetPublicFileServiceTest {
             File file = File.withId(new FileId(UUID.randomUUID()), new FileNamespaceId(UUID.randomUUID()),
                     new FileName("report.pdf"), new FilePath("/1"), new FileOwnerId(UUID.randomUUID()),
                     null, null, FileStatus.UPLOADED, new FileIsDirectory(false));
-            given(publicFileResolver.resolve(token)).willReturn(file);
+            given(publicFileResolver.resolve(fileId, key)).willReturn(file);
 
             assertThat(getPublicFileService.getPublicFile(command).getName()).isEqualTo("report.pdf");
         }
     }
 
     @Nested
-    @DisplayName("토큰이 유효하지 않을 때")
+    @DisplayName("key가 유효하지 않을 때")
     class WhenTokenIsRejected {
 
         @Test
         void propagatesFileNotFound() {
             willThrow(new BusinessException(FileExceptionCase.FILE_NOT_FOUND))
-                    .given(publicFileResolver).resolve(token);
+                    .given(publicFileResolver).resolve(fileId, key);
 
             Throwable thrown = catchThrowable(() -> getPublicFileService.getPublicFile(command));
 

@@ -300,12 +300,15 @@ class FilePersistenceAdapterTest {
                     new FileShareFileId(fileIdValue), new FileShareOwnerId(UUID.randomUUID()),
                     new FileShareGranteeEmail("guest@example.com"), new FileShareRole(Role.VIEWER)));
 
+            UUID token = created.getToken();
             created.claim(memberId);
             filePersistenceAdapter.saveFileShare(created);
 
             assertThat(filePersistenceAdapter.findPendingByGranteeEmail("guest@example.com")).isEmpty();
             assertThat(filePersistenceAdapter.findByFileIdAndSharedWithUserId(new FileId(fileIdValue), memberId))
                     .get().extracting(FileShare::getRole).isEqualTo(Role.VIEWER);
+            // token survives the claim so the emailed /public link still resolves
+            assertThat(filePersistenceAdapter.findByToken(token)).isPresent();
         }
 
         @Test

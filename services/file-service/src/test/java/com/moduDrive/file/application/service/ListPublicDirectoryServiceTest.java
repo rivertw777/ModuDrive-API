@@ -26,17 +26,18 @@ class ListPublicDirectoryServiceTest {
     @Mock private PublicFileResolver publicFileResolver;
     @InjectMocks private ListPublicDirectoryService listPublicDirectoryService;
 
-    private final String token = UUID.randomUUID().toString();
+    private final String fileId = UUID.randomUUID().toString();
+    private final String key = UUID.randomUUID().toString();
 
     @Test
-    void delegatesToTheResolverWithTokenAndParentId() {
+    void delegatesToTheResolverWithFileIdAndKey() {
         File child = File.withId(new FileId(UUID.randomUUID()), new FileNamespaceId(UUID.randomUUID()),
                 new FileName("a.txt"), new FilePath("/shared"), new FileOwnerId(UUID.randomUUID()),
                 null, null, FileStatus.UPLOADED, new FileIsDirectory(false));
-        given(publicFileResolver.resolveChildren(token, "p-1")).willReturn(List.of(child));
+        given(publicFileResolver.resolveChildren(fileId, key)).willReturn(List.of(child));
 
         List<File> result = listPublicDirectoryService.listPublicDirectory(
-                new ListPublicDirectoryCommand(token, "p-1"));
+                new ListPublicDirectoryCommand(fileId, key));
 
         assertThat(result).containsExactly(child);
     }
@@ -44,10 +45,10 @@ class ListPublicDirectoryServiceTest {
     @Test
     void propagatesFileNotFoundFromTheResolver() {
         willThrow(new BusinessException(FileExceptionCase.FILE_NOT_FOUND))
-                .given(publicFileResolver).resolveChildren(token, null);
+                .given(publicFileResolver).resolveChildren(fileId, key);
 
         Throwable thrown = catchThrowable(() -> listPublicDirectoryService.listPublicDirectory(
-                new ListPublicDirectoryCommand(token, null)));
+                new ListPublicDirectoryCommand(fileId, key)));
 
         assertThat(thrown).isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getExceptionCase())
