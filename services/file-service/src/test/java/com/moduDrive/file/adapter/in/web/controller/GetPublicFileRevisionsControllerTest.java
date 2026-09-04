@@ -47,7 +47,7 @@ class GetPublicFileRevisionsControllerTest {
             given(getPublicFileRevisionsUseCase.getPublicFileRevisions(any(GetPublicFileRevisionsCommand.class)))
                     .willReturn(List.of(v));
 
-            mockMvc.perform(get("/internal/files/public/{token}/revisions", TOKEN))
+            mockMvc.perform(get("/internal/files/public/{fileId}/revisions", TOKEN))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data[0].s3Path").value("s3://b/k"));
         }
@@ -63,7 +63,7 @@ class GetPublicFileRevisionsControllerTest {
                     .given(getPublicFileRevisionsUseCase)
                     .getPublicFileRevisions(any(GetPublicFileRevisionsCommand.class));
 
-            mockMvc.perform(get("/internal/files/public/{token}/revisions", TOKEN))
+            mockMvc.perform(get("/internal/files/public/{fileId}/revisions", TOKEN))
                     .andExpect(status().isNotFound());
         }
 
@@ -73,7 +73,7 @@ class GetPublicFileRevisionsControllerTest {
                     .given(getPublicFileRevisionsUseCase)
                     .getPublicFileRevisions(any(GetPublicFileRevisionsCommand.class));
 
-            mockMvc.perform(get("/internal/files/public/{token}/revisions", "not-a-uuid"))
+            mockMvc.perform(get("/internal/files/public/{fileId}/revisions", "not-a-uuid"))
                     .andExpect(status().isNotFound());
         }
     }

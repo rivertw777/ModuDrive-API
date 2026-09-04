@@ -36,15 +36,10 @@ interface FileServiceFeignClient {
                                                          @RequestParam String userId);
 
     // Anonymous link-share download: no userId, because there is no authenticated caller — the
-    // link token is the whole credential and file-service validates it (see PublicFileResolver).
-    @GetMapping("/internal/files/public/{token}/revisions")
-    ApiResponse<List<FileVersionDto>> getPublicFileRevisions(@PathVariable String token,
+    // key is the whole credential and file-service validates it (see PublicFileResolver). fileId
+    // is the shared file or one nested under a shared folder.
+    @GetMapping("/internal/files/public/{fileId}/revisions")
+    ApiResponse<List<FileVersionDto>> getPublicFileRevisions(@PathVariable String fileId,
+                                                             @RequestParam(required = false) String key,
                                                              @RequestParam(defaultValue = "1") int limit);
-
-    // Same as above for a file nested under a link-shared folder: the folder token plus the
-    // descendant's id, file-service checks the entry really is under that folder.
-    @GetMapping("/internal/files/public/{token}/entry/{entryId}/revisions")
-    ApiResponse<List<FileVersionDto>> getPublicDescendantRevisions(@PathVariable String token,
-                                                                   @PathVariable String entryId,
-                                                                   @RequestParam(defaultValue = "1") int limit);
 }

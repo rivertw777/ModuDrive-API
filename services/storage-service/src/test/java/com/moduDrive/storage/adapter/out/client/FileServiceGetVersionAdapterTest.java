@@ -97,4 +97,35 @@ class FileServiceGetVersionAdapterTest {
                     .isEqualTo(StorageExceptionCase.FILE_NOT_FOUND_IN_STORAGE);
         }
     }
+
+    @Nested
+    @DisplayName("익명 링크로 버전을 조회할 때")
+    class WhenResolvingPublicVersion {
+
+        private final String key = UUID.randomUUID().toString();
+
+        @Test
+        void forwardsFileIdAndKeyToTheInternalRouteAndMapsTheVersion() {
+            given(feignClient.getPublicFileRevisions(anyString(), anyString(), anyInt()))
+                    .willReturn(ApiResponse.success(List.of(
+                            new FileVersionDto(UUID.randomUUID(), fileId, 42L, 5, "path/pub"))));
+
+            VersionLocation result = adapter.getPublicVersion(fileId.toString(), key);
+
+            assertThat(result).isEqualTo(new VersionLocation("path/pub", 5));
+            then(feignClient).should().getPublicFileRevisions(fileId.toString(), key, 1);
+        }
+
+        @Test
+        void throwsFileNotFoundInStorageWhenNoVersionComesBack() {
+            given(feignClient.getPublicFileRevisions(anyString(), anyString(), anyInt()))
+                    .willReturn(ApiResponse.success(List.of()));
+
+            Throwable thrown = catchThrowable(() -> adapter.getPublicVersion(fileId.toString(), key));
+
+            assertThat(thrown).isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(StorageExceptionCase.FILE_NOT_FOUND_IN_STORAGE);
+        }
+    }
 }

@@ -22,9 +22,10 @@ class SendShareInviteMailService implements SendShareInviteMailUseCase {
         String body = "'%s' 파일에 %s 권한으로 접근할 수 있게 되었습니다. ModuDrive에서 확인해보세요."
                 .formatted(command.getFileName(), command.getRole());
         // A guest invite (no ModuDrive account for this email) has no login-gated deep link to
-        // send instead, so the mail carries the file's no-login link directly.
+        // send instead, so the mail carries the file's no-login link directly. fileId keeps the
+        // URL stable; key is the capability that authorizes it and survives the guest signing up.
         if (command.getLinkToken() != null) {
-            body += "\n\n%s/public/%s".formatted(clientUrl, command.getLinkToken());
+            body += "\n\n%s/public/%s?key=%s".formatted(clientUrl, command.getFileId(), command.getLinkToken());
         }
 
         sendMailPort.send(command.getEmail(), "[ModuDrive] 파일이 공유되었습니다", body);

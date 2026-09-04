@@ -16,6 +16,6 @@ class GetPublicFileService implements GetPublicFileUseCase {
     @Transactional(readOnly = true)
     @Override
     public File getPublicFile(GetPublicFileCommand command) {
-        return publicFileResolver.resolve(command.getToken());
+        return publicFileResolver.resolve(command.getFileId(), command.getKey());
     }
 }

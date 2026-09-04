@@ -208,7 +208,7 @@ class StorageControllerTest {
     }
 
     @Nested
-    @DisplayName("GET /api/v1/storage/public/{token}/download")
+    @DisplayName("GET /api/v1/storage/public/{fileId}/download")
     class PublicDownloadFile {
 
         @Test
@@ -262,24 +262,6 @@ class StorageControllerTest {
                     .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, startsWith("attachment;")));
         }
 
-        @Test
-        void streamsADescendantOfAFolderLinkThroughTheEntryRoute() throws Exception {
-            byte[] data = "nested content".getBytes();
-            willAnswer(invocation -> {
-                OutputStream out = invocation.getArgument(1);
-                out.write(data);
-                return null;
-            }).given(publicDownloadFileUseCase).downloadPublicStream(any(), any());
-
-            MvcResult asyncResult = mockMvc.perform(get("/api/v1/storage/public/" + UUID.randomUUID()
-                            + "/entry/" + UUID.randomUUID() + "/download"))
-                    .andExpect(request().asyncStarted())
-                    .andReturn();
-
-            mockMvc.perform(asyncDispatch(asyncResult))
-                    .andExpect(status().isOk())
-                    .andExpect(result -> assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(data));
-        }
     }
 
     @Nested
@@ -448,7 +430,7 @@ class StorageControllerTest {
     }
 
     @Nested
-    @DisplayName("GET /api/v1/storage/public/{token}/view")
+    @DisplayName("GET /api/v1/storage/public/{fileId}/view")
     class ViewPublicFile {
 
         @Test

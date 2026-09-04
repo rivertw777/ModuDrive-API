@@ -18,14 +18,17 @@ public class FileShare {
      * at yet, only an invited email. Filled in later by {@link #claim} once that email signs up. */
     private UUID sharedWithUserId;
     private Role role;
-    /** Non-null only for a pending guest share: the one-time capability token that stands in for
-     * membership, minted per invite so each guest can be revoked without touching any other
-     * share or the file's own {@code linkToken}. Null for a real member grant, including a
-     * claimed one — see {@link #claim}. */
+    /** The per-invite capability token, minted per guest so each can be revoked without touching
+     * any other share or the file's own {@code linkToken}. Kept alive after {@link #claim} so the
+     * Google-Drive-style {@code /public/{fileId}?key=} link a guest was emailed still resolves
+     * once they sign up, and dropped by {@link #revokeToken} when link sharing is turned off.
+     * Null for a share created directly for an existing member, and for any row read back through
+     * a {@code withId} overload other than the persistence mapper's. */
     private UUID token;
-    /** Non-null only for a pending guest share — the invited address, kept so the owner's share
-     * list can display it without a member-service lookup. Null for a real member grant, including
-     * a claimed one — see {@link #claim}. */
+    /** Non-null only while a guest share is still unclaimed — the invited address, kept so the
+     * owner's share list can display it without a member-service lookup. Cleared by
+     * {@link #claim} (the row is a real member grant from then on) and null for a direct member
+     * share. */
     private String granteeEmail;
     /** Null until the row is persisted — filled in by JPA auditing. "Shared on" date. */
     private LocalDateTime createdAt;
@@ -91,14 +94,20 @@ public class FileShare {
     }
 
     /** Links a pending guest share to the member who just signed up with its {@code granteeEmail}.
-     * Clears {@code token}/{@code granteeEmail} so the row becomes indistinguishable from a normal
-     * member grant: {@code UpdateFileScopeService.revokePendingGuestShares} deletes any share whose
-     * {@code token} is still non-null when sharing is turned off, and a claimed share must survive
-     * that the same way a directly-invited member share does. */
+     * Clears {@code granteeEmail} (there is a real member behind it now) but keeps {@code token}
+     * so the {@code /public/{fileId}?key=} link the guest was emailed keeps working — bounded by
+     * the same invite TTL, which measures from {@code createdAt} (the original invite), not the
+     * claim. "Still unclaimed" is therefore {@code sharedWithUserId == null}. */
     public void claim(UUID memberId) {
         this.sharedWithUserId = memberId;
-        this.token = null;
         this.granteeEmail = null;
+    }
+
+    /** Drops the anonymous capability while keeping the row: a claimed guest share becomes a
+     * plain member grant with no bearer link, which is what turning link sharing off must leave
+     * behind (see {@code UpdateFileScopeService.revokeGuestCapabilities}). */
+    public void revokeToken() {
+        this.token = null;
     }
 
     public record FileShareId(UUID value) {}

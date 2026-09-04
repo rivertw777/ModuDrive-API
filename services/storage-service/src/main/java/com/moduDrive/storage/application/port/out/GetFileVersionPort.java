@@ -10,16 +10,11 @@ public interface GetFileVersionPort {
      * Drive's behaviour. One lookup, since s3Path and blockCount come from the same response. */
     VersionLocation getLatestVersion(UUID fileId, UUID userId, boolean markAccessed);
 
-    /** Link-token lookups for anonymous visitors: the token identifies the file and authorizes
-     * the read at once, so there is no caller id to pass along. */
-    String getPublicS3Path(String token);
-
-    int getPublicBlockCount(String token);
-
-    /** Same as the two above but for a file reached through a link-shared <b>folder</b>: the
-     * folder token plus the descendant's id. One lookup, since both fields come from the same
-     * response. */
-    VersionLocation getPublicDescendantVersion(String token, String entryId);
+    /** Link lookup for anonymous visitors: {@code fileId} identifies the entry (the shared file
+     * or one nested under a shared folder) and {@code key} authorizes the read, so there is no
+     * caller id to pass along. One lookup — like {@link #getLatestVersion} — so s3Path and
+     * blockCount can't tear across a version committed mid-download. */
+    VersionLocation getPublicVersion(String fileId, String key);
 
     /** Every version ever uploaded for this file, not just the latest — a purge has to delete
      * every version's blocks, not only the one a download would resolve to. */

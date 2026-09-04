@@ -44,36 +44,45 @@ class PublicDownloadFileServiceTest {
     @Mock private StorageProperties storageProperties;
     @InjectMocks private PublicDownloadFileService publicDownloadFileService;
 
-    private final String token = UUID.randomUUID().toString();
+    private final String fileId = UUID.randomUUID().toString();
+    private final String key = UUID.randomUUID().toString();
+
+    private PublicDownloadFileCommand command() {
+        return new PublicDownloadFileCommand(fileId, key);
+    }
+
+    private PublicDownloadFileCommand previewCommand() {
+        return new PublicDownloadFileCommand(fileId, key, true);
+    }
 
     @Nested
-    @DisplayName("토큰이 공개 파일을 가리킬 때")
-    class WhenTokenResolves {
+    @DisplayName("fileId/key가 공개 파일을 가리킬 때")
+    class WhenKeyResolves {
 
         @Test
         void returnsAssembledBytes() {
-            given(getFileVersionPort.getPublicS3Path(token)).willReturn("files/abc/xyz");
-            given(getFileVersionPort.getPublicBlockCount(token)).willReturn(2);
+            given(getFileVersionPort.getPublicVersion(fileId, key))
+                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", 2));
             given(retrieveBlocksPort.retrieveBlocks(anyString(), anyInt()))
                     .willReturn(List.of("hello ".getBytes(), "world".getBytes()));
 
-            byte[] result = publicDownloadFileService.downloadPublic(new PublicDownloadFileCommand(token));
+            byte[] result = publicDownloadFileService.downloadPublic(command());
 
             assertThat(new String(result)).isEqualTo("hello world");
         }
     }
 
     @Nested
-    @DisplayName("토큰이 더 이상 유효하지 않을 때")
-    class WhenTokenIsRejected {
+    @DisplayName("key가 더 이상 유효하지 않을 때")
+    class WhenKeyIsRejected {
 
         @Test
         void propagatesNotFoundWithoutTouchingStorage() {
             willThrow(new BusinessException(StorageExceptionCase.FILE_NOT_FOUND_IN_STORAGE))
-                    .given(getFileVersionPort).getPublicS3Path(token);
+                    .given(getFileVersionPort).getPublicVersion(fileId, key);
 
             Throwable thrown = catchThrowable(
-                    () -> publicDownloadFileService.downloadPublic(new PublicDownloadFileCommand(token)));
+                    () -> publicDownloadFileService.downloadPublic(command()));
 
             assertThat(thrown).isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
@@ -88,52 +97,52 @@ class PublicDownloadFileServiceTest {
 
         @Test
         void delegatesToStreamBlocksWithoutAssemblingAByteArray() {
-            given(getFileVersionPort.getPublicS3Path(token)).willReturn("files/abc/xyz");
-            given(getFileVersionPort.getPublicBlockCount(token)).willReturn(2);
+            given(getFileVersionPort.getPublicVersion(fileId, key))
+                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", 2));
 
-            publicDownloadFileService.downloadPublicStream(new PublicDownloadFileCommand(token), new ByteArrayOutputStream());
+            publicDownloadFileService.downloadPublicStream(command(), new ByteArrayOutputStream());
 
             then(retrieveBlocksPort).should().streamBlocks(eq("files/abc/xyz"), eq(2), any(OutputStream.class));
             then(retrieveBlocksPort).should(never()).retrieveBlocks(anyString(), anyInt());
         }
 
         @Test
-        void checksTheTokenScopedQuotaBeforeStreamingAndRecordsWhatWasActuallySent() {
-            given(getFileVersionPort.getPublicS3Path(token)).willReturn("files/abc/xyz");
-            given(getFileVersionPort.getPublicBlockCount(token)).willReturn(2);
+        void checksTheKeyScopedQuotaBeforeStreamingAndRecordsWhatWasActuallySent() {
+            given(getFileVersionPort.getPublicVersion(fileId, key))
+                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", 2));
             willAnswer(inv -> { ((OutputStream) inv.getArgument(2)).write(new byte[300]); return null; })
                     .given(retrieveBlocksPort).streamBlocks(anyString(), anyInt(), any());
 
-            publicDownloadFileService.downloadPublicStream(new PublicDownloadFileCommand(token), new ByteArrayOutputStream());
+            publicDownloadFileService.downloadPublicStream(command(), new ByteArrayOutputStream());
 
-            then(downloadQuotaPort).should().checkWithinQuota(token, "files/abc/xyz");
-            then(downloadQuotaPort).should().recordUsage(token, "files/abc/xyz", 300L);
+            then(downloadQuotaPort).should().checkWithinQuota(key, "files/abc/xyz");
+            then(downloadQuotaPort).should().recordUsage(key, "files/abc/xyz", 300L);
         }
 
         @Test
         void stillRecordsWhatWasSentWhenStreamingAbortsPartway() {
-            given(getFileVersionPort.getPublicS3Path(token)).willReturn("files/abc/xyz");
-            given(getFileVersionPort.getPublicBlockCount(token)).willReturn(2);
+            given(getFileVersionPort.getPublicVersion(fileId, key))
+                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", 2));
             willAnswer(inv -> {
                 ((OutputStream) inv.getArgument(2)).write(new byte[128]);
                 throw new UncheckedIOException(new IOException("client gone"));
             }).given(retrieveBlocksPort).streamBlocks(anyString(), anyInt(), any());
 
             catchThrowable(() -> publicDownloadFileService.downloadPublicStream(
-                    new PublicDownloadFileCommand(token), new ByteArrayOutputStream()));
+                    command(), new ByteArrayOutputStream()));
 
-            then(downloadQuotaPort).should().recordUsage(token, "files/abc/xyz", 128L);
+            then(downloadQuotaPort).should().recordUsage(key, "files/abc/xyz", 128L);
         }
 
         @Test
         void rejectsBeforeStreamingWhenTheFileIsOverItsDownloadQuota() {
-            given(getFileVersionPort.getPublicS3Path(token)).willReturn("files/abc/xyz");
-            given(getFileVersionPort.getPublicBlockCount(token)).willReturn(2);
+            given(getFileVersionPort.getPublicVersion(fileId, key))
+                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", 2));
             willThrow(new BusinessException(StorageExceptionCase.DOWNLOAD_QUOTA_EXCEEDED))
                     .given(downloadQuotaPort).checkWithinQuota(anyString(), anyString());
 
             Throwable thrown = catchThrowable(() -> publicDownloadFileService.downloadPublicStream(
-                    new PublicDownloadFileCommand(token), new ByteArrayOutputStream()));
+                    command(), new ByteArrayOutputStream()));
 
             assertThat(thrown).isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
@@ -149,47 +158,32 @@ class PublicDownloadFileServiceTest {
 
         @Test
         void alsoMetersTheQuotaSoTheViewRouteCannotBypassTheLimit() {
-            given(getFileVersionPort.getPublicS3Path(token)).willReturn("files/abc/xyz");
-            given(getFileVersionPort.getPublicBlockCount(token)).willReturn(1);
+            given(getFileVersionPort.getPublicVersion(fileId, key))
+                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", 1));
             given(storageProperties.getBlockSize()).willReturn(4 * 1024 * 1024);
             given(retrieveBlocksPort.retrieveBlocks(anyString(), anyInt())).willReturn(List.of("data".getBytes()));
 
-            publicDownloadFileService.downloadPublic(new PublicDownloadFileCommand(token, true));
+            publicDownloadFileService.downloadPublic(previewCommand());
 
-            then(downloadQuotaPort).should().checkWithinQuota(token, "files/abc/xyz");
-            then(downloadQuotaPort).should().recordUsage(token, "files/abc/xyz", 4L);
+            then(downloadQuotaPort).should().checkWithinQuota(key, "files/abc/xyz");
+            then(downloadQuotaPort).should().recordUsage(key, "files/abc/xyz", 4L);
         }
     }
 
     @Nested
-    @DisplayName("토큰이 폴더를 가리키고 entryId가 함께 올 때")
-    class WhenTokenIsAFolderLinkWithAnEntry {
-
-        private final String entryId = UUID.randomUUID().toString();
+    @DisplayName("fileId가 공유 폴더 하위의 파일일 때")
+    class WhenFileIsUnderASharedFolder {
 
         @Test
-        void resolvesTheDescendantVersionInOneLookup() {
-            given(getFileVersionPort.getPublicDescendantVersion(token, entryId))
+        void resolvesItThroughTheSameKeyedLookup() {
+            given(getFileVersionPort.getPublicVersion(fileId, key))
                     .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", 2));
             given(retrieveBlocksPort.retrieveBlocks(anyString(), anyInt()))
                     .willReturn(List.of("hello ".getBytes(), "world".getBytes()));
 
-            byte[] result = publicDownloadFileService.downloadPublic(
-                    new PublicDownloadFileCommand(token, entryId, false));
+            byte[] result = publicDownloadFileService.downloadPublic(command());
 
             assertThat(new String(result)).isEqualTo("hello world");
-            then(getFileVersionPort).should(never()).getPublicS3Path(anyString());
-        }
-
-        @Test
-        void streamsTheDescendantWithoutAssembling() {
-            given(getFileVersionPort.getPublicDescendantVersion(token, entryId))
-                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", 2));
-
-            publicDownloadFileService.downloadPublicStream(
-                    new PublicDownloadFileCommand(token, entryId, false), new ByteArrayOutputStream());
-
-            then(retrieveBlocksPort).should().streamBlocks(eq("files/abc/xyz"), eq(2), any(OutputStream.class));
         }
     }
 
@@ -199,12 +193,12 @@ class PublicDownloadFileServiceTest {
 
         @Test
         void rejectsBeforeFetchingAnyBlocks() {
-            given(getFileVersionPort.getPublicS3Path(token)).willReturn("files/abc/xyz");
-            given(getFileVersionPort.getPublicBlockCount(token)).willReturn(30);
+            given(getFileVersionPort.getPublicVersion(fileId, key))
+                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", 30));
             given(storageProperties.getBlockSize()).willReturn(4 * 1024 * 1024);
 
             Throwable thrown = catchThrowable(() ->
-                    publicDownloadFileService.downloadPublic(new PublicDownloadFileCommand(token, true)));
+                    publicDownloadFileService.downloadPublic(previewCommand()));
 
             assertThat(thrown).isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
