@@ -18,12 +18,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -53,13 +51,11 @@ class ListFileSharesService implements ListFileSharesUseCase {
         List<FileShare> shares = findFileSharePort.findByFileId(command.getFileId());
 
         // A share on a directory above this file is inherited by it. Show those grants too so the
-        // owner sees who really has access — but read-only, since the lever to change them is on
-        // the directory, not here. Skip anyone already granted directly (the direct row wins).
-        Set<UUID> directGrantees = shares.stream()
-                .map(FileShare::getSharedWithUserId)
-                .filter(Objects::nonNull)
-                .collect(Collectors.toCollection(HashSet::new));
-
+        // owner sees who really has access. Kept even for someone already granted directly on
+        // this file — removing just the direct row would otherwise look like it revoked their
+        // access when the ancestor grant still lets them in (see RevokeInheritedDialog on the
+        // web side, which needs this row to warn about and cascade that removal); the web layer
+        // is the one that hides the redundant row when both exist, not this service.
         List<File> inheritedLinkSources = new ArrayList<>();
         // One row per inherited grantee. Ancestors arrive root-most first; keep the most generous
         // role (that's the effective access FileAccessGuard resolves) and, on a tie, the nearest
@@ -71,7 +67,7 @@ class ListFileSharesService implements ListFileSharesUseCase {
             }
             for (FileShare ancestorShare : findFileSharePort.findByFileId(new File.FileId(ancestor.getId()))) {
                 UUID grantee = ancestorShare.getSharedWithUserId();
-                if (grantee == null || directGrantees.contains(grantee)) {
+                if (grantee == null) {
                     continue;
                 }
                 inheritedByGrantee.merge(grantee, new InheritedShare(ancestorShare, ancestor), (existing, candidate) -> {

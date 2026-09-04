@@ -29,7 +29,11 @@ public record FileResponse(
         Role role,
         String sharedByName,
         String sharedByEmail,
-        LocalDateTime sharedAt
+        LocalDateTime sharedAt,
+        /** When the caller last opened this file — only populated by 최근 문서함. */
+        LocalDateTime accessedAt,
+        /** When the caller starred this file — only populated by 즐겨찾기. */
+        LocalDateTime favoritedAt
 ) {
     public static FileResponse from(File file) {
         return from(FileView.owned(file));
@@ -54,7 +58,9 @@ public record FileResponse(
                 view.callerRole(),
                 view.sharedByName(),
                 view.sharedByEmail(),
-                view.sharedAt()
+                view.sharedAt(),
+                view.accessedAt(),
+                view.favoritedAt()
         );
     }
 }

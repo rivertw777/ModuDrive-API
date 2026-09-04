@@ -16,6 +16,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -83,6 +84,33 @@ class FileAccessGuard {
             best = moreGenerous(best, grantedRole(ancestor.getId(), callerId));
         }
         return best;
+    }
+
+    /** The specific share row that explains why {@code callerId} can read {@code file} — their
+     * own grant on it, or failing that, the nearest ancestor directory's. Unlike
+     * {@link #effectiveRole} (which only needs the most generous role, for a permission check),
+     * a listing that shows "공유한 사용자"/"공유된 날짜" for a shared directory's contents needs the
+     * actual origin grant, so every child in the listing attributes to the same one. Empty when
+     * the caller owns the file or holds no grant on it or any ancestor. */
+    Optional<FileShare> resolveGrant(File file, UUID callerId) {
+        if (callerId == null) {
+            return Optional.empty();
+        }
+        Optional<FileShare> own = findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(file.getId()), callerId);
+        if (own.isPresent()) {
+            return own;
+        }
+        // ancestorDirectories() returns root-most first; walk it backwards so the first hit is
+        // the nearest ancestor, matching ListFileSharesService's own nearest-wins tie-break.
+        List<File> ancestors = ancestorDirectories(file);
+        for (int i = ancestors.size() - 1; i >= 0; i--) {
+            Optional<FileShare> grant =
+                    findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(ancestors.get(i).getId()), callerId);
+            if (grant.isPresent()) {
+                return grant;
+            }
+        }
+        return Optional.empty();
     }
 
     private Role grantedRole(UUID fileId, UUID callerId) {

@@ -198,6 +198,84 @@ class FileAccessGuardTest {
     }
 
     @Nested
+    @DisplayName("resolveGrant 는")
+    class ResolveGrant {
+
+        private final UUID fileId = UUID.randomUUID();
+        private final UUID sharedDirId = UUID.randomUUID();
+        private final File f = file(fileId, "/shared");
+
+        private void ancestorExists() {
+            given(findFilePort.findActiveByNamespaceIdAndPathAndName(new NamespaceId(namespaceId), "/", "shared"))
+                    .willReturn(Optional.of(directory(sharedDirId, "/", "shared")));
+        }
+
+        @Test
+        @DisplayName("파일 자신에 직접 grant가 있으면 그걸 돌려준다")
+        void prefersTheFilesOwnGrant() {
+            FileShare own = grant(fileId, callerId, Role.VIEWER);
+            given(findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(fileId), callerId))
+                    .willReturn(Optional.of(own));
+
+            assertThat(fileAccessGuard.resolveGrant(f, callerId)).contains(own);
+        }
+
+        @Test
+        @DisplayName("파일 자신엔 grant가 없으면 가장 가까운 상위 폴더의 grant로 대체한다")
+        void fallsBackToTheNearestAncestorsGrant() {
+            ancestorExists();
+            FileShare ancestorGrant = grant(sharedDirId, callerId, Role.EDITOR);
+            given(findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(fileId), callerId))
+                    .willReturn(Optional.empty());
+            given(findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(sharedDirId), callerId))
+                    .willReturn(Optional.of(ancestorGrant));
+
+            assertThat(fileAccessGuard.resolveGrant(f, callerId)).contains(ancestorGrant);
+        }
+
+        @Test
+        @DisplayName("조상 여러 곳에 grant가 있으면 가장 가까운(자식 쪽) 조상의 grant를 돌려준다")
+        void prefersTheNearerOfTwoAncestorGrants() {
+            UUID nearFileId = UUID.randomUUID();
+            UUID nearDirId = UUID.randomUUID();
+            UUID farDirId = UUID.randomUUID();
+            // /far/near/report.pdf — far는 루트 바로 밑, near는 far 밑, 파일은 near 밑.
+            File nested = file(nearFileId, "/far/near");
+            given(findFilePort.findActiveByNamespaceIdAndPathAndName(new NamespaceId(namespaceId), "/", "far"))
+                    .willReturn(Optional.of(directory(farDirId, "/", "far")));
+            given(findFilePort.findActiveByNamespaceIdAndPathAndName(new NamespaceId(namespaceId), "/far", "near"))
+                    .willReturn(Optional.of(directory(nearDirId, "/far", "near")));
+            // near is checked first and matches, so far's own grant is never even queried —
+            // resolveGrant short-circuits on the first hit walking child-to-root.
+            FileShare nearGrant = grant(nearDirId, callerId, Role.VIEWER);
+            given(findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(nearFileId), callerId))
+                    .willReturn(Optional.empty());
+            given(findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(nearDirId), callerId))
+                    .willReturn(Optional.of(nearGrant));
+
+            assertThat(fileAccessGuard.resolveGrant(nested, callerId)).contains(nearGrant);
+        }
+
+        @Test
+        @DisplayName("경로 어디에도 grant가 없으면 비어있다")
+        void emptyWhenNoGrantAnywhere() {
+            ancestorExists();
+            given(findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(fileId), callerId))
+                    .willReturn(Optional.empty());
+            given(findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(sharedDirId), callerId))
+                    .willReturn(Optional.empty());
+
+            assertThat(fileAccessGuard.resolveGrant(f, callerId)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("호출자가 null이면 조회 없이 비어있다")
+        void emptyForAnonymousCaller() {
+            assertThat(fileAccessGuard.resolveGrant(f, null)).isEmpty();
+        }
+    }
+
+    @Nested
     @DisplayName("익명 호출자(callerId=null)는")
     class AnonymousCaller {
 

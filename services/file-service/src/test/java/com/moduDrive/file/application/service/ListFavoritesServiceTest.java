@@ -4,6 +4,7 @@ import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.file.application.port.in.command.ListFavoritesCommand;
 import com.moduDrive.file.application.port.in.usecase.FileView;
 import com.moduDrive.file.application.port.out.FileFavoritePort;
+import com.moduDrive.file.application.port.out.FileFavoritePort.FavoriteEntry;
 import com.moduDrive.file.application.port.out.FindFilePort;
 import com.moduDrive.file.application.port.out.FindNamespacePort;
 import com.moduDrive.file.domain.model.File;
@@ -21,7 +22,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.util.LinkedHashSet;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -60,13 +61,17 @@ class ListFavoritesServiceTest {
     class WhenNamespaceExists {
 
         @Test
-        @DisplayName("소유 파일과 공유 파일을 file_favorite 순서대로 돌려준다")
+        @DisplayName("소유 파일과 공유 파일을 file_favorite 순서대로, 즐겨찾기한 날짜와 함께 돌려준다")
         void returnsOwnedAndSharedInFavoriteOrder() {
             UUID sharedId = UUID.randomUUID();
             UUID ownedId = UUID.randomUUID();
+            LocalDateTime sharedFavoritedAt = LocalDateTime.of(2026, 9, 2, 10, 0);
+            LocalDateTime ownedFavoritedAt = LocalDateTime.of(2026, 9, 1, 10, 0);
             given(findNamespacePort.findByUserId(any())).willReturn(Optional.of(namespace));
-            given(fileFavoritePort.favoriteFileIds(userId))
-                    .willReturn(new LinkedHashSet<>(List.of(sharedId, ownedId)));
+            given(fileFavoritePort.favoritesByRecency(userId))
+                    .willReturn(List.of(
+                            new FavoriteEntry(sharedId, sharedFavoritedAt),
+                            new FavoriteEntry(ownedId, ownedFavoritedAt)));
             given(findFilePort.findById(new FileId(sharedId)))
                     .willReturn(Optional.of(file(sharedId, UUID.randomUUID(), FileStatus.UPLOADED)));
             given(findFilePort.findById(new FileId(ownedId)))
@@ -81,6 +86,24 @@ class ListFavoritesServiceTest {
             // shared row carries the caller's role; owned row does not
             assertThat(result.get(0).callerRole()).isEqualTo(Role.EDITOR);
             assertThat(result.get(1).callerRole()).isNull();
+            assertThat(result).extracting(FileView::favoritedAt)
+                    .containsExactly(sharedFavoritedAt, ownedFavoritedAt);
+        }
+
+        @Test
+        @DisplayName("favoritedAt이 null인 별표(컬럼 도입 이전 행)도 예외 없이 반환한다")
+        void toleratesNullFavoritedAt() {
+            UUID ownedId = UUID.randomUUID();
+            given(findNamespacePort.findByUserId(any())).willReturn(Optional.of(namespace));
+            given(fileFavoritePort.favoritesByRecency(userId))
+                    .willReturn(List.of(new FavoriteEntry(ownedId, null)));
+            given(findFilePort.findById(new FileId(ownedId)))
+                    .willReturn(Optional.of(file(ownedId, userId, FileStatus.UPLOADED)));
+
+            List<FileView> result = listFavoritesService.listFavorites(command);
+
+            assertThat(result).extracting(v -> v.file().getId()).containsExactly(ownedId);
+            assertThat(result.get(0).favoritedAt()).isNull();
         }
 
         @Test
@@ -88,7 +111,8 @@ class ListFavoritesServiceTest {
         void skipsOrphanedStarWhoseFileIsGone() {
             UUID goneId = UUID.randomUUID();
             given(findNamespacePort.findByUserId(any())).willReturn(Optional.of(namespace));
-            given(fileFavoritePort.favoriteFileIds(userId)).willReturn(new LinkedHashSet<>(List.of(goneId)));
+            given(fileFavoritePort.favoritesByRecency(userId))
+                    .willReturn(List.of(new FavoriteEntry(goneId, LocalDateTime.now())));
             given(findFilePort.findById(new FileId(goneId))).willReturn(Optional.empty());
 
             assertThat(listFavoritesService.listFavorites(command)).isEmpty();
@@ -99,7 +123,8 @@ class ListFavoritesServiceTest {
         void dropsStarredFileNoLongerReachable() {
             UUID sharedId = UUID.randomUUID();
             given(findNamespacePort.findByUserId(any())).willReturn(Optional.of(namespace));
-            given(fileFavoritePort.favoriteFileIds(userId)).willReturn(new LinkedHashSet<>(List.of(sharedId)));
+            given(fileFavoritePort.favoritesByRecency(userId))
+                    .willReturn(List.of(new FavoriteEntry(sharedId, LocalDateTime.now())));
             given(findFilePort.findById(new FileId(sharedId)))
                     .willReturn(Optional.of(file(sharedId, UUID.randomUUID(), FileStatus.UPLOADED)));
             given(fileAccessGuard.effectiveRole(any(File.class), eq(userId))).willReturn(null);
@@ -112,7 +137,8 @@ class ListFavoritesServiceTest {
         void dropsDeletedStarredFile() {
             UUID ownedId = UUID.randomUUID();
             given(findNamespacePort.findByUserId(any())).willReturn(Optional.of(namespace));
-            given(fileFavoritePort.favoriteFileIds(userId)).willReturn(new LinkedHashSet<>(List.of(ownedId)));
+            given(fileFavoritePort.favoritesByRecency(userId))
+                    .willReturn(List.of(new FavoriteEntry(ownedId, LocalDateTime.now())));
             given(findFilePort.findById(new FileId(ownedId)))
                     .willReturn(Optional.of(file(ownedId, userId, FileStatus.DELETED)));
 

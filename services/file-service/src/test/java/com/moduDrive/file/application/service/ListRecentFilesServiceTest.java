@@ -5,7 +5,6 @@ import com.moduDrive.file.application.port.in.usecase.FileView;
 import com.moduDrive.file.application.port.out.FileFavoritePort;
 import com.moduDrive.file.application.port.out.FindFileAccessPort;
 import com.moduDrive.file.application.port.out.FindFilePort;
-import com.moduDrive.file.application.port.out.FindFileSharePort;
 import com.moduDrive.file.application.port.out.FindNamespacePort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
@@ -14,6 +13,7 @@ import com.moduDrive.file.domain.model.FileAccess.FileAccessFileId;
 import com.moduDrive.file.domain.model.FileAccess.FileAccessUserId;
 import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.Namespace;
+import com.moduDrive.file.domain.model.Role;
 import com.moduDrive.file.domain.model.Namespace.NamespaceQuotaBytes;
 import com.moduDrive.file.domain.model.Namespace.NamespaceRootPath;
 import com.moduDrive.file.domain.model.Namespace.NamespaceUserId;
@@ -43,7 +43,6 @@ class ListRecentFilesServiceTest {
     @Mock private FindFileAccessPort findFileAccessPort;
     @Mock private FindFilePort findFilePort;
     @Mock private FindNamespacePort findNamespacePort;
-    @Mock private FindFileSharePort findFileSharePort;
     @Mock private FileFavoritePort fileFavoritePort;
     @Mock private FileAccessGuard fileAccessGuard;
     @InjectMocks private ListRecentFilesService listRecentFilesService;
@@ -87,10 +86,13 @@ class ListRecentFilesServiceTest {
         void returnsFilesInAccessOrderExcludingDeleted() {
             UUID activeFileId = UUID.randomUUID();
             UUID deletedFileId = UUID.randomUUID();
+            LocalDateTime accessedAt = LocalDateTime.of(2026, 9, 4, 13, 25);
             givenOwnNamespace();
 
             given(findFileAccessPort.findByUserIdOrderByAccessedAtDesc(userId, 20))
-                    .willReturn(List.of(makeAccess(activeFileId), makeAccess(deletedFileId)));
+                    .willReturn(List.of(
+                            FileAccess.of(new FileAccessUserId(userId), new FileAccessFileId(activeFileId), accessedAt),
+                            makeAccess(deletedFileId)));
             given(findFilePort.findById(new FileId(activeFileId)))
                     .willReturn(Optional.of(makeFile(activeFileId, ownNamespaceId, FileStatus.UPLOADED)));
             given(findFilePort.findById(new FileId(deletedFileId)))
@@ -99,6 +101,8 @@ class ListRecentFilesServiceTest {
             List<FileView> result = listRecentFilesService.listRecentFiles(command);
 
             assertThat(result).extracting(v -> v.file().getId()).containsExactly(activeFileId);
+            // The recent-files response surfaces "when opened", not the file's updatedAt.
+            assertThat(result.get(0).accessedAt()).isEqualTo(accessedAt);
         }
 
         @Test
@@ -150,8 +154,7 @@ class ListRecentFilesServiceTest {
                     .willReturn(List.of(makeAccess(otherUsersFileId)));
             given(findFilePort.findById(new FileId(otherUsersFileId)))
                     .willReturn(Optional.of(makeFile(otherUsersFileId, otherNamespaceId, FileStatus.UPLOADED)));
-            given(findFileSharePort.existsByFileIdAndSharedWithUserId(new FileId(otherUsersFileId), userId))
-                    .willReturn(false);
+            // defaults() already stubs effectiveRole to null — no access, direct or inherited.
 
             List<FileView> result = listRecentFilesService.listRecentFiles(command);
 
@@ -162,18 +165,37 @@ class ListRecentFilesServiceTest {
         void includesFileStillSharedWithUser() {
             UUID sharedFileId = UUID.randomUUID();
             UUID otherNamespaceId = UUID.randomUUID();
+            File shared = makeFile(sharedFileId, otherNamespaceId, FileStatus.UPLOADED);
             givenOwnNamespace();
 
             given(findFileAccessPort.findByUserIdOrderByAccessedAtDesc(userId, 20))
                     .willReturn(List.of(makeAccess(sharedFileId)));
-            given(findFilePort.findById(new FileId(sharedFileId)))
-                    .willReturn(Optional.of(makeFile(sharedFileId, otherNamespaceId, FileStatus.UPLOADED)));
-            given(findFileSharePort.existsByFileIdAndSharedWithUserId(new FileId(sharedFileId), userId))
-                    .willReturn(true);
+            given(findFilePort.findById(new FileId(sharedFileId))).willReturn(Optional.of(shared));
+            given(fileAccessGuard.effectiveRole(shared, userId)).willReturn(Role.VIEWER);
 
             List<FileView> result = listRecentFilesService.listRecentFiles(command);
 
             assertThat(result).extracting(v -> v.file().getId()).containsExactly(sharedFileId);
+        }
+
+        @Test
+        @DisplayName("직접 공유는 없어도 상위 폴더를 통해 상속 접근 중이면 포함한다")
+        void includesFileOnlyReachableThroughAnInheritedFolderGrant() {
+            UUID inheritedFileId = UUID.randomUUID();
+            UUID otherNamespaceId = UUID.randomUUID();
+            File inherited = makeFile(inheritedFileId, otherNamespaceId, FileStatus.UPLOADED);
+            givenOwnNamespace();
+
+            given(findFileAccessPort.findByUserIdOrderByAccessedAtDesc(userId, 20))
+                    .willReturn(List.of(makeAccess(inheritedFileId)));
+            given(findFilePort.findById(new FileId(inheritedFileId))).willReturn(Optional.of(inherited));
+            // No direct share on this file at all — access comes only from an ancestor folder's
+            // grant, exactly like opening it via GetFileService does.
+            given(fileAccessGuard.effectiveRole(inherited, userId)).willReturn(Role.EDITOR);
+
+            List<FileView> result = listRecentFilesService.listRecentFiles(command);
+
+            assertThat(result).extracting(v -> v.file().getId()).containsExactly(inheritedFileId);
         }
     }
 }

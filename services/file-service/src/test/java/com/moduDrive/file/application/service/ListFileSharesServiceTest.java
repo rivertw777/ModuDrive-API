@@ -138,7 +138,8 @@ class ListFileSharesServiceTest {
         }
 
         @Test
-        void skipsInheritedGrantWhenSameMemberIsAlsoSharedDirectly() {
+        @DisplayName("같은 사람이 이 파일에 직접 공유도 있으면 direct/inherited 둘 다 돌려준다 (상위 grant까지 지워야 진짜 revoke — RevokeInheritedDialog가 이 정보로 판단함)")
+        void includesInheritedGrantEvenWhenSameMemberIsAlsoSharedDirectly() {
             UUID grantee = UUID.randomUUID();
             FileShare direct = memberShare(fileId, grantee, Role.EDITOR);
             FileShare inherited = memberShare(parentId, grantee, Role.VIEWER);
@@ -152,7 +153,8 @@ class ListFileSharesServiceTest {
             FileSharesView result = listFileSharesService.listFileShares(command);
 
             assertThat(result.shares()).containsExactly(direct);
-            assertThat(result.inheritedShares()).isEmpty();
+            assertThat(result.inheritedShares()).hasSize(1);
+            assertThat(result.inheritedShares().get(0).share()).isEqualTo(inherited);
         }
 
         @Test
