@@ -403,6 +403,28 @@ class FilePersistenceAdapterTest {
             assertThat(springDataFileFavoriteRepository.count()).isZero();
             assertThat(springDataFileRepository.findById(fileIdValue)).isEmpty();
         }
+
+        @Test
+        @DisplayName("purge는 파일 행을 tombstone(deleted_at)으로 남기고 버전/공유/즐겨찾기만 지운다")
+        void purgeKeepsTheRowAsATombstoneAndClearsAttachments() {
+            UUID fileIdValue = springDataFileRepository.save(new FileJpaEntity(
+                    namespaceIdValue, "report.pdf", "/1", UUID.randomUUID(), FileStatus.DELETED, false)).getId();
+            springDataFileVersionRepository.save(new FileVersionJpaEntity(fileIdValue, 10L, 1, "s3://b/v1"));
+            springDataFileShareRepository.save(
+                    new FileShareJpaEntity(fileIdValue, UUID.randomUUID(), UUID.randomUUID(), Role.VIEWER));
+            springDataFileFavoriteRepository.save(new FileFavoriteJpaEntity(UUID.randomUUID(), fileIdValue));
+
+            filePersistenceAdapter.purgeFile(new FileId(fileIdValue));
+            entityManager.clear();
+
+            FileJpaEntity tombstone = springDataFileRepository.findById(fileIdValue).orElseThrow();
+            assertThat(tombstone.getDeletedAt()).isNotNull();
+            assertThat(tombstone.getStatus()).isEqualTo(FileStatus.DELETED);
+            assertThat(springDataFileVersionRepository.findByFileIdOrderByCreatedAtDesc(
+                    fileIdValue, org.springframework.data.domain.PageRequest.of(0, 10))).isEmpty();
+            assertThat(springDataFileShareRepository.findByFileId(fileIdValue)).isEmpty();
+            assertThat(springDataFileFavoriteRepository.count()).isZero();
+        }
     }
 
     @Nested

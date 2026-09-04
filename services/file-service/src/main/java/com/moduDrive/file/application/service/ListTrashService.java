@@ -7,7 +7,6 @@ import com.moduDrive.file.application.port.in.usecase.ListTrashUseCase;
 import com.moduDrive.file.application.port.out.FindFilePort;
 import com.moduDrive.file.application.port.out.FindNamespacePort;
 import com.moduDrive.file.domain.model.File;
-import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.Namespace;
 import com.moduDrive.file.domain.model.Namespace.NamespaceId;
 import com.moduDrive.file.exception.FileExceptionCase;
@@ -33,7 +32,7 @@ class ListTrashService implements ListTrashUseCase {
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.NAMESPACE_NOT_FOUND));
 
         List<File> deleted = favoriteEnricher.withFavorites(command.getUserId().value(),
-                findFilePort.findByNamespaceIdAndStatus(new NamespaceId(namespace.getId()), FileStatus.DELETED));
+                findFilePort.findTrashedNotPurged(new NamespaceId(namespace.getId())));
 
         // Deleting a directory cascades DELETED onto every descendant, so trash would otherwise
         // list each nested file/folder too — keep only the roots of each deleted subtree.

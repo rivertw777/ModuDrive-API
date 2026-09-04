@@ -40,14 +40,14 @@ class FilePurgerTest {
     class WhenRootIsAFile {
 
         @Test
-        void purgesItsBlocksThenDeletesTheRow() {
+        void purgesItsBlocksThenTombstonesTheRow() {
             File file = makeFile(new FileIsDirectory(false));
 
             filePurger.purgeRoot(file);
 
             then(purgeStorageBlocksPort).should().purgeBlocks(new FileId(file.getId()), ownerId);
             then(directoryCascader).shouldHaveNoInteractions();
-            then(saveFilePort).should().deleteFile(new FileId(file.getId()));
+            then(saveFilePort).should().purgeFile(new FileId(file.getId()));
         }
     }
 
@@ -63,7 +63,7 @@ class FilePurgerTest {
 
             then(directoryCascader).should().purge(any(), eq(directory.fullPath()), any());
             then(purgeStorageBlocksPort).shouldHaveNoInteractions();
-            then(saveFilePort).should().deleteFile(new FileId(directory.getId()));
+            then(saveFilePort).should().purgeFile(new FileId(directory.getId()));
         }
     }
 }

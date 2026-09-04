@@ -73,6 +73,7 @@ class RestoreFileServiceTest {
             File result = restoreFileService.restoreFile(command);
 
             assertThat(result.getStatus()).isEqualTo(FileStatus.UPLOADED);
+            assertThat(result.getTrashedAt()).isNull();
             then(saveFilePort).should().saveFile(any(File.class));
             then(directoryCascader).shouldHaveNoInteractions();
         }

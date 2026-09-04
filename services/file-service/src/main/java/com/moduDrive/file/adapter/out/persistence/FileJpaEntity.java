@@ -1,6 +1,5 @@
 package com.moduDrive.file.adapter.out.persistence;
 
-import com.moduDrive.common.infrastructure.jpa.audit.BaseTimeEntity;
 import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.Role;
 import com.moduDrive.file.domain.model.ShareScope;
@@ -10,7 +9,11 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.UuidGenerator;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Getter
@@ -25,12 +28,13 @@ import java.util.UUID;
 @Table(name = "file", uniqueConstraints = {
         @UniqueConstraint(name = "uk_file_namespace_path_active_name", columnNames = {"namespace_id", "path", "active_slot_name"})
 }, indexes = {
-        // Backs the trash-retention sweep's findByStatusAndUpdatedAtBefore, which scans every
-        // namespace — without this it's a full table scan every night.
-        @Index(name = "ix_file_status_updated_at", columnList = "status, updated_at")
+        // Backs the trash-retention sweep (findExpiredTrash: status + trashed_at), which scans
+        // every namespace — without this it's a full table scan every night.
+        @Index(name = "ix_file_status_trashed_at", columnList = "status, trashed_at")
 })
 @Entity
-class FileJpaEntity extends BaseTimeEntity {
+@EntityListeners(AuditingEntityListener.class)
+class FileJpaEntity {
 
     @Id
     @UuidGenerator(style = UuidGenerator.Style.VERSION_7)
@@ -82,6 +86,19 @@ class FileJpaEntity extends BaseTimeEntity {
     @Column(name = "active_slot_name")
     private String activeSlotName;
 
+    @CreatedDate
+    @Column(updatable = false)
+    private LocalDateTime createdAt;
+
+    @LastModifiedDate
+    private LocalDateTime updatedAt;
+
+    /** Set when the file is sent to trash, cleared on restore. */
+    private LocalDateTime trashedAt;
+
+    /** Set when the file is purged from trash — the row then lives on only as a tombstone. */
+    private LocalDateTime deletedAt;
+
     FileJpaEntity(UUID namespaceId, String name, String path, UUID ownerId, FileStatus status, boolean directory) {
         this.namespaceId = namespaceId;
         this.name = name;
@@ -94,7 +111,8 @@ class FileJpaEntity extends BaseTimeEntity {
     }
 
     void applyChanges(String name, String path, UUID currentVersionId, Long fileSize, FileStatus status,
-                      ShareScope accessScope, UUID linkToken, Role linkRole) {
+                      ShareScope accessScope, UUID linkToken, Role linkRole,
+                      LocalDateTime trashedAt, LocalDateTime deletedAt) {
         this.name = name;
         this.path = path;
         this.currentVersionId = currentVersionId;
@@ -103,6 +121,8 @@ class FileJpaEntity extends BaseTimeEntity {
         this.accessScope = accessScope;
         this.linkToken = linkToken;
         this.linkRole = linkRole;
+        this.trashedAt = trashedAt;
+        this.deletedAt = deletedAt;
         this.activeSlotName = activeSlotName(name, status);
     }
 

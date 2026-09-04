@@ -1,0 +1,59 @@
+package com.moduDrive.file.config;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.ApplicationArguments;
+import org.springframework.boot.ApplicationRunner;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Component;
+
+/**
+ * One-time, idempotent trash-lifecycle fixup for the {@code file} table.
+ * <ol>
+ *   <li>Backfills {@code trashed_at} for files already in the trash — before this column existed
+ *       the retention sweep used {@code updated_at}, so that's the best available "trashed on"
+ *       value. Without it every pre-existing trashed file drops out of the trash view
+ *       (which now filters on {@code trashed_at}).</li>
+ *   <li>Drops the {@code is_deleted} column left behind by {@code BaseTimeEntity} — nothing reads
+ *       it any more (a tombstone is {@code deleted_at IS NOT NULL}).</li>
+ * </ol>
+ * This repo has no Flyway/Liquibase (see CLAUDE.md), and {@code ddl-auto=update} adds columns
+ * but never backfills or drops them. Each statement is a no-op once applied; safe on every boot.
+ */
+@Slf4j
+@Component
+@RequiredArgsConstructor
+class FileTrashLifecycleMigration implements ApplicationRunner {
+
+    private final JdbcTemplate jdbcTemplate;
+
+    @Override
+    public void run(ApplicationArguments args) {
+        backfillTrashedAt();
+        dropIsDeletedColumn();
+    }
+
+    private void backfillTrashedAt() {
+        try {
+            int updated = jdbcTemplate.update(
+                    "UPDATE file SET trashed_at = updated_at WHERE status = 'DELETED' AND trashed_at IS NULL");
+            // Always logged: a miss here empties every user's trash view, so "ran, 0 rows" has to
+            // be distinguishable from "threw".
+            log.info("file.trashed_at backfill: {} row(s) updated", updated);
+        } catch (Exception e) {
+            log.error("file.trashed_at backfill FAILED — pre-existing trashed files will be "
+                    + "missing from the trash view until this succeeds", e);
+        }
+    }
+
+    private void dropIsDeletedColumn() {
+        try {
+            jdbcTemplate.execute("ALTER TABLE file DROP COLUMN IF EXISTS is_deleted");
+            // The retention sweep now keys on trashed_at, not updated_at — drop the stale index.
+            jdbcTemplate.execute("DROP INDEX IF EXISTS ix_file_status_updated_at");
+        } catch (Exception e) {
+            // Harmless leftovers that nothing reads — log and move on.
+            log.warn("file.is_deleted / ix_file_status_updated_at cleanup skipped", e);
+        }
+    }
+}

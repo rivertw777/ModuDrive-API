@@ -80,7 +80,8 @@ class FilePersistenceAdapter implements
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_NOT_FOUND));
 
         entity.applyChanges(file.getName(), file.getPath(), file.getCurrentVersionId(), file.getFileSize(),
-                file.getStatus(), file.getAccessScope(), file.getLinkToken(), file.getLinkRole());
+                file.getStatus(), file.getAccessScope(), file.getLinkToken(), file.getLinkRole(),
+                file.getTrashedAt(), file.getDeletedAt());
 
         // Same conflict, different door: rename/move/restore land here, and none of their callers
         // pre-check the destination slot either (e.g. RestoreFileService can restore a file back
@@ -112,17 +113,32 @@ class FilePersistenceAdapter implements
                 && cause.getMessage().toLowerCase().contains("uk_file_namespace_path_active_name");
     }
 
+    /** Hard delete — no caller in the trash flow anymore (purgeFile keeps a tombstone), kept for
+     * a future job that clears out tombstones older than the recovery window. */
     @Override
     public void deleteFile(FileId fileId) {
-        // A purged file's versions would otherwise dangle forever, pointing at S3 prefixes that
-        // FilePurger/DirectoryCascader already deleted the blocks under. Its share and favorite
-        // rows likewise — there is no FK cascade, so a grant or a star on a permanently-deleted
-        // file/folder would linger and only ever get filtered out at read time
-        // (ListSharedWithMeService / ListFavoritesService).
+        cascadeDeleteAttachments(fileId);
+        fileRepository.deleteById(fileId.value());
+    }
+
+    @Override
+    public void purgeFile(FileId fileId) {
+        // Tombstone purge: drop everything that costs storage, keep the metadata row with
+        // deletedAt stamped. markPurged is a plain UPDATE (not a JPA save) so it doesn't bump
+        // updatedAt — DirectoryCascader.purge's sibling check relies on trash-time timestamps
+        // staying put.
+        cascadeDeleteAttachments(fileId);
+        fileRepository.markPurged(fileId.value(), LocalDateTime.now());
+    }
+
+    // The file's versions would otherwise dangle forever, pointing at S3 prefixes that
+    // FilePurger/DirectoryCascader already deleted the blocks under. Its share and favorite rows
+    // likewise — no FK cascade, so a grant or a star on a purged file/folder would linger and
+    // only ever get filtered out at read time (ListSharedWithMeService / ListFavoritesService).
+    private void cascadeDeleteAttachments(FileId fileId) {
         fileVersionRepository.deleteByFileId(fileId.value());
         fileShareRepository.deleteByFileId(fileId.value());
         fileFavoriteRepository.deleteByFileId(fileId.value());
-        fileRepository.deleteById(fileId.value());
     }
 
     @Override
@@ -210,9 +226,9 @@ class FilePersistenceAdapter implements
     }
 
     @Override
-    public List<File> findByNamespaceIdAndStatus(NamespaceId namespaceId, FileStatus status) {
+    public List<File> findTrashedNotPurged(NamespaceId namespaceId) {
         return fileRepository
-                .findByNamespaceIdAndStatus(namespaceId.value(), status)
+                .findByNamespaceIdAndStatusAndDeletedAtIsNull(namespaceId.value(), FileStatus.DELETED)
                 .stream()
                 .map(fileMapper::mapFileToDomain)
                 .collect(Collectors.toList());
@@ -242,8 +258,9 @@ class FilePersistenceAdapter implements
     }
 
     @Override
-    public List<File> findByStatusAndUpdatedAtBefore(FileStatus status, LocalDateTime cutoff) {
-        return fileRepository.findByStatusAndUpdatedAtBefore(status, cutoff)
+    public List<File> findExpiredTrash(LocalDateTime cutoff) {
+        return fileRepository
+                .findByStatusAndDeletedAtIsNullAndTrashedAtBefore(FileStatus.DELETED, cutoff)
                 .stream()
                 .map(fileMapper::mapFileToDomain)
                 .collect(Collectors.toList());

@@ -63,7 +63,7 @@ class EmptyTrashServiceTest {
                     new FileOwnerId(userId), null, null, FileStatus.DELETED, new FileIsDirectory(false));
 
             given(findNamespacePort.findByUserId(any())).willReturn(Optional.of(namespace));
-            given(findFilePort.findByNamespaceIdAndStatus(any(), eq(FileStatus.DELETED)))
+            given(findFilePort.findTrashedNotPurged(any()))
                     .willReturn(List.of(file, directory, nestedFile));
 
             emptyTrashService.emptyTrash(command);
@@ -90,7 +90,7 @@ class EmptyTrashServiceTest {
                     new FileOwnerId(userId), null, null, FileStatus.DELETED, new FileIsDirectory(false));
 
             given(findNamespacePort.findByUserId(any())).willReturn(Optional.of(namespace));
-            given(findFilePort.findByNamespaceIdAndStatus(any(), eq(FileStatus.DELETED)))
+            given(findFilePort.findTrashedNotPurged(any()))
                     .willReturn(List.of(failing, ok));
             willThrow(new RuntimeException("storage-service unreachable")).given(filePurger).purgeRoot(failing);
 
@@ -107,7 +107,7 @@ class EmptyTrashServiceTest {
         @Test
         void doesNothing() {
             given(findNamespacePort.findByUserId(any())).willReturn(Optional.of(namespace));
-            given(findFilePort.findByNamespaceIdAndStatus(any(), eq(FileStatus.DELETED))).willReturn(List.of());
+            given(findFilePort.findTrashedNotPurged(any())).willReturn(List.of());
 
             emptyTrashService.emptyTrash(command);
 

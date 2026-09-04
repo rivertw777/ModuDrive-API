@@ -52,7 +52,7 @@ class PurgeExpiredTrashServiceTest {
                     new FileName("stale.png"), new FilePath("/2"),
                     new FileOwnerId(UUID.randomUUID()), null, null, FileStatus.DELETED, new FileIsDirectory(false));
 
-            given(findFilePort.findByStatusAndUpdatedAtBefore(eq(FileStatus.DELETED), any(LocalDateTime.class)))
+            given(findFilePort.findExpiredTrash(any(LocalDateTime.class)))
                     .willReturn(List.of(fileInA, directoryInA, nestedFileInA, fileInB));
 
             purgeExpiredTrashService.purgeExpiredTrash();
@@ -79,7 +79,7 @@ class PurgeExpiredTrashServiceTest {
                     new FileName("fine.pdf"), new FilePath("/2"),
                     new FileOwnerId(UUID.randomUUID()), null, null, FileStatus.DELETED, new FileIsDirectory(false));
 
-            given(findFilePort.findByStatusAndUpdatedAtBefore(eq(FileStatus.DELETED), any(LocalDateTime.class)))
+            given(findFilePort.findExpiredTrash(any(LocalDateTime.class)))
                     .willReturn(List.of(failing, ok));
             willThrow(new RuntimeException("storage-service unreachable")).given(filePurger).purgeRoot(failing);
 
@@ -95,7 +95,7 @@ class PurgeExpiredTrashServiceTest {
 
         @Test
         void doesNothing() {
-            given(findFilePort.findByStatusAndUpdatedAtBefore(eq(FileStatus.DELETED), any(LocalDateTime.class)))
+            given(findFilePort.findExpiredTrash(any(LocalDateTime.class)))
                     .willReturn(List.of());
 
             purgeExpiredTrashService.purgeExpiredTrash();

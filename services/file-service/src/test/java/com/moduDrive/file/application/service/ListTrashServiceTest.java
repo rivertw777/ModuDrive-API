@@ -60,7 +60,7 @@ class ListTrashServiceTest {
                     new FileOwnerId(UUID.randomUUID()), null, null, FileStatus.DELETED, new FileIsDirectory(false));
 
             given(findNamespacePort.findByUserId(any())).willReturn(Optional.of(namespace));
-            given(findFilePort.findByNamespaceIdAndStatus(any(), any())).willReturn(List.of(file));
+            given(findFilePort.findTrashedNotPurged(any())).willReturn(List.of(file));
 
             List<File> result = listTrashService.listTrash(command);
 
@@ -80,7 +80,7 @@ class ListTrashServiceTest {
                     new FileOwnerId(UUID.randomUUID()), null, null, FileStatus.DELETED, new FileIsDirectory(false));
 
             given(findNamespacePort.findByUserId(any())).willReturn(Optional.of(namespace));
-            given(findFilePort.findByNamespaceIdAndStatus(any(), any())).willReturn(List.of(directory, nestedFile));
+            given(findFilePort.findTrashedNotPurged(any())).willReturn(List.of(directory, nestedFile));
 
             List<File> result = listTrashService.listTrash(command);
 

@@ -45,11 +45,12 @@ class DirectoryCascaderTest {
         return childAt(path, name, status, trashedAt);
     }
 
-    private File childAt(String path, String name, FileStatus status, LocalDateTime updatedAt) {
+    private File childAt(String path, String name, FileStatus status, LocalDateTime trashTime) {
         File file = File.withId(new FileId(UUID.randomUUID()), new FileNamespaceId(namespaceId.value()),
                 new FileName(name), new FilePath(path),
                 new FileOwnerId(UUID.randomUUID()), null, null, status, new FileIsDirectory(false));
-        file.markUpdatedAt(updatedAt);
+        file.markUpdatedAt(trashTime);
+        if (status == FileStatus.DELETED) file.markTrashedAt(trashTime);
         return file;
     }
 
@@ -122,8 +123,8 @@ class DirectoryCascaderTest {
 
         directoryCascader.purge(namespaceId, "/A", trashedAt);
 
-        then(saveFilePort).should(times(1)).deleteFile(new FileId(deleted.getId()));
-        then(saveFilePort).should(times(0)).deleteFile(new FileId(restoredEarly.getId()));
+        then(saveFilePort).should(times(1)).purgeFile(new FileId(deleted.getId()));
+        then(saveFilePort).should(times(0)).purgeFile(new FileId(restoredEarly.getId()));
         then(purgeStorageBlocksPort).should(times(1))
                 .purgeBlocks(new FileId(deleted.getId()), deleted.getOwnerId());
         then(purgeStorageBlocksPort).should(times(0)).purgeBlocks(new FileId(restoredEarly.getId()), restoredEarly.getOwnerId());
@@ -136,12 +137,13 @@ class DirectoryCascaderTest {
                 new FileName("하위폴더"), new FilePath("/A"),
                 new FileOwnerId(UUID.randomUUID()), null, null, FileStatus.DELETED, new FileIsDirectory(true));
         deletedDirectory.markUpdatedAt(trashedAt);
+        deletedDirectory.markTrashedAt(trashedAt);
         given(findFilePort.findByNamespaceIdAndPathStartingWith(namespaceId, "/A"))
                 .willReturn(List.of(deletedDirectory));
 
         directoryCascader.purge(namespaceId, "/A", trashedAt);
 
-        then(saveFilePort).should(times(1)).deleteFile(new FileId(deletedDirectory.getId()));
+        then(saveFilePort).should(times(1)).purgeFile(new FileId(deletedDirectory.getId()));
         then(purgeStorageBlocksPort).shouldHaveNoInteractions();
     }
 
@@ -157,8 +159,8 @@ class DirectoryCascaderTest {
 
         directoryCascader.purge(namespaceId, "/A", trashedAt);
 
-        then(saveFilePort).should(times(1)).deleteFile(new FileId(ownDescendant.getId()));
-        then(saveFilePort).should(times(0)).deleteFile(new FileId(unrelatedNamesakeDescendant.getId()));
+        then(saveFilePort).should(times(1)).purgeFile(new FileId(ownDescendant.getId()));
+        then(saveFilePort).should(times(0)).purgeFile(new FileId(unrelatedNamesakeDescendant.getId()));
         then(purgeStorageBlocksPort).should(times(0))
                 .purgeBlocks(new FileId(unrelatedNamesakeDescendant.getId()), unrelatedNamesakeDescendant.getOwnerId());
     }

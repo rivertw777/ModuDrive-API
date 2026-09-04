@@ -58,13 +58,16 @@ class DeleteFileServiceTest {
     class WhenFileIsUploaded {
 
         @Test
-        void softDeletesFile() {
+        void softDeletesFileAndStampsTrashedAt() {
             given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(makeFile(FileStatus.UPLOADED)));
             given(saveFilePort.saveFile(any())).willAnswer(inv -> inv.getArgument(0));
 
             deleteFileService.deleteFile(command);
 
-            then(saveFilePort).should().saveFile(any(File.class));
+            org.mockito.ArgumentCaptor<File> saved = org.mockito.ArgumentCaptor.forClass(File.class);
+            then(saveFilePort).should().saveFile(saved.capture());
+            assertThat(saved.getValue().getStatus()).isEqualTo(FileStatus.DELETED);
+            assertThat(saved.getValue().getTrashedAt()).isNotNull();
             then(directoryCascader).shouldHaveNoInteractions();
         }
     }
