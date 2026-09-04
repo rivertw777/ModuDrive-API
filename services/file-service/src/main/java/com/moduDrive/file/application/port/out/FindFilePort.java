@@ -4,7 +4,6 @@ import com.moduDrive.file.application.port.in.usecase.DirectoryPage;
 import com.moduDrive.file.domain.model.DirectorySort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.FileId;
-import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.Namespace.NamespaceId;
 
 import java.time.LocalDateTime;
@@ -34,9 +33,9 @@ public interface FindFilePort {
      * descendant of the directory whose full path is {@code pathPrefix}. */
     List<File> findByNamespaceIdAndPathStartingWith(NamespaceId namespaceId, String pathPrefix);
 
-    List<File> findByNamespaceIdAndStatus(NamespaceId namespaceId, FileStatus status);
-
-    List<File> findByNamespaceIdAndFavorite(NamespaceId namespaceId);
+    /** The trash view: files sent to trash and not yet purged. A purged tombstone
+     * ({@code deletedAt} set) is excluded — its contents are already gone. */
+    List<File> findTrashedNotPurged(NamespaceId namespaceId);
 
     List<File> findByNamespaceIdAndNameContaining(NamespaceId namespaceId, String query);
 
@@ -44,9 +43,8 @@ public interface FindFilePort {
 
     long sumFileSizeByNamespaceId(NamespaceId namespaceId);
 
-    /** Every DELETED file across every namespace whose {@code updatedAt} — i.e. the moment it
-     * was trashed, since nothing else touches a DELETED row — is older than {@code cutoff}.
-     * Used by the trash-retention sweep; unlike the rest of this port, deliberately not scoped
-     * to one namespace. */
-    List<File> findByStatusAndUpdatedAtBefore(FileStatus status, LocalDateTime cutoff);
+    /** Every not-yet-purged trashed file across every namespace that was trashed before
+     * {@code cutoff}. Used by the retention sweep; unlike the rest of this port, deliberately
+     * not scoped to one namespace. */
+    List<File> findExpiredTrash(LocalDateTime cutoff);
 }

@@ -19,6 +19,7 @@ class ListDirectoryService implements ListDirectoryUseCase {
 
     private final FindNamespacePort findNamespacePort;
     private final FindFilePort findFilePort;
+    private final FavoriteEnricher favoriteEnricher;
 
     @Transactional(readOnly = true)
     @Override
@@ -26,11 +27,13 @@ class ListDirectoryService implements ListDirectoryUseCase {
         Namespace namespace = findNamespacePort.findByUserId(command.getUserId())
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.NAMESPACE_NOT_FOUND));
 
-        return findFilePort.findDirectoryPage(
+        DirectoryPage page = findFilePort.findDirectoryPage(
                 new NamespaceId(namespace.getId()),
                 command.getPath().value(),
                 command.getSort(),
                 command.getCursor(),
                 command.getLimit());
+        favoriteEnricher.withFavorites(command.getUserId().value(), page.content());
+        return page;
     }
 }

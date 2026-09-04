@@ -7,7 +7,6 @@ import com.moduDrive.file.application.port.in.usecase.EmptyTrashUseCase;
 import com.moduDrive.file.application.port.out.FindFilePort;
 import com.moduDrive.file.application.port.out.FindNamespacePort;
 import com.moduDrive.file.domain.model.File;
-import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.Namespace;
 import com.moduDrive.file.domain.model.Namespace.NamespaceId;
 import com.moduDrive.file.exception.FileExceptionCase;
@@ -36,11 +35,11 @@ class EmptyTrashService implements EmptyTrashUseCase {
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.NAMESPACE_NOT_FOUND));
 
         NamespaceId namespaceId = new NamespaceId(namespace.getId());
-        List<File> deleted = findFilePort.findByNamespaceIdAndStatus(namespaceId, FileStatus.DELETED);
+        List<File> deleted = findFilePort.findTrashedNotPurged(namespaceId);
 
         // Same trick as ListTrashService: purging a trashed directory root cascades onto every
         // descendant, so purging both the root and its already-covered descendants would double
-        // up work (deleteFile on an already-deleted row is harmless, but pointless).
+        // up work (purgeFile on an already-purged row is a no-op UPDATE, but pointless).
         Set<String> deletedDirectoryFullPaths = deleted.stream()
                 .filter(File::isDirectory)
                 .map(File::fullPath)

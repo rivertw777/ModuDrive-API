@@ -22,6 +22,7 @@ class GetFilesByCategoryService implements GetFilesByCategoryUseCase {
 
     private final FindNamespacePort findNamespacePort;
     private final FindFilePort findFilePort;
+    private final FavoriteEnricher favoriteEnricher;
 
     @Transactional(readOnly = true)
     @Override
@@ -29,9 +30,10 @@ class GetFilesByCategoryService implements GetFilesByCategoryUseCase {
         Namespace namespace = findNamespacePort.findByUserId(command.getUserId())
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.NAMESPACE_NOT_FOUND));
 
-        return findFilePort.findByNamespaceId(new NamespaceId(namespace.getId()))
+        List<File> inCategory = findFilePort.findByNamespaceId(new NamespaceId(namespace.getId()))
                 .stream()
                 .filter(file -> FileCategory.of(file.getName()) == command.getCategory())
                 .toList();
+        return favoriteEnricher.withFavorites(command.getUserId().value(), inCategory);
     }
 }

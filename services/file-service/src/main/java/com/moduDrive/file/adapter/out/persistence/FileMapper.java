@@ -41,8 +41,9 @@ class FileMapper {
                 entity.getStatus(),
                 new FileIsDirectory(entity.isDirectory())
         );
-        file.markFavorite(entity.isFavorite());
         file.markUpdatedAt(entity.getUpdatedAt());
+        file.markTrashedAt(entity.getTrashedAt());
+        file.markDeletedAt(entity.getDeletedAt());
         // Rows written before access_scope existed read back as null — treat that as RESTRICTED
         // so a legacy row can never be mistaken for a publicly linkable one.
         if (entity.getAccessScope() == ShareScope.LINK) {

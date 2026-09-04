@@ -6,7 +6,6 @@ import com.moduDrive.file.application.port.in.command.UpdateFileFavoriteCommand;
 import com.moduDrive.file.application.port.in.usecase.UpdateFileFavoriteUseCase;
 import com.moduDrive.file.application.port.out.FileFavoritePort;
 import com.moduDrive.file.application.port.out.FindFilePort;
-import com.moduDrive.file.application.port.out.SaveFilePort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.Permission;
 import com.moduDrive.file.exception.FileExceptionCase;
@@ -18,7 +17,6 @@ import org.springframework.transaction.annotation.Transactional;
 class UpdateFileFavoriteService implements UpdateFileFavoriteUseCase {
 
     private final FindFilePort findFilePort;
-    private final SaveFilePort saveFilePort;
     private final FileFavoritePort fileFavoritePort;
     private final FileAccessGuard fileAccessGuard;
 
@@ -28,21 +26,19 @@ class UpdateFileFavoriteService implements UpdateFileFavoriteUseCase {
         File file = findFilePort.findById(command.getFileId())
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_NOT_FOUND));
 
-        if (file.getOwnerId().equals(command.getCallerId())) {
-            // The owner's favorite is a column on their own file row.
-            file.markFavorite(command.isFavorite());
-            return saveFilePort.saveFile(file);
+        // Anyone who can read the file may star it — for themselves only. A non-owner needs a
+        // share; the owner always passes.
+        if (!file.getOwnerId().equals(command.getCallerId())) {
+            fileAccessGuard.requirePermission(file, command.getCallerId(), Permission.READ);
         }
 
-        // A shared file: favorite is per-user (see FileFavoritePort), so any grantee who can read
-        // it may star it — for themselves only, never touching the owner's column.
-        fileAccessGuard.requirePermission(file, command.getCallerId(), Permission.READ);
+        // Every star — owner's or not — is one file_favorite row. Nothing on the file itself
+        // changes, so no saveFile: markFavorite here only echoes the new state into the response.
         if (command.isFavorite()) {
             fileFavoritePort.favorite(command.getCallerId(), file.getId());
         } else {
             fileFavoritePort.unfavorite(command.getCallerId(), file.getId());
         }
-        // Reflect the caller's new state in the response; not persisted onto the file row.
         file.markFavorite(command.isFavorite());
         return file;
     }

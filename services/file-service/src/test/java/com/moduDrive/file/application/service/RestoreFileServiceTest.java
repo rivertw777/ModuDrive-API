@@ -8,6 +8,7 @@ import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
 import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.exception.FileExceptionCase;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -24,6 +25,7 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.BDDMockito.then;
 
 import com.moduDrive.file.domain.model.Role;
@@ -37,7 +39,13 @@ class RestoreFileServiceTest {
     @Mock private SaveFilePort saveFilePort;
     @Mock private DirectoryCascader directoryCascader;
     @Mock private FileAccessGuard fileAccessGuard;
+    @Mock private FavoriteEnricher favoriteEnricher;
     @InjectMocks private RestoreFileService restoreFileService;
+
+    @BeforeEach
+    void passThroughFavoriteEnricher() {
+        lenient().when(favoriteEnricher.withFavorite(any(), any())).thenAnswer(inv -> inv.getArgument(1));
+    }
 
     private final UUID fileId = UUID.randomUUID();
     private final UUID callerId = UUID.randomUUID();
@@ -65,6 +73,7 @@ class RestoreFileServiceTest {
             File result = restoreFileService.restoreFile(command);
 
             assertThat(result.getStatus()).isEqualTo(FileStatus.UPLOADED);
+            assertThat(result.getTrashedAt()).isNull();
             then(saveFilePort).should().saveFile(any(File.class));
             then(directoryCascader).shouldHaveNoInteractions();
         }
@@ -83,6 +92,25 @@ class RestoreFileServiceTest {
             restoreFileService.restoreFile(command);
 
             then(directoryCascader).should().restore(any(), eq("/1/docs/report.pdf"));
+        }
+    }
+
+    @Nested
+    @DisplayName("파일이 purge된 tombstone일 때")
+    class WhenFileIsATombstone {
+
+        @Test
+        void throwsFileNotFound() {
+            File tombstone = makeFile(FileStatus.DELETED);
+            tombstone.markDeletedAt(java.time.LocalDateTime.now());
+            given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(tombstone));
+
+            Throwable thrown = catchThrowable(() -> restoreFileService.restoreFile(command));
+
+            assertThat(thrown).isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(FileExceptionCase.FILE_NOT_FOUND);
+            then(saveFilePort).shouldHaveNoInteractions();
         }
     }
 

@@ -21,6 +21,7 @@ class MoveFileService implements MoveFileUseCase {
     private final SaveFilePort saveFilePort;
     private final DirectoryCascader directoryCascader;
     private final FileAccessGuard fileAccessGuard;
+    private final FavoriteEnricher favoriteEnricher;
 
     @Transactional
     @Override
@@ -47,6 +48,6 @@ class MoveFileService implements MoveFileUseCase {
             directoryCascader.movePath(new NamespaceId(saved.getNamespaceId()), oldFullPath, saved.fullPath());
         }
 
-        return saved;
+        return favoriteEnricher.withFavorite(command.getCallerId(), saved);
     }
 }

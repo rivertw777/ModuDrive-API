@@ -21,6 +21,7 @@ class ListAllFilesService implements ListAllFilesUseCase {
 
     private final FindNamespacePort findNamespacePort;
     private final FindFilePort findFilePort;
+    private final FavoriteEnricher favoriteEnricher;
 
     @Transactional(readOnly = true)
     @Override
@@ -28,6 +29,7 @@ class ListAllFilesService implements ListAllFilesUseCase {
         Namespace namespace = findNamespacePort.findByUserId(command.getUserId())
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.NAMESPACE_NOT_FOUND));
 
-        return findFilePort.findByNamespaceId(new NamespaceId(namespace.getId()));
+        return favoriteEnricher.withFavorites(command.getUserId().value(),
+                findFilePort.findByNamespaceId(new NamespaceId(namespace.getId())));
     }
 }

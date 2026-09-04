@@ -13,10 +13,11 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.UUID;
 
 /**
- * Permanently deletes one trash root — every purge path (single-file purge, empty-trash,
- * scheduled retention sweep) ends up doing exactly this for each root it finds, so it's
- * centralized here rather than repeated per caller. A directory has no blocks of its own;
- * {@link DirectoryCascader#purge} both purges its descendants' blocks and deletes their rows.
+ * Purges one trash root — every purge path (single-file purge, empty-trash, scheduled retention
+ * sweep) ends up doing exactly this for each root it finds, so it's centralized here rather than
+ * repeated per caller. "Purge" keeps the metadata row as a tombstone ({@code file.deleted_at});
+ * only the blocks/versions/shares/favorites go. A directory has no blocks of its own;
+ * {@link DirectoryCascader#purge} tombstones its descendants and drops their blocks.
  *
  * {@code REQUIRES_NEW}: a batch caller (empty-trash, the retention sweep) purges many roots in
  * one pass — without its own transaction, one root's failure would roll back every other root
@@ -34,15 +35,15 @@ class FilePurger {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     void purgeRoot(File root) {
         if (root.isDirectory()) {
-            directoryCascader.purge(new NamespaceId(root.getNamespaceId()), root.fullPath(), root.getUpdatedAt());
+            directoryCascader.purge(new NamespaceId(root.getNamespaceId()), root.fullPath(), root.getTrashedAt());
         } else {
             FileId fileId = new FileId(root.getId());
             UUID ownerId = root.getOwnerId();
             // Deferred to after commit: the S3 delete can't be rolled back, so it must not run
-            // until the row deletion below is actually durable — otherwise a later failure in
-            // this same transaction would roll the row back while its blocks stay gone.
+            // until the tombstone below is actually durable — otherwise a later failure in this
+            // same transaction would roll the row back while its blocks stay gone.
             AfterCommit.run(() -> purgeStorageBlocksPort.purgeBlocks(fileId, ownerId));
         }
-        saveFilePort.deleteFile(new FileId(root.getId()));
+        saveFilePort.purgeFile(new FileId(root.getId()));
     }
 }

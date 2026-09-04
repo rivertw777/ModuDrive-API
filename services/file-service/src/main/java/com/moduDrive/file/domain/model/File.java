@@ -26,6 +26,12 @@ public class File {
     private UUID linkToken;
     /** Only meaningful while {@code accessScope == LINK}; null otherwise. */
     private Role linkRole;
+    /** When this file was sent to trash; null while it is not in the trash. */
+    private LocalDateTime trashedAt;
+    /** When this file was purged from the trash. Non-null makes the row a tombstone — its
+     * blocks/versions/shares/favorites are gone but the metadata row is kept as a deletion
+     * record. Every {@code status != DELETED} read already hides it. */
+    private LocalDateTime deletedAt;
 
     public static File create(FileNamespaceId namespaceId,
                               FileName name,
@@ -45,6 +51,8 @@ public class File {
                 false,
                 null,
                 ShareScope.RESTRICTED,
+                null,
+                null,
                 null,
                 null
         );
@@ -67,6 +75,8 @@ public class File {
                 false,
                 null,
                 ShareScope.RESTRICTED,
+                null,
+                null,
                 null,
                 null
         );
@@ -95,6 +105,8 @@ public class File {
                 null,
                 ShareScope.RESTRICTED,
                 null,
+                null,
+                null,
                 null
         );
     }
@@ -114,12 +126,17 @@ public class File {
         this.fileSize = size;
     }
 
-    public void softDelete() {
+    /** {@code trashedAt} is passed in, not read from the clock here, so a directory and every
+     * descendant trashed in the same cascade share one instant — {@code DirectoryCascader.purge}
+     * tells a cascade sibling from a later, unrelated file at a reused path by that equality. */
+    public void softDelete(LocalDateTime trashedAt) {
         this.status = FileStatus.DELETED;
+        this.trashedAt = trashedAt;
     }
 
     public void restore() {
         this.status = FileStatus.UPLOADED;
+        this.trashedAt = null;
     }
 
     public void rename(FileName name) {
@@ -142,6 +159,14 @@ public class File {
 
     public void markUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public void markTrashedAt(LocalDateTime trashedAt) {
+        this.trashedAt = trashedAt;
+    }
+
+    public void markDeletedAt(LocalDateTime deletedAt) {
+        this.deletedAt = deletedAt;
     }
 
     /** Idempotent in the token: an already-issued token is kept, so re-selecting LINK never

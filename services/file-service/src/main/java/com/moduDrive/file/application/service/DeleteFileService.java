@@ -13,6 +13,8 @@ import com.moduDrive.file.exception.FileExceptionCase;
 import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+
 @UseCase
 @RequiredArgsConstructor
 class DeleteFileService implements DeleteFileUseCase {
@@ -32,11 +34,13 @@ class DeleteFileService implements DeleteFileUseCase {
         if (file.getStatus() == FileStatus.DELETED) {
             throw new BusinessException(FileExceptionCase.FILE_ALREADY_DELETED);
         }
-        file.softDelete();
+        // One instant for the whole subtree — see File.softDelete / DirectoryCascader.purge.
+        LocalDateTime trashedAt = LocalDateTime.now();
+        file.softDelete(trashedAt);
         File saved = saveFilePort.saveFile(file);
 
         if (saved.isDirectory()) {
-            directoryCascader.softDelete(new NamespaceId(saved.getNamespaceId()), saved.fullPath());
+            directoryCascader.softDelete(new NamespaceId(saved.getNamespaceId()), saved.fullPath(), trashedAt);
         }
     }
 }

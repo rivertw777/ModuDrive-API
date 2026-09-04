@@ -4,7 +4,6 @@ import com.moduDrive.common.core.annotation.UseCase;
 import com.moduDrive.file.application.port.in.usecase.PurgeExpiredTrashUseCase;
 import com.moduDrive.file.application.port.out.FindFilePort;
 import com.moduDrive.file.domain.model.File;
-import com.moduDrive.file.domain.model.FileStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -33,7 +32,7 @@ class PurgeExpiredTrashService implements PurgeExpiredTrashUseCase {
     @Override
     public void purgeExpiredTrash() {
         LocalDateTime cutoff = LocalDateTime.now().minusDays(TRASH_RETENTION_DAYS);
-        List<File> expired = findFilePort.findByStatusAndUpdatedAtBefore(FileStatus.DELETED, cutoff);
+        List<File> expired = findFilePort.findExpiredTrash(cutoff);
 
         // Group by namespace, then within each namespace keep only the roots of a deleted
         // subtree (same trick as ListTrashService/EmptyTrashService) — purging a root directory

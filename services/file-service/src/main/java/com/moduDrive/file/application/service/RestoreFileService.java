@@ -21,6 +21,7 @@ class RestoreFileService implements RestoreFileUseCase {
     private final SaveFilePort saveFilePort;
     private final DirectoryCascader directoryCascader;
     private final FileAccessGuard fileAccessGuard;
+    private final FavoriteEnricher favoriteEnricher;
 
     @Transactional
     @Override
@@ -32,6 +33,11 @@ class RestoreFileService implements RestoreFileUseCase {
         if (file.getStatus() != FileStatus.DELETED) {
             throw new BusinessException(FileExceptionCase.FILE_NOT_DELETED);
         }
+        // A purged file is a tombstone (status still DELETED, deletedAt set) — its content is
+        // gone; to the caller it no longer exists.
+        if (file.getDeletedAt() != null) {
+            throw new BusinessException(FileExceptionCase.FILE_NOT_FOUND);
+        }
 
         file.restore();
         File saved = saveFilePort.saveFile(file);
@@ -40,6 +46,6 @@ class RestoreFileService implements RestoreFileUseCase {
             directoryCascader.restore(new NamespaceId(saved.getNamespaceId()), saved.fullPath());
         }
 
-        return saved;
+        return favoriteEnricher.withFavorite(command.getCallerId(), saved);
     }
 }

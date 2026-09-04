@@ -43,12 +43,14 @@ class ListTrashControllerTest {
                     new FileName("old.pdf"), new FilePath("/1/docs"),
                     new FileOwnerId(UUID.fromString(USER_ID)), null, null, FileStatus.DELETED,
                     new FileIsDirectory(false));
+            deleted.markTrashedAt(java.time.LocalDateTime.of(2026, 9, 1, 10, 0));
             given(listTrashUseCase.listTrash(any(ListTrashCommand.class))).willReturn(List.of(deleted));
 
             mockMvc.perform(get("/api/v1/files/trash").header("X_USER_ID", USER_ID))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data[0].name").value("old.pdf"))
-                    .andExpect(jsonPath("$.data[0].status").value("DELETED"));
+                    .andExpect(jsonPath("$.data[0].status").value("DELETED"))
+                    .andExpect(jsonPath("$.data[0].trashedAt").value("2026-09-01T10:00:00"));
         }
     }
 }

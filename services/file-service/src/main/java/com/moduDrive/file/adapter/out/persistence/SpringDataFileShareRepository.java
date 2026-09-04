@@ -23,7 +23,8 @@ interface SpringDataFileShareRepository extends JpaRepository<FileShareJpaEntity
 
     void deleteByFileId(UUID fileId);
 
-    List<FileShareJpaEntity> findBySharedWithUserId(UUID sharedWithUserId);
+    // Most recently shared first — drives the "공유 문서함" list order.
+    List<FileShareJpaEntity> findBySharedWithUserIdOrderByCreatedAtDesc(UUID sharedWithUserId);
 
     List<FileShareJpaEntity> findByGranteeEmailAndSharedWithUserIdIsNull(String granteeEmail);
 }

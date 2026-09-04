@@ -11,6 +11,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.UuidGenerator;
 
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Getter
@@ -25,9 +26,9 @@ import java.util.UUID;
 @Table(name = "file", uniqueConstraints = {
         @UniqueConstraint(name = "uk_file_namespace_path_active_name", columnNames = {"namespace_id", "path", "active_slot_name"})
 }, indexes = {
-        // Backs the trash-retention sweep's findByStatusAndUpdatedAtBefore, which scans every
-        // namespace — without this it's a full table scan every night.
-        @Index(name = "ix_file_status_updated_at", columnList = "status, updated_at")
+        // Backs the trash-retention sweep (findExpiredTrash: status + trashed_at), which scans
+        // every namespace — without this it's a full table scan every night.
+        @Index(name = "ix_file_status_trashed_at", columnList = "status, trashed_at")
 })
 @Entity
 class FileJpaEntity extends BaseTimeEntity {
@@ -56,11 +57,12 @@ class FileJpaEntity extends BaseTimeEntity {
     @Column(nullable = false)
     private FileStatus status;
 
-    @Column(nullable = false)
+    // Column is `is_directory`; the Java side stays `directory` / `isDirectory()`. Left
+    // DB-nullable for the same reason as access_scope below — ddl-auto=update can't add a NOT
+    // NULL column to a populated table (the rename is a add-nullable + backfill + drop-old, see
+    // FileDirectoryColumnRenameMigration). Application code always sets it.
+    @Column(name = "is_directory")
     private boolean directory;
-
-    @Column(nullable = false)
-    private boolean favorite;
 
     // Left DB-nullable on purpose: ddl-auto=update can't add a NOT NULL column to a table that
     // already has rows, so pre-existing files would break the migration. FileMapper reads a null
@@ -81,6 +83,11 @@ class FileJpaEntity extends BaseTimeEntity {
     @Column(name = "active_slot_name")
     private String activeSlotName;
 
+    /** Set when the file is sent to trash, cleared on restore. Distinct from {@code BaseTimeEntity}'s
+     * {@code deletedAt}, which this project only stamps on a *purge* (tombstone) — see
+     * {@code SpringDataFileRepository.markPurged}. */
+    private LocalDateTime trashedAt;
+
     FileJpaEntity(UUID namespaceId, String name, String path, UUID ownerId, FileStatus status, boolean directory) {
         this.namespaceId = namespaceId;
         this.name = name;
@@ -93,16 +100,16 @@ class FileJpaEntity extends BaseTimeEntity {
     }
 
     void applyChanges(String name, String path, UUID currentVersionId, Long fileSize, FileStatus status,
-                      boolean favorite, ShareScope accessScope, UUID linkToken, Role linkRole) {
+                      ShareScope accessScope, UUID linkToken, Role linkRole, LocalDateTime trashedAt) {
         this.name = name;
         this.path = path;
         this.currentVersionId = currentVersionId;
         this.fileSize = fileSize;
         this.status = status;
-        this.favorite = favorite;
         this.accessScope = accessScope;
         this.linkToken = linkToken;
         this.linkRole = linkRole;
+        this.trashedAt = trashedAt;
         this.activeSlotName = activeSlotName(name, status);
     }
 

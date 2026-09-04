@@ -3,6 +3,7 @@ package com.moduDrive.file.adapter.out.persistence;
 import com.moduDrive.file.domain.model.FileStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -33,11 +34,20 @@ interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID>, J
             @Param("prefix") String prefix,
             @Param("escapedPrefix") String escapedPrefix);
 
-    List<FileJpaEntity> findByNamespaceIdAndStatus(UUID namespaceId, FileStatus status);
+    // Trash view: trashed but not yet purged (a tombstone stays status=DELETED with deleted_at set).
+    List<FileJpaEntity> findByNamespaceIdAndStatusAndDeletedAtIsNull(UUID namespaceId, FileStatus status);
 
-    List<FileJpaEntity> findByStatusAndUpdatedAtBefore(FileStatus status, LocalDateTime cutoff);
+    // Retention sweep: in-trash long enough, not already purged.
+    List<FileJpaEntity> findByStatusAndDeletedAtIsNullAndTrashedAtBefore(FileStatus status, LocalDateTime cutoff);
 
-    List<FileJpaEntity> findByNamespaceIdAndFavoriteTrueAndStatusNot(UUID namespaceId, FileStatus status);
+    // Tombstone stamp — BaseTimeEntity's deletedAt/isDeleted, but via a plain UPDATE so no
+    // @LastModifiedDate bump (see FilePersistenceAdapter.purgeFile). flush first so the
+    // version/share/favorite deletes in the same purgeFile call are committed; clear after so a
+    // stale managed FileJpaEntity isn't read back with the old value.
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("update FileJpaEntity f set f.deletedAt = :now, f.isDeleted = true "
+            + "where f.id = :id and f.deletedAt is null and f.status = 'DELETED'")
+    void markPurged(@Param("id") UUID id, @Param("now") LocalDateTime now);
 
     List<FileJpaEntity> findByNamespaceIdAndNameContainingIgnoreCaseAndStatusNot(
             UUID namespaceId, String name, FileStatus status);
@@ -45,9 +55,11 @@ interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID>, J
     List<FileJpaEntity> findByNamespaceIdAndDirectoryFalseAndStatusNot(
             UUID namespaceId, FileStatus status);
 
-    // Trashed (DELETED) files still occupy storage until purged, so they count here too —
-    // only PENDING (upload not yet finished, no committed size) is excluded.
+    // Trashed (DELETED) files still occupy storage until purged, so they count here too — but a
+    // purged tombstone (deleted_at set) no longer has blocks. PENDING (upload not finished, no
+    // committed size) is excluded too.
     @Query("select coalesce(sum(f.fileSize), 0) from FileJpaEntity f " +
-            "where f.namespaceId = :namespaceId and f.directory = false and f.status <> 'PENDING'")
+            "where f.namespaceId = :namespaceId and f.directory = false " +
+            "and f.status <> 'PENDING' and f.deletedAt is null")
     long sumFileSizeByNamespaceId(@Param("namespaceId") UUID namespaceId);
 }
