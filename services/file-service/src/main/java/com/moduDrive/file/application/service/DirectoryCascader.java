@@ -42,11 +42,12 @@ class DirectoryCascader {
         });
     }
 
-    /** Soft-deletes every descendant along with the directory being sent to trash. */
-    void softDelete(NamespaceId namespaceId, String directoryFullPath) {
+    /** Soft-deletes every descendant along with the directory being sent to trash. {@code trashedAt}
+     * is the directory's own — the whole cascade shares one instant (see {@link #purge}). */
+    void softDelete(NamespaceId namespaceId, String directoryFullPath, LocalDateTime trashedAt) {
         forEachDescendant(namespaceId, directoryFullPath, descendant -> {
             if (descendant.getStatus() == FileStatus.DELETED) return;
-            descendant.softDelete();
+            descendant.softDelete(trashedAt);
             saveFilePort.saveFile(descendant);
         });
     }
@@ -58,6 +59,9 @@ class DirectoryCascader {
     void restore(NamespaceId namespaceId, String directoryFullPath) {
         forEachDescendant(namespaceId, directoryFullPath, descendant -> {
             if (descendant.getStatus() != FileStatus.DELETED) return;
+            // A descendant purged individually before the parent folder is restored is a
+            // tombstone — its content is gone, restoring the row would resurrect an empty file.
+            if (descendant.getDeletedAt() != null) return;
             descendant.restore();
             saveFilePort.saveFile(descendant);
         });

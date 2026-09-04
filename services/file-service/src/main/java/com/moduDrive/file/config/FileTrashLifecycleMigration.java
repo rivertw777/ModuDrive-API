@@ -37,12 +37,14 @@ class FileTrashLifecycleMigration implements ApplicationRunner {
         try {
             int updated = jdbcTemplate.update(
                     "UPDATE file SET trashed_at = updated_at WHERE status = 'DELETED' AND trashed_at IS NULL");
-            // Always logged: a miss here empties every user's trash view, so "ran, 0 rows" has to
-            // be distinguishable from "threw".
+            // Always logged: a miss here drops pre-existing trashed rows out of BOTH the trash
+            // view AND the retention sweep (both key on trashed_at) — so "ran, 0 rows" has to be
+            // distinguishable from "threw".
             log.info("file.trashed_at backfill: {} row(s) updated", updated);
         } catch (Exception e) {
             log.error("file.trashed_at backfill FAILED — pre-existing trashed files will be "
-                    + "missing from the trash view until this succeeds", e);
+                    + "missing from the trash view AND never auto-purged (their blocks leak) "
+                    + "until this succeeds", e);
         }
     }
 

@@ -91,11 +91,26 @@ class DirectoryCascaderTest {
         given(findFilePort.findByNamespaceIdAndPathStartingWith(namespaceId, "/A"))
                 .willReturn(List.of(active, alreadyDeleted));
 
-        directoryCascader.softDelete(namespaceId, "/A");
+        directoryCascader.softDelete(namespaceId, "/A", trashedAt);
 
         assertThat(active.getStatus()).isEqualTo(FileStatus.DELETED);
+        assertThat(active.getTrashedAt()).isEqualTo(trashedAt);
         then(saveFilePort).should(times(1)).saveFile(active);
         then(saveFilePort).should(times(0)).saveFile(alreadyDeleted);
+    }
+
+    @Test
+    @DisplayName("복원할 때 개별 purge된 tombstone 하위 항목은 되살리지 않는다")
+    void restoreSkipsPurgedTombstoneDescendant() {
+        File tombstone = childAt("/A", "b.txt", FileStatus.DELETED);
+        tombstone.markDeletedAt(trashedAt.plusMinutes(5));
+        given(findFilePort.findByNamespaceIdAndPathStartingWith(namespaceId, "/A"))
+                .willReturn(List.of(tombstone));
+
+        directoryCascader.restore(namespaceId, "/A");
+
+        assertThat(tombstone.getStatus()).isEqualTo(FileStatus.DELETED);
+        then(saveFilePort).should(times(0)).saveFile(tombstone);
     }
 
     @Test

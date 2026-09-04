@@ -44,7 +44,8 @@ interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID>, J
     // flush first so the version/share/favorite deletes in the same purgeFile call are committed;
     // clear after so a stale managed FileJpaEntity isn't read back with the old deletedAt.
     @Modifying(flushAutomatically = true, clearAutomatically = true)
-    @Query("update FileJpaEntity f set f.deletedAt = :now where f.id = :id and f.deletedAt is null")
+    @Query("update FileJpaEntity f set f.deletedAt = :now "
+            + "where f.id = :id and f.deletedAt is null and f.status = 'DELETED'")
     void markPurged(@Param("id") UUID id, @Param("now") LocalDateTime now);
 
     List<FileJpaEntity> findByNamespaceIdAndNameContainingIgnoreCaseAndStatusNot(

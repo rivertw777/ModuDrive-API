@@ -96,6 +96,25 @@ class RestoreFileServiceTest {
     }
 
     @Nested
+    @DisplayName("파일이 purge된 tombstone일 때")
+    class WhenFileIsATombstone {
+
+        @Test
+        void throwsFileNotFound() {
+            File tombstone = makeFile(FileStatus.DELETED);
+            tombstone.markDeletedAt(java.time.LocalDateTime.now());
+            given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(tombstone));
+
+            Throwable thrown = catchThrowable(() -> restoreFileService.restoreFile(command));
+
+            assertThat(thrown).isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(FileExceptionCase.FILE_NOT_FOUND);
+            then(saveFilePort).shouldHaveNoInteractions();
+        }
+    }
+
+    @Nested
     @DisplayName("파일이 없을 때")
     class WhenFileNotFound {
 

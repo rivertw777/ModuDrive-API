@@ -126,9 +126,12 @@ public class File {
         this.fileSize = size;
     }
 
-    public void softDelete() {
+    /** {@code trashedAt} is passed in, not read from the clock here, so a directory and every
+     * descendant trashed in the same cascade share one instant — {@code DirectoryCascader.purge}
+     * tells a cascade sibling from a later, unrelated file at a reused path by that equality. */
+    public void softDelete(LocalDateTime trashedAt) {
         this.status = FileStatus.DELETED;
-        this.trashedAt = LocalDateTime.now();
+        this.trashedAt = trashedAt;
     }
 
     public void restore() {

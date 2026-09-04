@@ -33,6 +33,11 @@ class RestoreFileService implements RestoreFileUseCase {
         if (file.getStatus() != FileStatus.DELETED) {
             throw new BusinessException(FileExceptionCase.FILE_NOT_DELETED);
         }
+        // A purged file is a tombstone (status still DELETED, deletedAt set) — its content is
+        // gone; to the caller it no longer exists.
+        if (file.getDeletedAt() != null) {
+            throw new BusinessException(FileExceptionCase.FILE_NOT_FOUND);
+        }
 
         file.restore();
         File saved = saveFilePort.saveFile(file);

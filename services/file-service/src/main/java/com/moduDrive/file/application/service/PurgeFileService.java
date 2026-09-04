@@ -27,7 +27,8 @@ class PurgeFileService implements PurgeFileUseCase {
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_NOT_FOUND));
         fileAccessGuard.requireOwner(file, command.getCallerId());
 
-        if (file.getStatus() != FileStatus.DELETED) {
+        // Not DELETED, or already a tombstone (deletedAt set) — nothing left to purge.
+        if (file.getStatus() != FileStatus.DELETED || file.getDeletedAt() != null) {
             throw new BusinessException(FileExceptionCase.FILE_NOT_DELETED);
         }
 
