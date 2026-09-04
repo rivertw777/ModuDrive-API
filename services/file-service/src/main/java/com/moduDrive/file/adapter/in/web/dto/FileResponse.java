@@ -22,6 +22,9 @@ public record FileResponse(
         boolean favorite,
         FileCategory category,
         LocalDateTime updatedAt,
+        /** When the file was sent to trash — null unless it is in the trash. The trash view reads
+         * this for "휴지통에 버린 날짜" (not {@code updatedAt}, which any edit bumps). */
+        LocalDateTime trashedAt,
         /** "Shared with me" context — all null when the caller owns the file. See {@link FileView}. */
         Role role,
         String sharedByName,
@@ -47,6 +50,7 @@ public record FileResponse(
                 file.isFavorite(),
                 FileCategory.of(file.getName()),
                 file.getUpdatedAt(),
+                file.getTrashedAt(),
                 view.callerRole(),
                 view.sharedByName(),
                 view.sharedByEmail(),
