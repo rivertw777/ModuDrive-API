@@ -48,7 +48,8 @@ class ListSharedWithMeControllerTest {
                     new FileIsDirectory(false));
             given(listSharedWithMeUseCase.listSharedWithMe(any(ListSharedWithMeCommand.class)))
                     .willReturn(List.of(new FileView(
-                            file, Role.EDITOR, "홍길동", "owner@modudrive.com", LocalDateTime.of(2026, 9, 1, 9, 0))));
+                            file, Role.EDITOR, "홍길동", "owner@modudrive.com",
+                            LocalDateTime.of(2026, 9, 1, 9, 0), null, null)));
 
             mockMvc.perform(get("/api/v1/files/shared-with-me").header("X_USER_ID", USER_ID))
                     .andExpect(status().isOk())

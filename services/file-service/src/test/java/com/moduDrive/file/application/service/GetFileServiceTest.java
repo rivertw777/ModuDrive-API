@@ -5,11 +5,12 @@ import com.moduDrive.file.application.port.in.command.GetFileCommand;
 import com.moduDrive.file.application.port.in.usecase.FileView;
 import com.moduDrive.file.application.port.out.FileFavoritePort;
 import com.moduDrive.file.application.port.out.FindFilePort;
-import com.moduDrive.file.application.port.out.FindFileSharePort;
 import com.moduDrive.file.application.port.out.FindMemberByIdPort;
 import com.moduDrive.file.application.port.out.FindMemberByIdPort.MemberSummary;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
+import com.moduDrive.file.domain.model.FileShare;
+import com.moduDrive.file.domain.model.FileShare.*;
 import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.Permission;
 import com.moduDrive.file.domain.model.Role;
@@ -22,6 +23,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -36,7 +38,6 @@ import static org.mockito.BDDMockito.willThrow;
 class GetFileServiceTest {
 
     @Mock private FindFilePort findFilePort;
-    @Mock private FindFileSharePort findFileSharePort;
     @Mock private FindMemberByIdPort findMemberByIdPort;
     @Mock private FileFavoritePort fileFavoritePort;
     @Mock private FileAccessGuard fileAccessGuard;
@@ -82,14 +83,32 @@ class GetFileServiceTest {
             given(fileAccessGuard.effectiveRole(any(File.class), eq(callerId))).willReturn(Role.EDITOR);
             given(findMemberByIdPort.findMemberById(otherOwnerId))
                     .willReturn(new MemberSummary("홍길동", "owner@modudrive.com"));
-            given(findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(fileId), callerId))
-                    .willReturn(Optional.empty());
+            given(fileAccessGuard.resolveGrant(any(File.class), eq(callerId))).willReturn(Optional.empty());
 
             FileView result = getFileService.getFile(command);
 
             assertThat(result.callerRole()).isEqualTo(Role.EDITOR);
             assertThat(result.sharedByEmail()).isEqualTo("owner@modudrive.com");
             assertThat(result.file().isFavorite()).isTrue();
+        }
+
+        @Test
+        @DisplayName("이 파일 자체엔 직접 공유가 없고 상위 폴더를 통해서만 접근 가능해도 공유된 날짜가 채워진다")
+        void fillsSharedAtFromAnInheritedGrantWhenTheFileHasNoDirectShare() {
+            LocalDateTime sharedAt = LocalDateTime.of(2026, 9, 4, 15, 5);
+            FileShare inheritedGrant = FileShare.withId(new FileShareId(UUID.randomUUID()),
+                    new FileShareFileId(UUID.randomUUID()), new FileShareOwnerId(otherOwnerId),
+                    new FileShareSharedWithUserId(callerId), new FileShareRole(Role.VIEWER), sharedAt);
+            given(findFilePort.findById(command.getFileId()))
+                    .willReturn(Optional.of(fileOwnedBy(otherOwnerId, FileStatus.UPLOADED)));
+            given(fileAccessGuard.effectiveRole(any(File.class), eq(callerId))).willReturn(Role.VIEWER);
+            given(findMemberByIdPort.findMemberById(otherOwnerId))
+                    .willReturn(new MemberSummary("홍길동", "owner@modudrive.com"));
+            given(fileAccessGuard.resolveGrant(any(File.class), eq(callerId))).willReturn(Optional.of(inheritedGrant));
+
+            FileView result = getFileService.getFile(command);
+
+            assertThat(result.sharedAt()).isEqualTo(sharedAt);
         }
     }
 

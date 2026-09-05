@@ -7,11 +7,9 @@ import com.moduDrive.file.application.port.in.usecase.FileView;
 import com.moduDrive.file.application.port.in.usecase.GetFileUseCase;
 import com.moduDrive.file.application.port.out.FileFavoritePort;
 import com.moduDrive.file.application.port.out.FindFilePort;
-import com.moduDrive.file.application.port.out.FindFileSharePort;
 import com.moduDrive.file.application.port.out.FindMemberByIdPort;
 import com.moduDrive.file.application.port.out.FindMemberByIdPort.MemberSummary;
 import com.moduDrive.file.domain.model.File;
-import com.moduDrive.file.domain.model.File.FileId;
 import com.moduDrive.file.domain.model.FileShare;
 import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.Permission;
@@ -31,7 +29,6 @@ class GetFileService implements GetFileUseCase {
     private static final MemberSummary UNKNOWN_MEMBER = new MemberSummary(null, null);
 
     private final FindFilePort findFilePort;
-    private final FindFileSharePort findFileSharePort;
     private final FindMemberByIdPort findMemberByIdPort;
     private final FileFavoritePort fileFavoritePort;
     private final FileAccessGuard fileAccessGuard;
@@ -54,14 +51,16 @@ class GetFileService implements GetFileUseCase {
         }
 
         // The caller doesn't own it: the detail panel shows the full "shared with me" context —
-        // same as 공유 문서함 — wherever it opens.
+        // same as 공유 문서함 — wherever it opens. Their access can come from a grant on this file
+        // itself or, for a file only reachable by browsing into a shared folder, one inherited
+        // from an ancestor (see ListSharedDirectoryService) — resolveGrant covers both so
+        // "공유된 날짜" isn't blank just because this particular file was never shared directly.
         MemberSummary sharedBy = lookupMember(file.getOwnerId());
-        LocalDateTime sharedAt = findFileSharePort
-                .findByFileIdAndSharedWithUserId(new FileId(file.getId()), command.getCallerId())
+        LocalDateTime sharedAt = fileAccessGuard.resolveGrant(file, command.getCallerId())
                 .map(FileShare::getCreatedAt)
                 .orElse(null);
         return new FileView(file, fileAccessGuard.effectiveRole(file, command.getCallerId()),
-                sharedBy.name(), sharedBy.email(), sharedAt);
+                sharedBy.name(), sharedBy.email(), sharedAt, null, null);
     }
 
     private MemberSummary lookupMember(UUID memberId) {

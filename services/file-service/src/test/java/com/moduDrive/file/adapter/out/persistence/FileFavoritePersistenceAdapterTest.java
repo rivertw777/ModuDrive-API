@@ -1,6 +1,7 @@
 package com.moduDrive.file.adapter.out.persistence;
 
 import com.moduDrive.common.infrastructure.jpa.config.AuditingConfig;
+import com.moduDrive.file.application.port.out.FileFavoritePort;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -59,6 +60,21 @@ class FileFavoritePersistenceAdapterTest {
 
             assertThat(List.copyOf(fileFavoritePersistenceAdapter.favoriteFileIds(userId)))
                     .containsExactly(third, second, first);
+        }
+
+        @Test
+        @DisplayName("즐겨찾기한 날짜를 함께, 같은 순서로 반환한다")
+        void recencyEntriesCarryFavoritedAt() {
+            UUID first = UUID.randomUUID();
+            UUID second = UUID.randomUUID();
+
+            fileFavoritePersistenceAdapter.favorite(userId, first);
+            fileFavoritePersistenceAdapter.favorite(userId, second);
+
+            List<FileFavoritePort.FavoriteEntry> entries = fileFavoritePersistenceAdapter.favoritesByRecency(userId);
+
+            assertThat(entries).extracting(FileFavoritePort.FavoriteEntry::fileId).containsExactly(second, first);
+            assertThat(entries).allMatch(e -> e.favoritedAt() != null);
         }
     }
 }

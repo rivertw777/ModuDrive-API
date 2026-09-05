@@ -16,6 +16,7 @@ import com.moduDrive.file.exception.FileExceptionCase;
 import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -44,17 +45,26 @@ class ListFavoritesService implements ListFavoritesUseCase {
         // trashed, and (for a file the caller doesn't own) still reachable — a star outlives a
         // revoked share, and "즐겨찾기" must reflect what they can open now. effectiveRole honours
         // an inherited folder grant, matching the READ check the favorite was written under.
-        return fileFavoritePort.favoriteFileIds(userId).stream()
-                .map(id -> findFilePort.findById(new FileId(id)))
-                .flatMap(Optional::stream)
-                .filter(file -> file.getStatus() != FileStatus.DELETED)
-                .map(file -> {
+        // A local record, not Map.entry — favoritedAt is DB-nullable for a star that predates the
+        // column (see FileFavoriteJpaEntity), and Map.entry(K, V) throws on a null value.
+        record Starred(File file, LocalDateTime favoritedAt) {}
+
+        return fileFavoritePort.favoritesByRecency(userId).stream()
+                .flatMap(entry -> findFilePort.findById(new FileId(entry.fileId()))
+                        .map(file -> new Starred(file, entry.favoritedAt()))
+                        .stream())
+                .filter(starred -> starred.file().getStatus() != FileStatus.DELETED)
+                .map(starred -> {
+                    File file = starred.file();
                     file.markFavorite(true);
+                    Optional<FileView> view;
                     if (file.getOwnerId().equals(userId)) {
-                        return Optional.of(FileView.owned(file));
+                        view = Optional.of(FileView.owned(file));
+                    } else {
+                        Role role = fileAccessGuard.effectiveRole(file, userId);
+                        view = role == null ? Optional.empty() : Optional.of(FileView.shared(file, role));
                     }
-                    Role role = fileAccessGuard.effectiveRole(file, userId);
-                    return role == null ? Optional.<FileView>empty() : Optional.of(FileView.shared(file, role));
+                    return view.map(v -> v.withFavoritedAt(starred.favoritedAt()));
                 })
                 .flatMap(Optional::stream)
                 .toList();

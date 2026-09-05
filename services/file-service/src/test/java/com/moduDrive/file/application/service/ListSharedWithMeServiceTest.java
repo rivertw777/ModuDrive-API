@@ -67,6 +67,12 @@ class ListSharedWithMeServiceTest {
                 new FileOwnerId(ownerId), null, null, status, new FileIsDirectory(false));
     }
 
+    private File makeEntry(UUID fileId, String name, String path, boolean directory) {
+        return File.withId(new FileId(fileId), new FileNamespaceId(UUID.randomUUID()),
+                new FileName(name), new FilePath(path),
+                new FileOwnerId(ownerId), null, null, FileStatus.UPLOADED, new FileIsDirectory(directory));
+    }
+
     @Nested
     @DisplayName("공유받은 파일이 있을 때")
     class WhenSharesExist {
@@ -130,6 +136,27 @@ class ListSharedWithMeServiceTest {
             given(findFilePort.findById(new FileId(fileId))).willReturn(Optional.empty());
 
             assertThat(listSharedWithMeService.listSharedWithMe(command)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("파일이 다른 직접 공유 폴더 아래에 있어도 최상위엔 둘 다 뜬다 (구글 드라이브와 동일)")
+        void listsBothAFileAndItsSeparatelySharedAncestorFolder() {
+            UUID folderId = UUID.randomUUID();
+            UUID fileId = UUID.randomUUID();
+            // a를 편집자로 먼저 공유하고, 나중에 그 상위 폴더 b를 뷰어로 같은 사람에게 공유한 상황
+            // — 실제 구글 드라이브에서 확인한 결과 "공유 문서함" 최상위엔 둘 다 뜬다.
+            File folder = makeEntry(folderId, "b", "/", true);
+            File nestedFile = makeEntry(fileId, "a.txt", "/b", false);
+            lenient().when(findMemberByIdPort.findMemberById(any()))
+                    .thenReturn(new MemberSummary("홍길동", "owner@modudrive.com"));
+            given(findFileSharePort.findBySharedWithUserId(sharedWithUserId))
+                    .willReturn(List.of(makeShare(fileId, Role.EDITOR), makeShare(folderId, Role.VIEWER)));
+            given(findFilePort.findById(new FileId(fileId))).willReturn(Optional.of(nestedFile));
+            given(findFilePort.findById(new FileId(folderId))).willReturn(Optional.of(folder));
+
+            List<FileView> result = listSharedWithMeService.listSharedWithMe(command);
+
+            assertThat(result).extracting(v -> v.file().getId()).containsExactlyInAnyOrder(fileId, folderId);
         }
     }
 

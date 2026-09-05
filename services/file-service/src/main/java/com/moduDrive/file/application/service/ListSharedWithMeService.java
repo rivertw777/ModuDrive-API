@@ -37,6 +37,11 @@ class ListSharedWithMeService implements ListSharedWithMeUseCase {
     @Override
     public List<FileView> listSharedWithMe(ListSharedWithMeCommand command) {
         Set<UUID> favoriteIds = fileFavoritePort.favoriteFileIds(command.getSharedWithUserId());
+        // Flat, matching Drive: every item this user has a *direct* share on shows up here, even
+        // one nested under another of their own directly-shared folders — a stays listed here
+        // even after its ancestor b is also shared to the same person (verified against real
+        // Drive). ListSharedDirectoryService is the one that keeps b's own listing from
+        // double-showing a — see the note there.
         return findFileSharePort.findBySharedWithUserId(command.getSharedWithUserId())
                 .stream()
                 .flatMap(share -> findFilePort.findById(new FileId(share.getFileId()))
@@ -47,7 +52,7 @@ class ListSharedWithMeService implements ListSharedWithMeUseCase {
                             file.markFavorite(favoriteIds.contains(file.getId()));
                             MemberSummary sharedBy = lookupMember(file.getOwnerId());
                             return new FileView(file, share.getRole(), sharedBy.name(), sharedBy.email(),
-                                    share.getCreatedAt());
+                                    share.getCreatedAt(), null, null);
                         })
                         .stream())
                 .toList();

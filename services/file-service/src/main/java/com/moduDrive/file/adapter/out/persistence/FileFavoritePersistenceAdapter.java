@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collection;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -63,5 +64,12 @@ class FileFavoritePersistenceAdapter implements FileFavoritePort {
             return Set.of();
         }
         return fileFavoriteRepository.findFileIdsByUserIdAndFileIdIn(userId, fileIds);
+    }
+
+    @Override
+    public List<FavoriteEntry> favoritesByRecency(UUID userId) {
+        return fileFavoriteRepository.findByUserIdOrderByRecency(userId).stream()
+                .map(f -> new FavoriteEntry(f.getFileId(), f.getCreatedAt()))
+                .toList();
     }
 }

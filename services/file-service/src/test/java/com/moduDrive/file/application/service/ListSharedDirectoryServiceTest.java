@@ -5,11 +5,16 @@ import com.moduDrive.file.application.port.in.command.ListSharedDirectoryCommand
 import com.moduDrive.file.application.port.in.usecase.FileView;
 import com.moduDrive.file.application.port.out.FileFavoritePort;
 import com.moduDrive.file.application.port.out.FindFilePort;
+import com.moduDrive.file.application.port.out.FindFileSharePort;
+import com.moduDrive.file.application.port.out.FindMemberByIdPort;
+import com.moduDrive.file.application.port.out.FindMemberByIdPort.MemberSummary;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
+import com.moduDrive.file.domain.model.FileShare;
 import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.Namespace.NamespaceId;
 import com.moduDrive.file.domain.model.Permission;
+import com.moduDrive.file.domain.model.Role;
 import com.moduDrive.file.exception.FileExceptionCase;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -20,6 +25,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -37,7 +43,9 @@ import static org.mockito.Mockito.lenient;
 class ListSharedDirectoryServiceTest {
 
     @Mock private FindFilePort findFilePort;
+    @Mock private FindFileSharePort findFileSharePort;
     @Mock private FileFavoritePort fileFavoritePort;
+    @Mock private FindMemberByIdPort findMemberByIdPort;
     @Mock private FileAccessGuard fileAccessGuard;
     @InjectMocks private ListSharedDirectoryService listSharedDirectoryService;
 
@@ -45,6 +53,9 @@ class ListSharedDirectoryServiceTest {
     void defaults() {
         lenient().when(fileFavoritePort.favoriteFileIds(any())).thenReturn(Set.of());
         lenient().when(fileAccessGuard.effectiveRole(any(), any())).thenReturn(null);
+        lenient().when(fileAccessGuard.resolveGrant(any(), any())).thenReturn(Optional.empty());
+        lenient().when(findMemberByIdPort.findMemberById(any())).thenReturn(new MemberSummary("홍길동", "owner@modudrive.com"));
+        lenient().when(findFileSharePort.existsByFileIdAndSharedWithUserId(any(), any())).thenReturn(false);
     }
 
     private final UUID dirId = UUID.randomUUID();
@@ -79,6 +90,45 @@ class ListSharedDirectoryServiceTest {
             List<FileView> result = listSharedDirectoryService.listSharedDirectory(command);
 
             assertThat(result).extracting(FileView::file).containsExactly(child);
+        }
+
+        @Test
+        @DisplayName("자식 파일도 폴더 자체의 공유 정보(공유한 사용자/공유된 날짜)를 그대로 물려받는다")
+        void childrenInheritTheDirectorysShareAttribution() {
+            File child = entry("a.txt", "/shared", false, FileStatus.UPLOADED);
+            LocalDateTime sharedAt = LocalDateTime.of(2026, 9, 4, 14, 10);
+            FileShare grant = FileShare.withId(new FileShare.FileShareId(UUID.randomUUID()),
+                    new FileShare.FileShareFileId(dirId), new FileShare.FileShareOwnerId(UUID.randomUUID()),
+                    new FileShare.FileShareSharedWithUserId(callerId), new FileShare.FileShareRole(Role.VIEWER),
+                    sharedAt);
+            given(findFilePort.findById(command.getDirectoryId())).willReturn(Optional.of(dir()));
+            given(findFilePort.findByNamespaceIdAndPath(new NamespaceId(namespaceId), "/shared"))
+                    .willReturn(List.of(child));
+            given(fileAccessGuard.resolveGrant(any(), eq(callerId))).willReturn(Optional.of(grant));
+            given(fileAccessGuard.effectiveRole(any(), eq(callerId))).willReturn(Role.VIEWER);
+
+            List<FileView> result = listSharedDirectoryService.listSharedDirectory(command);
+
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).sharedByName()).isEqualTo("홍길동");
+            assertThat(result.get(0).sharedAt()).isEqualTo(sharedAt);
+            assertThat(result.get(0).callerRole()).isEqualTo(Role.VIEWER);
+        }
+
+        @Test
+        @DisplayName("자식이 호출자에게 따로 직접 공유돼 있으면 목록에서 빠진다 (구글 드라이브와 동일 — 그건 최상위 자기 항목으로 따로 뜬다)")
+        void excludesAChildTheCallerAlreadyHasADirectShareOn() {
+            File plainChild = entry("b.txt", "/shared", false, FileStatus.UPLOADED);
+            File individuallySharedChild = entry("a.txt", "/shared", false, FileStatus.UPLOADED);
+            given(findFilePort.findById(command.getDirectoryId())).willReturn(Optional.of(dir()));
+            given(findFilePort.findByNamespaceIdAndPath(new NamespaceId(namespaceId), "/shared"))
+                    .willReturn(List.of(plainChild, individuallySharedChild));
+            given(findFileSharePort.existsByFileIdAndSharedWithUserId(
+                    new FileId(individuallySharedChild.getId()), callerId)).willReturn(true);
+
+            List<FileView> result = listSharedDirectoryService.listSharedDirectory(command);
+
+            assertThat(result).extracting(FileView::file).containsExactly(plainChild);
         }
     }
 
