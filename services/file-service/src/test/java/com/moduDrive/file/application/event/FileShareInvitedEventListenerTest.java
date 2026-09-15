@@ -2,6 +2,7 @@ package com.moduDrive.file.application.event;
 
 import com.moduDrive.file.application.port.out.PublishMailEventPort;
 import com.moduDrive.file.application.port.out.PublishNotificationEventPort;
+import com.moduDrive.file.domain.model.FileCategory;
 import com.moduDrive.file.domain.model.Role;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -37,12 +38,13 @@ class FileShareInvitedEventListenerTest {
             UUID granteeId = UUID.randomUUID();
             FileShareInvitedEvent event = new FileShareInvitedEvent(
                     FILE_ID, GRANTER_ID, "홍길동", "owner@modudrive.com", granteeId, "grantee@modudrive.com",
-                    "report.pdf", true, Role.EDITOR, null);
+                    "report.pdf", true, FileCategory.DOCUMENT, Role.EDITOR, "확인 부탁드려요", null);
 
             fileShareInvitedEventListener.onFileShareInvited(event);
 
             then(publishMailEventPort).should().publishShareInviteRequested(
-                    FILE_ID, "grantee@modudrive.com", "report.pdf", "EDITOR", null);
+                    FILE_ID, "grantee@modudrive.com", "report.pdf", true, "DOCUMENT", "EDITOR", "홍길동",
+                    "owner@modudrive.com", "확인 부탁드려요", null);
             then(publishNotificationEventPort).should().publishFileShared(
                     FILE_ID, granteeId, "report.pdf", "EDITOR", true, "홍길동", "owner@modudrive.com");
         }
@@ -57,12 +59,13 @@ class FileShareInvitedEventListenerTest {
             UUID inviteToken = UUID.randomUUID();
             FileShareInvitedEvent event = new FileShareInvitedEvent(
                     FILE_ID, GRANTER_ID, "홍길동", "owner@modudrive.com", null, "guest@modudrive.com",
-                    "report.pdf", false, Role.VIEWER, inviteToken);
+                    "report.pdf", false, FileCategory.DOCUMENT, Role.VIEWER, null, inviteToken);
 
             fileShareInvitedEventListener.onFileShareInvited(event);
 
             then(publishMailEventPort).should().publishShareInviteRequested(
-                    FILE_ID, "guest@modudrive.com", "report.pdf", "VIEWER", inviteToken);
+                    FILE_ID, "guest@modudrive.com", "report.pdf", false, "DOCUMENT", "VIEWER", "홍길동",
+                    "owner@modudrive.com", null, inviteToken);
             then(publishNotificationEventPort).shouldHaveNoInteractions();
         }
     }

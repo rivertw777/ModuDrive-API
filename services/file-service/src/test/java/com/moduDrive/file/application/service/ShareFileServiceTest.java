@@ -11,6 +11,7 @@ import com.moduDrive.file.application.port.out.FindMemberByIdPort.MemberSummary;
 import com.moduDrive.file.application.port.out.SaveFileSharePort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
+import com.moduDrive.file.domain.model.FileCategory;
 import com.moduDrive.file.domain.model.FileShare;
 import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.Role;
@@ -56,7 +57,8 @@ class ShareFileServiceTest {
     private static final String EMAIL = "river@modudrive.com";
     private static final String OWNER_NAME = "홍길동";
     private static final String OWNER_EMAIL = "owner@modudrive.com";
-    private final ShareFileCommand command = new ShareFileCommand(fileId, ownerId, EMAIL, Role.VIEWER);
+    private static final String MESSAGE = "확인 부탁드려요";
+    private final ShareFileCommand command = new ShareFileCommand(fileId, ownerId, EMAIL, Role.VIEWER, MESSAGE);
 
     private final File file = File.withId(new FileId(fileId), new FileNamespaceId(UUID.randomUUID()),
             new FileName("report.pdf"), new FilePath("/1"), new FileOwnerId(ownerId),
@@ -81,7 +83,7 @@ class ShareFileServiceTest {
             assertThat(result.get().getSharedWithUserId()).isEqualTo(granteeId);
             assertThat(result.get().getRole()).isEqualTo(Role.VIEWER);
             then(eventPublisher).should().publishEvent(
-                    new FileShareInvitedEvent(fileId, ownerId, OWNER_NAME, OWNER_EMAIL, granteeId, EMAIL, "report.pdf", false, Role.VIEWER, null));
+                    new FileShareInvitedEvent(fileId, ownerId, OWNER_NAME, OWNER_EMAIL, granteeId, EMAIL, "report.pdf", false, FileCategory.DOCUMENT, Role.VIEWER, MESSAGE, null));
         }
     }
 
@@ -130,7 +132,7 @@ class ShareFileServiceTest {
             assertThat(pending.getGranteeEmail()).isEqualTo(EMAIL);
             assertThat(pending.getToken()).isNotNull();
             then(eventPublisher).should().publishEvent(
-                    new FileShareInvitedEvent(fileId, ownerId, OWNER_NAME, OWNER_EMAIL, null, EMAIL, "report.pdf", false, Role.VIEWER, pending.getToken()));
+                    new FileShareInvitedEvent(fileId, ownerId, OWNER_NAME, OWNER_EMAIL, null, EMAIL, "report.pdf", false, FileCategory.DOCUMENT, Role.VIEWER, MESSAGE, pending.getToken()));
         }
     }
 

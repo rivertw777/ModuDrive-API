@@ -18,9 +18,12 @@ class KafkaMailEventPublisher implements PublishMailEventPort {
     private final KafkaTemplate<String, Object> kafkaTemplate;
 
     @Override
-    public void publishShareInviteRequested(UUID fileId, String granteeEmail, String fileName, String role, UUID inviteToken) {
+    public void publishShareInviteRequested(
+            UUID fileId, String granteeEmail, String fileName, boolean directory, String category, String role,
+            String granterName, String granterEmail, String message, UUID inviteToken) {
         kafkaTemplate.send(MailTopics.SHARE_INVITE_REQUESTED, fileId.toString(),
-                        new ShareInviteMailRequested(fileId, granteeEmail, fileName, role, inviteToken))
+                        new ShareInviteMailRequested(fileId, granteeEmail, fileName, directory, category, role,
+                                granterName, granterEmail, message, inviteToken))
                 .whenComplete((result, ex) -> {
                     if (ex != null) {
                         log.error("Failed to publish share invite mail event: fileId={}", fileId, ex);

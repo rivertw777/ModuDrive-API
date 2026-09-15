@@ -12,6 +12,7 @@ import com.moduDrive.file.application.port.out.FindMemberByIdPort;
 import com.moduDrive.file.application.port.out.FindMemberByIdPort.MemberSummary;
 import com.moduDrive.file.application.port.out.SaveFileSharePort;
 import com.moduDrive.file.domain.model.File;
+import com.moduDrive.file.domain.model.FileCategory;
 import com.moduDrive.file.domain.model.FileShare;
 import com.moduDrive.file.domain.model.FileShare.FileShareFileId;
 import com.moduDrive.file.domain.model.FileShare.FileShareGranteeEmail;
@@ -70,7 +71,7 @@ class ShareFileService implements ShareFileUseCase {
         eventPublisher.publishEvent(new FileShareInvitedEvent(
                 saved.getFileId(), saved.getOwnerId(), granter.name(), granter.email(),
                 saved.getSharedWithUserId(), command.getEmail(), file.getName(), file.isDirectory(),
-                saved.getRole(), null));
+                FileCategory.of(file.getName()), saved.getRole(), command.getMessage(), null));
 
         return Optional.of(saved);
     }
@@ -96,6 +97,7 @@ class ShareFileService implements ShareFileUseCase {
         MemberSummary granter = findMemberByIdPort.findMemberByIdOrUnknown(saved.getOwnerId());
         eventPublisher.publishEvent(new FileShareInvitedEvent(
                 saved.getFileId(), saved.getOwnerId(), granter.name(), granter.email(), null,
-                command.getEmail(), file.getName(), file.isDirectory(), saved.getRole(), saved.getToken()));
+                command.getEmail(), file.getName(), file.isDirectory(), FileCategory.of(file.getName()),
+                saved.getRole(), command.getMessage(), saved.getToken()));
     }
 }

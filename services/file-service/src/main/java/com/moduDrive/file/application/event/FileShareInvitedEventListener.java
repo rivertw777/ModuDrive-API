@@ -18,7 +18,9 @@ class FileShareInvitedEventListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     void onFileShareInvited(FileShareInvitedEvent event) {
         publishMailEventPort.publishShareInviteRequested(
-                event.fileId(), event.granteeEmail(), event.fileName(), event.role().name(), event.inviteToken());
+                event.fileId(), event.granteeEmail(), event.fileName(), event.directory(), event.category().name(),
+                event.role().name(), event.granterName(), event.granterEmail(), event.message(),
+                event.inviteToken());
 
         // A null granteeId means a guest-by-email invite: nobody owns that address on ModuDrive,
         // so there is no account to hang an in-app notification off. The mail is all they get.

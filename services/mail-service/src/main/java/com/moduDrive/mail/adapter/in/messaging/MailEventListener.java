@@ -27,7 +27,8 @@ class MailEventListener {
     @KafkaListener(topics = MailTopics.SHARE_INVITE_REQUESTED)
     void onShareInviteRequested(ShareInviteMailRequested event) {
         sendShareInviteMailUseCase.sendShareInviteMail(
-                new SendShareInviteMailCommand(event.granteeEmail(), event.fileName(), event.role(),
-                        event.fileId(), event.inviteToken()));
+                new SendShareInviteMailCommand(event.granteeEmail(), event.fileName(), event.directory(),
+                        event.category(), event.role(), event.fileId(), event.granterName(), event.granterEmail(),
+                        event.message(), event.inviteToken()));
     }
 }

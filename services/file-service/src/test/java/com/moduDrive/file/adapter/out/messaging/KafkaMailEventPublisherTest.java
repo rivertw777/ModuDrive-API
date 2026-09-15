@@ -36,11 +36,14 @@ class KafkaMailEventPublisherTest {
             given(kafkaTemplate.send(any(String.class), any(String.class), any()))
                     .willReturn(CompletableFuture.completedFuture(null));
 
-            kafkaMailEventPublisher.publishShareInviteRequested(fileId, "grantee@modudrive.com", "report.pdf", "VIEWER", null);
+            kafkaMailEventPublisher.publishShareInviteRequested(
+                    fileId, "grantee@modudrive.com", "report.pdf", false, "DOCUMENT", "VIEWER", "홍길동",
+                    "owner@modudrive.com", "확인 부탁드려요", null);
 
             then(kafkaTemplate).should().send(
                     MailTopics.SHARE_INVITE_REQUESTED, fileId.toString(),
-                    new ShareInviteMailRequested(fileId, "grantee@modudrive.com", "report.pdf", "VIEWER", null));
+                    new ShareInviteMailRequested(fileId, "grantee@modudrive.com", "report.pdf", false, "DOCUMENT",
+                            "VIEWER", "홍길동", "owner@modudrive.com", "확인 부탁드려요", null));
         }
 
         @Test
@@ -50,11 +53,14 @@ class KafkaMailEventPublisherTest {
             given(kafkaTemplate.send(any(String.class), any(String.class), any()))
                     .willReturn(CompletableFuture.completedFuture(null));
 
-            kafkaMailEventPublisher.publishShareInviteRequested(fileId, "grantee@modudrive.com", "report.pdf", "VIEWER", inviteToken);
+            kafkaMailEventPublisher.publishShareInviteRequested(
+                    fileId, "grantee@modudrive.com", "report.pdf", false, "DOCUMENT", "VIEWER", "홍길동",
+                    "owner@modudrive.com", null, inviteToken);
 
             then(kafkaTemplate).should().send(
                     MailTopics.SHARE_INVITE_REQUESTED, fileId.toString(),
-                    new ShareInviteMailRequested(fileId, "grantee@modudrive.com", "report.pdf", "VIEWER", inviteToken));
+                    new ShareInviteMailRequested(fileId, "grantee@modudrive.com", "report.pdf", false, "DOCUMENT",
+                            "VIEWER", "홍길동", "owner@modudrive.com", null, inviteToken));
         }
     }
 }

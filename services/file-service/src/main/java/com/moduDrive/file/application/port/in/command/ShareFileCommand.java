@@ -15,11 +15,14 @@ public class ShareFileCommand {
     private final FileShareOwnerId ownerId;
     private final String email;
     private final FileShareRole role;
+    /** Optional note for the invite mail (Drive-style share message). Null/blank when omitted. */
+    private final String message;
 
-    public ShareFileCommand(UUID fileId, UUID ownerId, String email, Role role) {
+    public ShareFileCommand(UUID fileId, UUID ownerId, String email, Role role, String message) {
         this.fileId = new FileId(fileId);
         this.ownerId = new FileShareOwnerId(ownerId);
         this.email = email;
         this.role = new FileShareRole(role);
+        this.message = message;
     }
 }

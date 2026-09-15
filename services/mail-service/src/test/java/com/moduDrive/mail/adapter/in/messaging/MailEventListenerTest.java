@@ -53,12 +53,14 @@ class MailEventListenerTest {
             UUID fileId = UUID.randomUUID();
             UUID inviteToken = UUID.randomUUID();
             ShareInviteMailRequested event = new ShareInviteMailRequested(
-                    fileId, "grantee@modudrive.com", "report.pdf", "VIEWER", inviteToken);
+                    fileId, "grantee@modudrive.com", "report.pdf", false, "DOCUMENT", "VIEWER", "홍길동",
+                    "owner@modudrive.com", "확인 부탁드려요", inviteToken);
 
             mailEventListener.onShareInviteRequested(event);
 
             then(sendShareInviteMailUseCase).should().sendShareInviteMail(
-                    new SendShareInviteMailCommand("grantee@modudrive.com", "report.pdf", "VIEWER", fileId, inviteToken));
+                    new SendShareInviteMailCommand("grantee@modudrive.com", "report.pdf", false, "DOCUMENT",
+                            "VIEWER", fileId, "홍길동", "owner@modudrive.com", "확인 부탁드려요", inviteToken));
         }
     }
 }
