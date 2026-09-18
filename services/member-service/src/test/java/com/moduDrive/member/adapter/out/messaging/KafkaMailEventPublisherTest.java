@@ -2,6 +2,7 @@ package com.moduDrive.member.adapter.out.messaging;
 
 import com.moduDrive.common.event.mail.MailTopics;
 import com.moduDrive.common.event.mail.VerificationMailRequested;
+import com.moduDrive.common.infrastructure.outbox.OutboxEventRecorder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -9,7 +10,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.kafka.core.KafkaTemplate;
 
 import static org.mockito.BDDMockito.then;
 
@@ -17,7 +17,7 @@ import static org.mockito.BDDMockito.then;
 class KafkaMailEventPublisherTest {
 
     @Mock
-    private KafkaTemplate<String, Object> kafkaTemplate;
+    private OutboxEventRecorder outboxEventRecorder;
     @InjectMocks
     private KafkaMailEventPublisher kafkaMailEventPublisher;
 
@@ -29,7 +29,7 @@ class KafkaMailEventPublisherTest {
         void sendsPayloadToVerificationTopicKeyedByEmail() {
             kafkaMailEventPublisher.publishVerificationRequested("river@modudrive.com", "042917");
 
-            then(kafkaTemplate).should().send(
+            then(outboxEventRecorder).should().record(
                     MailTopics.VERIFICATION_REQUESTED, "river@modudrive.com",
                     new VerificationMailRequested("river@modudrive.com", "042917"));
         }

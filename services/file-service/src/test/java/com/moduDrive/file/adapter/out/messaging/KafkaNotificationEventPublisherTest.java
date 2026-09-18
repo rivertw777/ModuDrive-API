@@ -2,6 +2,7 @@ package com.moduDrive.file.adapter.out.messaging;
 
 import com.moduDrive.common.event.notification.FileSharedNotified;
 import com.moduDrive.common.event.notification.NotificationTopics;
+import com.moduDrive.common.infrastructure.outbox.OutboxEventRecorder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -11,7 +12,6 @@ import org.mockito.Captor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.kafka.core.KafkaTemplate;
 
 import java.util.UUID;
 
@@ -23,7 +23,7 @@ import static org.mockito.BDDMockito.then;
 class KafkaNotificationEventPublisherTest {
 
     @Mock
-    private KafkaTemplate<String, Object> kafkaTemplate;
+    private OutboxEventRecorder outboxEventRecorder;
     @InjectMocks
     private KafkaNotificationEventPublisher kafkaNotificationEventPublisher;
 
@@ -41,7 +41,7 @@ class KafkaNotificationEventPublisherTest {
 
             kafkaNotificationEventPublisher.publishFileShared(fileId, recipientId, "report.pdf", "EDITOR", true, "홍길동", "owner@modudrive.com");
 
-            then(kafkaTemplate).should().send(
+            then(outboxEventRecorder).should().record(
                     eq(NotificationTopics.FILE_SHARED), eq(recipientId.toString()), payloadCaptor.capture());
             assertThat(payloadCaptor.getValue())
                     .isInstanceOf(FileSharedNotified.class)
@@ -67,7 +67,7 @@ class KafkaNotificationEventPublisherTest {
             kafkaNotificationEventPublisher.publishFileShared(fileId, recipientId, "report.pdf", "EDITOR", true, "홍길동", "owner@modudrive.com");
             kafkaNotificationEventPublisher.publishFileShared(fileId, recipientId, "report.pdf", "EDITOR", true, "홍길동", "owner@modudrive.com");
 
-            then(kafkaTemplate).should(org.mockito.Mockito.times(2)).send(
+            then(outboxEventRecorder).should(org.mockito.Mockito.times(2)).record(
                     eq(NotificationTopics.FILE_SHARED), eq(recipientId.toString()), payloadCaptor.capture());
             assertThat(payloadCaptor.getAllValues())
                     .extracting(payload -> ((FileSharedNotified) payload).eventId())
