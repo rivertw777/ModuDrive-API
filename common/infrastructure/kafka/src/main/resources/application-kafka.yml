@@ -1,0 +1,20 @@
+# 모든 Kafka 서비스 공통 직렬화 설정. 서비스 쪽 application.yml에는 group-id와
+# spring.json.trusted.packages(구독하는 이벤트 패키지만 허용)만 남긴다.
+# import된 파일이 import한 파일보다 우선하므로 여기 있는 키는 서비스에서 덮어쓸 수 없다 — 서비스별로
+# 달라져야 하는 값은 여기 두지 말 것.
+spring:
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    # 컨슈머 전용 서비스에도 필요함: DeadLetterPublishingRecoverer가 이 프로듀서로 DLT에 쓰는데,
+    # Boot 기본(String 직렬화기)이면 이벤트 객체를 못 써서 SerializationException → 무한 재시도.
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    # ErrorHandlingDeserializer로 감싸야 역직렬화가 깨지는 메시지(포이즌 필)가 무한 재생되지 않고
+    # DefaultErrorHandler → DLT 경로를 탄다 (KafkaConsumerRetryAutoConfiguration 참고).
+    consumer:
+      key-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.key.delegate.class: org.apache.kafka.common.serialization.StringDeserializer
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer

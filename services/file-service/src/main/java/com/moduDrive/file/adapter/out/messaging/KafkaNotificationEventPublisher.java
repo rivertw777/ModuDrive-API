@@ -4,13 +4,11 @@ import com.moduDrive.common.event.notification.FileSharedNotified;
 import com.moduDrive.common.event.notification.NotificationTopics;
 import com.moduDrive.file.application.port.out.PublishNotificationEventPort;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 
 import java.util.UUID;
 
-@Slf4j
 @Component
 @RequiredArgsConstructor
 class KafkaNotificationEventPublisher implements PublishNotificationEventPort {
@@ -25,13 +23,7 @@ class KafkaNotificationEventPublisher implements PublishNotificationEventPort {
                                   boolean directory, String sharerName, String sharerEmail) {
         UUID eventId = UUID.randomUUID();
         kafkaTemplate.send(NotificationTopics.FILE_SHARED, recipientId.toString(),
-                        new FileSharedNotified(eventId, fileId, recipientId, fileName, role, directory,
-                                sharerName, sharerEmail))
-                .whenComplete((result, ex) -> {
-                    if (ex != null) {
-                        log.error("Failed to publish file shared notification event: fileId={}, recipientId={}",
-                                fileId, recipientId, ex);
-                    }
-                });
+                new FileSharedNotified(eventId, fileId, recipientId, fileName, role, directory,
+                        sharerName, sharerEmail));
     }
 }
