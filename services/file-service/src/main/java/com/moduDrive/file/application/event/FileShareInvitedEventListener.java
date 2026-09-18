@@ -7,7 +7,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
-/** AFTER_COMMIT so a rolled-back invite never produces a notification. */
+/** BEFORE_COMMIT so the mail and notification events are written to the outbox in the same
+ * transaction as the share: a rolled-back invite produces neither, and a committed one gets both
+ * even if Kafka is down right then (#350). */
 @Component
 @RequiredArgsConstructor
 class FileShareInvitedEventListener {
@@ -15,7 +17,7 @@ class FileShareInvitedEventListener {
     private final PublishMailEventPort publishMailEventPort;
     private final PublishNotificationEventPort publishNotificationEventPort;
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
     void onFileShareInvited(FileShareInvitedEvent event) {
         publishMailEventPort.publishShareInviteRequested(
                 event.fileId(), event.granteeEmail(), event.fileName(), event.directory(), event.category().name(),

@@ -1,0 +1,16 @@
+group = 'com.modudrive.common.infrastructure.outbox'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    api project(':common:infrastructure:jpa')
+    api project(':common:infrastructure:kafka')
+    implementation 'org.springframework.boot:spring-boot-jackson'
+    implementation 'io.micrometer:micrometer-tracing'
+
+    testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+    testImplementation 'org.testcontainers:testcontainers-postgresql'
+    testRuntimeOnly 'org.postgresql:postgresql'
+}

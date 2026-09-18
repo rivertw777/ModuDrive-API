@@ -51,7 +51,8 @@ class SignUpMemberService implements SignUpMemberUseCase {
         // The Feign call to file-service and the Kafka publish used to run right here, inside this
         // @Transactional — holding the DB connection for an HTTP round trip, and (on a later commit
         // failure) leaving an already-published MemberSignedUp for a member that was never actually
-        // created. MemberSignedUpEventListener runs both AFTER_COMMIT instead (#208).
+        // created. MemberSignedUpEventListener now runs the Feign call AFTER_COMMIT (#208) and writes
+        // the event to the outbox BEFORE_COMMIT, where it commits atomically with the member (#350).
         eventPublisher.publishEvent(new MemberSignedUpEvent(savedMember.getId(), savedMember.getEmail()));
     }
 

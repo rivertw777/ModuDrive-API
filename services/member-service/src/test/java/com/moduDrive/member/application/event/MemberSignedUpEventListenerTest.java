@@ -21,19 +21,32 @@ class MemberSignedUpEventListenerTest {
     @Mock private PublishMemberEventPort publishMemberEventPort;
     @InjectMocks private MemberSignedUpEventListener listener;
 
+    private final UUID memberId = UUID.randomUUID();
+    private final String email = "river@modudrive.com";
+
     @Nested
-    @DisplayName("회원가입 커밋 후 이벤트를 받으면")
-    class WhenHandlingTheEvent {
+    @DisplayName("회원가입 커밋 직전 이벤트를 받으면")
+    class WhenHandlingBeforeCommit {
 
         @Test
-        void createsTheNamespaceAndPublishesSignedUp() {
-            UUID memberId = UUID.randomUUID();
-            String email = "river@modudrive.com";
+        void publishesSignedUpWithoutCreatingTheNamespace() {
+            listener.publishSignedUp(new MemberSignedUpEvent(memberId, email));
 
-            listener.onMemberSignedUp(new MemberSignedUpEvent(memberId, email));
+            then(publishMemberEventPort).should().publishSignedUp(memberId, email);
+            then(createNamespacePort).shouldHaveNoInteractions();
+        }
+    }
+
+    @Nested
+    @DisplayName("회원가입 커밋 후 이벤트를 받으면")
+    class WhenHandlingAfterCommit {
+
+        @Test
+        void createsTheNamespaceWithoutPublishing() {
+            listener.createNamespace(new MemberSignedUpEvent(memberId, email));
 
             then(createNamespacePort).should().createNamespace(memberId);
-            then(publishMemberEventPort).should().publishSignedUp(memberId, email);
+            then(publishMemberEventPort).shouldHaveNoInteractions();
         }
     }
 }

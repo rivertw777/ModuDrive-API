@@ -2,6 +2,7 @@ package com.moduDrive.member.adapter.out.messaging;
 
 import com.moduDrive.common.event.member.MemberSignedUp;
 import com.moduDrive.common.event.member.MemberTopics;
+import com.moduDrive.common.infrastructure.outbox.OutboxEventRecorder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -9,7 +10,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.kafka.core.KafkaTemplate;
 
 import java.util.UUID;
 
@@ -19,7 +19,7 @@ import static org.mockito.BDDMockito.then;
 class KafkaMemberEventPublisherTest {
 
     @Mock
-    private KafkaTemplate<String, Object> kafkaTemplate;
+    private OutboxEventRecorder outboxEventRecorder;
     @InjectMocks
     private KafkaMemberEventPublisher kafkaMemberEventPublisher;
 
@@ -33,7 +33,7 @@ class KafkaMemberEventPublisherTest {
 
             kafkaMemberEventPublisher.publishSignedUp(memberId, "river@modudrive.com");
 
-            then(kafkaTemplate).should().send(
+            then(outboxEventRecorder).should().record(
                     MemberTopics.SIGNED_UP, "river@modudrive.com",
                     new MemberSignedUp(memberId, "river@modudrive.com"));
         }
