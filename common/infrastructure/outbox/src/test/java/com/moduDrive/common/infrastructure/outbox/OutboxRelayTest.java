@@ -31,6 +31,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -153,7 +154,7 @@ class OutboxRelayTest {
         }
 
         @Test
-        @DisplayName("복원할 수 없는 행은 건너뛰고 나머지를 보낸다")
+        @DisplayName("복원할 수 없는 행은 실패로 표시해 이후 배치에서 빼고 나머지를 보낸다")
         void skipsARowThatCannotBeRebuilt() {
             transactionTemplate.executeWithoutResult(status -> entityManager.persist(
                     new OutboxEventJpaEntity(SOURCE, "topic", "k0", "com.example.Gone", "{}", null)));
@@ -162,9 +163,14 @@ class OutboxRelayTest {
             given(kafkaTemplate.send(anyString(), anyString(), any())).willReturn(CompletableFuture.completedFuture(null));
 
             relay.relay();
+            relay.relay();
 
             then(kafkaTemplate).should().send("topic", "k1", event);
             assertThat(rowCount()).isEqualTo(1);
+            Instant failedAt = transactionTemplate.execute(status -> entityManager
+                    .createQuery("select e from OutboxEventJpaEntity e", OutboxEventJpaEntity.class)
+                    .getSingleResult().getFailedAt());
+            assertThat(failedAt).isNotNull();
         }
 
         @Test

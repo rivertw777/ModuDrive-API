@@ -46,11 +46,16 @@ class OutboxEventJpaEntity {
 
     /** W3C trace headers of the request that recorded the event, as JSON. The relay picks them up
      * again so the consumer's spans still join the original trace in Tempo. */
-    @Column(length = 1_024)
+    @Column(length = 65_535)
     private String traceHeaders;
 
     @Column(nullable = false)
     private Instant createdAt;
+
+    /** Set when the payload can't be turned back into its event class. The relay skips these rows
+     * from then on, so a pile of them can't fill every batch and block the rows behind them. They
+     * stay in the table for a human to look at. */
+    private Instant failedAt;
 
     OutboxEventJpaEntity(String source, String topic, String messageKey, String payloadType, String payload,
                          String traceHeaders) {
@@ -61,5 +66,9 @@ class OutboxEventJpaEntity {
         this.payload = payload;
         this.traceHeaders = traceHeaders;
         this.createdAt = Instant.now();
+    }
+
+    void markFailed() {
+        this.failedAt = Instant.now();
     }
 }

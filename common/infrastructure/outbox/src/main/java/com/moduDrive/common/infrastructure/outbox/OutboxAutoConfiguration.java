@@ -10,7 +10,6 @@ import org.springframework.boot.autoconfigure.AutoConfigurationPackage;
 import org.springframework.context.annotation.Bean;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.orm.jpa.SharedEntityManagerCreator;
-import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.json.JsonMapper;
@@ -25,7 +24,6 @@ import tools.jackson.databind.json.JsonMapper;
  */
 @AutoConfiguration
 @AutoConfigurationPackage
-@EnableScheduling
 public class OutboxAutoConfiguration {
 
     @Bean
@@ -40,7 +38,7 @@ public class OutboxAutoConfiguration {
                 tracer.getIfAvailable(() -> Tracer.NOOP), propagator.getIfAvailable(() -> Propagator.NOOP));
     }
 
-    @Bean
+    @Bean(initMethod = "start", destroyMethod = "stop")
     OutboxRelay outboxRelay(@Value("${spring.application.name}") String source,
                             EntityManagerFactory entityManagerFactory,
                             PlatformTransactionManager transactionManager,

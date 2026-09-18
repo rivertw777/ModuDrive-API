@@ -7,7 +7,6 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.ClassUtils;
 import tools.jackson.core.type.TypeReference;
@@ -15,12 +14,20 @@ import tools.jackson.databind.json.JsonMapper;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Sends {@code outbox_event} rows to Kafka in insertion order and deletes each one after the
- * broker acks it. If a send fails (broker down), the batch stops there. The failed row and
- * everything after it stay put for the next tick, so nothing is lost and order is kept.
+ * Sends {@code outbox_event} rows to Kafka in id order and deletes each one after the broker acks
+ * it. If a send fails (broker down), the batch stops there. The failed row and everything after it
+ * stay put for the next tick, so nothing is lost. Ids are assigned at insert, not at commit, so two
+ * concurrent transactions can commit out of id order. No current event relies on cross-transaction
+ * ordering.
+ * <p>
+ * Runs on its own thread, not Boot's shared one-thread scheduler. Otherwise a send blocked by a
+ * broker outage would stall other {@code @Scheduled} jobs (file-service's trash sweep), and a long
+ * sweep would stall event delivery.
  * <p>
  * Delivery is at-least-once. If the broker acks but the delete doesn't commit, the row is sent
  * again. Consumers must tolerate duplicates: notification-service dedupes on {@code eventId},
@@ -34,7 +41,6 @@ import java.util.concurrent.TimeUnit;
 class OutboxRelay {
 
     static final int BATCH_SIZE = 100;
-    private static final long SEND_TIMEOUT_SECONDS = 10;
     // Hibernate's value for SKIP LOCKED (org.hibernate.Timeouts.SKIP_LOCKED_MILLI).
     private static final int SKIP_LOCKED = -2;
     private static final TypeReference<Map<String, String>> TRACE_HEADERS = new TypeReference<>() {};
@@ -46,6 +52,7 @@ class OutboxRelay {
     private final JsonMapper jsonMapper;
     private final Tracer tracer;
     private final Propagator propagator;
+    private ScheduledExecutorService executor;
 
     OutboxRelay(String source, EntityManager entityManager, TransactionTemplate transactionTemplate,
                 KafkaTemplate<Object, Object> kafkaTemplate, JsonMapper jsonMapper,
@@ -60,11 +67,26 @@ class OutboxRelay {
     }
 
     // ponytail: 1s polling, so an event waits up to ~1s. Wake the relay after commit if that's too slow.
-    @Scheduled(fixedDelay = 1_000)
+    void start() {
+        executor = Executors.newSingleThreadScheduledExecutor(Thread.ofPlatform().name("outbox-relay").factory());
+        executor.scheduleWithFixedDelay(() -> {
+            try {
+                relay();
+            } catch (Exception e) {
+                // An escaped exception would cancel the schedule for good.
+                log.error("Outbox relay tick failed", e);
+            }
+        }, 1, 1, TimeUnit.SECONDS);
+    }
+
+    void stop() {
+        executor.shutdownNow();
+    }
+
     void relay() {
         transactionTemplate.executeWithoutResult(status -> {
             List<OutboxEventJpaEntity> batch = entityManager
-                    .createQuery("select e from OutboxEventJpaEntity e where e.source = :source order by e.id",
+                    .createQuery("select e from OutboxEventJpaEntity e where e.source = :source and e.failedAt is null order by e.id",
                             OutboxEventJpaEntity.class)
                     .setParameter("source", source)
                     .setLockMode(LockModeType.PESSIMISTIC_WRITE)
@@ -76,11 +98,12 @@ class OutboxRelay {
                 Object event;
                 try {
                     event = jsonMapper.readValue(row.getPayload(),
-                            ClassUtils.forName(row.getPayloadType(), OutboxRelay.class.getClassLoader()));
+                            ClassUtils.forName(row.getPayloadType(), ClassUtils.getDefaultClassLoader()));
                 } catch (Exception e) {
                     // Not transient: retrying won't fix it (e.g. the event class was renamed while the
-                    // row was waiting). Leave the row for a human and keep draining the rest.
-                    log.error("Outbox row can't be rebuilt, skipping: id={}, type={}", row.getId(), row.getPayloadType(), e);
+                    // row was waiting). Park the row for a human and keep draining the rest.
+                    log.error("Outbox row can't be rebuilt, parking it: id={}, type={}", row.getId(), row.getPayloadType(), e);
+                    row.markFailed();
                     continue;
                 }
                 try {
@@ -99,7 +122,10 @@ class OutboxRelay {
                 ? Map.of() : jsonMapper.readValue(row.getTraceHeaders(), TRACE_HEADERS);
         Span span = propagator.extract(traceHeaders, Map::get).name("outbox relay").start();
         try (Tracer.SpanInScope ignored = tracer.withSpan(span)) {
-            kafkaTemplate.send(row.getTopic(), row.getMessageKey(), event).get(SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            // No timeout of our own: the producer settles the future within delivery.timeout.ms. Giving up
+            // sooner would leave the record retrying inside the producer while the next tick sends
+            // the row again, so it would be delivered twice.
+            kafkaTemplate.send(row.getTopic(), row.getMessageKey(), event).get();
         } catch (Exception e) {
             span.error(e);
             throw e;
