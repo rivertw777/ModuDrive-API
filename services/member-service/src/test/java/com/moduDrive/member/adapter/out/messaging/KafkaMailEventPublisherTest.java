@@ -11,10 +11,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.kafka.core.KafkaTemplate;
 
-import java.util.concurrent.CompletableFuture;
-
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 
 @ExtendWith(MockitoExtension.class)
@@ -31,9 +27,6 @@ class KafkaMailEventPublisherTest {
 
         @Test
         void sendsPayloadToVerificationTopicKeyedByEmail() {
-            given(kafkaTemplate.send(any(String.class), any(String.class), any()))
-                    .willReturn(CompletableFuture.completedFuture(null));
-
             kafkaMailEventPublisher.publishVerificationRequested("river@modudrive.com", "042917");
 
             then(kafkaTemplate).should().send(

@@ -12,10 +12,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.kafka.core.KafkaTemplate;
 
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 
 @ExtendWith(MockitoExtension.class)
@@ -33,8 +30,6 @@ class KafkaMailEventPublisherTest {
         @Test
         void sendsPayloadToShareInviteTopicKeyedByFileId() {
             UUID fileId = UUID.randomUUID();
-            given(kafkaTemplate.send(any(String.class), any(String.class), any()))
-                    .willReturn(CompletableFuture.completedFuture(null));
 
             kafkaMailEventPublisher.publishShareInviteRequested(
                     fileId, "grantee@modudrive.com", "report.pdf", false, "DOCUMENT", "VIEWER", "홍길동",
@@ -50,8 +45,6 @@ class KafkaMailEventPublisherTest {
         void includesTheInviteTokenForAGuestInvite() {
             UUID fileId = UUID.randomUUID();
             UUID inviteToken = UUID.randomUUID();
-            given(kafkaTemplate.send(any(String.class), any(String.class), any()))
-                    .willReturn(CompletableFuture.completedFuture(null));
 
             kafkaMailEventPublisher.publishShareInviteRequested(
                     fileId, "grantee@modudrive.com", "report.pdf", false, "DOCUMENT", "VIEWER", "홍길동",

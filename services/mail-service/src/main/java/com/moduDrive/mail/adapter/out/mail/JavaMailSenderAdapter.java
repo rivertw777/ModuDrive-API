@@ -34,7 +34,8 @@ class JavaMailSenderAdapter implements SendMailPort {
         message.setText(body);
 
         // Throws MailException on SMTP failure — left uncaught so the Kafka listener's
-        // DefaultErrorHandler (see config.KafkaRetryConfig) retries, then routes to the DLT.
+        // DefaultErrorHandler (see common:infrastructure:kafka's KafkaConsumerRetryAutoConfiguration)
+        // retries, then routes to the DLT.
         javaMailSender.send(message);
     }
 

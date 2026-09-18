@@ -14,12 +14,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.kafka.core.KafkaTemplate;
 
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 
 @ExtendWith(MockitoExtension.class)
@@ -41,8 +38,6 @@ class KafkaNotificationEventPublisherTest {
         void sendsPayloadToFileSharedTopicKeyedByRecipientId() {
             UUID fileId = UUID.randomUUID();
             UUID recipientId = UUID.randomUUID();
-            given(kafkaTemplate.send(any(String.class), any(String.class), any()))
-                    .willReturn(CompletableFuture.completedFuture(null));
 
             kafkaNotificationEventPublisher.publishFileShared(fileId, recipientId, "report.pdf", "EDITOR", true, "홍길동", "owner@modudrive.com");
 
@@ -68,8 +63,6 @@ class KafkaNotificationEventPublisherTest {
         void generatesAFreshEventIdPerPublish() {
             UUID fileId = UUID.randomUUID();
             UUID recipientId = UUID.randomUUID();
-            given(kafkaTemplate.send(any(String.class), any(String.class), any()))
-                    .willReturn(CompletableFuture.completedFuture(null));
 
             kafkaNotificationEventPublisher.publishFileShared(fileId, recipientId, "report.pdf", "EDITOR", true, "홍길동", "owner@modudrive.com");
             kafkaNotificationEventPublisher.publishFileShared(fileId, recipientId, "report.pdf", "EDITOR", true, "홍길동", "owner@modudrive.com");
