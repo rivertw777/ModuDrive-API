@@ -6,6 +6,8 @@ repositories {
 
 dependencies {
     api 'org.springframework.boot:spring-boot-starter-actuator'
+    // Boot 4는 트레이싱 auto-config가 별도 모듈 — bridge만 있으면 Tracer 빈이 안 생겨서 span이 하나도 안 나간다.
+    api 'org.springframework.boot:spring-boot-micrometer-tracing-opentelemetry'
     api 'io.micrometer:micrometer-tracing-bridge-otel'
     api 'io.opentelemetry:opentelemetry-exporter-otlp'
     api 'io.micrometer:micrometer-registry-prometheus'

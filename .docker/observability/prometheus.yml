@@ -14,3 +14,4 @@ scrape_configs:
           - file-service:9464
           - storage-service:9464
           - mail-service:9464
+          - notification-service:9464

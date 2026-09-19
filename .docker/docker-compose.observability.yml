@@ -3,6 +3,10 @@ name: modudrive-observability
 # Traces/metrics/logs stack, split out of docker-compose.infra.yml so it can be
 # run (or skipped) independently. modudrive_network is created by `make network`
 # (a prerequisite of the infra/observability targets).
+#
+# 설정은 파일 단위가 아니라 디렉터리 단위로 마운트한다. 단일 파일 bind mount는 컨테이너 생성 시점의
+# inode에 묶여서, 에디터 저장/git checkout처럼 파일을 새 inode로 교체하면 컨테이너가 옛 내용을 보거나
+# 재시작 시 기동 실패한다(promtail 무한 재시작 원인).
 
 services:
 
@@ -15,17 +19,18 @@ services:
       # 호스트 바인딩은 IDE에서 직접 띄운 서비스를 로컬로 붙일 때만 필요 — loopback만 연다.
       - "127.0.0.1:4317:4317"   # OTLP gRPC
       - "127.0.0.1:4318:4318"   # OTLP HTTP
+    command: ["--config=/etc/modudrive/otel-collector-config.yaml"]
     volumes:
-      - ./observability/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+      - ./observability:/etc/modudrive:ro
     restart: unless-stopped
 
   tempo:
     image: grafana/tempo:3.0.0
     networks:
       - modudrive_network
-    command: ["-config.file=/etc/tempo.yaml"]
+    command: ["-config.file=/etc/modudrive/tempo.yaml"]
     volumes:
-      - ./observability/tempo.yaml:/etc/tempo.yaml:ro
+      - ./observability:/etc/modudrive:ro
       - tempo_data:/var/tempo
     restart: unless-stopped
 
@@ -33,9 +38,9 @@ services:
     image: grafana/loki:3.7.6
     networks:
       - modudrive_network
-    command: ["-config.file=/etc/loki/config.yaml"]
+    command: ["-config.file=/etc/modudrive/loki-config.yaml"]
     volumes:
-      - ./observability/loki-config.yaml:/etc/loki/config.yaml:ro
+      - ./observability:/etc/modudrive:ro
       - loki_data:/loki
     restart: unless-stopped
 
@@ -43,9 +48,9 @@ services:
     image: grafana/promtail:3.6.8
     networks:
       - modudrive_network
-    command: ["-config.file=/etc/promtail/config.yaml"]
+    command: ["-config.file=/etc/modudrive/promtail-config.yaml"]
     volumes:
-      - ./observability/promtail-config.yaml:/etc/promtail/config.yaml:ro
+      - ./observability:/etc/modudrive:ro
       # docker.sock을 :ro로 마운트해도 Docker Engine API 자체는 전부 열린다(호스트 root 상당 권한).
       # 로컬 dev compose 전용 트레이드오프 — 공유 호스트/서버로 절대 승격하지 말 것.
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -61,8 +66,9 @@ services:
       - modudrive_network
     ports:
       - "127.0.0.1:9090:9090"
+    command: ["--config.file=/etc/modudrive/prometheus.yml", "--storage.tsdb.path=/prometheus"]
     volumes:
-      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability:/etc/modudrive:ro
       - prometheus_data:/prometheus
     restart: unless-stopped
 
@@ -77,7 +83,7 @@ services:
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
     volumes:
-      - ./observability/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
+      - ./observability/grafana:/etc/grafana/provisioning/datasources:ro
       - grafana_data:/var/lib/grafana
     depends_on:
       - prometheus

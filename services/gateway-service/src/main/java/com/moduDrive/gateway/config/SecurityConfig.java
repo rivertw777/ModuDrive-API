@@ -46,6 +46,10 @@ class SecurityConfig {
                         // case before the request even reaches the service.
                         .pathMatchers(HttpMethod.GET, "/api/v1/storage/view/**").permitAll()
                         .pathMatchers("/webjars/swagger-ui/**", "/v3/api-docs/**", "/*/v3/api-docs/**").permitAll()
+                        // Actuator is served only on management.server.port (9464), which isn't published
+                        // to the host — the public app port returns 404 for /actuator/** regardless. Network
+                        // isolation is the guard here, so Prometheus can scrape without a token.
+                        .pathMatchers("/actuator/**").permitAll()
                         .anyExchange().authenticated()
                 )
                 .securityContextRepository(securityContextRepository)

@@ -3,9 +3,11 @@ management:
   # 내부 네트워크(prometheus 컨테이너)에서만 스크레이프 가능해진다. 이 포트는 호스트에 퍼블리시하지 않는다.
   server:
     port: 9464
-  otlp:
+  opentelemetry:
     tracing:
-      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://otel-collector:4318}/v1/traces
+      export:
+        otlp:
+          endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://otel-collector:4318}/v1/traces
   tracing:
     sampling:
       # head 단계는 전량 export (샘플링은 otel-collector의 tail_sampling이 결정).
