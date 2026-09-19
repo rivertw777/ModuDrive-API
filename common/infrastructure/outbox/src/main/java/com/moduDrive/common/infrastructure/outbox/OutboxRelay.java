@@ -6,6 +6,7 @@ import io.micrometer.observation.transport.ReceiverContext;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import lombok.extern.slf4j.Slf4j;
+import com.moduDrive.common.infrastructure.sqs.SqsFailures;
 import io.awspring.cloud.sqs.listener.SqsHeaders.MessageSystemAttributes;
 import io.awspring.cloud.sqs.operations.SqsOperations;
 import org.springframework.messaging.Message;
@@ -25,8 +26,10 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Sends {@code outbox_event} rows to SQS (FIFO queues) in id order and deletes each one after SQS
- * accepts it. If a send fails (SQS unreachable), the batch stops there. The failed row and everything after it
- * stay put for the next tick, so nothing is lost. Ids are assigned at insert, not at commit, so two
+ * accepts it. If a send fails because SQS is unreachable (or throttling, 5xx, access denied), the batch
+ * stops there. The failed row and everything after it stay put for the next tick, so nothing is lost.
+ * If SQS instead rejects that one message ({@link SqsFailures#isPermanentSendFailure}), the row is
+ * parked like an unreadable one and the batch carries on. Ids are assigned at insert, not at commit, so two
  * concurrent transactions can commit out of id order. No current event relies on cross-transaction
  * ordering.
  * <p>
@@ -111,6 +114,13 @@ class OutboxRelay {
                 try {
                     send(row, event);
                 } catch (Exception e) {
+                    if (SqsFailures.isPermanentSendFailure(e)) {
+                        // SQS rejected this message itself (queue missing, too large, bad group id):
+                        // resending never helps, and stopping here would block every row behind it.
+                        log.error("Outbox row rejected by SQS, parking it: id={}, topic={}", row.getId(), row.getTopic(), e);
+                        row.markFailed();
+                        continue;
+                    }
                     log.warn("Outbox send failed, will retry: id={}, topic={}", row.getId(), row.getTopic(), e);
                     return;
                 }

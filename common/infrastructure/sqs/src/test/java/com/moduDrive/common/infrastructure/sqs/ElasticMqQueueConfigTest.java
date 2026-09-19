@@ -20,20 +20,27 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.utility.MountableFile;
 import software.amazon.awssdk.services.sqs.SqsAsyncClient;
+import software.amazon.awssdk.services.sqs.model.Message;
+import software.amazon.awssdk.services.sqs.model.MessageAttributeValue;
 
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
-/** Runs the real {@code .docker/elasticmq/elasticmq.conf} against the real SQS client stack, so a
- * queue-name typo, a missing DLQ or a broken redrive policy fails here instead of in the E2E. */
+/** Runs the real {@code .docker/elasticmq/elasticmq.conf} against the real SQS client stack and this
+ * module's error handling, so a queue-name typo, a missing DLQ, a broken redrive policy or a
+ * misclassified failure fails here instead of in the E2E. */
 @SpringBootTest(classes = ElasticMqQueueConfigTest.TestApp.class,
         properties = "spring.config.import=classpath:application-sqs.yml")
 class ElasticMqQueueConfigTest {
@@ -59,13 +66,13 @@ class ElasticMqQueueConfigTest {
     }
 
     @Autowired private SqsTemplate sqsTemplate;
-    @Autowired private RecordingListener listener;
     @Autowired private SqsAsyncClient sqsAsyncClient;
+    @Autowired private RecordingListener listener;
 
     @BeforeEach
     void reset() {
         listener.received.clear();
-        listener.attempts.set(0);
+        listener.attempts.clear();
     }
 
     @Nested
@@ -88,20 +95,38 @@ class ElasticMqQueueConfigTest {
     }
 
     @Nested
-    @DisplayName("리스너가 계속 실패할 때")
-    class WhenTheListenerKeepsFailing {
+    @DisplayName("재처리 가능한 실패(일시 장애)가 계속될 때")
+    class WhenARetryableFailureKeepsHappening {
 
         @Test
-        @DisplayName("1회 시도 + 3회 재시도 뒤 DLQ로 옮겨진다")
-        void movesTheMessageToTheDlqAfterFourReceives() {
-            MemberSignedUp poison = new MemberSignedUp(UUID.randomUUID(), "fail@modudrive.com");
+        @DisplayName("백오프하며 4번 시도한 뒤 redrive로 DLQ에 옮겨지고, 사유 속성은 없다")
+        void retriesWithBackoffThenRedrivesToTheDlq() {
+            MemberSignedUp event = new MemberSignedUp(UUID.randomUUID(), "retry@modudrive.com");
 
-            send(poison, "outbox-2");
+            send(event, "outbox-2");
 
-            await().atMost(Duration.ofSeconds(30)).pollInterval(1, TimeUnit.SECONDS).until(() ->
-                    sqsTemplate.receive(from -> from.queue(DLQ).pollTimeout(Duration.ofSeconds(1)), MemberSignedUp.class)
-                            .map(m -> m.getPayload().equals(poison)).orElse(false));
-            assertThat(listener.attempts.get()).isEqualTo(4);
+            Message dead = awaitDeadLetter(event.email(), Duration.ofSeconds(45));
+            assertThat(listener.attempts(event.email())).isEqualTo(4);
+            assertThat(dead.messageAttributes()).doesNotContainKey(DeadLetteringErrorHandler.REASON_ATTRIBUTE);
+        }
+    }
+
+    @Nested
+    @DisplayName("재처리 불가능한 실패(잘못된 값)가 나면")
+    class WhenAPermanentFailureHappens {
+
+        @Test
+        @DisplayName("재시도 없이 한 번 만에 DLQ로 옮겨지고, 원본 본문과 사유가 남는다")
+        void movesStraightToTheDlqWithTheReason() {
+            MemberSignedUp event = new MemberSignedUp(UUID.randomUUID(), "invalid@modudrive.com");
+
+            send(event, "outbox-3");
+
+            Message dead = awaitDeadLetter(event.email(), Duration.ofSeconds(10));
+            assertThat(listener.attempts(event.email())).isEqualTo(1);
+            assertThat(dead.body()).contains(event.memberId().toString());
+            assertThat(dead.messageAttributes().get(DeadLetteringErrorHandler.REASON_ATTRIBUTE).stringValue())
+                    .contains("IllegalArgumentException");
         }
     }
 
@@ -109,20 +134,21 @@ class ElasticMqQueueConfigTest {
     @DisplayName("본문이 JSON으로 안 읽히는 메시지(포이즌 필)가 오면")
     class WhenThePayloadCannotBeRead {
 
+        // Spring Cloud AWS converts the body in the message source, before the listener pipeline, and
+        // on failure logs and drops it without calling the error handler. So a poison message can't
+        // take the immediate path: it comes back after the queue's visibility timeout and the redrive
+        // policy moves it after 4 receives (~40s), original body intact, without a reason attribute.
         @Test
-        @DisplayName("리스너까지 가지 않고, 4회 수신 뒤 원본 본문 그대로 DLQ로 옮겨진다")
-        void movesTheRawBodyToTheDlq() {
+        @DisplayName("리스너까지 가지 않고, 큐의 redrive로 원본 본문 그대로 DLQ에 옮겨진다")
+        void movesTheRawBodyToTheDlqThroughRedrive() {
             String queueUrl = sqsAsyncClient.getQueueUrl(r -> r.queueName(MemberQueues.SIGNED_UP)).join().queueUrl();
-            String dlqUrl = sqsAsyncClient.getQueueUrl(r -> r.queueName(DLQ)).join().queueUrl();
 
             sqsAsyncClient.sendMessage(r -> r.queueUrl(queueUrl).messageBody("{not json")
                     .messageGroupId("poison").messageDeduplicationId("poison-1")).join();
 
-            await().atMost(Duration.ofSeconds(60)).pollInterval(1, TimeUnit.SECONDS).until(() ->
-                    sqsAsyncClient.receiveMessage(r -> r.queueUrl(dlqUrl).waitTimeSeconds(1)).join().messages()
-                            .stream().anyMatch(m -> m.body().equals("{not json")));
+            Message dead = awaitDeadLetter("{not json", Duration.ofSeconds(60));
+            assertThat(dead.body()).isEqualTo("{not json");
             assertThat(listener.received).isEmpty();
-            assertThat(listener.attempts.get()).isZero();
         }
     }
 
@@ -131,6 +157,20 @@ class ElasticMqQueueConfigTest {
                 .setHeader(MessageSystemAttributes.SQS_MESSAGE_GROUP_ID_HEADER, event.email())
                 .setHeader(MessageSystemAttributes.SQS_MESSAGE_DEDUPLICATION_ID_HEADER, deduplicationId)
                 .build());
+    }
+
+    /** Polls the DLQ until a message whose body contains {@code marker} shows up. */
+    private Message awaitDeadLetter(String marker, Duration timeout) {
+        String dlqUrl = sqsAsyncClient.getQueueUrl(r -> r.queueName(DLQ)).join().queueUrl();
+        AtomicReference<Message> found = new AtomicReference<>();
+        await().atMost(timeout).pollInterval(500, TimeUnit.MILLISECONDS).until(() -> {
+            Optional<Message> match = sqsAsyncClient.receiveMessage(r -> r.queueUrl(dlqUrl)
+                            .maxNumberOfMessages(10).waitTimeSeconds(1).messageAttributeNames("All"))
+                    .join().messages().stream().filter(m -> m.body().contains(marker)).findFirst();
+            match.ifPresent(found::set);
+            return match.isPresent();
+        });
+        return found.get();
     }
 
     @EnableAutoConfiguration
@@ -142,14 +182,20 @@ class ElasticMqQueueConfigTest {
     static class RecordingListener {
 
         final List<MemberSignedUp> received = new CopyOnWriteArrayList<>();
-        final AtomicInteger attempts = new AtomicInteger();
+        final Map<String, AtomicInteger> attempts = new ConcurrentHashMap<>();
 
-        // 1s instead of the queue's 10s visibility so the four failed receives take seconds.
-        @SqsListener(value = MemberQueues.SIGNED_UP, messageVisibilitySeconds = "1")
+        int attempts(String email) {
+            return attempts.getOrDefault(email, new AtomicInteger()).get();
+        }
+
+        @SqsListener(MemberQueues.SIGNED_UP)
         void onSignedUp(MemberSignedUp event) {
-            if (event.email().startsWith("fail")) {
-                attempts.incrementAndGet();
-                throw new IllegalStateException("simulated consumer failure");
+            attempts.computeIfAbsent(event.email(), e -> new AtomicInteger()).incrementAndGet();
+            if (event.email().startsWith("retry")) {
+                throw new IllegalStateException("simulated outage");
+            }
+            if (event.email().startsWith("invalid")) {
+                throw new IllegalArgumentException("simulated bad payload");
             }
             received.add(event);
         }
