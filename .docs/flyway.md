@@ -28,14 +28,12 @@ flowchart LR
 
 의존성만 있으면 Spring Boot가 기동 중에 알아서 실행한다. 코드에서 Flyway를 직접 호출하는 곳은 없다.
 
-| 단계 | 하는 일 |
-|---|---|
-| 1. 자동 설정 | 클래스패스에 Flyway, 빈에 DataSource가 있으면 켜진다 |
-| 2. 파일 탐색 | `src/main/resources/db/migration` (dev 프로필이면 `db/seed`도) |
-| 3. 이력 준비 | `flyway_schema_history`가 없으면 만들고, DB 락을 잡는다 (동시 기동해도 한 대만 진행) |
-| 4. 검증 | 이미 적용된 파일의 체크섬 비교 — 다르면 **기동 실패** |
-| 5. 실행 | 안 돌린 파일만 버전 순으로 실행. 파일마다 트랜잭션, 성공하면 이력 한 줄 추가 |
-| 6. Hibernate validate | Flyway가 끝난 뒤 엔티티와 테이블을 비교 — 다르면 **기동 실패** |
+1. **자동 설정** — 클래스패스에 Flyway, 빈에 DataSource가 있으면 켜진다.
+2. **파일 탐색** — `src/main/resources/db/migration`에서 SQL을 찾는다. dev 프로필이면 `db/seed`도.
+3. **이력 준비** — `flyway_schema_history`가 없으면 만들고 DB 락을 잡는다. 동시에 여러 대가 떠도 한 대만 진행한다.
+4. **검증** — 이미 적용된 파일의 체크섬을 비교한다. 다르면 기동 실패.
+5. **실행** — 안 돌린 파일만 버전 순으로 실행한다. 파일마다 트랜잭션이고, 성공하면 이력에 한 줄 남긴다.
+6. **Hibernate validate** — Flyway가 끝난 뒤 엔티티와 테이블을 비교한다. 다르면 기동 실패.
 
 > **새 서비스에 붙이려면** `common:infrastructure:jpa`에 의존하고 `db/migration/V1__init.sql`만 만들면 된다.
 > Flyway, Postgres 지원 모듈(`flyway-database-postgresql`), `ddl-auto: validate`는 공통 모듈에 이미 있다.
