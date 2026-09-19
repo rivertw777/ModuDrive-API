@@ -11,3 +11,7 @@ storage:
     region: us-east-1
   block-size: 4194304
   encryption-key: MBDmFlbqAnqqs/HpwcOPOA==
+
+clients:
+  file-service:
+    url: http://localhost:10012

@@ -1,36 +1,45 @@
 package com.moduDrive.gateway.config;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.cloud.gateway.route.RouteLocator;
 import org.springframework.cloud.gateway.route.builder.GatewayFilterSpec;
 import org.springframework.cloud.gateway.route.builder.RouteLocatorBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
 
+@RequiredArgsConstructor
 @Configuration
 class RouteConfig {
+
+    private final Environment env;
 
     @Bean
     public RouteLocator gatewayRoutes(RouteLocatorBuilder builder) {
         return builder.routes()
                 .route("member-service", r -> r.path("/api/v1/member/**")
                         .filters(f -> addCircuitBreaker(f, "memberServiceCircuitBreaker"))
-                        .uri("lb://member-service"))
+                        .uri(url("member-service")))
                 .route("auth-service", r -> r.path("/api/v1/auth/**")
                         .filters(f -> addCircuitBreaker(f, "authServiceCircuitBreaker"))
-                        .uri("lb://auth-service"))
+                        .uri(url("auth-service")))
                 .route("file-service", r -> r.path("/api/v1/files/**", "/api/v1/directories/**")
                         .filters(f -> addCircuitBreaker(f, "fileServiceCircuitBreaker"))
-                        .uri("lb://file-service"))
+                        .uri(url("file-service")))
                 .route("storage-service", r -> r.path("/api/v1/storage/**")
                         .filters(f -> addCircuitBreaker(f, "storageServiceCircuitBreaker"))
-                        .uri("lb://storage-service"))
+                        .uri(url("storage-service")))
                 .route("mail-service", r -> r.path("/api/v1/mail/**")
                         .filters(f -> addCircuitBreaker(f, "mailServiceCircuitBreaker"))
-                        .uri("lb://mail-service"))
+                        .uri(url("mail-service")))
                 .route("notification-service", r -> r.path("/api/v1/notifications/**")
                         .filters(f -> addCircuitBreaker(f, "notificationServiceCircuitBreaker"))
-                        .uri("lb://notification-service"))
+                        .uri(url("notification-service")))
                 .build();
+    }
+
+    private String url(String service) {
+        return env.getRequiredProperty("clients." + service + ".url");
     }
 
     private GatewayFilterSpec addCircuitBreaker(GatewayFilterSpec filterSpec, String circuitBreakerName) {

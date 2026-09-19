@@ -35,3 +35,10 @@ resilience4j:
 internal:
   service:
     token: ${INTERNAL_SERVICE_TOKEN}
+
+# Fixed service URLs (compose DNS locally, ECS Service Connect on AWS).
+clients:
+  member-service:
+    url: http://member-service:10010
+  storage-service:
+    url: http://storage-service:10013

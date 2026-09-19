@@ -3,3 +3,7 @@ jwt:
     expiration: 604800000
     cookie:
       secure: true
+
+clients:
+  member-service:
+    url: http://localhost:10010

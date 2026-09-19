@@ -11,8 +11,7 @@ or `adapter`. `application` never imports `adapter`.
 
 Applies to the services with a real `domain/application/adapter` split: member, auth,
 file, storage. `gateway-service` (a reactive WebFlux edge service — `config/exception/adapter`
-only, no domain/application layer) and `eureka-server` (a bare registry with no business
-logic) don't follow this structure; only borrow the adapter/config conventions below where
+only, no domain/application layer) doesn't follow this structure; only borrow the adapter/config conventions below where
 they're actually relevant.
 
 ## Core principles
@@ -217,7 +216,7 @@ or the service layer depend on the Feign DTOs directly — only the
 `ClientAdapter` should touch them.
 
 ```java
-@FeignClient(name = "member-service")
+@FeignClient(name = "member-service", url = "${clients.member-service.url}")
 interface MemberClient {
     @PostMapping("/api/v1/member/authenticate")
     @CircuitBreaker(name = "memberServiceCircuitBreaker", fallbackMethod = "authenticateMemberFallback")

@@ -17,3 +17,8 @@ modudrive:
 internal:
   service:
     token: ${INTERNAL_SERVICE_TOKEN}
+
+# Fixed service URLs (compose DNS locally, ECS Service Connect on AWS).
+clients:
+  file-service:
+    url: http://file-service:10012

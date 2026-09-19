@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.List;
 
-@FeignClient(name = "file-service")
+@FeignClient(name = "file-service", url = "${clients.file-service.url}")
 interface FileServiceFeignClient {
 
     @PutMapping("/api/v1/files/{fileId}/uploaded")

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ModuDrive is a cloud-drive microservices backend built with **Spring Boot 4.1.1**, **Java 25**, and **Spring Cloud 2025.1.3**, organized as a Gradle 9.7.1 multi-module project. Services register with Netflix Eureka for service discovery. Inter-service calls use OpenFeign (`auth-service` → `member-service`) or `WebClient` (`gateway-service` → `auth-service`), with Resilience4j providing circuit breaking and retry.
+ModuDrive is a cloud-drive microservices backend built with **Spring Boot 4.1.1**, **Java 25**, and **Spring Cloud 2025.1.3**, organized as a Gradle 9.7.1 multi-module project. There is no service registry: services call each other at fixed URLs (`clients.<service>.url` in each `application.yml` — compose DNS locally, ECS Service Connect on AWS). Inter-service calls use OpenFeign (`auth-service` → `member-service`) or `WebClient` (`gateway-service` → `auth-service`), with Resilience4j providing circuit breaking and retry.
 
 ## Build & Run Commands
 
@@ -45,7 +45,6 @@ The active Spring profile (`dev`) is injected via `SPRING_PROFILES_ACTIVE` in `d
 
 | Service               | Port  | Description                              |
 |-----------------------|-------|------------------------------------------|
-| eureka-server         | 10000 | Netflix Eureka service registry          |
 | gateway-service       | 10001 | Spring Cloud Gateway (WebFlux/reactive)  |
 | member-service        | 10010 | User signup, lookup, password validation |
 | auth-service          | 10011 | JWT login + token validation             |
@@ -74,10 +73,10 @@ For the full layer breakdown, naming conventions, dependency-direction rules, an
 | `common:infrastructure:outbox`      | Transactional outbox: producers call `OutboxEventRecorder.record(topic, key, event)` instead of `KafkaTemplate.send`, which writes an `outbox_event` row in the caller's transaction; a scheduled relay sends it to Kafka and deletes it (`SKIP LOCKED`; each service has its own `outbox_event` table in its own database). Used by member/file-service — publish from `BEFORE_COMMIT`, not `AFTER_COMMIT` |
 | `common:infrastructure:redis`       | `spring-boot-starter-data-redis` — used by auth-service for token storage, member-service for email verification tokens |
 | `common:infrastructure:resilience4j`| `CircuitBreakerEventConfig`, `RetryEventConfig`, `FeignFallbackUtils` |
-| `common:infrastructure:spring-cloud`| `spring-cloud-starter-netflix-eureka-client`, `spring-cloud-starter-openfeign` — all services that register with Eureka or use Feign depend on this module |
+| `common:infrastructure:spring-cloud`| `spring-cloud-starter-openfeign` — all services that use Feign depend on this module |
 | `common:infrastructure:swagger`     | Aggregated OpenAPI/Swagger UI config (dev profile)           |
 
-Application services (auth, member, gateway) depend on `common:core`, `common:api`, and `common:infrastructure:spring-cloud`. JPA services also depend on `common:infrastructure:jpa`. `eureka-server` is a standalone registry and does not depend on any common module.
+Application services (auth, member, gateway) depend on `common:core`, `common:api`, and `common:infrastructure:spring-cloud`. JPA services also depend on `common:infrastructure:jpa`.
 
 Root `build.gradle`'s `subprojects {}` block applies the Spring Boot plugin (and disables `bootJar`/`bootRun`/`bootBuildImage`) to every module — including implicit intermediate directories like `common` and `services`, which Gradle creates automatically from nested `include(...)` paths in `settings.gradle` even without their own `build.gradle` file. Only the 4 runnable services re-enable those tasks in their own `build.gradle`.
 
