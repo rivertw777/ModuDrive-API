@@ -36,25 +36,19 @@ flowchart LR
 
 ## 3. 동작 순서
 
-코드에서 Flyway를 직접 호출하는 곳은 없다. 의존성만 있으면 Spring Boot 자동 설정이 알아서 실행한다.
+의존성만 있으면 Spring Boot가 기동 중에 알아서 실행한다. 코드에서 Flyway를 직접 호출하는 곳은 없다.
 
-**기동 시 (Spring Boot)**
+| 단계 | 하는 일 |
+|---|---|
+| 1. 자동 설정 | 클래스패스에 Flyway, 빈에 DataSource가 있으면 켜진다 |
+| 2. 파일 탐색 | `src/main/resources/db/migration` (dev 프로필이면 `db/seed`도) |
+| 3. 이력 준비 | `flyway_schema_history`가 없으면 만들고, DB 락을 잡는다 (동시 기동해도 한 대만 진행) |
+| 4. 검증 | 이미 적용된 파일의 체크섬 비교 — 다르면 **기동 실패** |
+| 5. 실행 | 안 돌린 파일만 버전 순으로 실행. 파일마다 트랜잭션, 성공하면 이력 한 줄 추가 |
+| 6. Hibernate validate | Flyway가 끝난 뒤 엔티티와 테이블을 비교 — 다르면 **기동 실패** |
 
-1. 클래스패스에 Flyway가 있고 DataSource가 있으면 Flyway 자동 설정이 켜진다.
-2. 기본 경로 `classpath:db/migration`(= `src/main/resources/db/migration`)에서 SQL 파일을 찾는다. dev 프로필이면 `db/seed`도 함께.
-3. 기동 중에 `flyway.migrate()`를 자동으로 호출한다.
-4. JPA(Hibernate)는 Flyway가 끝난 뒤에 초기화되도록 순서가 잡혀 있다. 그래서 테이블이 먼저 준비되고, 그다음 validate가 돈다.
-
-**`migrate()` 내부**
-
-1. `flyway_schema_history` 테이블이 없으면 만든다.
-2. DB 락을 잡는다. 여러 인스턴스가 동시에 떠도 한 대만 진행한다.
-3. 경로의 `V*.sql` 파일을 버전 순으로 정렬한다.
-4. 기록 테이블과 비교한다. 이미 적용된 파일은 체크섬이 그대로인지 확인하고, 아직 안 된 파일만 골라낸다.
-5. 골라낸 파일을 순서대로 파일마다 트랜잭션으로 실행하고, 기록 테이블에 한 줄씩 남긴다.
-
-**새 서비스에 붙이려면** `common:infrastructure:jpa`에 의존하고 `db/migration/V1__init.sql`만 만들면 된다.
-Flyway 의존성, Postgres 지원 모듈(`flyway-database-postgresql`, Flyway 10부터 DB별 모듈이 분리됨), `ddl-auto: validate`는 공통 모듈에 이미 들어 있다.
+> **새 서비스에 붙이려면** `common:infrastructure:jpa`에 의존하고 `db/migration/V1__init.sql`만 만들면 된다.
+> Flyway, Postgres 지원 모듈(`flyway-database-postgresql`), `ddl-auto: validate`는 공통 모듈에 이미 있다.
 
 ---
 
