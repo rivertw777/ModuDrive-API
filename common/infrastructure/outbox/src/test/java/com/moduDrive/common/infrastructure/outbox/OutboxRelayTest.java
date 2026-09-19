@@ -34,6 +34,8 @@ import org.springframework.orm.jpa.SharedEntityManagerCreator;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.postgresql.PostgreSQLContainer;
+import software.amazon.awssdk.awscore.exception.AwsErrorDetails;
+import software.amazon.awssdk.services.sqs.model.SqsException;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.time.Instant;
@@ -170,6 +172,32 @@ class OutboxRelayTest {
 
             then(sqsOperations).should(times(1)).send(anyString(), any(Message.class));
             assertThat(rowCount()).isEqualTo(2);
+        }
+
+        @Test
+        @DisplayName("SQS가 그 메시지 자체를 거절하면(400) 그 행만 격리하고 뒤 행은 계속 보낸다")
+        void parksARowSqsRejectsAndKeepsSending() {
+            OutboxTestEvent rejected = new OutboxTestEvent(UUID.randomUUID(), "too-large");
+            OutboxTestEvent next = new OutboxTestEvent(UUID.randomUUID(), "next");
+            recorder.record("queue.fifo", "k1", rejected);
+            recorder.record("queue.fifo", "k2", next);
+            SqsException invalid = (SqsException) SqsException.builder().statusCode(400)
+                    .awsErrorDetails(AwsErrorDetails.builder().errorCode("InvalidParameterValue").build()).build();
+            willAnswer(invocation -> {
+                if (((Message<?>) invocation.getArgument(1)).getPayload().equals(rejected)) {
+                    throw new RuntimeException("send failed", invalid);
+                }
+                return null;
+            }).given(sqsOperations).send(anyString(), any(Message.class));
+
+            relay.relay();
+            relay.relay();
+
+            assertThat(sentMessages()).extracting(m -> (Object) m.getPayload()).containsExactly(rejected, next);
+            Instant failedAt = transactionTemplate.execute(status -> entityManager
+                    .createQuery("select e from OutboxEventJpaEntity e", OutboxEventJpaEntity.class)
+                    .getSingleResult().getFailedAt());
+            assertThat(failedAt).isNotNull();
         }
 
         @Test
