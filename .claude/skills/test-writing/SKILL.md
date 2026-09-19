@@ -239,9 +239,9 @@ class MemberPersistenceAdapterTest { ... }
 A new JPA service needs the same `config/application.yml` plus
 `testImplementation 'org.testcontainers:testcontainers-postgresql'` (version
 managed by Spring Boot) and `runtimeOnly 'org.postgresql:postgresql'`. A test
-that needs a separate database (e.g. `FlywayMigrationTest`, which also loads the
-dev-only `db/seed`) overrides `spring.datasource.url` with a different database
-name — `jdbc:tc:` gives each distinct URL its own container.
+that needs a separate database overrides `spring.datasource.url` with a different
+database name — `jdbc:tc:` gives each distinct URL its own container. The dev-only
+`db/seed` is not loaded by any test; a broken seed shows up on the next local startup.
 
 ## Test data fixtures
 
