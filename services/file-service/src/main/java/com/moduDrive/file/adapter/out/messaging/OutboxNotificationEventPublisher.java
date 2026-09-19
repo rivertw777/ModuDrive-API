@@ -1,15 +1,15 @@
 package com.moduDrive.file.adapter.out.messaging;
 
+import com.moduDrive.common.core.annotation.EventPublisher;
 import com.moduDrive.common.event.notification.FileSharedNotified;
 import com.moduDrive.common.event.notification.NotificationQueues;
 import com.moduDrive.common.infrastructure.outbox.OutboxEventRecorder;
 import com.moduDrive.file.application.port.out.PublishNotificationEventPort;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Component;
 
 import java.util.UUID;
 
-@Component
+@EventPublisher
 @RequiredArgsConstructor
 class OutboxNotificationEventPublisher implements PublishNotificationEventPort {
 

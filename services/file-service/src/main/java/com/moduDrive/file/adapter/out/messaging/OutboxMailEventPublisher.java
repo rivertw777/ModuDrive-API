@@ -1,15 +1,15 @@
 package com.moduDrive.file.adapter.out.messaging;
 
+import com.moduDrive.common.core.annotation.EventPublisher;
 import com.moduDrive.common.event.mail.MailQueues;
 import com.moduDrive.common.event.mail.ShareInviteMailRequested;
 import com.moduDrive.common.infrastructure.outbox.OutboxEventRecorder;
 import com.moduDrive.file.application.port.out.PublishMailEventPort;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Component;
 
 import java.util.UUID;
 
-@Component
+@EventPublisher
 @RequiredArgsConstructor
 class OutboxMailEventPublisher implements PublishMailEventPort {
 

@@ -1,14 +1,14 @@
 package com.moduDrive.notification.adapter.in.messaging;
 
+import com.moduDrive.common.core.annotation.EventListener;
 import com.moduDrive.common.event.notification.FileSharedNotified;
 import com.moduDrive.common.event.notification.NotificationQueues;
 import com.moduDrive.notification.application.port.in.command.RecordFileSharedNotificationCommand;
 import com.moduDrive.notification.application.port.in.usecase.RecordFileSharedNotificationUseCase;
 import io.awspring.cloud.sqs.annotation.SqsListener;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Component;
 
-@Component
+@EventListener
 @RequiredArgsConstructor
 class NotificationEventListener {
 

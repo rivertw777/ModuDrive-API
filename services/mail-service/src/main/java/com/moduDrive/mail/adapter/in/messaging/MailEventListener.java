@@ -1,5 +1,6 @@
 package com.moduDrive.mail.adapter.in.messaging;
 
+import com.moduDrive.common.core.annotation.EventListener;
 import com.moduDrive.common.event.mail.MailQueues;
 import com.moduDrive.common.event.mail.ShareInviteMailRequested;
 import com.moduDrive.common.event.mail.VerificationMailRequested;
@@ -9,9 +10,8 @@ import com.moduDrive.mail.application.port.in.usecase.SendShareInviteMailUseCase
 import com.moduDrive.mail.application.port.in.usecase.SendVerificationMailUseCase;
 import io.awspring.cloud.sqs.annotation.SqsListener;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Component;
 
-@Component
+@EventListener
 @RequiredArgsConstructor
 class MailEventListener {
 
