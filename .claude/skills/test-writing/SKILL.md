@@ -1,6 +1,6 @@
 ---
 name: test-writing
-description: Testing conventions for ModuDrive services — what must be tested, which test type per layer, given-when-then structure with JUnit 5/BDDMockito/AssertJ/@Nested, ArchUnit dependency-direction tests, Testcontainers for Postgres-specific cases, and the 70% coverage policy (JaCoCo recipe included). Use whenever writing or modifying test code under any services/*/src/test/java module, or right after implementing a domain model, service, controller, or adapter that needs accompanying tests.
+description: Testing conventions for ModuDrive services — what must be tested, which test type per layer, given-when-then structure with JUnit 5/BDDMockito/AssertJ/@Nested, ArchUnit dependency-direction tests, Postgres (Testcontainers) persistence tests, and the 70% coverage policy (JaCoCo recipe included). Use whenever writing or modifying test code under any services/*/src/test/java module, or right after implementing a domain model, service, controller, or adapter that needs accompanying tests.
 ---
 
 # Test Writing Conventions (ModuDrive)
@@ -42,7 +42,7 @@ what needs the test.
 | `domain/model/*`, `domain/vo/*` | Plain JUnit unit test | No | None — call factory methods / behavior directly |
 | `application/service/*Service` | Mockito unit test | No | Mock every injected out `Port` interface |
 | `adapter/in/web/controller/*Controller` | `@WebMvcTest` slice | Web layer only | Mock the `UseCase` interface with `@MockitoBean` |
-| `adapter/out/persistence/*PersistenceAdapter` | `@DataJpaTest` (H2 by default, Testcontainers when Postgres-specific — see below) | JPA layer only | None — hits a real DB |
+| `adapter/out/persistence/*PersistenceAdapter` | `@DataJpaTest` (Postgres via Testcontainers — see below) | JPA layer only | None — hits a real DB |
 | `adapter/out/security/*`, `adapter/out/client/*ClientAdapter` | Mockito unit test | No | Mock the raw collaborator when it's an injected interface (Feign client, `PasswordEncoder`) |
 | every service module | ArchUnit test (once per service) | No | Imports the service's own compiled classes |
 | `config/*`, `adapter/in/web/dto/*` | none required | — | — |
@@ -87,11 +87,8 @@ needed:
   fails with "failed to check any classes" instead of an ASM/bytecode error.
   If you ever see that message, suspect the ArchUnit/JDK version mismatch
   first, not the rule itself.
-- **Testcontainers** (only for the Postgres-specific persistence tests
-  described below) — not yet added to any service; needs
-  `testImplementation 'org.testcontainers:junit-jupiter:1.20.4'` and
-  `testImplementation 'org.testcontainers:postgresql:1.20.4'` in that
-  service's `build.gradle` the first time a Postgres-specific test is written.
+- **Testcontainers** — every JPA service's `@DataJpaTest`s run on Postgres
+  through it (see [Persistence adapter tests](#persistence-adapter-tests-real-postgres-via-testcontainers)).
 
 **Spring Boot 4.0 test-slice annotations are no longer bundled in
 `spring-boot-starter-test`.** `@WebMvcTest`, `@DataJpaTest`, etc. moved to
@@ -223,36 +220,28 @@ class HexagonalArchitectureTest {
 Add one of these the first time a service gets its first real test class —
 it costs one file and catches an entire class of review mistakes for free.
 
-## Persistence adapter tests: H2 by default, Testcontainers for Postgres-specific cases
+## Persistence adapter tests: real Postgres via Testcontainers
 
-Default every `@DataJpaTest` to the existing H2 in-memory setup (per
-CLAUDE.md) — it's fast and sufficient for ordinary query/mapping tests.
-Switch a specific test class to Testcontainers only when the behavior under
-test depends on something H2 doesn't faithfully emulate: a `unique = true`
-constraint's exact violation behavior, a Postgres-only column type, or a
-native query using Postgres-specific SQL. Don't switch the whole suite —
-only the test class that actually needs Postgres fidelity:
+There is no H2. Every JPA service (member, file, notification) has
+`src/test/resources/config/application.yml` pointing the datasource at a
+Testcontainers JDBC URL (`jdbc:tc:postgresql:18-alpine:///test`) with
+`spring.test.database.replace: none`. So a plain `@DataJpaTest` already runs on
+Postgres, on the schema Flyway builds from `db/migration`, with
+`ddl-auto=validate` — an entity that drifts from the migrations fails every
+persistence test. Nothing to add per test class; Docker must be running.
 
 ```java
-@Testcontainers
 @DataJpaTest
-@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-class MemberPersistenceAdapterUniqueEmailTest {
-
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
-
-    @DynamicPropertySource
-    static void dataSourceProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", postgres::getJdbcUrl);
-        registry.add("spring.datasource.username", postgres::getUsername);
-        registry.add("spring.datasource.password", postgres::getPassword);
-    }
-
-    // given/when/then: insert two members with the same email,
-    // assert the second save throws DataIntegrityViolationException
-}
+@Import({MemberPersistenceAdapter.class, MemberMapper.class})
+class MemberPersistenceAdapterTest { ... }
 ```
+
+A new JPA service needs the same `config/application.yml` plus
+`testImplementation 'org.testcontainers:testcontainers-postgresql'` (version
+managed by Spring Boot) and `runtimeOnly 'org.postgresql:postgresql'`. A test
+that needs a separate database (e.g. `FlywayMigrationTest`, which also loads the
+dev-only `db/seed`) overrides `spring.datasource.url` with a different database
+name — `jdbc:tc:` gives each distinct URL its own container.
 
 ## Test data fixtures
 
@@ -275,8 +264,8 @@ project's hexagonal conventions are already based on — see the
 3. `adapter/in/web/controller/<Verb><Entity>Controller` — `@WebMvcTest`, mock
    the UseCase, assert HTTP status and `ApiResponse` body shape.
 4. `adapter/out/persistence` — extend/add `@DataJpaTest` cases for any new
-   query method on the `SpringData<Entity>Repository`; switch to Testcontainers
-   only if the new behavior is Postgres-specific.
+   query method on the `SpringData<Entity>Repository` (already on Postgres), plus a
+   `V<n>__*.sql` migration for any schema change the entity needs.
 5. New `adapter/out/security` or `adapter/out/client` logic — Mockito test
    mocking the raw collaborator, asserting the translation to/from the
    domain object.

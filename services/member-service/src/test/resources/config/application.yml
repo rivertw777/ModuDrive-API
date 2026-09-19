@@ -1,8 +1,8 @@
-# H2 slice tests: db/migration is Postgres SQL, so Hibernate builds the schema here instead.
-# Flyway + validate against real Postgres is covered by FlywayMigrationTest.
+# JPA tests run on real Postgres with the schema Flyway builds from db/migration (ddl-auto=validate
+# from application-jpa.yml still applies). The jdbc:tc URL starts the container on first connection.
 spring:
-  flyway:
-    enabled: false
-  jpa:
-    hibernate:
-      ddl-auto: create-drop
+  datasource:
+    url: jdbc:tc:postgresql:18-alpine:///test
+  test:
+    database:
+      replace: none

@@ -98,6 +98,6 @@ Each service defines a `<Domain>ExceptionCase` enum implementing `ExceptionCase`
 
 ## Testing
 
-Tests use **JUnit 5** (`useJUnitPlatform()`) with H2 in-memory database for JPA services (no Postgres required for most tests; `src/test/resources/config/application.yml` turns Flyway off and lets Hibernate build the H2 schema). Each JPA service's `FlywayMigrationTest` runs the real migrations on Postgres via Testcontainers and fails if an entity drifts from them. Test heap is capped at 1 GB. Test classes live in `src/test/java` mirroring the main package structure.
+Tests use **JUnit 5** (`useJUnitPlatform()`). JPA services' persistence tests run on real Postgres via Testcontainers (`src/test/resources/config/application.yml` sets a `jdbc:tc:` URL), on the schema Flyway builds, with `ddl-auto: validate` — so Docker must be running for `./gradlew test`. Test heap is capped at 1 GB. Test classes live in `src/test/java` mirroring the main package structure.
 
 For which classes require tests, which test type per layer, the given-when-then/BDDMockito/AssertJ conventions, and the 70% coverage policy, use the `test-writing` skill.
