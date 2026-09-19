@@ -121,7 +121,7 @@ class OutboxRelay {
                     // Not transient: retrying won't fix it (e.g. the event class was renamed while the
                     // row was waiting). Park the row for a human and keep draining the rest.
                     log.error("Outbox row can't be rebuilt, parking it: id={}, type={}", row.getId(), row.getPayloadType(), e);
-                    row.markFailed();
+                    row.markFailed(e);
                     continue;
                 }
                 try {
@@ -131,7 +131,7 @@ class OutboxRelay {
                         // SQS rejected this message itself (queue missing, too large, bad group id):
                         // resending never helps, and stopping here would block every row behind it.
                         log.error("Outbox row rejected by SQS, parking it: id={}, topic={}", row.getId(), row.getTopic(), e);
-                        row.markFailed();
+                        row.markFailed(rootCause(e));
                         continue;
                     }
                     log.warn("Outbox send failed, will retry: id={}, topic={}", row.getId(), row.getTopic(), e);
@@ -170,6 +170,15 @@ class OutboxRelay {
         Observation.createNotStarted("outbox.relay", () -> context, observationRegistry)
                 .contextualName("outbox relay")
                 .observe(() -> sqsOperations.send(row.getTopic(), message));
+    }
+
+    /** The SDK error SQS returned, not the template/CompletionException wrappers around it. */
+    private static Throwable rootCause(Throwable failure) {
+        Throwable cause = failure;
+        while (cause.getCause() != null && cause.getCause() != cause) {
+            cause = cause.getCause();
+        }
+        return cause;
     }
 
     /** FIFO needs a MessageGroupId, capped at 128 chars, and emails can run to 255: hash those

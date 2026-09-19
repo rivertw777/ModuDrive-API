@@ -56,6 +56,31 @@ class SqsFailuresTest {
         }
     }
 
+    @Nested
+    @DisplayName("큐의 redrive 설정을 읽을 때")
+    class WhenReadingTheRedrivePolicy {
+
+        @Test
+        @DisplayName("최대 수신 횟수와 DLQ 이름을 꺼낸다 (AWS의 문자열 숫자도)")
+        void readsTheLimitAndDlqName() {
+            var fromElasticMq = DeadLetteringErrorHandler.RedrivePolicy.parse(
+                    "{\"deadLetterTargetArn\":\"arn:aws:sqs:elasticmq:000000000000:member-signed-up-dlq.fifo\",\"maxReceiveCount\":4}");
+            var fromAws = DeadLetteringErrorHandler.RedrivePolicy.parse(
+                    "{\"deadLetterTargetArn\":\"arn:aws:sqs:ap-northeast-2:123:mail-dlq.fifo\",\"maxReceiveCount\":\"5\"}");
+
+            assertThat(fromElasticMq).isEqualTo(new DeadLetteringErrorHandler.RedrivePolicy(4, "member-signed-up-dlq.fifo"));
+            assertThat(fromAws).isEqualTo(new DeadLetteringErrorHandler.RedrivePolicy(5, "mail-dlq.fifo"));
+            assertThat(DeadLetteringErrorHandler.RedrivePolicy.parse(null)).isEqualTo(DeadLetteringErrorHandler.RedrivePolicy.NONE);
+        }
+    }
+
+    @Test
+    @DisplayName("DLQ 사유에는 감싼 예외가 아니라 실제 원인을 적는다")
+    void reasonNamesTheActualCause() {
+        assertThat(DeadLetteringErrorHandler.reason(new RuntimeException("listener failed", new IllegalStateException("smtp down"))))
+                .isEqualTo("java.lang.IllegalStateException: smtp down");
+    }
+
     @Test
     @DisplayName("DLQ 이름은 <이름>-dlq.fifo 규칙을 따른다")
     void namesTheDeadLetterQueue() {
