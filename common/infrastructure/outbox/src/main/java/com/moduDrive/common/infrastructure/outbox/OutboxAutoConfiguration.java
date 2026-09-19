@@ -4,7 +4,6 @@ import io.micrometer.tracing.Tracer;
 import io.micrometer.tracing.propagation.Propagator;
 import jakarta.persistence.EntityManagerFactory;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigurationPackage;
 import org.springframework.context.annotation.Bean;
@@ -27,26 +26,24 @@ import tools.jackson.databind.json.JsonMapper;
 public class OutboxAutoConfiguration {
 
     @Bean
-    OutboxEventRecorder outboxEventRecorder(@Value("${spring.application.name}") String source,
-                                            EntityManagerFactory entityManagerFactory,
+    OutboxEventRecorder outboxEventRecorder(EntityManagerFactory entityManagerFactory,
                                             PlatformTransactionManager transactionManager,
                                             JsonMapper jsonMapper,
                                             ObjectProvider<Tracer> tracer,
                                             ObjectProvider<Propagator> propagator) {
-        return new OutboxEventRecorder(source, SharedEntityManagerCreator.createSharedEntityManager(entityManagerFactory),
+        return new OutboxEventRecorder(SharedEntityManagerCreator.createSharedEntityManager(entityManagerFactory),
                 new TransactionTemplate(transactionManager), jsonMapper,
                 tracer.getIfAvailable(() -> Tracer.NOOP), propagator.getIfAvailable(() -> Propagator.NOOP));
     }
 
     @Bean(initMethod = "start", destroyMethod = "stop")
-    OutboxRelay outboxRelay(@Value("${spring.application.name}") String source,
-                            EntityManagerFactory entityManagerFactory,
+    OutboxRelay outboxRelay(EntityManagerFactory entityManagerFactory,
                             PlatformTransactionManager transactionManager,
                             KafkaTemplate<Object, Object> kafkaTemplate,
                             JsonMapper jsonMapper,
                             ObjectProvider<Tracer> tracer,
                             ObjectProvider<Propagator> propagator) {
-        return new OutboxRelay(source, SharedEntityManagerCreator.createSharedEntityManager(entityManagerFactory),
+        return new OutboxRelay(SharedEntityManagerCreator.createSharedEntityManager(entityManagerFactory),
                 new TransactionTemplate(transactionManager), kafkaTemplate, jsonMapper,
                 tracer.getIfAvailable(() -> Tracer.NOOP), propagator.getIfAvailable(() -> Propagator.NOOP));
     }

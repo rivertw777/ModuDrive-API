@@ -19,16 +19,14 @@ import java.util.Map;
  */
 public class OutboxEventRecorder {
 
-    private final String source;
     private final EntityManager entityManager;
     private final TransactionTemplate transactionTemplate;
     private final JsonMapper jsonMapper;
     private final Tracer tracer;
     private final Propagator propagator;
 
-    OutboxEventRecorder(String source, EntityManager entityManager, TransactionTemplate transactionTemplate,
+    OutboxEventRecorder(EntityManager entityManager, TransactionTemplate transactionTemplate,
                         JsonMapper jsonMapper, Tracer tracer, Propagator propagator) {
-        this.source = source;
         this.entityManager = entityManager;
         this.transactionTemplate = transactionTemplate;
         this.jsonMapper = jsonMapper;
@@ -42,7 +40,7 @@ public class OutboxEventRecorder {
         if (span != null) {
             propagator.inject(span.context(), traceHeaders, Map::put);
         }
-        OutboxEventJpaEntity row = new OutboxEventJpaEntity(source, topic, key, event.getClass().getName(),
+        OutboxEventJpaEntity row = new OutboxEventJpaEntity(topic, key, event.getClass().getName(),
                 jsonMapper.writeValueAsString(event), jsonMapper.writeValueAsString(traceHeaders));
         transactionTemplate.executeWithoutResult(status -> entityManager.persist(row));
     }
