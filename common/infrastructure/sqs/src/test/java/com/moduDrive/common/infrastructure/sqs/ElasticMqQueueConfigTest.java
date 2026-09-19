@@ -19,6 +19,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.utility.MountableFile;
+import software.amazon.awssdk.services.sqs.SqsAsyncClient;
 
 import java.nio.file.Path;
 import java.time.Duration;
@@ -59,6 +60,7 @@ class ElasticMqQueueConfigTest {
 
     @Autowired private SqsTemplate sqsTemplate;
     @Autowired private RecordingListener listener;
+    @Autowired private SqsAsyncClient sqsAsyncClient;
 
     @BeforeEach
     void reset() {
@@ -100,6 +102,27 @@ class ElasticMqQueueConfigTest {
                     sqsTemplate.receive(from -> from.queue(DLQ).pollTimeout(Duration.ofSeconds(1)), MemberSignedUp.class)
                             .map(m -> m.getPayload().equals(poison)).orElse(false));
             assertThat(listener.attempts.get()).isEqualTo(4);
+        }
+    }
+
+    @Nested
+    @DisplayName("본문이 JSON으로 안 읽히는 메시지(포이즌 필)가 오면")
+    class WhenThePayloadCannotBeRead {
+
+        @Test
+        @DisplayName("리스너까지 가지 않고, 4회 수신 뒤 원본 본문 그대로 DLQ로 옮겨진다")
+        void movesTheRawBodyToTheDlq() {
+            String queueUrl = sqsAsyncClient.getQueueUrl(r -> r.queueName(MemberQueues.SIGNED_UP)).join().queueUrl();
+            String dlqUrl = sqsAsyncClient.getQueueUrl(r -> r.queueName(DLQ)).join().queueUrl();
+
+            sqsAsyncClient.sendMessage(r -> r.queueUrl(queueUrl).messageBody("{not json")
+                    .messageGroupId("poison").messageDeduplicationId("poison-1")).join();
+
+            await().atMost(Duration.ofSeconds(60)).pollInterval(1, TimeUnit.SECONDS).until(() ->
+                    sqsAsyncClient.receiveMessage(r -> r.queueUrl(dlqUrl).waitTimeSeconds(1)).join().messages()
+                            .stream().anyMatch(m -> m.body().equals("{not json")));
+            assertThat(listener.received).isEmpty();
+            assertThat(listener.attempts.get()).isZero();
         }
     }
 
