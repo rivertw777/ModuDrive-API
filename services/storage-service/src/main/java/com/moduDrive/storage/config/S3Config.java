@@ -3,10 +3,12 @@ package com.moduDrive.storage.config;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.util.StringUtils;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.S3ClientBuilder;
 import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
 
 import java.net.URI;
@@ -15,22 +17,35 @@ import java.net.URI;
 @EnableConfigurationProperties(StorageProperties.class)
 public class S3Config {
 
+    /** An endpoint means an S3-compatible store (local MinIO); without one this talks to real S3.
+     * Without keys the SDK's default credential chain applies — the ECS task role on AWS. */
     @Bean
     public S3Client s3Client(StorageProperties properties) {
         StorageProperties.S3Properties s3 = properties.getS3();
-        S3Client client = S3Client.builder()
-                .endpointOverride(URI.create(s3.getEndpoint()))
-                .credentialsProvider(StaticCredentialsProvider.create(
-                        AwsBasicCredentials.create(s3.getAccessKey(), s3.getSecretKey())))
-                .region(Region.of(s3.getRegion()))
-                .forcePathStyle(true)
-                .build();
+        boolean customEndpoint = StringUtils.hasText(s3.getEndpoint());
 
-        try {
-            client.headBucket(b -> b.bucket(s3.getBucket()));
-        } catch (NoSuchBucketException e) {
-            client.createBucket(b -> b.bucket(s3.getBucket()));
+        S3ClientBuilder builder = S3Client.builder().region(Region.of(s3.getRegion()));
+        if (customEndpoint) {
+            builder.endpointOverride(URI.create(s3.getEndpoint())).forcePathStyle(true);
+        }
+        if (StringUtils.hasText(s3.getAccessKey())) {
+            builder.credentialsProvider(StaticCredentialsProvider.create(
+                    AwsBasicCredentials.create(s3.getAccessKey(), s3.getSecretKey())));
+        }
+        S3Client client = builder.build();
+
+        // Real buckets are provisioned by Terraform and the task role has no CreateBucket permission.
+        if (customEndpoint) {
+            createBucketIfMissing(client, s3.getBucket());
         }
         return client;
+    }
+
+    private void createBucketIfMissing(S3Client client, String bucket) {
+        try {
+            client.headBucket(b -> b.bucket(bucket));
+        } catch (NoSuchBucketException e) {
+            client.createBucket(b -> b.bucket(bucket));
+        }
     }
 }

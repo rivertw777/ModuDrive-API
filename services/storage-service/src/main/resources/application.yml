@@ -19,10 +19,10 @@ modudrive:
 
 storage:
   s3:
-    endpoint: ${STORAGE_S3_ENDPOINT}
+    endpoint: ${STORAGE_S3_ENDPOINT:}  # blank = real AWS S3
     bucket: ${STORAGE_S3_BUCKET}
-    access-key: ${STORAGE_S3_ACCESS_KEY}
-    secret-key: ${STORAGE_S3_SECRET_KEY}
+    access-key: ${STORAGE_S3_ACCESS_KEY:}  # blank = default credential chain (ECS task role)
+    secret-key: ${STORAGE_S3_SECRET_KEY:}
     region: ${STORAGE_S3_REGION}
   block-size: ${STORAGE_BLOCK_SIZE}
   encryption-key: ${STORAGE_ENCRYPTION_KEY}

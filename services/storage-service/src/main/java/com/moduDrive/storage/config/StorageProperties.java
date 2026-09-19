@@ -25,8 +25,8 @@ public class StorageProperties {
     public static class S3Properties {
         private String endpoint;
         private String bucket = "modudrive";
-        private String accessKey = "minioadmin";
-        private String secretKey = "minioadmin";
+        private String accessKey;
+        private String secretKey;
         private String region = "us-east-1";
     }
 }
