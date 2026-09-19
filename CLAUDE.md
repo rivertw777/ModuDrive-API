@@ -21,7 +21,7 @@ ModuDrive is a cloud-drive microservices backend built with **Spring Boot 4.1.1*
 # Run tests for a single service
 ./gradlew :services:member-service:test
 
-# Start infra only (Postgres, Redis, Kafka, MinIO)
+# Start infra only (Postgres, Redis, ElasticMQ, MinIO)
 make infra
 
 # Start the observability stack only (otel-collector, Tempo, Loki, Promtail, Prometheus, Grafana)
@@ -37,7 +37,7 @@ make service
 make member   # or: make gateway, make auth, make file, make storage, make mail
 ```
 
-Docker Compose files are at `.docker/docker-compose.service.yml` (services), `.docker/docker-compose.infra.yml` (Postgres, Redis, Kafka, MinIO), and `.docker/docker-compose.observability.yml` (Grafana/Tempo/Loki/Prometheus/OTel). All three attach to `modudrive_network` as an **external** network, created by the `network` Make target (a prerequisite of `infra`/`observability`; `start.sh` creates it inline). Postgres holds one database + login per service (`member_db`/`member_service`, `file_db`/`file_service`, `notification_db`/`notification_service`); each login can only connect to its own database. They are created by `.docker/init/01_postgres_init.sh`, which runs only on an empty volume — `make reset` after changing it. Tables come from Flyway, not this script — see [Database Migrations](#database-migrations-flyway). The shared `Dockerfile` lives at `.docker/Dockerfile`, referenced by every service's `build.gradle` via its `docker` task.
+Docker Compose files are at `.docker/docker-compose.service.yml` (services), `.docker/docker-compose.infra.yml` (Postgres, Redis, ElasticMQ — local SQS, MinIO), and `.docker/docker-compose.observability.yml` (Grafana/Tempo/Loki/Prometheus/OTel). All three attach to `modudrive_network` as an **external** network, created by the `network` Make target (a prerequisite of `infra`/`observability`; `start.sh` creates it inline). Postgres holds one database + login per service (`member_db`/`member_service`, `file_db`/`file_service`, `notification_db`/`notification_service`); each login can only connect to its own database. They are created by `.docker/init/01_postgres_init.sh`, which runs only on an empty volume — `make reset` after changing it. Tables come from Flyway, not this script — see [Database Migrations](#database-migrations-flyway). The shared `Dockerfile` lives at `.docker/Dockerfile`, referenced by every service's `build.gradle` via its `docker` task.
 
 The active Spring profile (`dev`) is injected via `SPRING_PROFILES_ACTIVE` in `docker-compose.service.yml`, not hardcoded in `application.yml`.
 
@@ -50,8 +50,8 @@ The active Spring profile (`dev`) is injected via `SPRING_PROFILES_ACTIVE` in `d
 | auth-service          | 10011 | JWT login + token validation             |
 | file-service          | 10012 | File metadata, versioning, sharing, directory management |
 | storage-service       | 10013 | Block-level file storage — split, compress, encrypt, upload/download via S3/MinIO |
-| mail-service           | 10014 | Async mail sending (Kafka consumer)      |
-| notification-service   | 10015 | In-app notification feed — records file-share events (Kafka consumer), list/mark-read API |
+| mail-service           | 10014 | Async mail sending (SQS consumer)        |
+| notification-service   | 10015 | In-app notification feed — records file-share events (SQS consumer), list/mark-read API |
 
 Swagger UI for all services is aggregated at the gateway: `http://localhost:10001/swagger-ui.html`.
 
@@ -67,10 +67,10 @@ For the full layer breakdown, naming conventions, dependency-direction rules, an
 |-------------------------------------|--------------------------------------------------------------|
 | `common:core`                       | `@UseCase`/`@WebAdapter`/`@PersistenceAdapter`, `ApiResponse<T>`, `BusinessException`, `ExceptionCase` interface, `SelfValidating`, `LoggingAspect` |
 | `common:api`                        | Shared DTOs for cross-service calls (auth, member)           |
-| `common:event`                      | Kafka event DTOs + topic constants for async cross-service messaging: mail (`VerificationMailRequested`, `ShareInviteMailRequested`, `MailTopics` — member/file-service produce, mail-service consumes), notification (`FileSharedNotified`, `NotificationTopics` — file-service produces, notification-service consumes), member (`MemberSignedUp`) |
+| `common:event`                      | Event DTOs + SQS FIFO queue-name constants for async cross-service messaging: mail (`VerificationMailRequested`, `ShareInviteMailRequested`, `MailQueues` — member/file-service produce, mail-service consumes), notification (`FileSharedNotified`, `NotificationQueues` — file-service produces, notification-service consumes), member (`MemberSignedUp`, `MemberQueues` — member-service produces, file-service consumes) |
 | `common:infrastructure:jpa`         | `BaseTimeEntity` (JPA auditing), `AuditingConfig`            |
-| `common:infrastructure:kafka`       | `spring-boot-starter-kafka` + shared `application-kafka.yml` (serializers, `ErrorHandlingDeserializer`) + auto-configured consumer retry → `<topic>-dlt` and topic/key-only send-failure logging — used by member/file-service (producers) and mail-service / notification-service (consumers) |
-| `common:infrastructure:outbox`      | Transactional outbox: producers call `OutboxEventRecorder.record(topic, key, event)` instead of `KafkaTemplate.send`, which writes an `outbox_event` row in the caller's transaction; a scheduled relay sends it to Kafka and deletes it (`SKIP LOCKED`; each service has its own `outbox_event` table in its own database). Used by member/file-service — publish from `BEFORE_COMMIT`, not `AFTER_COMMIT` |
+| `common:infrastructure:sqs`         | Spring Cloud AWS SQS (`SqsTemplate`, `@SqsListener`) + shared `application-sqs.yml` (observation on, fail on missing queue). No retry code: every queue is FIFO and retries/DLQ come from the queue's redrive policy (`<queue>-dlq.fifo` after 4 receives), declared in `.docker/elasticmq/elasticmq.conf` locally and Terraform on AWS. Connection via env: locally `SPRING_CLOUD_AWS_SQS_ENDPOINT` → ElasticMQ, on AWS unset (task role) — used by member/file-service (producers) and file/mail/notification-service (consumers) |
+| `common:infrastructure:outbox`      | Transactional outbox: producers call `OutboxEventRecorder.record(queue, key, event)` instead of `SqsTemplate.send`, which writes an `outbox_event` row in the caller's transaction; a scheduled relay sends it to SQS (key → FIFO `MessageGroupId`, row id → `MessageDeduplicationId`) and deletes it (`SKIP LOCKED`; each service has its own `outbox_event` table in its own database). Used by member/file-service — publish from `BEFORE_COMMIT`, not `AFTER_COMMIT` |
 | `common:infrastructure:redis`       | `spring-boot-starter-data-redis` — used by auth-service for token storage, member-service for email verification tokens |
 | `common:infrastructure:resilience4j`| `CircuitBreakerEventConfig`, `RetryEventConfig`, `FeignFallbackUtils` |
 | `common:infrastructure:spring-cloud`| `spring-cloud-starter-openfeign` — all services that use Feign depend on this module |
