@@ -1,16 +1,23 @@
 package com.moduDrive.common.infrastructure.kafka;
 
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.serialization.ByteArraySerializer;
+import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.core.DefaultKafkaProducerFactory;
 import org.springframework.kafka.core.KafkaOperations;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.listener.CommonErrorHandler;
 import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.util.backoff.ExponentialBackOff;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * Gives every {@link KafkaListener} retry-with-backoff plus a dead-letter topic, so a failed
@@ -32,6 +39,11 @@ import org.springframework.util.backoff.ExponentialBackOff;
  * makes recovery itself fail, and the record replays forever. The DLT is auto-created by the
  * broker; a cluster with {@code auto.create.topics.enable=false} must provision it up front.
  * <p>
+ * A record that failed to deserialize reaches the recoverer as its original {@code byte[]}. It
+ * goes out through a raw-bytes template so the DLT holds exactly what was sent. The shared
+ * {@code JsonSerializer} would wrap it into a base64 JSON string that can't be read or replayed.
+ * Everything else still uses the normal JSON template.
+ * <p>
  * ponytail: fixed retry policy for every topic; split per-topic if one SLA needs to differ.
  */
 @AutoConfiguration
@@ -43,7 +55,12 @@ public class KafkaConsumerRetryAutoConfiguration {
     CommonErrorHandler kafkaDeadLetterErrorHandler(KafkaOperations<Object, Object> kafkaOperations) {
         ExponentialBackOff backOff = new ExponentialBackOff(1_000L, 2.0);
         backOff.setMaxAttempts(3); // 1s, 2s, 4s, then give up
-        return new DefaultErrorHandler(new DeadLetterPublishingRecoverer(kafkaOperations,
+        Map<Class<?>, KafkaOperations<?, ?>> templates = new LinkedHashMap<>();
+        templates.put(byte[].class, new KafkaTemplate<>(new DefaultKafkaProducerFactory<>(
+                kafkaOperations.getProducerFactory().getConfigurationProperties(),
+                new StringSerializer(), new ByteArraySerializer())));
+        templates.put(Object.class, kafkaOperations);
+        return new DefaultErrorHandler(new DeadLetterPublishingRecoverer(templates,
                 (record, ex) -> new TopicPartition(record.topic() + "-dlt", -1)), backOff);
     }
 }
