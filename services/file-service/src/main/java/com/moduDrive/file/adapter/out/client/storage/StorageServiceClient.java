@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
-@FeignClient(name = "storage-service")
+@FeignClient(name = "storage-service", url = "${clients.storage-service.url}")
 interface StorageServiceClient {
 
     // storage-service's internal, service-to-service route (see its PurgeStoredFileController) —

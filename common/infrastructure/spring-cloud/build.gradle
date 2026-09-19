@@ -5,7 +5,6 @@ repositories {
 }
 
 dependencies {
-    api 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'
     api 'org.springframework.cloud:spring-cloud-starter-openfeign'
     // 있어야 Feign 호출이 계측되고 traceparent가 전파된다 — 없으면 호출 대상 서비스에서 trace가 새로 시작됨.
     api 'io.github.openfeign:feign-micrometer'

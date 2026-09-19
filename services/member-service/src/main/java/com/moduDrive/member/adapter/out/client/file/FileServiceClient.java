@@ -5,7 +5,7 @@ import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 
-@FeignClient(name = "file-service")
+@FeignClient(name = "file-service", url = "${clients.file-service.url}")
 interface FileServiceClient {
 
     @PostMapping("/internal/v1/namespaces")

@@ -54,7 +54,6 @@ Scopes:
 | `file` | services/file-service |
 | `storage` | services/storage-service |
 | `mail` | services/mail-service |
-| `eureka` | services/eureka-server |
 | `common` | common/* |
 
 - Scope is optional; omit it for repo-level changes (`.github/*`, `.claude/*`, root configs) that don't map to any row above

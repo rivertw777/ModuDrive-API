@@ -9,6 +9,7 @@ import org.springframework.cloud.gateway.route.builder.RouteLocatorBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
+import org.springframework.core.env.Environment;
 
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -29,6 +30,7 @@ class SwaggerAggregationConfig {
     );
 
     private final SwaggerUiConfigProperties swaggerUiConfigProperties;
+    private final Environment env;
 
     @PostConstruct
     void configureSwaggerUiUrls() {
@@ -47,7 +49,7 @@ class SwaggerAggregationConfig {
                         "/" + service + "/v3/api-docs",
                         "/" + service + "/v3/api-docs/**")
                 .filters(f -> f.stripPrefix(1))
-                .uri("lb://" + service)));
+                .uri(env.getRequiredProperty("clients." + service + ".url"))));
         return routes.build();
     }
 }

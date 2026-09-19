@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
 /** Inbound adapter triggered by the clock instead of HTTP — the scheduler equivalent of a
  * controller, so it does nothing but map the trigger onto the use case.
  *
- * file-service runs as multiple instances behind Eureka/the gateway, and {@code @Scheduled}
+ * file-service runs as multiple instances behind the gateway, and {@code @Scheduled}
  * fires independently on every one of them — without a lock, every instance would run the same
  * sweep at 3am and race to purge the same rows. {@code @SchedulerLock} (ShedLock) makes only one
  * instance's invocation actually run per tick; the rest see the lock held and skip. Vendor-

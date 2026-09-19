@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 
-@FeignClient(name = "member-service")
+@FeignClient(name = "member-service", url = "${clients.member-service.url}")
 interface MemberClient {
 
     @GetMapping("/api/v1/member/find-by-email")
