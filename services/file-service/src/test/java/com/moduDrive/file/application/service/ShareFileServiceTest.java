@@ -1,17 +1,17 @@
 package com.moduDrive.file.application.service;
 
 import com.moduDrive.common.core.exception.BusinessException;
-import com.moduDrive.file.application.event.FileShareInvitedEvent;
 import com.moduDrive.file.application.port.in.command.ShareFileCommand;
 import com.moduDrive.file.application.port.out.FindFilePort;
 import com.moduDrive.file.application.port.out.FindFileSharePort;
 import com.moduDrive.file.application.port.out.FindMemberByEmailPort;
 import com.moduDrive.file.application.port.out.FindMemberByIdPort;
 import com.moduDrive.file.application.port.out.FindMemberByIdPort.MemberSummary;
+import com.moduDrive.file.application.port.out.PublishMailEventPort;
+import com.moduDrive.file.application.port.out.PublishNotificationEventPort;
 import com.moduDrive.file.application.port.out.SaveFileSharePort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
-import com.moduDrive.file.domain.model.FileCategory;
 import com.moduDrive.file.domain.model.FileShare;
 import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.Role;
@@ -26,7 +26,6 @@ import org.mockito.Answers;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -48,7 +47,8 @@ class ShareFileServiceTest {
     @Mock private FindMemberByEmailPort findMemberByEmailPort;
     @Mock(answer = Answers.CALLS_REAL_METHODS) private FindMemberByIdPort findMemberByIdPort;
     @Mock private FileAccessGuard fileAccessGuard;
-    @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private PublishMailEventPort publishMailEventPort;
+    @Mock private PublishNotificationEventPort publishNotificationEventPort;
     @InjectMocks private ShareFileService shareFileService;
 
     private final UUID fileId = UUID.randomUUID();
@@ -69,7 +69,7 @@ class ShareFileServiceTest {
     class WhenShareIsNew {
 
         @Test
-        void savesFileShareAndPublishesInvitedEvent() {
+        void savesFileShareAndPublishesMailAndNotification() {
             given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(file));
             given(findMemberByEmailPort.findMemberIdByEmail(EMAIL)).willReturn(Optional.of(granteeId));
             given(findFileSharePort.existsByFileIdAndSharedWithUserId(command.getFileId(), granteeId))
@@ -82,8 +82,10 @@ class ShareFileServiceTest {
             assertThat(result).isPresent();
             assertThat(result.get().getSharedWithUserId()).isEqualTo(granteeId);
             assertThat(result.get().getRole()).isEqualTo(Role.VIEWER);
-            then(eventPublisher).should().publishEvent(
-                    new FileShareInvitedEvent(fileId, ownerId, OWNER_NAME, OWNER_EMAIL, granteeId, EMAIL, "report.pdf", false, FileCategory.DOCUMENT, Role.VIEWER, MESSAGE, null));
+            then(publishMailEventPort).should().publishShareInviteRequested(
+                    fileId, EMAIL, "report.pdf", false, "DOCUMENT", "VIEWER", OWNER_NAME, OWNER_EMAIL, MESSAGE, null);
+            then(publishNotificationEventPort).should().publishFileShared(
+                    fileId, granteeId, "report.pdf", "VIEWER", false, OWNER_NAME, OWNER_EMAIL);
         }
     }
 
@@ -131,8 +133,10 @@ class ShareFileServiceTest {
             assertThat(pending.getSharedWithUserId()).isNull();
             assertThat(pending.getGranteeEmail()).isEqualTo(EMAIL);
             assertThat(pending.getToken()).isNotNull();
-            then(eventPublisher).should().publishEvent(
-                    new FileShareInvitedEvent(fileId, ownerId, OWNER_NAME, OWNER_EMAIL, null, EMAIL, "report.pdf", false, FileCategory.DOCUMENT, Role.VIEWER, MESSAGE, pending.getToken()));
+            // A guest has no account to notify in-app: only the mail, carrying its no-login token.
+            then(publishMailEventPort).should().publishShareInviteRequested(
+                    fileId, EMAIL, "report.pdf", false, "DOCUMENT", "VIEWER", OWNER_NAME, OWNER_EMAIL, MESSAGE, pending.getToken());
+            then(publishNotificationEventPort).shouldHaveNoInteractions();
         }
     }
 
@@ -152,7 +156,8 @@ class ShareFileServiceTest {
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
                     .isEqualTo(FileExceptionCase.FILE_SHARE_ALREADY_EXISTS);
             then(saveFileSharePort).shouldHaveNoInteractions();
-            then(eventPublisher).shouldHaveNoInteractions();
+            then(publishMailEventPort).shouldHaveNoInteractions();
+            then(publishNotificationEventPort).shouldHaveNoInteractions();
         }
     }
 
@@ -172,7 +177,8 @@ class ShareFileServiceTest {
                     .isEqualTo(FileExceptionCase.FILE_SHARE_SELF_NOT_ALLOWED);
             then(findFileSharePort).shouldHaveNoInteractions();
             then(saveFileSharePort).shouldHaveNoInteractions();
-            then(eventPublisher).shouldHaveNoInteractions();
+            then(publishMailEventPort).shouldHaveNoInteractions();
+            then(publishNotificationEventPort).shouldHaveNoInteractions();
         }
     }
 
@@ -193,7 +199,8 @@ class ShareFileServiceTest {
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
                     .isEqualTo(FileExceptionCase.FILE_SHARE_ALREADY_EXISTS);
             then(saveFileSharePort).shouldHaveNoInteractions();
-            then(eventPublisher).shouldHaveNoInteractions();
+            then(publishMailEventPort).shouldHaveNoInteractions();
+            then(publishNotificationEventPort).shouldHaveNoInteractions();
         }
     }
 

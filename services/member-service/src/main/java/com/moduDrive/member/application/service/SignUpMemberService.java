@@ -2,12 +2,14 @@ package com.moduDrive.member.application.service;
 
 import com.moduDrive.common.core.annotation.UseCase;
 import com.moduDrive.common.core.exception.BusinessException;
-import com.moduDrive.member.application.event.MemberSignedUpEvent;
+import com.moduDrive.common.core.transaction.AfterCommit;
 import com.moduDrive.member.application.port.in.command.SignUpMemberCommand;
 import com.moduDrive.member.application.port.in.usecase.SignUpMemberUseCase;
 import com.moduDrive.member.application.port.out.CheckEmailExistsPort;
+import com.moduDrive.member.application.port.out.CreateNamespacePort;
 import com.moduDrive.member.application.port.out.EmailVerificationTokenPort;
 import com.moduDrive.member.application.port.out.EncodePasswordPort;
+import com.moduDrive.member.application.port.out.PublishMemberEventPort;
 import com.moduDrive.member.application.port.out.SignUpMemberPort;
 import com.moduDrive.member.exception.MemberExceptionCase;
 import com.moduDrive.member.domain.model.Member;
@@ -17,7 +19,6 @@ import com.moduDrive.member.domain.model.Member.MemberPassword;
 import com.moduDrive.member.domain.model.Member.MemberRoles;
 import com.moduDrive.member.domain.model.Role;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
@@ -30,7 +31,8 @@ class SignUpMemberService implements SignUpMemberUseCase {
     private final EncodePasswordPort encodePasswordPort;
     private final CheckEmailExistsPort checkEmailExistsPort;
     private final EmailVerificationTokenPort emailVerificationTokenPort;
-    private final ApplicationEventPublisher eventPublisher;
+    private final PublishMemberEventPort publishMemberEventPort;
+    private final CreateNamespacePort createNamespacePort;
 
     @Transactional
     @Override
@@ -48,12 +50,12 @@ class SignUpMemberService implements SignUpMemberUseCase {
                 new MemberIsValid(true)
         );
         Member savedMember = signUpMemberPort.createMember(member);
-        // The Feign call to file-service and the event publish used to run right here, inside this
-        // @Transactional — holding the DB connection for an HTTP round trip, and (on a later commit
-        // failure) leaving an already-published MemberSignedUp for a member that was never actually
-        // created. MemberSignedUpEventListener now runs the Feign call AFTER_COMMIT (#208) and writes
-        // the event to the outbox BEFORE_COMMIT, where it commits atomically with the member (#350).
-        eventPublisher.publishEvent(new MemberSignedUpEvent(savedMember.getId(), savedMember.getEmail()));
+        // Outbox write in this transaction: commits or rolls back with the member row (#350). Lets
+        // file-service claim pending guest shares invited to this email.
+        publishMemberEventPort.publishSignedUp(savedMember.getId(), savedMember.getEmail());
+        // The Feign call to file-service waits for the commit, so a signup that rolls back never gets
+        // a namespace and the transaction doesn't hold its connection across an HTTP round trip (#208).
+        AfterCommit.run(() -> createNamespacePort.createNamespace(savedMember.getId()));
     }
 
     private void validateEmailNotDuplicated(MemberEmail memberEmail) {

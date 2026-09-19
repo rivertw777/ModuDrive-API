@@ -65,7 +65,6 @@ application/
   port/in/usecase/<Verb><Entity>UseCase.java   Public interface, entry contract
   port/out/<Capability>Port.java               Public interface, one capability
   service/<Verb><Entity>Service.java           Package-private, @UseCase impl
-  event/<Event>EventListener.java              In-process Spring event listener, @EventListener
 exception/
   <Domain>ExceptionCase.java  enum implements ExceptionCase (from common:core)
 adapter/
