@@ -1,36 +1,43 @@
 package com.moduDrive.common.infrastructure.outbox;
 
-import io.micrometer.tracing.Span;
-import io.micrometer.tracing.Tracer;
-import io.micrometer.tracing.propagation.Propagator;
+import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationRegistry;
+import io.micrometer.observation.transport.ReceiverContext;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.kafka.core.KafkaTemplate;
+import io.awspring.cloud.sqs.listener.SqsHeaders.MessageSystemAttributes;
+import io.awspring.cloud.sqs.operations.SqsOperations;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.ClassUtils;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Sends {@code outbox_event} rows to Kafka in id order and deletes each one after the broker acks
- * it. If a send fails (broker down), the batch stops there. The failed row and everything after it
+ * Sends {@code outbox_event} rows to SQS (FIFO queues) in id order and deletes each one after SQS
+ * accepts it. If a send fails (SQS unreachable), the batch stops there. The failed row and everything after it
  * stay put for the next tick, so nothing is lost. Ids are assigned at insert, not at commit, so two
  * concurrent transactions can commit out of id order. No current event relies on cross-transaction
  * ordering.
  * <p>
  * Runs on its own thread, not Boot's shared one-thread scheduler. Otherwise a send blocked by a
- * broker outage would stall other {@code @Scheduled} jobs (file-service's trash sweep), and a long
+ * SQS outage would stall other {@code @Scheduled} jobs (file-service's trash sweep), and a long
  * sweep would stall event delivery.
  * <p>
- * Delivery is at-least-once. If the broker acks but the delete doesn't commit, the row is sent
- * again. Consumers must tolerate duplicates: notification-service dedupes on {@code eventId},
+ * The row key becomes the FIFO {@code MessageGroupId} (per-key order)
+ * and the row id the {@code MessageDeduplicationId}, so a resend within SQS's 5-minute window, e.g.
+ * SQS accepted but the delete didn't commit, is dropped by SQS. Past that window delivery is
+ * at-least-once and consumers must tolerate duplicates: notification-service dedupes on {@code eventId},
  * the pending-share claim is idempotent, and a duplicate mail is accepted.
  * <p>
  * {@code FOR UPDATE SKIP LOCKED} lets several instances run this at once without sending a row
@@ -47,21 +54,19 @@ class OutboxRelay {
 
     private final EntityManager entityManager;
     private final TransactionTemplate transactionTemplate;
-    private final KafkaTemplate<Object, Object> kafkaTemplate;
+    private final SqsOperations sqsOperations;
     private final JsonMapper jsonMapper;
-    private final Tracer tracer;
-    private final Propagator propagator;
+    private final ObservationRegistry observationRegistry;
     private ScheduledExecutorService executor;
 
     OutboxRelay(EntityManager entityManager, TransactionTemplate transactionTemplate,
-                KafkaTemplate<Object, Object> kafkaTemplate, JsonMapper jsonMapper,
-                Tracer tracer, Propagator propagator) {
+                SqsOperations sqsOperations, JsonMapper jsonMapper,
+                ObservationRegistry observationRegistry) {
         this.entityManager = entityManager;
         this.transactionTemplate = transactionTemplate;
-        this.kafkaTemplate = kafkaTemplate;
+        this.sqsOperations = sqsOperations;
         this.jsonMapper = jsonMapper;
-        this.tracer = tracer;
-        this.propagator = propagator;
+        this.observationRegistry = observationRegistry;
     }
 
     // ponytail: 1s polling, so an event waits up to ~1s. Wake the relay after commit if that's too slow.
@@ -114,20 +119,30 @@ class OutboxRelay {
         });
     }
 
-    private void send(OutboxEventJpaEntity row, Object event) throws Exception {
+    private void send(OutboxEventJpaEntity row, Object event) {
         Map<String, String> traceHeaders = row.getTraceHeaders() == null
                 ? Map.of() : jsonMapper.readValue(row.getTraceHeaders(), TRACE_HEADERS);
-        Span span = propagator.extract(traceHeaders, Map::get).name("outbox relay").start();
-        try (Tracer.SpanInScope ignored = tracer.withSpan(span)) {
-            // No timeout of our own: the producer settles the future within delivery.timeout.ms. Giving up
-            // sooner would leave the record retrying inside the producer while the next tick sends
-            // the row again, so it would be delivered twice.
-            kafkaTemplate.send(row.getTopic(), row.getMessageKey(), event).get();
-        } catch (Exception e) {
-            span.error(e);
-            throw e;
-        } finally {
-            span.end();
+        // Resumes the recording request's trace from the stored headers. It has to be an Observation,
+        // not a bare span in scope: SqsTemplate takes the current Observation as its send span's parent,
+        // and the first send to a queue finishes on an SDK thread (queue URL lookup) where a thread-local
+        // span isn't visible, so that message would start a new trace.
+        ReceiverContext<Map<String, String>> context = new ReceiverContext<>(Map::get);
+        context.setCarrier(traceHeaders);
+        Message<Object> message = MessageBuilder.withPayload(event)
+                .setHeader(MessageSystemAttributes.SQS_MESSAGE_GROUP_ID_HEADER, groupId(row.getMessageKey()))
+                .setHeader(MessageSystemAttributes.SQS_MESSAGE_DEDUPLICATION_ID_HEADER, "outbox-" + row.getId())
+                .build();
+        Observation.createNotStarted("outbox.relay", () -> context, observationRegistry)
+                .contextualName("outbox relay")
+                .observe(() -> sqsOperations.send(row.getTopic(), message));
+    }
+
+    /** FIFO needs a MessageGroupId, capped at 128 chars, and emails can run to 255: hash those
+     * (stable, so the same key still lands in the same group). */
+    static String groupId(String key) {
+        if (key == null) {
+            return "none";
         }
+        return key.length() <= 128 ? key : UUID.nameUUIDFromBytes(key.getBytes(StandardCharsets.UTF_8)).toString();
     }
 }

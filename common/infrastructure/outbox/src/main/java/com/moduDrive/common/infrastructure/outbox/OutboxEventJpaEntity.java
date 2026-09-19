@@ -12,8 +12,8 @@ import lombok.NoArgsConstructor;
 
 import java.time.Instant;
 
-/** One Kafka record waiting to be sent. The row lives only until {@link OutboxRelay} has sent it,
- * so a non-empty table means the broker is behind. The oldest {@code created_at} shows how far.
+/** One SQS message waiting to be sent. The row lives only until {@link OutboxRelay} has sent it,
+ * so a non-empty table means sending is behind. The oldest {@code created_at} shows how far.
  * Each service has its own database, so each has its own table. */
 @Getter
 @Entity
@@ -25,6 +25,7 @@ class OutboxEventJpaEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /** The destination queue name (the column predates the move from Kafka topics to SQS). */
     @Column(nullable = false)
     private String topic;
 
@@ -32,7 +33,7 @@ class OutboxEventJpaEntity {
     private String messageKey;
 
     /** Fully-qualified class of the event record, so the relay can rebuild the exact object and
-     * send it through the normal {@code JsonSerializer} (same {@code __TypeId__} header as before). */
+     * send it through {@code SqsTemplate}'s normal JSON conversion. */
     @Column(nullable = false)
     private String payloadType;
 

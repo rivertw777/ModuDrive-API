@@ -24,7 +24,7 @@ dependencies {
     implementation project(':common:api')
     implementation project(':common:event')
     implementation project(':common:infrastructure:jpa')
-    implementation project(':common:infrastructure:kafka')
+    implementation project(':common:infrastructure:sqs')
     implementation project(':common:infrastructure:outbox')
     implementation project(':common:infrastructure:observability')
     implementation project(':common:infrastructure:resilience4j')

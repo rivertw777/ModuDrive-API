@@ -13,7 +13,7 @@ public class Notification {
 
     /** Null until the row is persisted — assigned by the database, like every other aggregate here. */
     private final UUID id;
-    /** The producing Kafka event's id, and the idempotency key: Kafka is at-least-once, so the
+    /** The producing event's id, and the idempotency key: SQS is at-least-once, so the
      * same share can arrive more than once and must still produce exactly one notification. */
     private final UUID eventId;
     private final UUID recipientId;

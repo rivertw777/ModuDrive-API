@@ -1,5 +1,7 @@
 package com.moduDrive.common.infrastructure.outbox;
 
+import io.awspring.cloud.sqs.operations.SqsOperations;
+import io.micrometer.observation.ObservationRegistry;
 import io.micrometer.tracing.Tracer;
 import io.micrometer.tracing.propagation.Propagator;
 import jakarta.persistence.EntityManagerFactory;
@@ -7,7 +9,6 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigurationPackage;
 import org.springframework.context.annotation.Bean;
-import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.orm.jpa.SharedEntityManagerCreator;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -18,8 +19,8 @@ import tools.jackson.databind.json.JsonMapper;
  * adds this package to Boot's entity scan, so {@code outbox_event} maps next to the service's own
  * tables. Each producing service creates the table in its own Flyway migration.
  * <p>
- * Tracing is optional: without a {@link Tracer} (e.g. in a test context) events are relayed
- * without trace headers.
+ * Tracing is optional: without a {@link Tracer} and {@link ObservationRegistry} (e.g. in a test
+ * context) events are recorded and relayed without trace context.
  */
 @AutoConfiguration
 @AutoConfigurationPackage
@@ -39,12 +40,11 @@ public class OutboxAutoConfiguration {
     @Bean(initMethod = "start", destroyMethod = "stop")
     OutboxRelay outboxRelay(EntityManagerFactory entityManagerFactory,
                             PlatformTransactionManager transactionManager,
-                            KafkaTemplate<Object, Object> kafkaTemplate,
+                            SqsOperations sqsOperations,
                             JsonMapper jsonMapper,
-                            ObjectProvider<Tracer> tracer,
-                            ObjectProvider<Propagator> propagator) {
+                            ObjectProvider<ObservationRegistry> observationRegistry) {
         return new OutboxRelay(SharedEntityManagerCreator.createSharedEntityManager(entityManagerFactory),
-                new TransactionTemplate(transactionManager), kafkaTemplate, jsonMapper,
-                tracer.getIfAvailable(() -> Tracer.NOOP), propagator.getIfAvailable(() -> Propagator.NOOP));
+                new TransactionTemplate(transactionManager), sqsOperations, jsonMapper,
+                observationRegistry.getIfAvailable(() -> ObservationRegistry.NOOP));
     }
 }

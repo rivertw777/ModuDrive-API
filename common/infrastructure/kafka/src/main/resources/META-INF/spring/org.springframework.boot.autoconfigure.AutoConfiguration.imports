@@ -1,2 +1,0 @@
-com.moduDrive.common.infrastructure.kafka.KafkaLoggingAutoConfiguration
-com.moduDrive.common.infrastructure.kafka.KafkaConsumerRetryAutoConfiguration

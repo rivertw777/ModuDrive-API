@@ -22,11 +22,3 @@ logging:
   pattern:
     # LOG_CORRELATION_PATTERN 슬롯 — 기본 콘솔 패턴의 "---" 뒤, 스레드명 앞에 그대로 삽입된다.
     correlation: "[${spring.application.name:},%X{traceId:-},%X{spanId:-}] "
-
-# Kafka producer/consumer 자동 계측 (Kafka를 쓰는 서비스에만 적용됨, 그 외 서비스는 no-op)
-spring:
-  kafka:
-    template:
-      observation-enabled: true
-    listener:
-      observation-enabled: true

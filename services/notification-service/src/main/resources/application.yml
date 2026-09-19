@@ -5,9 +5,4 @@ spring:
     import:
       - "classpath:application-jpa.yml"
       - "classpath:application-observability.yml"
-      - "classpath:application-kafka.yml"
-  kafka:
-    consumer:
-      group-id: notification-service
-      properties:
-        spring.json.trusted.packages: com.moduDrive.common.event.notification
+      - "classpath:application-sqs.yml"

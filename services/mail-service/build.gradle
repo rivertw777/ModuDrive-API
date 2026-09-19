@@ -22,7 +22,7 @@ bootBuildImage {
 dependencies {
     implementation project(':common:core')
     implementation project(':common:event')
-    implementation project(':common:infrastructure:kafka')
+    implementation project(':common:infrastructure:sqs')
     implementation project(':common:infrastructure:observability')
     implementation project(':common:infrastructure:spring-cloud')
     implementation project(':common:infrastructure:swagger')
@@ -33,7 +33,6 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-mail'
     testImplementation 'com.tngtech.archunit:archunit-junit5:1.4.2'
     testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
-    testImplementation 'org.springframework.kafka:spring-kafka-test'
 }
 
 task prepareDockerContext(type: Copy) {

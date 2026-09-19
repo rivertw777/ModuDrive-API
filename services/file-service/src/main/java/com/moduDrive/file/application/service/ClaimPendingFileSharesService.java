@@ -30,7 +30,7 @@ class ClaimPendingFileSharesService implements ClaimPendingFileSharesUseCase {
     @Transactional
     @Override
     public void claimPendingFileShares(ClaimPendingFileSharesCommand command) {
-        // Kafka is internal-only, but a listener still shouldn't trust a payload's own claim of
+        // The queue is internal-only, but a listener still shouldn't trust a payload's own claim of
         // "this memberId owns this email" — confirm it against member-service, the system of
         // record, before granting anything.
         if (!ownsEmail(command.getMemberId(), command.getGranteeEmail())) {

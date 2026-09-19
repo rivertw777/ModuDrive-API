@@ -1,0 +1,15 @@
+group = 'com.modudrive.common.infrastructure.sqs'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    api platform('io.awspring.cloud:spring-cloud-aws-dependencies:4.1.1')
+    api 'io.awspring.cloud:spring-cloud-aws-starter-sqs'
+    // SqsTemplate's JSON converter is built from Boot's Jackson 3 JsonMapper bean.
+    api 'org.springframework.boot:spring-boot-jackson'
+
+    testImplementation project(':common:event')
+    testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+}

@@ -24,7 +24,7 @@ public class AuditingConfig {
      * every controller already reads (see any {@code @RequestHeader("X_USER_ID")} param) — so an
      * entity's audit columns are stamped automatically, the same way {@code @CreatedDate}/
      * {@code @LastModifiedDate} already are, with no service/controller code touching them.
-     * Empty outside an HTTP request (a scheduled job, a Kafka consumer) or when the header is
+     * Empty outside an HTTP request (a scheduled job, a queue consumer) or when the header is
      * missing/malformed — those writes just get a null auditor column. */
     @Bean
     public AuditorAware<UUID> auditorAware() {

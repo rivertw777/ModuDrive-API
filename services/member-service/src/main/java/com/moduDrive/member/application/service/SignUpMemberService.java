@@ -48,7 +48,7 @@ class SignUpMemberService implements SignUpMemberUseCase {
                 new MemberIsValid(true)
         );
         Member savedMember = signUpMemberPort.createMember(member);
-        // The Feign call to file-service and the Kafka publish used to run right here, inside this
+        // The Feign call to file-service and the event publish used to run right here, inside this
         // @Transactional — holding the DB connection for an HTTP round trip, and (on a later commit
         // failure) leaving an already-published MemberSignedUp for a member that was never actually
         // created. MemberSignedUpEventListener now runs the Feign call AFTER_COMMIT (#208) and writes

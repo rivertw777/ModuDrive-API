@@ -1,14 +1,14 @@
 package com.moduDrive.mail.adapter.in.messaging;
 
-import com.moduDrive.common.event.mail.MailTopics;
+import com.moduDrive.common.event.mail.MailQueues;
 import com.moduDrive.common.event.mail.ShareInviteMailRequested;
 import com.moduDrive.common.event.mail.VerificationMailRequested;
 import com.moduDrive.mail.application.port.in.command.SendShareInviteMailCommand;
 import com.moduDrive.mail.application.port.in.command.SendVerificationMailCommand;
 import com.moduDrive.mail.application.port.in.usecase.SendShareInviteMailUseCase;
 import com.moduDrive.mail.application.port.in.usecase.SendVerificationMailUseCase;
+import io.awspring.cloud.sqs.annotation.SqsListener;
 import lombok.RequiredArgsConstructor;
-import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -18,13 +18,13 @@ class MailEventListener {
     private final SendVerificationMailUseCase sendVerificationMailUseCase;
     private final SendShareInviteMailUseCase sendShareInviteMailUseCase;
 
-    @KafkaListener(topics = MailTopics.VERIFICATION_REQUESTED)
+    @SqsListener(MailQueues.VERIFICATION_REQUESTED)
     void onVerificationRequested(VerificationMailRequested event) {
         sendVerificationMailUseCase.sendVerificationMail(
                 new SendVerificationMailCommand(event.email(), event.verificationCode()));
     }
 
-    @KafkaListener(topics = MailTopics.SHARE_INVITE_REQUESTED)
+    @SqsListener(MailQueues.SHARE_INVITE_REQUESTED)
     void onShareInviteRequested(ShareInviteMailRequested event) {
         sendShareInviteMailUseCase.sendShareInviteMail(
                 new SendShareInviteMailCommand(event.granteeEmail(), event.fileName(), event.directory(),

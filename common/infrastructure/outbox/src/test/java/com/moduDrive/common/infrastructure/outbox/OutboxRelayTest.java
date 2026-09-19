@@ -1,5 +1,10 @@
 package com.moduDrive.common.infrastructure.outbox;
 
+import io.awspring.cloud.sqs.listener.SqsHeaders.MessageSystemAttributes;
+import io.awspring.cloud.sqs.operations.SqsOperations;
+import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationRegistry;
+import io.micrometer.observation.transport.ReceiverContext;
 import io.micrometer.tracing.Span;
 import io.micrometer.tracing.TraceContext;
 import io.micrometer.tracing.Tracer;
@@ -24,7 +29,7 @@ import org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration;
 import org.springframework.boot.transaction.autoconfigure.TransactionAutoConfiguration;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.messaging.Message;
 import org.springframework.orm.jpa.SharedEntityManagerCreator;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -35,9 +40,9 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -46,9 +51,11 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willAnswer;
+import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 
 /** Runs against real Postgres: {@code FOR UPDATE SKIP LOCKED} is the part that keeps two relay
  * instances from sending the same row, and H2 can't prove that. */
@@ -61,8 +68,7 @@ class OutboxRelayTest {
     private static TransactionTemplate transactionTemplate;
     private static JsonMapper jsonMapper;
 
-    @SuppressWarnings("unchecked")
-    private final KafkaTemplate<Object, Object> kafkaTemplate = mock(KafkaTemplate.class);
+    private final SqsOperations sqsOperations = mock(SqsOperations.class);
     private OutboxEventRecorder recorder;
     private OutboxRelay relay;
 
@@ -95,7 +101,7 @@ class OutboxRelayTest {
         transactionTemplate.executeWithoutResult(status ->
                 entityManager.createQuery("delete from OutboxEventJpaEntity").executeUpdate());
         recorder = new OutboxEventRecorder(entityManager, transactionTemplate, jsonMapper, Tracer.NOOP, Propagator.NOOP);
-        relay = new OutboxRelay(entityManager, transactionTemplate, kafkaTemplate, jsonMapper, Tracer.NOOP, Propagator.NOOP);
+        relay = new OutboxRelay(entityManager, transactionTemplate, sqsOperations, jsonMapper, ObservationRegistry.NOOP);
     }
 
     @Nested
@@ -123,16 +129,32 @@ class OutboxRelayTest {
         void sendsTheOriginalEventsInOrderThenDeletesTheRows() {
             OutboxTestEvent first = new OutboxTestEvent(UUID.randomUUID(), "first");
             OutboxTestEvent second = new OutboxTestEvent(UUID.randomUUID(), "second");
-            recorder.record("topic-a", "k1", first);
-            recorder.record("topic-b", "k2", second);
-            given(kafkaTemplate.send(anyString(), anyString(), any())).willReturn(CompletableFuture.completedFuture(null));
+            recorder.record("queue-a.fifo", "k1", first);
+            recorder.record("queue-b.fifo", "k2", second);
 
             relay.relay();
 
-            InOrder inOrder = inOrder(kafkaTemplate);
-            inOrder.verify(kafkaTemplate).send("topic-a", "k1", first);
-            inOrder.verify(kafkaTemplate).send("topic-b", "k2", second);
+            List<Message<?>> sent = sentMessages();
+            assertThat(sent).extracting(m -> (Object) m.getPayload()).containsExactly(first, second);
+            assertThat(sent).extracting(m -> m.getHeaders().get(MessageSystemAttributes.SQS_MESSAGE_GROUP_ID_HEADER))
+                    .containsExactly("k1", "k2");
+            InOrder inOrder = inOrder(sqsOperations);
+            inOrder.verify(sqsOperations).send(eq("queue-a.fifo"), any(Message.class));
+            inOrder.verify(sqsOperations).send(eq("queue-b.fifo"), any(Message.class));
             assertThat(rowCount()).isZero();
+        }
+
+        @Test
+        @DisplayName("행 id를 중복 제거 id로 붙여, 재전송돼도 SQS가 5분 안의 중복을 버리게 한다")
+        void usesTheRowIdAsTheDeduplicationId() {
+            recorder.record("queue.fifo", "k1", new OutboxTestEvent(UUID.randomUUID(), "a"));
+            recorder.record("queue.fifo", "k1", new OutboxTestEvent(UUID.randomUUID(), "b"));
+
+            relay.relay();
+
+            assertThat(sentMessages()).extracting(m -> (String) m.getHeaders().get(MessageSystemAttributes.SQS_MESSAGE_DEDUPLICATION_ID_HEADER))
+                    .allMatch(id -> id.matches("outbox-\\d+"))
+                    .doesNotHaveDuplicates();
         }
 
         @Test
@@ -140,14 +162,13 @@ class OutboxRelayTest {
         void stopsAtTheFirstFailedSendAndKeepsTheRest() {
             OutboxTestEvent first = new OutboxTestEvent(UUID.randomUUID(), "first");
             OutboxTestEvent second = new OutboxTestEvent(UUID.randomUUID(), "second");
-            recorder.record("topic", "k1", first);
-            recorder.record("topic", "k2", second);
-            given(kafkaTemplate.send(anyString(), anyString(), any()))
-                    .willReturn(CompletableFuture.failedFuture(new RuntimeException("broker down")));
+            recorder.record("queue.fifo", "k1", first);
+            recorder.record("queue.fifo", "k2", second);
+            willThrow(new RuntimeException("sqs down")).given(sqsOperations).send(anyString(), any(Message.class));
 
             relay.relay();
 
-            then(kafkaTemplate).should(never()).send("topic", "k2", second);
+            then(sqsOperations).should(times(1)).send(anyString(), any(Message.class));
             assertThat(rowCount()).isEqualTo(2);
         }
 
@@ -158,12 +179,11 @@ class OutboxRelayTest {
                     new OutboxEventJpaEntity("topic", "k0", "com.example.Gone", "{}", null)));
             OutboxTestEvent event = new OutboxTestEvent(UUID.randomUUID(), "ok");
             recorder.record("topic", "k1", event);
-            given(kafkaTemplate.send(anyString(), anyString(), any())).willReturn(CompletableFuture.completedFuture(null));
 
             relay.relay();
             relay.relay();
 
-            then(kafkaTemplate).should().send("topic", "k1", event);
+            assertThat(sentMessages()).extracting(m -> (Object) m.getPayload()).containsExactly(event);
             assertThat(rowCount()).isEqualTo(1);
             Instant failedAt = transactionTemplate.execute(status -> entityManager
                     .createQuery("select e from OutboxEventJpaEntity e", OutboxEventJpaEntity.class)
@@ -172,9 +192,8 @@ class OutboxRelayTest {
         }
 
         @Test
-        @DisplayName("기록한 요청의 trace 헤더를 전송 시점에 다시 이어붙인다")
-        @SuppressWarnings("unchecked")
-        void resumesTheRecordingRequestsTrace() {
+        @DisplayName("기록한 요청의 trace 헤더로 Observation을 열어, 전송 중 현재 Observation이 되게 한다")
+        void resumesTheRecordingRequestsTraceAsTheCurrentObservation() {
             Tracer tracer = mock(Tracer.class);
             Propagator propagator = mock(Propagator.class);
             Span requestSpan = mock(Span.class);
@@ -186,23 +205,24 @@ class OutboxRelayTest {
                 setter.set(invocation.getArgument(1), "traceparent", "00-trace-span-01");
                 return null;
             }).given(propagator).inject(eq(requestContext), any(), any());
-            Span.Builder builder = mock(Span.Builder.class);
-            Span relaySpan = mock(Span.class);
-            given(propagator.extract(any(), any())).willReturn(builder);
-            given(builder.name(anyString())).willReturn(builder);
-            given(builder.start()).willReturn(relaySpan);
-            given(kafkaTemplate.send(anyString(), anyString(), any())).willReturn(CompletableFuture.completedFuture(null));
+            ObservationRegistry registry = ObservationRegistry.create();
+            registry.observationConfig().observationHandler(context -> true);
+            AtomicReference<Observation> currentDuringSend = new AtomicReference<>();
+            willAnswer(invocation -> {
+                currentDuringSend.set(registry.getCurrentObservation());
+                return null;
+            }).given(sqsOperations).send(anyString(), any(Message.class));
 
             new OutboxEventRecorder(entityManager, transactionTemplate, jsonMapper, tracer, propagator)
-                    .record("topic", "k1", new OutboxTestEvent(UUID.randomUUID(), "traced"));
-            new OutboxRelay(entityManager, transactionTemplate, kafkaTemplate, jsonMapper, tracer, propagator)
-                    .relay();
+                    .record("queue.fifo", "k1", new OutboxTestEvent(UUID.randomUUID(), "traced"));
+            new OutboxRelay(entityManager, transactionTemplate, sqsOperations, jsonMapper, registry).relay();
 
-            ArgumentCaptor<Map<String, String>> carrier = ArgumentCaptor.forClass(Map.class);
-            then(propagator).should().extract(carrier.capture(), any());
-            assertThat(carrier.getValue()).containsEntry("traceparent", "00-trace-span-01");
-            then(tracer).should().withSpan(relaySpan);
-            then(relaySpan).should().end();
+            // SqsTemplate parents its send span on exactly this, including when it finishes on an SDK thread.
+            assertThat(currentDuringSend.get()).isNotNull();
+            @SuppressWarnings("unchecked")
+            ReceiverContext<Map<String, String>> context =
+                    (ReceiverContext<Map<String, String>>) currentDuringSend.get().getContext();
+            assertThat(context.getCarrier()).containsEntry("traceparent", "00-trace-span-01");
         }
 
         @Test
@@ -232,10 +252,33 @@ class OutboxRelayTest {
 
             release.countDown();
             otherInstance.join();
-            then(kafkaTemplate).shouldHaveNoInteractions();
+            then(sqsOperations).shouldHaveNoInteractions();
             assertThat(elapsedMillis).isLessThan(5_000);
             assertThat(rowCount()).isEqualTo(1);
         }
+    }
+
+    @Nested
+    @DisplayName("FIFO 메시지 그룹 id를 만들 때")
+    class WhenBuildingTheGroupId {
+
+        @Test
+        @DisplayName("128자를 넘는 키는 같은 키면 같은 값이 나오게 줄인다")
+        void shortensKeysPastSqsLimitStably() {
+            String longEmail = "a".repeat(200) + "@example.com";
+
+            assertThat(OutboxRelay.groupId(longEmail)).hasSizeLessThanOrEqualTo(128)
+                    .isEqualTo(OutboxRelay.groupId(longEmail));
+            assertThat(OutboxRelay.groupId("river@modudrive.com")).isEqualTo("river@modudrive.com");
+            assertThat(OutboxRelay.groupId(null)).isNotBlank();
+        }
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private List<Message<?>> sentMessages() {
+        ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
+        then(sqsOperations).should(atLeastOnce()).send(anyString(), captor.capture());
+        return (List) captor.getAllValues();
     }
 
     private long rowCount() {
