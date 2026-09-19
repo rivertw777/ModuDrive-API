@@ -17,6 +17,8 @@ import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -25,8 +27,8 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Sends {@code outbox_event} rows to SQS (FIFO queues) in id order and deletes each one after SQS
- * accepts it. If a send fails because SQS is unreachable (or throttling, 5xx, access denied), the batch
+ * Sends PENDING {@code outbox_event} rows to SQS (FIFO queues) in id order and marks each one SENT
+ * after SQS accepts it. SENT rows are purged once they're older than {@link #SENT_RETENTION}. If a send fails because SQS is unreachable (or throttling, 5xx, access denied), the batch
  * stops there. The failed row and everything after it stay put for the next tick, so nothing is lost.
  * If SQS instead rejects that one message ({@link SqsFailures#isPermanentSendFailure}), the row is
  * parked like an unreadable one and the batch carries on. Ids are assigned at insert, not at commit, so two
@@ -39,7 +41,7 @@ import java.util.concurrent.TimeUnit;
  * <p>
  * The row key becomes the FIFO {@code MessageGroupId} (per-key order)
  * and the row id the {@code MessageDeduplicationId}, so a resend within SQS's 5-minute window, e.g.
- * SQS accepted but the delete didn't commit, is dropped by SQS. Past that window delivery is
+ * SQS accepted but marking the row SENT didn't commit, is dropped by SQS. Past that window delivery is
  * at-least-once and consumers must tolerate duplicates: notification-service dedupes on {@code eventId},
  * the pending-share claim is idempotent, and a duplicate mail is accepted.
  * <p>
@@ -51,6 +53,8 @@ import java.util.concurrent.TimeUnit;
 class OutboxRelay {
 
     static final int BATCH_SIZE = 100;
+    // ponytail: fixed 7 days. Make it a property if a service needs longer (audit) or shorter (volume).
+    static final Duration SENT_RETENTION = Duration.ofDays(7);
     // Hibernate's value for SKIP LOCKED (org.hibernate.Timeouts.SKIP_LOCKED_MILLI).
     private static final int SKIP_LOCKED = -2;
     private static final TypeReference<Map<String, String>> TRACE_HEADERS = new TypeReference<>() {};
@@ -83,6 +87,14 @@ class OutboxRelay {
                 log.error("Outbox relay tick failed", e);
             }
         }, 1, 1, TimeUnit.SECONDS);
+        // Same thread as the relay, so a purge never races a send; hourly keeps each delete small.
+        executor.scheduleWithFixedDelay(() -> {
+            try {
+                purgeSent();
+            } catch (Exception e) {
+                log.error("Outbox purge failed", e);
+            }
+        }, 1, 60, TimeUnit.MINUTES);
     }
 
     void stop() {
@@ -92,8 +104,9 @@ class OutboxRelay {
     void relay() {
         transactionTemplate.executeWithoutResult(status -> {
             List<OutboxEventJpaEntity> batch = entityManager
-                    .createQuery("select e from OutboxEventJpaEntity e where e.failedAt is null order by e.id",
+                    .createQuery("select e from OutboxEventJpaEntity e where e.status = :pending order by e.id",
                             OutboxEventJpaEntity.class)
+                    .setParameter("pending", OutboxEventStatus.PENDING)
                     .setLockMode(LockModeType.PESSIMISTIC_WRITE)
                     .setHint("jakarta.persistence.lock.timeout", SKIP_LOCKED)
                     .setMaxResults(BATCH_SIZE)
@@ -124,9 +137,21 @@ class OutboxRelay {
                     log.warn("Outbox send failed, will retry: id={}, topic={}", row.getId(), row.getTopic(), e);
                     return;
                 }
-                entityManager.remove(row);
+                row.markSent();
             }
         });
+    }
+
+    /** Deletes SENT rows past {@link #SENT_RETENTION}. PENDING and FAILED rows are never purged. */
+    void purgeSent() {
+        int purged = transactionTemplate.execute(status -> entityManager
+                .createQuery("delete from OutboxEventJpaEntity e where e.status = :sent and e.sentAt < :cutoff")
+                .setParameter("sent", OutboxEventStatus.SENT)
+                .setParameter("cutoff", Instant.now().minus(SENT_RETENTION))
+                .executeUpdate());
+        if (purged > 0) {
+            log.info("Purged {} sent outbox rows older than {}", purged, SENT_RETENTION);
+        }
     }
 
     private void send(OutboxEventJpaEntity row, Object event) {
