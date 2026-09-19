@@ -4,13 +4,13 @@ create table member (
     email      varchar(255),
     password   varchar(255),
     is_valid   boolean not null,
-    created_at timestamp(6),
+    created_at timestamp(6) not null,
     created_by uuid,
-    updated_at timestamp(6),
+    updated_at timestamp(6) not null,
     updated_by uuid,
     deleted_at timestamp(6),
     deleted_by uuid,
-    is_deleted boolean,
+    is_deleted boolean not null,
     primary key (id),
     constraint uk_member_email unique (email)
 );

@@ -22,8 +22,7 @@ public class Notification {
     private final String role;
     /** Whether the shared item is a folder — lets the feed say "폴더" vs "파일" and pick the icon. */
     private final boolean directory;
-    /** Name/email of the member who shared the file. Null when file-service could not resolve them,
-     * or on notifications recorded before these fields existed. */
+    /** Name/email of the member who shared the file. Null when file-service could not resolve them. */
     private final String sharerName;
     private final String sharerEmail;
     /** Null while unread. */

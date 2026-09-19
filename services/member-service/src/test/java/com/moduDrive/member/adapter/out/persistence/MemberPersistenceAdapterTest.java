@@ -1,6 +1,7 @@
 package com.moduDrive.member.adapter.out.persistence;
 
 import com.moduDrive.common.core.exception.BusinessException;
+import com.moduDrive.common.infrastructure.jpa.config.AuditingConfig;
 import com.moduDrive.member.domain.model.Member;
 import com.moduDrive.member.domain.model.Member.MemberEmail;
 import com.moduDrive.member.domain.model.Member.MemberId;
@@ -24,7 +25,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
 @DataJpaTest
-@Import({MemberPersistenceAdapter.class, MemberMapper.class})
+// AuditingConfig is a third-party auto-configuration, so the @DataJpaTest slice drops it —
+// without it @CreatedDate never fires and the NOT NULL created_at rejects the insert.
+@Import({MemberPersistenceAdapter.class, MemberMapper.class, AuditingConfig.class})
 class MemberPersistenceAdapterTest {
 
     @Autowired

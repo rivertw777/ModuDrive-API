@@ -44,8 +44,6 @@ class ListFavoritesService implements ListFavoritesUseCase {
         // trashed, and (for a file the caller doesn't own) still reachable — a star outlives a
         // revoked share, and "즐겨찾기" must reflect what they can open now. effectiveRole honours
         // an inherited folder grant, matching the READ check the favorite was written under.
-        // A local record, not Map.entry — favoritedAt is DB-nullable for a star that predates the
-        // column (see FileFavoriteJpaEntity), and Map.entry(K, V) throws on a null value.
         record Starred(File file, LocalDateTime favoritedAt) {}
 
         return fileFavoritePort.favoritesByRecency(userId).stream()
