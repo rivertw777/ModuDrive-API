@@ -18,23 +18,13 @@ Flyway는 순수 SQL 파일과 버전 번호만으로 동작해 단순하고, Sp
 
 ---
 
-## 2. 한눈에 보기
+## 2. 동작 순서
 
 ```mermaid
 flowchart LR
     A([서비스 기동]) --> B["Flyway<br/>안 돌린 마이그레이션 실행"] --> C["Hibernate<br/>validate (검증만)"] --> D([기동 완료])
     B & C -. 실패 .-> X([기동 실패])
 ```
-
-- Flyway는 `db/migration`(dev 프로필이면 `db/seed`까지)에서 `flyway_schema_history`에 없는 파일만 버전 순서대로 실행한다.
-  이미 적용된 파일이 수정됐거나(체크섬 불일치) SQL이 실패하면 기동이 멈춘다.
-- 스키마를 바꾸는 유일한 방법은 **새 마이그레이션 파일을 추가하는 것**. 엔티티만 고치면 validate에서 기동이 막힌다.
-- 서비스마다 자기 DB, 자기 마이그레이션, 자기 `flyway_schema_history`를 가진다(서비스 간 공유 없음).
-- 같은 서비스를 여러 대 동시에 띄워도 Flyway가 DB 락을 잡아서 한 대만 마이그레이션을 실행한다.
-
----
-
-## 3. 동작 순서
 
 의존성만 있으면 Spring Boot가 기동 중에 알아서 실행한다. 코드에서 Flyway를 직접 호출하는 곳은 없다.
 
@@ -52,7 +42,7 @@ flowchart LR
 
 ---
 
-## 4. 구성
+## 3. 구성
 
 | 위치 | 역할 |
 |---|---|
@@ -61,7 +51,7 @@ flowchart LR
 | `services/<svc>/src/main/resources/db/migration/` | 운영 포함 모든 환경에 적용되는 스키마 마이그레이션 |
 | `services/<svc>/src/main/resources/db/seed/` | 로컬 개발용 데이터(테스트 유저). `dev` 프로필에서만 적용 |
 | `.docker/init/01_postgres_init.sh` | DB와 서비스별 계정 생성만 담당. 테이블·데이터는 만들지 않음 |
-| `services/<svc>/src/test/resources/config/application.yml` | 테스트 DB를 Testcontainers Postgres로 지정 (7장) |
+| `services/<svc>/src/test/resources/config/application.yml` | 테스트 DB를 Testcontainers Postgres로 지정 (6장) |
 
 역할 분리:
 
@@ -72,7 +62,7 @@ flowchart LR
 
 ---
 
-## 5. 새 마이그레이션 추가하기
+## 4. 새 마이그레이션 추가하기
 
 ### 절차
 
@@ -93,7 +83,7 @@ flowchart LR
 - **한 번이라도 적용된 파일은 절대 수정하지 않는다.** Flyway가 파일 체크섬을 기록해두기 때문에, 내용이 바뀌면
   기동할 때 `Migration checksum mismatch`로 실패한다. 고칠 게 있으면 새 버전 파일로.
 - 파일을 지우거나 이름을 바꾸지 않는다. 같은 이유로 validate에 걸린다.
-- 운영 데이터가 있는 테이블을 바꿀 때는 6장의 패턴을 따른다.
+- 운영 데이터가 있는 테이블을 바꿀 때는 5장의 패턴을 따른다.
 
 ### dev 시드를 바꾸고 싶을 때
 
@@ -102,7 +92,7 @@ flowchart LR
 
 ---
 
-## 6. 자주 하는 변경 레시피
+## 5. 자주 하는 변경 레시피
 
 **컬럼 추가 (nullable)** — 그냥 추가하면 된다.
 
@@ -145,7 +135,7 @@ alter table file add constraint file_status_check
 
 ---
 
-## 7. 테스트
+## 6. 테스트
 
 - H2는 쓰지 않는다. JPA 테스트(`@DataJpaTest`)는 전부 **Testcontainers로 띄운 실제 Postgres 18**에서 돈다.
 - 설정은 서비스별 `src/test/resources/config/application.yml` 하나뿐이다.
@@ -167,7 +157,7 @@ alter table file add constraint file_status_check
 
 ---
 
-## 8. 한계와 후속 과제
+## 7. 한계와 후속 과제
 
 - **앱이 뜰 때 마이그레이션 실행** — 지금 규모에선 표준적인 방식. 규모가 커지거나 AWS(ECS)로 가면 보통 배포 파이프라인에서
   마이그레이션을 따로 실행(CI 단계나 ECS 일회성 태스크)하고 앱은 validate만 하게 바꾼다.
