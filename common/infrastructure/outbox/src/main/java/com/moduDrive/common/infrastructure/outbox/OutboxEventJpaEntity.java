@@ -2,6 +2,8 @@ package com.moduDrive.common.infrastructure.outbox;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -12,9 +14,10 @@ import lombok.NoArgsConstructor;
 
 import java.time.Instant;
 
-/** One SQS message waiting to be sent. The row lives only until {@link OutboxRelay} has sent it,
- * so a non-empty table means sending is behind. The oldest {@code created_at} shows how far.
- * Each service has its own database, so each has its own table. */
+/** One SQS message, from recording to delivery ({@link OutboxEventStatus}). Sent rows stay for
+ * {@link OutboxRelay#SENT_RETENTION} as an audit trail and possible resend source, then get purged.
+ * Old PENDING rows mean sending is behind (the oldest {@code created_at} shows how far); FAILED rows
+ * need a human. Each service has its own database, so each has its own table. */
 @Getter
 @Entity
 @Table(name = "outbox_event")
@@ -48,9 +51,15 @@ class OutboxEventJpaEntity {
     @Column(nullable = false)
     private Instant createdAt;
 
-    /** Set when the payload can't be turned back into its event class. The relay skips these rows
-     * from then on, so a pile of them can't fill every batch and block the rows behind them. They
-     * stay in the table for a human to look at. */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private OutboxEventStatus status;
+
+    private Instant sentAt;
+
+    /** Set with FAILED: the payload can't be turned back into its event class, or SQS rejected the
+     * message itself. The relay only picks up PENDING rows, so a pile of these can't fill every batch
+     * and block the rows behind them. */
     private Instant failedAt;
 
     OutboxEventJpaEntity(String topic, String messageKey, String payloadType, String payload,
@@ -61,9 +70,16 @@ class OutboxEventJpaEntity {
         this.payload = payload;
         this.traceHeaders = traceHeaders;
         this.createdAt = Instant.now();
+        this.status = OutboxEventStatus.PENDING;
+    }
+
+    void markSent() {
+        this.status = OutboxEventStatus.SENT;
+        this.sentAt = Instant.now();
     }
 
     void markFailed() {
+        this.status = OutboxEventStatus.FAILED;
         this.failedAt = Instant.now();
     }
 }

@@ -127,8 +127,8 @@ class OutboxRelayTest {
     class WhenRelaying {
 
         @Test
-        @DisplayName("기록된 순서대로 원래 이벤트 객체를 전송하고 행을 지운다")
-        void sendsTheOriginalEventsInOrderThenDeletesTheRows() {
+        @DisplayName("기록된 순서대로 원래 이벤트 객체를 전송하고 행을 SENT로 남긴다")
+        void sendsTheOriginalEventsInOrderThenMarksTheRowsSent() {
             OutboxTestEvent first = new OutboxTestEvent(UUID.randomUUID(), "first");
             OutboxTestEvent second = new OutboxTestEvent(UUID.randomUUID(), "second");
             recorder.record("queue-a.fifo", "k1", first);
@@ -143,7 +143,8 @@ class OutboxRelayTest {
             InOrder inOrder = inOrder(sqsOperations);
             inOrder.verify(sqsOperations).send(eq("queue-a.fifo"), any(Message.class));
             inOrder.verify(sqsOperations).send(eq("queue-b.fifo"), any(Message.class));
-            assertThat(rowCount()).isZero();
+            assertThat(countByStatus(OutboxEventStatus.SENT)).isEqualTo(2);
+            assertThat(countByStatus(OutboxEventStatus.PENDING)).isZero();
         }
 
         @Test
@@ -171,7 +172,7 @@ class OutboxRelayTest {
             relay.relay();
 
             then(sqsOperations).should(times(1)).send(anyString(), any(Message.class));
-            assertThat(rowCount()).isEqualTo(2);
+            assertThat(countByStatus(OutboxEventStatus.PENDING)).isEqualTo(2);
         }
 
         @Test
@@ -194,10 +195,8 @@ class OutboxRelayTest {
             relay.relay();
 
             assertThat(sentMessages()).extracting(m -> (Object) m.getPayload()).containsExactly(rejected, next);
-            Instant failedAt = transactionTemplate.execute(status -> entityManager
-                    .createQuery("select e from OutboxEventJpaEntity e", OutboxEventJpaEntity.class)
-                    .getSingleResult().getFailedAt());
-            assertThat(failedAt).isNotNull();
+            assertThat(failedRow().getFailedAt()).isNotNull();
+            assertThat(countByStatus(OutboxEventStatus.SENT)).isEqualTo(1);
         }
 
         @Test
@@ -212,11 +211,8 @@ class OutboxRelayTest {
             relay.relay();
 
             assertThat(sentMessages()).extracting(m -> (Object) m.getPayload()).containsExactly(event);
-            assertThat(rowCount()).isEqualTo(1);
-            Instant failedAt = transactionTemplate.execute(status -> entityManager
-                    .createQuery("select e from OutboxEventJpaEntity e", OutboxEventJpaEntity.class)
-                    .getSingleResult().getFailedAt());
-            assertThat(failedAt).isNotNull();
+            assertThat(failedRow().getPayloadType()).isEqualTo("com.example.Gone");
+            assertThat(failedRow().getFailedAt()).isNotNull();
         }
 
         @Test
@@ -282,7 +278,36 @@ class OutboxRelayTest {
             otherInstance.join();
             then(sqsOperations).shouldHaveNoInteractions();
             assertThat(elapsedMillis).isLessThan(5_000);
-            assertThat(rowCount()).isEqualTo(1);
+            assertThat(countByStatus(OutboxEventStatus.PENDING)).isEqualTo(1);
+        }
+    }
+
+    @Nested
+    @DisplayName("보낸 행을 정리할 때")
+    class WhenPurging {
+
+        @Test
+        @DisplayName("보관 기간이 지난 SENT 행만 지우고, 최근 SENT·PENDING·FAILED 행은 남긴다")
+        void deletesOnlySentRowsPastRetention() {
+            recorder.record("queue.fifo", "old", new OutboxTestEvent(UUID.randomUUID(), "old"));
+            recorder.record("queue.fifo", "recent", new OutboxTestEvent(UUID.randomUUID(), "recent"));
+            relay.relay();
+            transactionTemplate.executeWithoutResult(status -> entityManager
+                    .createQuery("update OutboxEventJpaEntity e set e.sentAt = :old where e.messageKey = 'old'")
+                    .setParameter("old", Instant.now().minus(OutboxRelay.SENT_RETENTION).minusSeconds(60))
+                    .executeUpdate());
+            recorder.record("queue.fifo", "pending", new OutboxTestEvent(UUID.randomUUID(), "pending"));
+            transactionTemplate.executeWithoutResult(status -> entityManager.persist(
+                    new OutboxEventJpaEntity("queue.fifo", "failed", "com.example.Gone", "{}", null)));
+            willThrow(new RuntimeException("sqs down")).given(sqsOperations).send(anyString(), any(Message.class));
+            relay.relay();
+
+            relay.purgeSent();
+
+            List<String> left = transactionTemplate.execute(status -> entityManager
+                    .createQuery("select e.messageKey from OutboxEventJpaEntity e order by e.id", String.class)
+                    .getResultList());
+            assertThat(left).containsExactly("recent", "pending", "failed");
         }
     }
 
@@ -307,6 +332,20 @@ class OutboxRelayTest {
         ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
         then(sqsOperations).should(atLeastOnce()).send(anyString(), captor.capture());
         return (List) captor.getAllValues();
+    }
+
+    private long countByStatus(OutboxEventStatus status) {
+        return transactionTemplate.execute(tx -> entityManager
+                .createQuery("select count(e) from OutboxEventJpaEntity e where e.status = :status", Long.class)
+                .setParameter("status", status)
+                .getSingleResult());
+    }
+
+    private OutboxEventJpaEntity failedRow() {
+        return transactionTemplate.execute(tx -> entityManager
+                .createQuery("select e from OutboxEventJpaEntity e where e.status = :failed", OutboxEventJpaEntity.class)
+                .setParameter("failed", OutboxEventStatus.FAILED)
+                .getSingleResult());
     }
 
     private long rowCount() {
