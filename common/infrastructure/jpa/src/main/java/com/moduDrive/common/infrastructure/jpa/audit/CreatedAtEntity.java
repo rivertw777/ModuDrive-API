@@ -22,7 +22,7 @@ public class CreatedAtEntity {
     private LocalDateTime createdAt;
 
     /** Auto-stamped from the caller's {@code X_USER_ID} header — see AuditingConfig#auditorAware.
-     * Nullable: a background job/Kafka consumer write has no HTTP request to read the caller from. */
+     * Nullable: a background job/queue consumer write has no HTTP request to read the caller from. */
     @CreatedBy
     @Column(updatable = false)
     private UUID createdBy;

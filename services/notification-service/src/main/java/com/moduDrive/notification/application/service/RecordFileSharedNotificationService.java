@@ -20,7 +20,7 @@ class RecordFileSharedNotificationService implements RecordFileSharedNotificatio
     private final SaveNotificationPort saveNotificationPort;
 
     /**
-     * Kafka delivers at-least-once, so the same share event can arrive more than once. The
+     * SQS delivers at-least-once, so the same share event can arrive more than once. The
      * {@code existsByEventId} check catches the ordinary redelivery; the {@code event_id} unique
      * constraint closes the TOCTOU window where two concurrent consumers both pass that check.
      * {@code insertNotification} runs in its own REQUIRES_NEW transaction precisely so that

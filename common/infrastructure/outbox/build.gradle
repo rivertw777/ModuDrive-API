@@ -6,7 +6,7 @@ repositories {
 
 dependencies {
     api project(':common:infrastructure:jpa')
-    api project(':common:infrastructure:kafka')
+    api project(':common:infrastructure:sqs')
     implementation 'org.springframework.boot:spring-boot-jackson'
     implementation 'io.micrometer:micrometer-tracing'
 

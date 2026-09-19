@@ -11,11 +11,11 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Stands in for {@code KafkaTemplate.send}: saves the event to {@code outbox_event} instead, and
- * {@link OutboxRelay} sends it to Kafka later. The write joins the caller's transaction, so the
+ * Stands in for {@code SqsTemplate.send}: saves the event to {@code outbox_event} instead, and
+ * {@link OutboxRelay} sends it to SQS later. The write joins the caller's transaction, so the
  * event commits or rolls back with the business change. If there is no transaction, it opens its
- * own. Either way, once this returns without an exception the event will reach Kafka even if the
- * broker is down right now.
+ * own. Either way, once this returns without an exception the event will reach SQS even if SQS
+ * is unreachable right now.
  */
 public class OutboxEventRecorder {
 

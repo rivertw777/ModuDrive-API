@@ -78,7 +78,7 @@ class SignUpMemberServiceTest {
 
             then(signUpMemberPort).should().createMember(
                     argThat((Member m) -> m.isValid() && m.getEmail().equals(command.getMemberEmail().emailValue())));
-            // Namespace creation and the Kafka publish are no longer called directly here — they
+            // Namespace creation and the event publish are no longer called directly here — they
             // happen post-commit via MemberSignedUpEventListener (#208). This only publishes the event.
             then(eventPublisher).should().publishEvent(
                     new MemberSignedUpEvent(memberId, command.getMemberEmail().emailValue()));

@@ -20,7 +20,7 @@ import java.util.UUID;
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 // The unique constraint on event_id (not just the app-layer existsByEventId check) is what
 // actually closes the TOCTOU window where two concurrent consumers of the same at-least-once
-// Kafka redelivery both pass that check and both insert.
+// SQS redelivery both pass that check and both insert.
 @Table(name = "notification", uniqueConstraints = {
         @UniqueConstraint(name = "uk_notification_event_id", columnNames = "event_id")
 })

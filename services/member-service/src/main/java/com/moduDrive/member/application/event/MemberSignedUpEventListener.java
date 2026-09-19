@@ -8,7 +8,7 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 /** Two phases on purpose. The signed-up event is written to the outbox BEFORE_COMMIT, inside the
- * signup transaction, so it commits or rolls back with the member row and survives a Kafka outage
+ * signup transaction, so it commits or rolls back with the member row and survives an SQS outage
  * (#350). The Feign call to file-service stays AFTER_COMMIT, so a signup that didn't commit never
  * creates a namespace and the DB transaction doesn't hold its connection across an HTTP round
  * trip (#208). */
