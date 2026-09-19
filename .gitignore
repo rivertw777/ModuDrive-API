@@ -42,5 +42,4 @@ out/
 .docker/.env
 !.docker/.env.example
 
-.docs/*
-!.docs/file-sharing-spec.md
+.temp

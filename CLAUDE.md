@@ -37,7 +37,7 @@ make service
 make member   # or: make gateway, make auth, make file, make storage, make mail
 ```
 
-Docker Compose files are at `.docker/docker-compose.service.yml` (services), `.docker/docker-compose.infra.yml` (Postgres, Redis, Kafka, MinIO), and `.docker/docker-compose.observability.yml` (Grafana/Tempo/Loki/Prometheus/OTel). All three attach to `modudrive_network` as an **external** network, created by the `network` Make target (a prerequisite of `infra`/`observability`; `start.sh` creates it inline). Postgres holds one database + login per service (`member_db`/`member_service`, `file_db`/`file_service`, `notification_db`/`notification_service`); each login can only connect to its own database. They are created by `.docker/init/01_postgres_init.sh`, which runs only on an empty volume — `make reset` after changing it. Tables are owned by Flyway: each JPA service keeps its migrations in `src/main/resources/db/migration` (`V<n>__<desc>.sql`, never edit an applied one) and Hibernate runs with `ddl-auto: validate`; the dev test users (test / test2) come from `db/seed`, applied only under the `dev` profile. The shared `Dockerfile` lives at `.docker/Dockerfile`, referenced by every service's `build.gradle` via its `docker` task.
+Docker Compose files are at `.docker/docker-compose.service.yml` (services), `.docker/docker-compose.infra.yml` (Postgres, Redis, Kafka, MinIO), and `.docker/docker-compose.observability.yml` (Grafana/Tempo/Loki/Prometheus/OTel). All three attach to `modudrive_network` as an **external** network, created by the `network` Make target (a prerequisite of `infra`/`observability`; `start.sh` creates it inline). Postgres holds one database + login per service (`member_db`/`member_service`, `file_db`/`file_service`, `notification_db`/`notification_service`); each login can only connect to its own database. They are created by `.docker/init/01_postgres_init.sh`, which runs only on an empty volume — `make reset` after changing it. Tables come from Flyway, not this script — see [Database Migrations](#database-migrations-flyway). The shared `Dockerfile` lives at `.docker/Dockerfile`, referenced by every service's `build.gradle` via its `docker` task.
 
 The active Spring profile (`dev`) is injected via `SPRING_PROFILES_ACTIVE` in `docker-compose.service.yml`, not hardcoded in `application.yml`.
 
@@ -91,6 +91,19 @@ Root `build.gradle`'s `subprojects {}` block applies the Spring Boot plugin (and
 ## Error Handling
 
 Each service defines a `<Domain>ExceptionCase` enum implementing `ExceptionCase` (from `common:core`). Throw `BusinessException(exceptionCase)` from domain/service code. `GlobalExceptionHandler` (in `common:core`) translates these to `ApiResponse.error(...)` responses automatically.
+
+## Database Migrations (Flyway)
+
+JPA services (member, file, notification) own their schema through Flyway; Hibernate never creates or alters tables. Full guide (background, recipes, rationale): `.docs/flyway.md`.
+
+- **Where**: `services/<svc>/src/main/resources/db/migration/V<n>__<snake_case_desc>.sql`, one history per service database. Flyway + `ddl-auto: validate` are wired once in `common:infrastructure:jpa` (`application-jpa.yml`).
+- **When it runs**: on service startup — Flyway applies unapplied versions in order, then Hibernate validates entities against the tables. Either failing stops the service.
+- **Changing the schema**: add a new version file and change the entity in the same PR. Validate doesn't check nullability, so declare `nullable = false` on the entity to match any `not null` column.
+- **Never edit, rename or delete an applied migration** — the stored checksum mismatches and startup fails. Fix forward with a new version. Only exception: a migration not yet merged/deployed anywhere shared.
+- **Production-safe changes**: NOT NULL on a populated table = add nullable → backfill → `set not null`; renames/type changes use expand/contract across releases; `create index concurrently` needs `executeInTransaction=false` in a `V<n>__x.sql.conf`.
+- **Dev seed**: test users live in `db/seed/V<n>_<m>__seed_*.sql` (member-service, file-service), added to `spring.flyway.locations` only under the `dev` profile. Seed ids are fixed because member and namespace live in different databases. Not loaded by tests.
+- **Postgres init script** (`.docker/init/01_postgres_init.sh`) only creates databases and per-service logins — Flyway can't create either. No tables or data there.
+- **Local reset**: a local DB from the `ddl-auto=update` era, or one hit by a checksum mismatch, needs `make reset` (wipes volumes; Flyway re-applies everything on next startup).
 
 ## Git Convention
 
