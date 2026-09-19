@@ -45,7 +45,7 @@ they're actually relevant.
    `adapter/in/web/controller/*Controller`,
    `adapter/out/persistence/*PersistenceAdapter`, Feign client interfaces —
    is package-private. Spring still wires package-private
-   `@Component`/`@UseCase`/`@WebAdapter`/`@PersistenceAdapter` classes via
+   `@Component`/`@UseCase`/`@WebAdapter`/`@PersistenceAdapter`/`@EventPublisher`/`@EventListener` classes via
    component scanning; package-private only blocks other packages/modules
    from reaching in and bypassing the port.
 
@@ -65,6 +65,7 @@ application/
   port/in/usecase/<Verb><Entity>UseCase.java   Public interface, entry contract
   port/out/<Capability>Port.java               Public interface, one capability
   service/<Verb><Entity>Service.java           Package-private, @UseCase impl
+  event/<Event>EventListener.java              In-process Spring event listener, @EventListener
 exception/
   <Domain>ExceptionCase.java  enum implements ExceptionCase (from common:core)
 adapter/
@@ -76,6 +77,8 @@ adapter/
   out/persistence/<Entity>JpaEntity.java             JPA entity
   out/persistence/<Entity>Mapper.java                JpaEntity <-> domain
   out/persistence/SpringData<Entity>Repository.java  extends JpaRepository
+  in/messaging/<Source>EventListener.java            SQS consumer (@SqsListener methods), @EventListener
+  out/messaging/Outbox<Topic>EventPublisher.java     Outbox publisher, @EventPublisher
   out/<other>/...                                    security, client, etc.
 ```
 

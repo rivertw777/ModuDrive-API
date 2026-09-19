@@ -1,16 +1,16 @@
 package com.moduDrive.file.application.event;
 
+import com.moduDrive.common.core.annotation.EventListener;
 import com.moduDrive.file.application.port.out.PublishMailEventPort;
 import com.moduDrive.file.application.port.out.PublishNotificationEventPort;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 /** BEFORE_COMMIT so the mail and notification events are written to the outbox in the same
  * transaction as the share: a rolled-back invite produces neither, and a committed one gets both
  * even if SQS is unreachable right then (#350). */
-@Component
+@EventListener
 @RequiredArgsConstructor
 class FileShareInvitedEventListener {
 

@@ -57,7 +57,7 @@ Swagger UI for all services is aggregated at the gateway: `http://localhost:1000
 
 ## Architecture: Hexagonal (Ports & Adapters)
 
-Every service follows strict hexagonal architecture (`domain/` → `application/` → `adapter/`). Key annotations from `common:core`: `@UseCase` (service implementations), `@WebAdapter` (REST controllers), `@PersistenceAdapter` (JPA adapters) — all package-private by default; only interfaces are public.
+Every service follows strict hexagonal architecture (`domain/` → `application/` → `adapter/`). Key annotations from `common:core`: `@UseCase` (service implementations), `@WebAdapter` (REST controllers), `@PersistenceAdapter` (JPA adapters), `@EventPublisher` (outbox event publishers), `@EventListener` (SQS consumers and in-process event listeners; class-level, not Spring's method-level `@EventListener`) — all package-private by default; only interfaces are public.
 
 For the full layer breakdown, naming conventions, dependency-direction rules, and the step-by-step workflow for adding a new use case, use the `hexagonal-architecture` skill.
 
@@ -65,7 +65,7 @@ For the full layer breakdown, naming conventions, dependency-direction rules, an
 
 | Module                              | Purpose                                                      |
 |-------------------------------------|--------------------------------------------------------------|
-| `common:core`                       | `@UseCase`/`@WebAdapter`/`@PersistenceAdapter`, `ApiResponse<T>`, `BusinessException`, `ExceptionCase` interface, `SelfValidating`, `LoggingAspect` |
+| `common:core`                       | `@UseCase`/`@WebAdapter`/`@PersistenceAdapter`/`@EventPublisher`/`@EventListener`, `ApiResponse<T>`, `BusinessException`, `ExceptionCase` interface, `SelfValidating`, `LoggingAspect` |
 | `common:api`                        | Shared DTOs for cross-service calls (auth, member)           |
 | `common:event`                      | Event DTOs + SQS FIFO queue-name constants for async cross-service messaging: mail (`VerificationMailRequested`, `ShareInviteMailRequested`, `MailQueues` — member/file-service produce, mail-service consumes), notification (`FileSharedNotified`, `NotificationQueues` — file-service produces, notification-service consumes), member (`MemberSignedUp`, `MemberQueues` — member-service produces, file-service consumes) |
 | `common:infrastructure:jpa`         | `BaseTimeEntity` (JPA auditing), `AuditingConfig`            |

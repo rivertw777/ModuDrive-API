@@ -1,9 +1,9 @@
 package com.moduDrive.member.application.event;
 
+import com.moduDrive.common.core.annotation.EventListener;
 import com.moduDrive.member.application.port.out.CreateNamespacePort;
 import com.moduDrive.member.application.port.out.PublishMemberEventPort;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
@@ -12,7 +12,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
  * (#350). The Feign call to file-service stays AFTER_COMMIT, so a signup that didn't commit never
  * creates a namespace and the DB transaction doesn't hold its connection across an HTTP round
  * trip (#208). */
-@Component
+@EventListener
 @RequiredArgsConstructor
 class MemberSignedUpEventListener {
 
