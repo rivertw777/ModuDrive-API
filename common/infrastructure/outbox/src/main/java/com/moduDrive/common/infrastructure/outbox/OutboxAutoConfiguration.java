@@ -15,8 +15,8 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Transactional outbox for every service that depends on this module. {@link AutoConfigurationPackage}
- * adds this package to Boot's entity scan, so {@code ddl-auto=update} creates {@code outbox_event}
- * next to the service's own tables with no extra setup in the service.
+ * adds this package to Boot's entity scan, so {@code outbox_event} maps next to the service's own
+ * tables. Each producing service creates the table in its own Flyway migration.
  * <p>
  * Tracing is optional: without a {@link Tracer} (e.g. in a test context) events are relayed
  * without trace headers.

@@ -18,19 +18,17 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 public class BaseTimeEntity {
 
     @CreatedDate
-    @Column
+    @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
     /** Auto-stamped from the caller's {@code X_USER_ID} header — see AuditingConfig#auditorAware.
-     * Left DB-nullable like every other audit column here: ddl-auto=update can't add a NOT NULL
-     * column to a table that already has rows, and a background job/Kafka consumer write has no
-     * HTTP request to read the caller from. */
+     * Nullable: a background job/Kafka consumer write has no HTTP request to read the caller from. */
     @CreatedBy
     @Column(updatable = false)
     private UUID createdBy;
 
     @LastModifiedDate
-    @Column
+    @Column(nullable = false)
     private LocalDateTime updatedAt;
 
     @LastModifiedBy
@@ -48,7 +46,7 @@ public class BaseTimeEntity {
     @Column
     private UUID deletedBy;
 
-    @Column
+    @Column(nullable = false)
     private Boolean isDeleted = false;
 
 }

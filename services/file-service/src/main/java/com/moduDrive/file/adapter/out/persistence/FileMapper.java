@@ -6,7 +6,6 @@ import com.moduDrive.file.domain.model.FileAccess;
 import com.moduDrive.file.domain.model.FileShare;
 import com.moduDrive.file.domain.model.FileVersion;
 import com.moduDrive.file.domain.model.Namespace;
-import com.moduDrive.file.domain.model.Role;
 import com.moduDrive.file.domain.model.ShareScope;
 import org.springframework.stereotype.Component;
 
@@ -44,12 +43,10 @@ class FileMapper {
         file.markUpdatedAt(entity.getUpdatedAt());
         file.markTrashedAt(entity.getTrashedAt());
         file.markDeletedAt(entity.getDeletedAt());
-        // Rows written before access_scope existed read back as null — treat that as RESTRICTED
-        // so a legacy row can never be mistaken for a publicly linkable one.
         if (entity.getAccessScope() == ShareScope.LINK) {
             // link_role is deliberately not read back: a link is viewer-only by domain invariant
-            // (see File#enableLinkSharing, spec 2), so a row written before the column existed
-            // (null) and one somehow carrying EDITOR resolve the same viewer-only way (#318).
+            // (see File#enableLinkSharing, spec 2), so a null link_role and one somehow carrying
+            // EDITOR resolve the same viewer-only way (#318).
             file.enableLinkSharing();
         }
         return file;
@@ -78,10 +75,7 @@ class FileMapper {
                 new FileShareFileId(entity.getFileId()),
                 new FileShareOwnerId(entity.getOwnerId()),
                 entity.getSharedWithUserId() != null ? new FileShareSharedWithUserId(entity.getSharedWithUserId()) : null,
-                // Rows written before granted_role existed read back as null (ddl-auto can't add a
-                // NOT NULL column to a table that already has rows) — same fallback as the legacy
-                // access_scope/link_role columns above.
-                new FileShareRole(entity.getGrantedRole() != null ? entity.getGrantedRole() : Role.VIEWER),
+                new FileShareRole(entity.getGrantedRole()),
                 entity.getToken(),
                 entity.getGranteeEmail(),
                 entity.getCreatedAt()

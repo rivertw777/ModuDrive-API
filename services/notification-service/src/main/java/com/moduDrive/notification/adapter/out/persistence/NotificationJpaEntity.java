@@ -46,10 +46,10 @@ class NotificationJpaEntity extends CreatedAtEntity {
     @Column(nullable = false)
     private String role;
 
-    /** Nullable only for rows recorded before this column existed — treated as a file (false) then. */
-    private Boolean directory;
+    @Column(nullable = false)
+    private boolean directory;
 
-    /** Nullable — file-service may not have resolved them, and pre-existing rows predate the columns. */
+    /** Nullable — file-service may not have resolved them. */
     private String sharerName;
     private String sharerEmail;
 

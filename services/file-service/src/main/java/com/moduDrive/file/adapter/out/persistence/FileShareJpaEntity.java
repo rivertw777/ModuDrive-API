@@ -40,10 +40,8 @@ class FileShareJpaEntity extends CreatedAtEntity {
     /** Null for a pending guest share — see {@link com.moduDrive.file.domain.model.FileShare}. */
     private UUID sharedWithUserId;
 
-    /** Left DB-nullable on purpose, like {@code file.access_scope}/{@code link_role}: ddl-auto=update
-     * can't add a NOT NULL column to a table that already has rows, so a pre-existing deployment's
-     * rows would otherwise fail the migration outright. Application code always sets it on write. */
     @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
     private Role grantedRole;
 
     /** The per-invite capability token resolved by the public routes (see {@code PublicFileResolver}).

@@ -57,17 +57,12 @@ class FileJpaEntity extends BaseTimeEntity {
     @Column(nullable = false)
     private FileStatus status;
 
-    // Column is `is_directory`; the Java side stays `directory` / `isDirectory()`. Left
-    // DB-nullable for the same reason as access_scope below — ddl-auto=update can't add a NOT
-    // NULL column to a populated table (the rename is a add-nullable + backfill + drop-old, see
-    // FileDirectoryColumnRenameMigration). Application code always sets it.
-    @Column(name = "is_directory")
+    // Column is `is_directory`; the Java side stays `directory` / `isDirectory()`.
+    @Column(name = "is_directory", nullable = false)
     private boolean directory;
 
-    // Left DB-nullable on purpose: ddl-auto=update can't add a NOT NULL column to a table that
-    // already has rows, so pre-existing files would break the migration. FileMapper reads a null
-    // back as RESTRICTED (the safe default).
     @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
     private ShareScope accessScope;
 
     /** Null while the file is RESTRICTED. */

@@ -37,7 +37,7 @@ make service
 make member   # or: make gateway, make auth, make file, make storage, make mail
 ```
 
-Docker Compose files are at `.docker/docker-compose.service.yml` (services), `.docker/docker-compose.infra.yml` (Postgres, Redis, Kafka, MinIO), and `.docker/docker-compose.observability.yml` (Grafana/Tempo/Loki/Prometheus/OTel). All three attach to `modudrive_network` as an **external** network, created by the `network` Make target (a prerequisite of `infra`/`observability`; `start.sh` creates it inline). Postgres holds one database + login per service (`member_db`/`member_service`, `file_db`/`file_service`, `notification_db`/`notification_service`); each login can only connect to its own database. They are created by `.docker/init/01_postgres_init.sh`, which runs only on an empty volume — `make reset` after changing it. The shared `Dockerfile` lives at `.docker/Dockerfile`, referenced by every service's `build.gradle` via its `docker` task.
+Docker Compose files are at `.docker/docker-compose.service.yml` (services), `.docker/docker-compose.infra.yml` (Postgres, Redis, Kafka, MinIO), and `.docker/docker-compose.observability.yml` (Grafana/Tempo/Loki/Prometheus/OTel). All three attach to `modudrive_network` as an **external** network, created by the `network` Make target (a prerequisite of `infra`/`observability`; `start.sh` creates it inline). Postgres holds one database + login per service (`member_db`/`member_service`, `file_db`/`file_service`, `notification_db`/`notification_service`); each login can only connect to its own database. They are created by `.docker/init/01_postgres_init.sh`, which runs only on an empty volume — `make reset` after changing it. Tables come from Flyway, not this script — see [Database Migrations](#database-migrations-flyway). The shared `Dockerfile` lives at `.docker/Dockerfile`, referenced by every service's `build.gradle` via its `docker` task.
 
 The active Spring profile (`dev`) is injected via `SPRING_PROFILES_ACTIVE` in `docker-compose.service.yml`, not hardcoded in `application.yml`.
 
@@ -92,12 +92,16 @@ Root `build.gradle`'s `subprojects {}` block applies the Spring Boot plugin (and
 
 Each service defines a `<Domain>ExceptionCase` enum implementing `ExceptionCase` (from `common:core`). Throw `BusinessException(exceptionCase)` from domain/service code. `GlobalExceptionHandler` (in `common:core`) translates these to `ApiResponse.error(...)` responses automatically.
 
+## Database Migrations (Flyway)
+
+JPA services' schema is managed by Flyway (`db/migration`, `ddl-auto: validate`). Read `.docs/flyway.md` before changing any entity or migration.
+
 ## Git Convention
 
 @.github/CONTRIBUTING.md
 
 ## Testing
 
-Tests use **JUnit 5** (`useJUnitPlatform()`) with H2 in-memory database for JPA services (no MySQL required for tests). Test heap is capped at 1 GB. Test classes live in `src/test/java` mirroring the main package structure.
+Tests use **JUnit 5** (`useJUnitPlatform()`). JPA services' persistence tests run on real Postgres via Testcontainers (`src/test/resources/config/application.yml` sets a `jdbc:tc:` URL), on the schema Flyway builds, with `ddl-auto: validate` — so Docker must be running for `./gradlew test`. Test heap is capped at 1 GB. Test classes live in `src/test/java` mirroring the main package structure.
 
 For which classes require tests, which test type per layer, the given-when-then/BDDMockito/AssertJ conventions, and the 70% coverage policy, use the `test-writing` skill.

@@ -24,7 +24,7 @@ class NotificationMapper {
                 new NotificationFileId(entity.getFileId()),
                 new NotificationFileName(entity.getFileName()),
                 new NotificationRole(entity.getRole()),
-                new NotificationDirectory(Boolean.TRUE.equals(entity.getDirectory())),
+                new NotificationDirectory(entity.isDirectory()),
                 new NotificationSharerName(entity.getSharerName()),
                 new NotificationSharerEmail(entity.getSharerEmail()),
                 entity.getReadAt(),
