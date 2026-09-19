@@ -13,7 +13,7 @@ import javax.sql.DataSource;
  * anywhere in the app acquires, so this sits at the root like the other shared config classes.
  * {@code shedlock-provider-jdbc-template} works against any JDBC datasource (unlike a
  * Postgres-only {@code pg_advisory_lock}), so this survives swapping the database vendor —
- * only the {@code shedlock} table (see {@code ShedLockJpaEntity}) needs to exist. */
+ * only the {@code shedlock} table (created in db/migration/V1__init.sql) needs to exist. */
 @Configuration
 @EnableSchedulerLock(defaultLockAtMostFor = "PT30M")
 class SchedulingLockConfig {

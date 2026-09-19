@@ -1,0 +1,8 @@
+# H2 slice tests: db/migration is Postgres SQL, so Hibernate builds the schema here instead.
+# Flyway + validate against real Postgres is covered by FlywayMigrationTest.
+spring:
+  flyway:
+    enabled: false
+  jpa:
+    hibernate:
+      ddl-auto: create-drop

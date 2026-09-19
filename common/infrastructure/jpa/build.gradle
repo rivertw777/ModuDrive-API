@@ -6,6 +6,9 @@ repositories {
 
 dependencies {
     api 'org.springframework.boot:spring-boot-starter-data-jpa'
+    // Each service owns its schema in src/main/resources/db/migration; Hibernate only validates it.
+    api 'org.springframework.boot:spring-boot-starter-flyway'
+    runtimeOnly 'org.flywaydb:flyway-database-postgresql'
     // AuditorAware reads the caller off the current HTTP request (see AuditingConfig) — needs
     // RequestContextHolder/ServletRequestAttributes. Servlet API is compileOnly: every real
     // consumer of this module is a web service that already brings its own via

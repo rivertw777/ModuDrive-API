@@ -1,7 +1,18 @@
 spring:
   jpa:
+    hibernate:
+      # Flyway owns the schema (db/migration in each service); Hibernate only checks it matches.
+      ddl-auto: validate
     properties:
       hibernate:
         show_sql: true
         format_sql: true
         use_sql_comments: true
+---
+# Local test users (test / test2). db/seed only ships in services that seed — never applied outside dev.
+spring:
+  config:
+    activate:
+      on-profile: dev
+  flyway:
+    locations: classpath:db/migration,classpath:db/seed
