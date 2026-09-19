@@ -196,6 +196,7 @@ class OutboxRelayTest {
 
             assertThat(sentMessages()).extracting(m -> (Object) m.getPayload()).containsExactly(rejected, next);
             assertThat(failedRow().getFailedAt()).isNotNull();
+            assertThat(failedRow().getFailureReason()).startsWith(SqsException.class.getName());
             assertThat(countByStatus(OutboxEventStatus.SENT)).isEqualTo(1);
         }
 
@@ -213,6 +214,7 @@ class OutboxRelayTest {
             assertThat(sentMessages()).extracting(m -> (Object) m.getPayload()).containsExactly(event);
             assertThat(failedRow().getPayloadType()).isEqualTo("com.example.Gone");
             assertThat(failedRow().getFailedAt()).isNotNull();
+            assertThat(failedRow().getFailureReason()).contains("com.example.Gone");
         }
 
         @Test

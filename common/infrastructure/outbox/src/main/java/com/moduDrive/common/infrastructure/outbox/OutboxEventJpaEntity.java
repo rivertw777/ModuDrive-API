@@ -24,6 +24,8 @@ import java.time.Instant;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 class OutboxEventJpaEntity {
 
+    static final int FAILURE_REASON_LENGTH = 1000;
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -62,6 +64,10 @@ class OutboxEventJpaEntity {
      * and block the rows behind them. */
     private Instant failedAt;
 
+    /** Why it became FAILED: exception class and message, cut to the column size. */
+    @Column(length = FAILURE_REASON_LENGTH)
+    private String failureReason;
+
     OutboxEventJpaEntity(String topic, String messageKey, String payloadType, String payload,
                          String traceHeaders) {
         this.topic = topic;
@@ -78,8 +84,10 @@ class OutboxEventJpaEntity {
         this.sentAt = Instant.now();
     }
 
-    void markFailed() {
+    void markFailed(Throwable cause) {
         this.status = OutboxEventStatus.FAILED;
         this.failedAt = Instant.now();
+        String reason = cause.getClass().getName() + ": " + cause.getMessage();
+        this.failureReason = reason.length() <= FAILURE_REASON_LENGTH ? reason : reason.substring(0, FAILURE_REASON_LENGTH);
     }
 }

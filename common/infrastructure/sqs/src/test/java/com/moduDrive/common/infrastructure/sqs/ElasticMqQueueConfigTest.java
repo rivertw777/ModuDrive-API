@@ -99,15 +99,17 @@ class ElasticMqQueueConfigTest {
     class WhenARetryableFailureKeepsHappening {
 
         @Test
-        @DisplayName("백오프하며 4번 시도한 뒤 redrive로 DLQ에 옮겨지고, 사유 속성은 없다")
-        void retriesWithBackoffThenRedrivesToTheDlq() {
+        @DisplayName("백오프하며 4번 시도한 뒤 DLQ로 옮겨지고, 재시도 소진 사유가 남는다")
+        void retriesWithBackoffThenMovesToTheDlqWithTheReason() {
             MemberSignedUp event = new MemberSignedUp(UUID.randomUUID(), "retry@modudrive.com");
 
             send(event, "outbox-2");
 
             Message dead = awaitDeadLetter(event.email(), Duration.ofSeconds(45));
             assertThat(listener.attempts(event.email())).isEqualTo(4);
-            assertThat(dead.messageAttributes()).doesNotContainKey(DeadLetteringErrorHandler.REASON_ATTRIBUTE);
+            assertThat(dead.messageAttributes().get(DeadLetteringErrorHandler.REASON_ATTRIBUTE).stringValue())
+                    .startsWith("Retries exhausted after 4 attempts")
+                    .contains("IllegalStateException: simulated outage");
         }
     }
 
