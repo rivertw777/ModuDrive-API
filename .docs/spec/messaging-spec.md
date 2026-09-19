@@ -30,11 +30,11 @@ flowchart LR
     end
 
     subgraph R["받는 서비스"]
-        L["④ @EventListener<br/>공유 연결"]
+        L["④ EventListener<br/>공유 연결"]
     end
 
-    C -- "전송 성공 → 행 SENT" --> MQ
-    MQ -- "전달" --> L
+    C -- "송신" --> MQ
+    MQ -- "수신" --> L
 ```
 
 - **①②는 한 트랜잭션**: 회원이 저장되면 이벤트도 반드시 남고, 롤백되면 이벤트도 없음.
