@@ -56,8 +56,6 @@ class OutboxRelayTest {
 
     private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17-alpine");
 
-    private static final String SOURCE = "member-service";
-
     private static ConfigurableApplicationContext context;
     private static EntityManager entityManager;
     private static TransactionTemplate transactionTemplate;
@@ -96,8 +94,8 @@ class OutboxRelayTest {
     void setUp() {
         transactionTemplate.executeWithoutResult(status ->
                 entityManager.createQuery("delete from OutboxEventJpaEntity").executeUpdate());
-        recorder = new OutboxEventRecorder(SOURCE, entityManager, transactionTemplate, jsonMapper, Tracer.NOOP, Propagator.NOOP);
-        relay = new OutboxRelay(SOURCE, entityManager, transactionTemplate, kafkaTemplate, jsonMapper, Tracer.NOOP, Propagator.NOOP);
+        recorder = new OutboxEventRecorder(entityManager, transactionTemplate, jsonMapper, Tracer.NOOP, Propagator.NOOP);
+        relay = new OutboxRelay(entityManager, transactionTemplate, kafkaTemplate, jsonMapper, Tracer.NOOP, Propagator.NOOP);
     }
 
     @Nested
@@ -157,7 +155,7 @@ class OutboxRelayTest {
         @DisplayName("복원할 수 없는 행은 실패로 표시해 이후 배치에서 빼고 나머지를 보낸다")
         void skipsARowThatCannotBeRebuilt() {
             transactionTemplate.executeWithoutResult(status -> entityManager.persist(
-                    new OutboxEventJpaEntity(SOURCE, "topic", "k0", "com.example.Gone", "{}", null)));
+                    new OutboxEventJpaEntity("topic", "k0", "com.example.Gone", "{}", null)));
             OutboxTestEvent event = new OutboxTestEvent(UUID.randomUUID(), "ok");
             recorder.record("topic", "k1", event);
             given(kafkaTemplate.send(anyString(), anyString(), any())).willReturn(CompletableFuture.completedFuture(null));
@@ -195,9 +193,9 @@ class OutboxRelayTest {
             given(builder.start()).willReturn(relaySpan);
             given(kafkaTemplate.send(anyString(), anyString(), any())).willReturn(CompletableFuture.completedFuture(null));
 
-            new OutboxEventRecorder(SOURCE, entityManager, transactionTemplate, jsonMapper, tracer, propagator)
+            new OutboxEventRecorder(entityManager, transactionTemplate, jsonMapper, tracer, propagator)
                     .record("topic", "k1", new OutboxTestEvent(UUID.randomUUID(), "traced"));
-            new OutboxRelay(SOURCE, entityManager, transactionTemplate, kafkaTemplate, jsonMapper, tracer, propagator)
+            new OutboxRelay(entityManager, transactionTemplate, kafkaTemplate, jsonMapper, tracer, propagator)
                     .relay();
 
             ArgumentCaptor<Map<String, String>> carrier = ArgumentCaptor.forClass(Map.class);
@@ -205,18 +203,6 @@ class OutboxRelayTest {
             assertThat(carrier.getValue()).containsEntry("traceparent", "00-trace-span-01");
             then(tracer).should().withSpan(relaySpan);
             then(relaySpan).should().end();
-        }
-
-        @Test
-        @DisplayName("같은 DB를 쓰는 다른 서비스가 기록한 행은 건드리지 않는다")
-        void leavesRowsRecordedByAnotherService() {
-            new OutboxEventRecorder("file-service", entityManager, transactionTemplate, jsonMapper, Tracer.NOOP, Propagator.NOOP)
-                    .record("topic", "k1", new OutboxTestEvent(UUID.randomUUID(), "theirs"));
-
-            relay.relay();
-
-            then(kafkaTemplate).shouldHaveNoInteractions();
-            assertThat(rowCount()).isEqualTo(1);
         }
 
         @Test

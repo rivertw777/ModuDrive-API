@@ -14,9 +14,7 @@ import java.time.Instant;
 
 /** One Kafka record waiting to be sent. The row lives only until {@link OutboxRelay} has sent it,
  * so a non-empty table means the broker is behind. The oldest {@code created_at} shows how far.
- * <p>
- * Every service shares one database here, so they share this table too. {@code source} (the
- * recording service's {@code spring.application.name}) keeps each relay on its own rows. */
+ * Each service has its own database, so each has its own table. */
 @Getter
 @Entity
 @Table(name = "outbox_event")
@@ -26,9 +24,6 @@ class OutboxEventJpaEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-
-    @Column(nullable = false)
-    private String source;
 
     @Column(nullable = false)
     private String topic;
@@ -57,9 +52,8 @@ class OutboxEventJpaEntity {
      * stay in the table for a human to look at. */
     private Instant failedAt;
 
-    OutboxEventJpaEntity(String source, String topic, String messageKey, String payloadType, String payload,
+    OutboxEventJpaEntity(String topic, String messageKey, String payloadType, String payload,
                          String traceHeaders) {
-        this.source = source;
         this.topic = topic;
         this.messageKey = messageKey;
         this.payloadType = payloadType;

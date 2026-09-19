@@ -45,7 +45,6 @@ class OutboxRelay {
     private static final int SKIP_LOCKED = -2;
     private static final TypeReference<Map<String, String>> TRACE_HEADERS = new TypeReference<>() {};
 
-    private final String source;
     private final EntityManager entityManager;
     private final TransactionTemplate transactionTemplate;
     private final KafkaTemplate<Object, Object> kafkaTemplate;
@@ -54,10 +53,9 @@ class OutboxRelay {
     private final Propagator propagator;
     private ScheduledExecutorService executor;
 
-    OutboxRelay(String source, EntityManager entityManager, TransactionTemplate transactionTemplate,
+    OutboxRelay(EntityManager entityManager, TransactionTemplate transactionTemplate,
                 KafkaTemplate<Object, Object> kafkaTemplate, JsonMapper jsonMapper,
                 Tracer tracer, Propagator propagator) {
-        this.source = source;
         this.entityManager = entityManager;
         this.transactionTemplate = transactionTemplate;
         this.kafkaTemplate = kafkaTemplate;
@@ -86,9 +84,8 @@ class OutboxRelay {
     void relay() {
         transactionTemplate.executeWithoutResult(status -> {
             List<OutboxEventJpaEntity> batch = entityManager
-                    .createQuery("select e from OutboxEventJpaEntity e where e.source = :source and e.failedAt is null order by e.id",
+                    .createQuery("select e from OutboxEventJpaEntity e where e.failedAt is null order by e.id",
                             OutboxEventJpaEntity.class)
-                    .setParameter("source", source)
                     .setLockMode(LockModeType.PESSIMISTIC_WRITE)
                     .setHint("jakarta.persistence.lock.timeout", SKIP_LOCKED)
                     .setMaxResults(BATCH_SIZE)
