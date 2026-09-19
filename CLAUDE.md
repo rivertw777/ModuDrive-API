@@ -94,16 +94,7 @@ Each service defines a `<Domain>ExceptionCase` enum implementing `ExceptionCase`
 
 ## Database Migrations (Flyway)
 
-JPA services (member, file, notification) own their schema through Flyway; Hibernate never creates or alters tables. Full guide (background, recipes, rationale): `.docs/flyway.md`.
-
-- **Where**: `services/<svc>/src/main/resources/db/migration/V<n>__<snake_case_desc>.sql`, one history per service database. Flyway + `ddl-auto: validate` are wired once in `common:infrastructure:jpa` (`application-jpa.yml`).
-- **When it runs**: on service startup — Flyway applies unapplied versions in order, then Hibernate validates entities against the tables. Either failing stops the service.
-- **Changing the schema**: add a new version file and change the entity in the same PR. Validate doesn't check nullability, so declare `nullable = false` on the entity to match any `not null` column.
-- **Never edit, rename or delete an applied migration** — the stored checksum mismatches and startup fails. Fix forward with a new version. Only exception: a migration not yet merged/deployed anywhere shared.
-- **Production-safe changes**: NOT NULL on a populated table = add nullable → backfill → `set not null`; renames/type changes use expand/contract across releases; `create index concurrently` needs `executeInTransaction=false` in a `V<n>__x.sql.conf`.
-- **Dev seed**: test users live in `db/seed/V<n>_<m>__seed_*.sql` (member-service, file-service), added to `spring.flyway.locations` only under the `dev` profile. Seed ids are fixed because member and namespace live in different databases. Not loaded by tests.
-- **Postgres init script** (`.docker/init/01_postgres_init.sh`) only creates databases and per-service logins — Flyway can't create either. No tables or data there.
-- **Local reset**: a local DB from the `ddl-auto=update` era, or one hit by a checksum mismatch, needs `make reset` (wipes volumes; Flyway re-applies everything on next startup).
+JPA services' schema is managed by Flyway (`db/migration`, `ddl-auto: validate`). Read `.docs/flyway.md` before changing any entity or migration.
 
 ## Git Convention
 
