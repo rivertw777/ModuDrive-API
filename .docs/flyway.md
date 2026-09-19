@@ -34,7 +34,31 @@ flowchart LR
 
 ---
 
-## 3. 구성
+## 3. 동작 순서
+
+코드에서 Flyway를 직접 호출하는 곳은 없다. 의존성만 있으면 Spring Boot 자동 설정이 알아서 실행한다.
+
+**기동 시 (Spring Boot)**
+
+1. 클래스패스에 Flyway가 있고 DataSource가 있으면 Flyway 자동 설정이 켜진다.
+2. 기본 경로 `classpath:db/migration`(= `src/main/resources/db/migration`)에서 SQL 파일을 찾는다. dev 프로필이면 `db/seed`도 함께.
+3. 기동 중에 `flyway.migrate()`를 자동으로 호출한다.
+4. JPA(Hibernate)는 Flyway가 끝난 뒤에 초기화되도록 순서가 잡혀 있다. 그래서 테이블이 먼저 준비되고, 그다음 validate가 돈다.
+
+**`migrate()` 내부**
+
+1. `flyway_schema_history` 테이블이 없으면 만든다.
+2. DB 락을 잡는다. 여러 인스턴스가 동시에 떠도 한 대만 진행한다.
+3. 경로의 `V*.sql` 파일을 버전 순으로 정렬한다.
+4. 기록 테이블과 비교한다. 이미 적용된 파일은 체크섬이 그대로인지 확인하고, 아직 안 된 파일만 골라낸다.
+5. 골라낸 파일을 순서대로 파일마다 트랜잭션으로 실행하고, 기록 테이블에 한 줄씩 남긴다.
+
+**새 서비스에 붙이려면** `common:infrastructure:jpa`에 의존하고 `db/migration/V1__init.sql`만 만들면 된다.
+Flyway 의존성, Postgres 지원 모듈(`flyway-database-postgresql`, Flyway 10부터 DB별 모듈이 분리됨), `ddl-auto: validate`는 공통 모듈에 이미 들어 있다.
+
+---
+
+## 4. 구성
 
 | 위치 | 역할 |
 |---|---|
@@ -43,7 +67,7 @@ flowchart LR
 | `services/<svc>/src/main/resources/db/migration/` | 운영 포함 모든 환경에 적용되는 스키마 마이그레이션 |
 | `services/<svc>/src/main/resources/db/seed/` | 로컬 개발용 데이터(테스트 유저). `dev` 프로필에서만 적용 |
 | `.docker/init/01_postgres_init.sh` | DB와 서비스별 계정 생성만 담당. 테이블·데이터는 만들지 않음 |
-| `services/<svc>/src/test/resources/config/application.yml` | 테스트 DB를 Testcontainers Postgres로 지정 (6장) |
+| `services/<svc>/src/test/resources/config/application.yml` | 테스트 DB를 Testcontainers Postgres로 지정 (7장) |
 
 역할 분리:
 
@@ -54,7 +78,7 @@ flowchart LR
 
 ---
 
-## 4. 새 마이그레이션 추가하기
+## 5. 새 마이그레이션 추가하기
 
 ### 절차
 
@@ -75,7 +99,7 @@ flowchart LR
 - **한 번이라도 적용된 파일은 절대 수정하지 않는다.** Flyway가 파일 체크섬을 기록해두기 때문에, 내용이 바뀌면
   기동할 때 `Migration checksum mismatch`로 실패한다. 고칠 게 있으면 새 버전 파일로.
 - 파일을 지우거나 이름을 바꾸지 않는다. 같은 이유로 validate에 걸린다.
-- 운영 데이터가 있는 테이블을 바꿀 때는 5장의 패턴을 따른다.
+- 운영 데이터가 있는 테이블을 바꿀 때는 6장의 패턴을 따른다.
 
 ### dev 시드를 바꾸고 싶을 때
 
@@ -84,7 +108,7 @@ flowchart LR
 
 ---
 
-## 5. 자주 하는 변경 레시피
+## 6. 자주 하는 변경 레시피
 
 **컬럼 추가 (nullable)** — 그냥 추가하면 된다.
 
@@ -127,7 +151,7 @@ alter table file add constraint file_status_check
 
 ---
 
-## 6. 테스트
+## 7. 테스트
 
 - H2는 쓰지 않는다. JPA 테스트(`@DataJpaTest`)는 전부 **Testcontainers로 띄운 실제 Postgres 18**에서 돈다.
 - 설정은 서비스별 `src/test/resources/config/application.yml` 하나뿐이다.
@@ -149,7 +173,7 @@ alter table file add constraint file_status_check
 
 ---
 
-## 7. 한계와 후속 과제
+## 8. 한계와 후속 과제
 
 - **앱이 뜰 때 마이그레이션 실행** — 지금 규모에선 표준적인 방식. 규모가 커지거나 AWS(ECS)로 가면 보통 배포 파이프라인에서
   마이그레이션을 따로 실행(CI 단계나 ECS 일회성 태스크)하고 앱은 validate만 하게 바꾼다.
