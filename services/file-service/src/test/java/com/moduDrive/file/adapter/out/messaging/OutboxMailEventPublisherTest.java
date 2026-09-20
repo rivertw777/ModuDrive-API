@@ -28,7 +28,7 @@ class OutboxMailEventPublisherTest {
     class WhenPublishingShareInviteRequested {
 
         @Test
-        void sendsPayloadToShareInviteTopicKeyedByFileId() {
+        void sendsPayloadToShareInviteQueueKeyedByRecipient() {
             UUID fileId = UUID.randomUUID();
 
             publisher.publishShareInviteRequested(
@@ -36,7 +36,7 @@ class OutboxMailEventPublisherTest {
                     "owner@modudrive.com", "확인 부탁드려요", null);
 
             then(outboxEventRecorder).should().record(
-                    MailQueues.SHARE_INVITE_REQUESTED, fileId.toString(),
+                    MailQueues.SHARE_INVITE_REQUESTED, "grantee@modudrive.com",
                     new ShareInviteMailRequested(fileId, "grantee@modudrive.com", "report.pdf", false, "DOCUMENT",
                             "VIEWER", "홍길동", "owner@modudrive.com", "확인 부탁드려요", null));
         }
@@ -51,7 +51,7 @@ class OutboxMailEventPublisherTest {
                     "owner@modudrive.com", null, inviteToken);
 
             then(outboxEventRecorder).should().record(
-                    MailQueues.SHARE_INVITE_REQUESTED, fileId.toString(),
+                    MailQueues.SHARE_INVITE_REQUESTED, "grantee@modudrive.com",
                     new ShareInviteMailRequested(fileId, "grantee@modudrive.com", "report.pdf", false, "DOCUMENT",
                             "VIEWER", "홍길동", "owner@modudrive.com", null, inviteToken));
         }
