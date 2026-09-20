@@ -10,8 +10,9 @@ import org.springframework.messaging.support.MessageBuilder;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
-/** Maps the broker-agnostic publish onto SQS FIFO: the ordering key becomes the {@code MessageGroupId}
- * and the deduplication id the {@code MessageDeduplicationId}. */
+/** Maps the broker-agnostic publish onto SQS FIFO: the destination gets the queue's {@code .fifo}
+ * suffix, the ordering key becomes the {@code MessageGroupId} and the deduplication id the
+ * {@code MessageDeduplicationId}. */
 class SqsMessagePublisher implements MessagePublisher {
 
     // SQS caps a group id at 128 characters; emails can run to 255.
@@ -30,7 +31,7 @@ class SqsMessagePublisher implements MessagePublisher {
                 .setHeader(MessageSystemAttributes.SQS_MESSAGE_DEDUPLICATION_ID_HEADER, deduplicationId)
                 .build();
         try {
-            sqsOperations.send(destination, message);
+            sqsOperations.send(SqsQueues.queueName(destination), message);
         } catch (RuntimeException e) {
             if (SqsFailures.isPermanentSendFailure(e)) {
                 throw new PermanentPublishException(e);

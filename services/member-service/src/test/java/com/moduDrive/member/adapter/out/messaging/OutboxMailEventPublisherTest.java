@@ -1,6 +1,6 @@
 package com.moduDrive.member.adapter.out.messaging;
 
-import com.moduDrive.common.event.mail.MailQueues;
+import com.moduDrive.common.event.mail.MailDestinations;
 import com.moduDrive.common.event.mail.VerificationMailRequested;
 import com.moduDrive.common.infrastructure.messaging.outbox.OutboxEventRecorder;
 import org.junit.jupiter.api.DisplayName;
@@ -30,7 +30,7 @@ class OutboxMailEventPublisherTest {
             publisher.publishVerificationRequested("river@modudrive.com", "042917");
 
             then(outboxEventRecorder).should().record(
-                    MailQueues.VERIFICATION_REQUESTED, "river@modudrive.com",
+                    MailDestinations.VERIFICATION_REQUESTED, "river@modudrive.com",
                     new VerificationMailRequested("river@modudrive.com", "042917"));
         }
     }

@@ -1,7 +1,7 @@
 package com.moduDrive.file.adapter.out.messaging;
 
 import com.moduDrive.common.event.notification.FileSharedNotified;
-import com.moduDrive.common.event.notification.NotificationQueues;
+import com.moduDrive.common.event.notification.NotificationDestinations;
 import com.moduDrive.common.infrastructure.messaging.outbox.OutboxEventRecorder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -42,7 +42,7 @@ class OutboxNotificationEventPublisherTest {
             publisher.publishFileShared(fileId, recipientId, "report.pdf", "EDITOR", true, "홍길동", "owner@modudrive.com");
 
             then(outboxEventRecorder).should().record(
-                    eq(NotificationQueues.FILE_SHARED), eq(recipientId.toString()), payloadCaptor.capture());
+                    eq(NotificationDestinations.FILE_SHARED), eq(recipientId.toString()), payloadCaptor.capture());
             assertThat(payloadCaptor.getValue())
                     .isInstanceOf(FileSharedNotified.class)
                     .satisfies(payload -> {
@@ -68,7 +68,7 @@ class OutboxNotificationEventPublisherTest {
             publisher.publishFileShared(fileId, recipientId, "report.pdf", "EDITOR", true, "홍길동", "owner@modudrive.com");
 
             then(outboxEventRecorder).should(org.mockito.Mockito.times(2)).record(
-                    eq(NotificationQueues.FILE_SHARED), eq(recipientId.toString()), payloadCaptor.capture());
+                    eq(NotificationDestinations.FILE_SHARED), eq(recipientId.toString()), payloadCaptor.capture());
             assertThat(payloadCaptor.getAllValues())
                     .extracting(payload -> ((FileSharedNotified) payload).eventId())
                     .doesNotHaveDuplicates();
