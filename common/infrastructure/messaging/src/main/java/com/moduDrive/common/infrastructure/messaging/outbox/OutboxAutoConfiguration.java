@@ -1,6 +1,7 @@
 package com.moduDrive.common.infrastructure.messaging.outbox;
 
 import com.moduDrive.common.infrastructure.messaging.MessagePublisher;
+import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.observation.ObservationRegistry;
 import io.micrometer.tracing.Tracer;
 import io.micrometer.tracing.propagation.Propagator;
@@ -40,6 +41,14 @@ public class OutboxAutoConfiguration {
         return new OutboxEventRecorder(SharedEntityManagerCreator.createSharedEntityManager(entityManagerFactory),
                 new TransactionTemplate(transactionManager), jsonMapper,
                 tracer.getIfAvailable(() -> Tracer.NOOP), propagator.getIfAvailable(() -> Propagator.NOOP));
+    }
+
+    /** Without a {@link MeterRegistry} the lag simply isn't published; nothing else depends on it. */
+    @Bean
+    OutboxLag outboxLag(EntityManagerFactory entityManagerFactory, ObjectProvider<MeterRegistry> meterRegistry) {
+        OutboxLag lag = new OutboxLag(SharedEntityManagerCreator.createSharedEntityManager(entityManagerFactory));
+        meterRegistry.ifAvailable(lag::bindTo);
+        return lag;
     }
 
     @Bean(initMethod = "start", destroyMethod = "stop")
