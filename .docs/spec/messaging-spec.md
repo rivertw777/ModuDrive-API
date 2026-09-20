@@ -87,7 +87,27 @@ sequenceDiagram
 
 ## 2. Publisher — Transactional Outbox
 
-### 2-1. 기록
+### 2-1. outbox 상태
+
+`outbox_event`의 행은 항상 이 셋 중 하나다. 무엇이 상태를 바꾸는지는 아래 절들이 설명한다 — 기록([2-2](#2-2-기록))이 `PENDING`을 만들고, 전송([2-3](#2-3-전송))과 그 실패([2-4](#2-4-전송-실패))가 나머지를 결정한다.
+
+| 상태 | 뜻 | 언제 사라지나 |
+|---|---|---|
+| `PENDING` | 기록됨, 아직 안 보냄 (전송될 때까지 계속 재시도) | 전송되면 SENT |
+| `SENT` | SQS가 받음 (`sent_at`) | **7일 보관** 후 relay가 1시간마다 정리 |
+| `FAILED` | 그 메시지 하나가 잘못됨 (`failed_at`, `failure_reason`) | 정리하지 않음, 사람이 처리 |
+
+`FAILED`가 되는 경우는 [2-4](#2-4-전송-실패)의 **재처리 불가** 3가지다.
+셋 다 그 행 하나만의 문제이고 **인프라 장애로는 생기지 않으므로**, 한 번에 한두 건이다.
+
+```sql
+-- FAILED 행 원인 확인
+select id, queue, failed_at, failure_reason from outbox_event where status = 'FAILED';
+-- 원인을 고친 뒤 다시 보내기
+update outbox_event set status = 'PENDING', failed_at = null, failure_reason = null where id = 123;
+```
+
+### 2-2. 기록
 
 - 비즈니스 코드는 SQS로 직접 보내지 않고 `OutboxEventRecorder.record(queue, key, event)`를 부른다 → `outbox_event` 행 insert.
 - 기록은 **유스케이스 서비스가 자기 `@Transactional` 안에서 이벤트 포트를 직접 호출**해서 한다
@@ -96,7 +116,7 @@ sequenceDiagram
 - 호출자 트랜잭션이 없으면(예: 가입 인증 메일 요청 — 인증 코드는 Redis) 기록기가 outbox insert만 담은 트랜잭션을 스스로 연다.
   이때 보장은 "insert가 끝나면 결국 전송된다" 하나뿐.
 
-### 2-2. 전송
+### 2-3. 전송
 
 - `OutboxRelay`가 1초마다(한 틱) `PENDING` 행을 id 순으로 **최대 100개 읽어**(`FOR UPDATE SKIP LOCKED`) **1건씩** 동기 전송한다.
   SQS 일괄 전송(`SendMessageBatch`)은 쓰지 않는다 — 100개를 읽으면 SQS 호출도 100번.
@@ -109,7 +129,7 @@ sequenceDiagram
   Consumer 멱등성 체크의 키로도 쓴다([3-1](#3-1-멱등성-체크)).
 - 성공하면 `status = SENT`, `sent_at` 기록. SENT 행은 **7일 보관** 후 relay가 1시간마다 정리한다.
 
-### 2-3. 전송 실패
+### 2-4. 전송 실패
 
 실패는 **"이 메시지가 잘못됐나, 인프라가 잘못됐나"** 딱 둘로 갈린다.
 
@@ -137,29 +157,59 @@ N번에 `FAILED`로 보내면 멀쩡한 이벤트가 무더기로 빠지고 복�
 
 **그럼 장애를 어떻게 알아채나** — `FAILED` 행이 안 생기니 테이블만 봐서는 모른다.
 대신 **가장 오래 기다린 행이 몇 초째 기다리는지**를 숫자로 내보낸다(`modudrive.outbox.lag`).
-평소엔 1초 근처에 머물고, 전송이 막히면 계속 올라간다. 여기에 알람을 건다([9장 운영](#운영)).
+평소엔 1초 근처에 머물고, 전송이 막히면 계속 올라간다. 여기에 알람을 건다 — [2-5](#2-5-적체-알람).
 
 **SDK가 먼저 재시도한다** — relay가 `publish()`를 한 번 부르면 SDK가 그 안에서 최대 4번 시도한다
 (기본 LEGACY 모드, 100ms부터 지수 백오프 + jitter). 다 합쳐도 1초가 안 된다.
 그 안에 성공하면 relay는 실패가 있었는지도 모르고 넘어간다. **위 표의 "일시 장애"는 1초를 넘게 끊겼다는 뜻이다.**
 
-### 2-4. 행 상태
+### 2-5. 적체 알람
 
-| 상태 | 뜻 | 언제 사라지나 |
-|---|---|---|
-| `PENDING` | 기록됨, 아직 안 보냄 (전송될 때까지 계속 재시도) | 전송되면 SENT |
-| `SENT` | SQS가 받음 (`sent_at`) | **7일 보관** 후 relay가 1시간마다 정리 |
-| `FAILED` | 그 메시지 하나가 잘못됨 (`failed_at`, `failure_reason`) | 정리하지 않음, 사람이 처리 |
+> 아직 구현되지 않았다. 이 절은 확정된 설계이고, 남은 일은 [9장](#9-todo)에 있다.
 
-`FAILED`가 되는 경우는 [2-3](#2-3-전송-실패)의 **재처리 불가** 3가지다.
-셋 다 그 행 하나만의 문제이고 **인프라 장애로는 생기지 않으므로**, 한 번에 한두 건이다.
+[2-4](#2-4-전송-실패)에서 전송 실패에 횟수 제한을 두지 않기로 했으므로, **장애가 나도 `FAILED` 행이 생기지 않는다.**
+로그에 경고가 쌓일 뿐 DB는 평온해 보인다. 그래서 감지는 전적으로 이 알람에 달려 있다 — 없으면 SQS가 죽어도
+아무도 모른 채 테이블만 쌓이고, 메일과 알림이 조용히 멈춘다.
 
-```sql
--- FAILED 행 원인 확인
-select id, queue, failed_at, failure_reason from outbox_event where status = 'FAILED';
--- 원인을 고친 뒤 다시 보내기
-update outbox_event set status = 'PENDING', failed_at = null, failure_reason = null where id = 123;
+**지표**: `modudrive_outbox_lag_seconds` — 가장 오래 기다린 `PENDING` 행의 나이(초).
+Micrometer 게이지 `modudrive.outbox.lag`에 Prometheus가 base unit을 붙인 이름이다.
+outbox를 켠 서비스(member, file)마다 따로 나가므로 알람도 인스턴스별로 본다.
+
+| 상태 | 값 |
+|---|---|
+| 정상 | 0~1초 (relay가 1초마다 도니 그 주기만큼만 기다린다) |
+| 전송이 막힘 | 막힌 시간만큼 계속 증가 |
+
+**규칙**:
+
 ```
+max by (instance) (modudrive_outbox_lag_seconds) > 120   for 5m
+```
+
+- **120초**: 정상이 1초 근처니 2분이면 명백히 비정상이다. 한편 relay가 한 틱에 100건씩 보내므로
+  일시적인 몰림(수천 건이 한꺼번에 기록됨)은 수십 초 안에 빠진다 — 그걸 장애로 오인하지 않을 만큼은 높다.
+- **5분 지속**: SQS 짧은 장애는 저절로 복구되고 행도 자동으로 나간다. 그런 건 알릴 필요가 없다.
+  5분을 버틴다는 건 사람이 봐야 하는 상황이라는 뜻이다.
+- 단계를 둘로 나누지 않았다(경고/심각). 지금은 대응이 하나뿐이라 — "왜 막혔는지 본다" — 나눌 이유가 없다.
+  대응이 갈리기 시작하면 그때 쪼갠다.
+
+**어디에 거나**: Grafana 알림. 이미 떠 있고 알림 기능이 내장이라 컨테이너를 늘리지 않는다.
+Alertmanager를 붙이면 컨테이너 하나 + 라우팅 설정 + 수신처 설정이 새로 생기는데, 규칙 하나 때문에 치를 값이 아니다.
+규칙은 Grafana provisioning으로 파일에 둔다(`.docker/observability/grafana/alerting/`) — UI에서 손으로 만들면
+볼륨을 지우는 순간 사라지고, `make reset`이 일상이다. 지금 compose는 `grafana/`를 `provisioning/datasources`에
+바로 마운트하고 있어서, 상위를 `provisioning`으로 올리고 `datasources/`·`alerting/`을 그 아래로 옮겨야 한다.
+
+**받는 곳**: 미정. `/oh-my-claudecode:configure-notifications`로 붙일 수 있는 Telegram/Discord/Slack 중 하나면 된다.
+
+**AWS로 가면**: 이 지표는 앱이 내보내는 커스텀 메트릭이라 CloudWatch가 저절로 알지 못한다.
+OTel Collector에 CloudWatch EMF exporter를 붙이거나 ADOT를 쓰는 선택이 남아 있다 —
+[.docs/aws-migration.md](../aws-migration.md)의 모니터링 항목과 같이 정한다.
+
+#### 아직 지표가 없는 것: `FAILED` 행
+
+`FAILED`는 사람이 손대기 전까지 사라지지 않는데([2-1](#2-1-outbox-상태)) 알려주는 곳이 없다.
+lag 게이지는 `PENDING`만 보므로 `FAILED`가 쌓여도 조용하다. 알람을 걸려면 **게이지를 하나 더 내보내야 한다** —
+`modudrive.outbox.failed`(현재 `FAILED` 행 수), 규칙은 `> 0`. 적체 알람과 같은 PR에서 같이 나가는 게 맞다.
 
 ---
 
@@ -292,7 +342,7 @@ flowchart TD
 
 - 큐 이름 상수(`MailQueues`, `MemberQueues`, `NotificationQueues`)와 이벤트 레코드는 `common:event`.
 - SQS 큐 이름엔 `.`을 못 써서(`.fifo` 접미사 제외) 하이픈으로 이름 지음.
-- 키는 FIFO의 `MessageGroupId` — 같은 키끼리만 순서가 보장됨 ([2-2](#2-2-전송)).
+- 키는 FIFO의 `MessageGroupId` — 같은 키끼리만 순서가 보장됨 ([2-3](#2-3-전송)).
 
 ## 5. 인프라
 
@@ -310,7 +360,7 @@ flowchart TD
 ## 6. 재처리 (replay)
 
 - **Consumer 실패 재처리**: DLQ → 원래 큐로 redrive (AWS 콘솔 버튼 / `StartMessageMoveTask`). 로컬은 DLQ에서 받아 다시 보내면 됨.
-- **Publisher 실패 재처리**: `FAILED` 행을 `PENDING`으로 되돌림 ([2-4](#2-4-행-상태)).
+- **Publisher 실패 재처리**: `FAILED` 행을 `PENDING`으로 되돌림 ([2-1](#2-1-outbox-상태)).
 - **성공한 과거 이벤트 replay**: SQS는 처리 후 삭제라 Kafka식 offset 되감기는 불가. 대신 보낸 행이 outbox에 **7일간 SENT로 남아 있으므로**,
   그 기간 안이면 `PENDING`으로 되돌려 다시 발행할 수 있다. 단 같은 `DedupId`라 **Consumer 멱등성 체크에 걸려 건너뛴다** —
   정말 다시 처리시키려면 Consumer의 처리 기록도 지워야 한다. 현재 이 기능을 쓰는 곳은 없음.
@@ -332,19 +382,15 @@ flowchart TD
 
 ### 성능 (필요해지면)
 
-- [ ] **일괄 전송(`SendMessageBatch`)** ([2-2](#2-2-전송)): 지금은 한 행씩 동기 전송이라 SQS 호출 한 번에 5~20ms,
+- [ ] **일괄 전송(`SendMessageBatch`)** ([2-3](#2-3-전송)): 지금은 한 행씩 동기 전송이라 SQS 호출 한 번에 5~20ms,
   한 틱(1초)에 보낼 수 있는 양이 대략 50~200건이다. 초당 50건을 꾸준히 넘기면 outbox가 밀리기 시작한다.
   `SqsTemplate.sendMany`로 10건씩 묶으면 호출 수와 비용이 1/10이 되지만, **부분 실패**(10건 중 일부만 실패) 처리가
   생겨 "실패하면 멈춘다"는 지금 규칙을 다시 짜야 한다.
-  **도입 신호**: 아래 적체 알람이 울리기 시작할 때.
+  **도입 신호**: 적체 알람([2-5](#2-5-적체-알람))이 울리기 시작할 때.
 
 ### 운영
 
-- [ ] **outbox 적체 알람**: 게이지 `modudrive.outbox.lag`(초)는 나가고 있으니, **알람 규칙만 남았다** —
-  N분 넘게 올라가 있거나 `FAILED` 행이 생기면 알람.
-  Publisher는 전송 실패에 횟수 제한을 두지 않으므로([2-3](#2-3-전송-실패)) **이게 유일한 감지 수단**이다 —
-  규칙이 없으면 SQS가 죽어도 아무도 모른 채 테이블만 쌓인다.
-  지금은 Prometheus에 규칙을 걸고, AWS 모니터링 결정 때 CloudWatch로 옮길지 정한다.
+- [ ] **outbox 적체 알람** — 설계는 [2-5](#2-5-적체-알람).
 - [ ] **DLQ 알람**: Consumer에서 실패한 메시지는 `<큐>-dlq.fifo`로 옮겨지기만 하고 알려주는 곳이 없다.
   DLQ에도 보관 기간(기본 4일, 최대 14일)이 있어 방치하면 결국 사라진다. DLQ마다 "`ApproximateNumberOfMessagesVisible > 0`이면
   알람"을 걸어서, 사유(`DeadLetterReason`)를 보고 원인을 고친 뒤 원래 큐로 redrive할 수 있게 한다.
