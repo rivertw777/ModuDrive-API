@@ -2,7 +2,7 @@ package com.moduDrive.common.event.notification;
 
 import java.util.UUID;
 
-/** Published by file-service (queue {@link NotificationQueues#FILE_SHARED}) after a share to a
+/** Published by file-service (queue {@link NotificationDestinations#FILE_SHARED}) after a share to a
  * registered member commits — a guest-by-email invite has no ModuDrive account to notify in-app.
  * {@code eventId} is minted by the producer and is the consumer's idempotency key: SQS is
  * at-least-once, so notification-service dedupes redeliveries on it.

@@ -16,6 +16,9 @@ spring:
       mail.smtp.starttls.enable: true
 
 modudrive:
+  messaging:
+    idempotency:
+      enabled: true
   mail:
     from: ${MAIL_FROM}
 

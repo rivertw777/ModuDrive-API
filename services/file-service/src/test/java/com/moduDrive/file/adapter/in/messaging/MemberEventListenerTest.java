@@ -1,8 +1,8 @@
 package com.moduDrive.file.adapter.in.messaging;
 
-import com.moduDrive.common.event.member.MemberQueues;
+import com.moduDrive.common.event.member.MemberDestinations;
 import com.moduDrive.common.event.member.MemberSignedUp;
-import com.moduDrive.common.infrastructure.sqs.ProcessedEvents;
+import com.moduDrive.common.infrastructure.messaging.idempotency.ProcessedEvents;
 import com.moduDrive.file.application.port.in.command.ClaimPendingFileSharesCommand;
 import com.moduDrive.file.application.port.in.usecase.ClaimPendingFileSharesUseCase;
 import org.junit.jupiter.api.DisplayName;
@@ -37,14 +37,14 @@ class MemberEventListenerTest {
 
         @Test
         void claimsPendingSharesAndRecordsTheMessage() {
-            given(processedEvents.isProcessed(MemberQueues.SIGNED_UP, "outbox-1")).willReturn(false);
+            given(processedEvents.isProcessed(MemberDestinations.SIGNED_UP, "outbox-1")).willReturn(false);
 
             listener.onMemberSignedUp(event, "outbox-1");
 
             then(claimPendingFileSharesUseCase).should().claimPendingFileShares(argThat(
                     (ClaimPendingFileSharesCommand c) -> c.getMemberId().equals(memberId)
                             && c.getGranteeEmail().equals("river@modudrive.com")));
-            then(processedEvents).should().markProcessed(MemberQueues.SIGNED_UP, "outbox-1");
+            then(processedEvents).should().markProcessed(MemberDestinations.SIGNED_UP, "outbox-1");
         }
     }
 
@@ -54,7 +54,7 @@ class MemberEventListenerTest {
 
         @Test
         void skipsItWithoutClaimingAgain() {
-            given(processedEvents.isProcessed(MemberQueues.SIGNED_UP, "outbox-1")).willReturn(true);
+            given(processedEvents.isProcessed(MemberDestinations.SIGNED_UP, "outbox-1")).willReturn(true);
 
             listener.onMemberSignedUp(event, "outbox-1");
 

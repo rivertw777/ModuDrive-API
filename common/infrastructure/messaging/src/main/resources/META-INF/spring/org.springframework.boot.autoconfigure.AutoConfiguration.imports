@@ -1,0 +1,2 @@
+com.moduDrive.common.infrastructure.messaging.outbox.OutboxAutoConfiguration
+com.moduDrive.common.infrastructure.messaging.idempotency.IdempotencyAutoConfiguration

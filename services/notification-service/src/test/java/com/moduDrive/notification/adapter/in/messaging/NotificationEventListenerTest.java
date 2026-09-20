@@ -1,8 +1,8 @@
 package com.moduDrive.notification.adapter.in.messaging;
 
 import com.moduDrive.common.event.notification.FileSharedNotified;
-import com.moduDrive.common.event.notification.NotificationQueues;
-import com.moduDrive.common.infrastructure.sqs.ProcessedEvents;
+import com.moduDrive.common.event.notification.NotificationDestinations;
+import com.moduDrive.common.infrastructure.messaging.idempotency.ProcessedEvents;
 import com.moduDrive.notification.application.port.in.command.RecordFileSharedNotificationCommand;
 import com.moduDrive.notification.application.port.in.usecase.RecordFileSharedNotificationUseCase;
 import org.junit.jupiter.api.DisplayName;
@@ -36,7 +36,7 @@ class NotificationEventListenerTest {
 
         @Test
         void delegatesToRecordFileSharedNotificationUseCase() {
-            given(processedEvents.isProcessed(NotificationQueues.FILE_SHARED, "outbox-1")).willReturn(false);
+            given(processedEvents.isProcessed(NotificationDestinations.FILE_SHARED, "outbox-1")).willReturn(false);
             UUID eventId = UUID.randomUUID();
             UUID fileId = UUID.randomUUID();
             UUID recipientId = UUID.randomUUID();
@@ -48,7 +48,7 @@ class NotificationEventListenerTest {
             then(recordFileSharedNotificationUseCase).should().recordFileSharedNotification(
                     new RecordFileSharedNotificationCommand(
                             eventId, recipientId, fileId, "report.pdf", "EDITOR", true, "홍길동", "owner@modudrive.com"));
-            then(processedEvents).should().markProcessed(NotificationQueues.FILE_SHARED, "outbox-1");
+            then(processedEvents).should().markProcessed(NotificationDestinations.FILE_SHARED, "outbox-1");
         }
     }
 
@@ -58,7 +58,7 @@ class NotificationEventListenerTest {
 
         @Test
         void skipsItWithoutRecordingAnotherNotification() {
-            given(processedEvents.isProcessed(NotificationQueues.FILE_SHARED, "outbox-1")).willReturn(true);
+            given(processedEvents.isProcessed(NotificationDestinations.FILE_SHARED, "outbox-1")).willReturn(true);
             FileSharedNotified event = new FileSharedNotified(
                     UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "report.pdf", "EDITOR", true,
                     "홍길동", "owner@modudrive.com");

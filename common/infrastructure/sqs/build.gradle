@@ -10,15 +10,9 @@ dependencies {
     // SqsTemplate's JSON converter is built from Boot's Jackson 3 JsonMapper bean.
     api 'org.springframework.boot:spring-boot-jackson'
 
-    // Idempotency backends are optional: a consumer brings the one it has (its own DB, else Redis).
-    // Plain starters, not our jpa/redis modules, so their auto-configuration doesn't leak in here.
-    compileOnly 'org.springframework.boot:spring-boot-starter-data-jpa'
-    compileOnly 'org.springframework.boot:spring-boot-starter-data-redis'
-    implementation 'org.springframework:spring-tx'
+    // The broker-agnostic half (outbox, idempotency, MessagePublisher port) this adapter implements.
+    api project(':common:infrastructure:messaging')
 
     testImplementation project(':common:event')
-    testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
-    testImplementation 'org.testcontainers:testcontainers-postgresql'
-    testRuntimeOnly 'org.postgresql:postgresql'
 }

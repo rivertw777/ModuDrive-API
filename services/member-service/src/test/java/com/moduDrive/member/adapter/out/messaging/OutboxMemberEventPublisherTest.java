@@ -1,8 +1,8 @@
 package com.moduDrive.member.adapter.out.messaging;
 
-import com.moduDrive.common.event.member.MemberQueues;
+import com.moduDrive.common.event.member.MemberDestinations;
 import com.moduDrive.common.event.member.MemberSignedUp;
-import com.moduDrive.common.infrastructure.outbox.OutboxEventRecorder;
+import com.moduDrive.common.infrastructure.messaging.outbox.OutboxEventRecorder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -34,7 +34,7 @@ class OutboxMemberEventPublisherTest {
             publisher.publishSignedUp(memberId, "river@modudrive.com");
 
             then(outboxEventRecorder).should().record(
-                    MemberQueues.SIGNED_UP, "river@modudrive.com",
+                    MemberDestinations.SIGNED_UP, "river@modudrive.com",
                     new MemberSignedUp(memberId, "river@modudrive.com"));
         }
     }

@@ -1,6 +1,6 @@
 package com.moduDrive.common.infrastructure.sqs;
 
-import com.moduDrive.common.event.member.MemberQueues;
+import com.moduDrive.common.event.member.MemberDestinations;
 import com.moduDrive.common.event.member.MemberSignedUp;
 import io.awspring.cloud.sqs.annotation.SqsListener;
 import io.awspring.cloud.sqs.listener.SqsHeaders.MessageSystemAttributes;
@@ -11,8 +11,6 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
-import org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration;
-import org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.messaging.handler.annotation.Header;
@@ -48,6 +46,7 @@ import static org.awaitility.Awaitility.await;
         properties = "spring.config.import=classpath:application-sqs.yml")
 class ElasticMqQueueConfigTest {
 
+    private static final String QUEUE = SqsQueues.queueName(MemberDestinations.SIGNED_UP);
     private static final String DLQ = "member-signed-up-dlq.fifo";
 
     // Not stopped by hand: Spring's cached context still polls it until the JVM exits, and
@@ -158,7 +157,7 @@ class ElasticMqQueueConfigTest {
         @Test
         @DisplayName("리스너까지 가지 않고, 큐의 redrive로 원본 본문 그대로 DLQ에 옮겨진다")
         void movesTheRawBodyToTheDlqThroughRedrive() {
-            String queueUrl = sqsAsyncClient.getQueueUrl(r -> r.queueName(MemberQueues.SIGNED_UP)).join().queueUrl();
+            String queueUrl = sqsAsyncClient.getQueueUrl(r -> r.queueName(QUEUE)).join().queueUrl();
 
             sqsAsyncClient.sendMessage(r -> r.queueUrl(queueUrl).messageBody("{not json")
                     .messageGroupId("poison").messageDeduplicationId("poison-1")).join();
@@ -170,7 +169,7 @@ class ElasticMqQueueConfigTest {
     }
 
     private void send(MemberSignedUp event, String deduplicationId) {
-        sqsTemplate.send(MemberQueues.SIGNED_UP, MessageBuilder.withPayload(event)
+        sqsTemplate.send(QUEUE, MessageBuilder.withPayload(event)
                 .setHeader(MessageSystemAttributes.SQS_MESSAGE_GROUP_ID_HEADER, event.email())
                 .setHeader(MessageSystemAttributes.SQS_MESSAGE_DEDUPLICATION_ID_HEADER, deduplicationId)
                 .build());
@@ -190,8 +189,7 @@ class ElasticMqQueueConfigTest {
         return found.get();
     }
 
-    // JPA is on this module's test classpath for JpaProcessedEventsTest; this test only needs SQS.
-    @EnableAutoConfiguration(exclude = {DataSourceAutoConfiguration.class, HibernateJpaAutoConfiguration.class})
+    @EnableAutoConfiguration
     @Import(RecordingListener.class)
     static class TestApp {
     }
@@ -207,7 +205,7 @@ class ElasticMqQueueConfigTest {
             return attempts.getOrDefault(email, new AtomicInteger()).get();
         }
 
-        @SqsListener(MemberQueues.SIGNED_UP)
+        @SqsListener(MemberDestinations.SIGNED_UP + SqsQueues.FIFO_SUFFIX)
         void onSignedUp(MemberSignedUp event,
                         @Header(MessageSystemAttributes.SQS_MESSAGE_DEDUPLICATION_ID_HEADER) String deduplicationId) {
             attempts.computeIfAbsent(event.email(), e -> new AtomicInteger()).incrementAndGet();
