@@ -9,6 +9,9 @@ spring:
       - "classpath:application-redis.yml"
 
 modudrive:
+  messaging:
+    outbox:
+      enabled: true
   member:
     email-verification-token-expiration: ${MEMBER_EMAIL_VERIFICATION_TOKEN_EXPIRATION:180000}
 

@@ -4,7 +4,7 @@ import com.moduDrive.common.core.annotation.EventListener;
 import com.moduDrive.common.event.mail.MailQueues;
 import com.moduDrive.common.event.mail.ShareInviteMailRequested;
 import com.moduDrive.common.event.mail.VerificationMailRequested;
-import com.moduDrive.common.infrastructure.sqs.ProcessedEvents;
+import com.moduDrive.common.infrastructure.messaging.idempotency.ProcessedEvents;
 import com.moduDrive.mail.application.port.in.command.SendShareInviteMailCommand;
 import com.moduDrive.mail.application.port.in.command.SendVerificationMailCommand;
 import com.moduDrive.mail.application.port.in.usecase.SendShareInviteMailUseCase;

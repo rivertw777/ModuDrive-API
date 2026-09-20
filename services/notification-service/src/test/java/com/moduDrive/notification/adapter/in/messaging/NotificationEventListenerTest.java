@@ -2,7 +2,7 @@ package com.moduDrive.notification.adapter.in.messaging;
 
 import com.moduDrive.common.event.notification.FileSharedNotified;
 import com.moduDrive.common.event.notification.NotificationQueues;
-import com.moduDrive.common.infrastructure.sqs.ProcessedEvents;
+import com.moduDrive.common.infrastructure.messaging.idempotency.ProcessedEvents;
 import com.moduDrive.notification.application.port.in.command.RecordFileSharedNotificationCommand;
 import com.moduDrive.notification.application.port.in.usecase.RecordFileSharedNotificationUseCase;
 import org.junit.jupiter.api.DisplayName;

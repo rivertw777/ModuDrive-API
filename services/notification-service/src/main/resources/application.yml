@@ -6,3 +6,9 @@ spring:
       - "classpath:application-jpa.yml"
       - "classpath:application-observability.yml"
       - "classpath:application-sqs.yml"
+
+# 공통 메시징 모듈에서 이 서비스가 쓰는 기능만 켠다 (켠 것만 해당 테이블이 매핑됨).
+modudrive:
+  messaging:
+    idempotency:
+      enabled: true

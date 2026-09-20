@@ -3,7 +3,6 @@ package com.moduDrive.common.infrastructure.sqs;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.springframework.messaging.converter.MessageConversionException;
 import software.amazon.awssdk.awscore.exception.AwsErrorDetails;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.services.sqs.model.SqsException;
@@ -15,23 +14,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SqsFailuresTest {
 
     @Nested
-    @DisplayName("컨슈머 실패를 분류할 때")
-    class WhenClassifyingConsumerFailures {
+    @DisplayName("FIFO 메시지 그룹 id를 만들 때")
+    class WhenBuildingTheGroupId {
 
         @Test
-        @DisplayName("다시 해도 같은 결과인 실패는 원인 체인 안쪽에 있어도, 하위 타입이어도 영구로 본다")
-        void treatsPermanentTypesAnywhereInTheChainAsPermanent() {
-            assertThat(SqsFailures.isPermanentConsumerFailure(
-                    new RuntimeException("listener failed", new IllegalArgumentException("bad role")))).isTrue();
-            assertThat(SqsFailures.isPermanentConsumerFailure(new NumberFormatException("x"))).isTrue();
-            assertThat(SqsFailures.isPermanentConsumerFailure(new MessageConversionException("not json"))).isTrue();
-        }
+        @DisplayName("128자를 넘는 키는 같은 키면 같은 값이 나오게 줄인다")
+        void shortensKeysPastSqsLimitStably() {
+            String longEmail = "a".repeat(200) + "@example.com";
 
-        @Test
-        @DisplayName("일시 장애나 모르는 예외는 재시도 쪽으로 둔다")
-        void treatsTransientAndUnknownFailuresAsRetryable() {
-            assertThat(SqsFailures.isPermanentConsumerFailure(new IllegalStateException("smtp down"))).isFalse();
-            assertThat(SqsFailures.isPermanentConsumerFailure(new RuntimeException("?"))).isFalse();
+            assertThat(SqsMessagePublisher.groupId(longEmail)).hasSizeLessThanOrEqualTo(128)
+                    .isEqualTo(SqsMessagePublisher.groupId(longEmail));
+            assertThat(SqsMessagePublisher.groupId("river@modudrive.com")).isEqualTo("river@modudrive.com");
+            assertThat(SqsMessagePublisher.groupId(null)).isNotBlank();
         }
     }
 

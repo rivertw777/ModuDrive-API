@@ -2,7 +2,7 @@ package com.moduDrive.file.adapter.out.messaging;
 
 import com.moduDrive.common.event.notification.FileSharedNotified;
 import com.moduDrive.common.event.notification.NotificationQueues;
-import com.moduDrive.common.infrastructure.outbox.OutboxEventRecorder;
+import com.moduDrive.common.infrastructure.messaging.outbox.OutboxEventRecorder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;

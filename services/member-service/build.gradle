@@ -25,7 +25,7 @@ dependencies {
     implementation project(':common:event')
     implementation project(':common:infrastructure:jpa')
     implementation project(':common:infrastructure:sqs')
-    implementation project(':common:infrastructure:outbox')
+    implementation project(':common:infrastructure:messaging')
     implementation project(':common:infrastructure:observability')
     implementation project(':common:infrastructure:redis')
     implementation project(':common:infrastructure:spring-cloud')

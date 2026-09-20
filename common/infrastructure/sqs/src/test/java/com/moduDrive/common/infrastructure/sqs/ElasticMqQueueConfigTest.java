@@ -11,8 +11,6 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
-import org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration;
-import org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.messaging.handler.annotation.Header;
@@ -190,8 +188,7 @@ class ElasticMqQueueConfigTest {
         return found.get();
     }
 
-    // JPA is on this module's test classpath for JpaProcessedEventsTest; this test only needs SQS.
-    @EnableAutoConfiguration(exclude = {DataSourceAutoConfiguration.class, HibernateJpaAutoConfiguration.class})
+    @EnableAutoConfiguration
     @Import(RecordingListener.class)
     static class TestApp {
     }

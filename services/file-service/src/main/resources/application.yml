@@ -9,6 +9,11 @@ spring:
       - "classpath:application-resilience4j.yml"
 
 modudrive:
+  messaging:
+    outbox:
+      enabled: true
+    idempotency:
+      enabled: true
   file:
     default-quota-bytes: ${MODUDRIVE_FILE_DEFAULT_QUOTA_BYTES}
 

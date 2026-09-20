@@ -1,5 +1,6 @@
 package com.moduDrive.common.infrastructure.sqs;
 
+import com.moduDrive.common.infrastructure.messaging.PermanentFailures;
 import io.awspring.cloud.sqs.listener.SqsHeaders;
 import io.awspring.cloud.sqs.listener.SqsHeaders.MessageSystemAttributes;
 import io.awspring.cloud.sqs.listener.errorhandler.AsyncErrorHandler;
@@ -21,7 +22,7 @@ import java.util.regex.Pattern;
  * Listener error handling for every SQS consumer. The message goes to the queue's DLQ with the
  * original body plus a {@code DeadLetterReason} attribute, and is deleted from the source queue, when
  * <ul>
- *   <li>the failure is permanent ({@link SqsFailures}): no retries, so it doesn't hold up its FIFO group;</li>
+ *   <li>the failure is permanent ({@link PermanentFailures}): no retries, so it doesn't hold up its FIFO group;</li>
  *   <li>it's the last receive the queue's redrive policy allows: retries are used up, so move it now
  *       with the reason instead of letting SQS redrive it on the next receive without one.</li>
  * </ul>
@@ -68,7 +69,7 @@ class DeadLetteringErrorHandler implements AsyncErrorHandler<Object> {
     @Override
     public CompletableFuture<Void> handle(Message<Object> message, Throwable failure) {
         String queueUrl = message.getHeaders().get(SqsHeaders.SQS_QUEUE_URL_HEADER, String.class);
-        boolean permanent = SqsFailures.isPermanentConsumerFailure(failure);
+        boolean permanent = PermanentFailures.isPermanent(failure);
         return redrivePolicy(queueUrl).thenCompose(policy -> {
             long receiveCount = receiveCount(message);
             boolean lastAttempt = policy.maxReceiveCount() != null && receiveCount >= policy.maxReceiveCount();
@@ -141,8 +142,8 @@ class DeadLetteringErrorHandler implements AsyncErrorHandler<Object> {
     /** The innermost permanent cause for a permanent failure, else the root cause: what actually went wrong,
      * not the listener-invocation wrapper around it. */
     static String reason(Throwable failure) {
-        Throwable shown = SqsFailures.findCause(failure, c -> SqsFailures.isPermanentConsumerFailure(c)
-                && (c.getCause() == null || !SqsFailures.isPermanentConsumerFailure(c.getCause())));
+        Throwable shown = PermanentFailures.findCause(failure, c -> PermanentFailures.isPermanent(c)
+                && (c.getCause() == null || !PermanentFailures.isPermanent(c.getCause())));
         if (shown == null) {
             shown = failure;
             while (shown.getCause() != null && shown.getCause() != shown) {

@@ -2,7 +2,7 @@ package com.moduDrive.file.adapter.in.messaging;
 
 import com.moduDrive.common.event.member.MemberQueues;
 import com.moduDrive.common.event.member.MemberSignedUp;
-import com.moduDrive.common.infrastructure.sqs.ProcessedEvents;
+import com.moduDrive.common.infrastructure.messaging.idempotency.ProcessedEvents;
 import com.moduDrive.file.application.port.in.command.ClaimPendingFileSharesCommand;
 import com.moduDrive.file.application.port.in.usecase.ClaimPendingFileSharesUseCase;
 import org.junit.jupiter.api.DisplayName;

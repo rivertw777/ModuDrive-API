@@ -3,7 +3,7 @@ package com.moduDrive.member.adapter.out.messaging;
 import com.moduDrive.common.core.annotation.EventPublisher;
 import com.moduDrive.common.event.mail.MailQueues;
 import com.moduDrive.common.event.mail.VerificationMailRequested;
-import com.moduDrive.common.infrastructure.outbox.OutboxEventRecorder;
+import com.moduDrive.common.infrastructure.messaging.outbox.OutboxEventRecorder;
 import com.moduDrive.member.application.port.out.PublishMailEventPort;
 import lombok.RequiredArgsConstructor;
 
