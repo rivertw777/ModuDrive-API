@@ -322,15 +322,15 @@ class OutboxRelayTest {
     }
 
     @Nested
-    @DisplayName("적체를 재는 게이지는")
-    class TheLagGauge {
+    @DisplayName("게이지는")
+    class TheGauges {
 
-        private final OutboxLag lag = new OutboxLag(entityManager);
+        private final OutboxMetrics metrics = new OutboxMetrics(entityManager);
 
         @Test
         @DisplayName("보낼 행이 없으면 0이다")
         void readsZeroWhenNothingIsWaiting() {
-            assertThat(lag.oldestPendingAgeSeconds()).isZero();
+            assertThat(metrics.oldestPendingAgeSeconds()).isZero();
         }
 
         @Test
@@ -340,12 +340,12 @@ class OutboxRelayTest {
             recorder.record("queue-a.fifo", "k2", new OutboxTestEvent(UUID.randomUUID(), "new"));
             backdateOldestPendingBy(Duration.ofMinutes(5));
 
-            assertThat(lag.oldestPendingAgeSeconds()).isGreaterThanOrEqualTo(300);
+            assertThat(metrics.oldestPendingAgeSeconds()).isGreaterThanOrEqualTo(300);
 
             relay.relay();
 
             assertThat(countByStatus(OutboxEventStatus.PENDING)).isZero();
-            assertThat(lag.oldestPendingAgeSeconds()).isZero();
+            assertThat(metrics.oldestPendingAgeSeconds()).isZero();
         }
 
         @Test
@@ -360,7 +360,20 @@ class OutboxRelayTest {
 
             assertThat(countByStatus(OutboxEventStatus.FAILED)).isZero();
             assertThat(countByStatus(OutboxEventStatus.PENDING)).isEqualTo(1);
-            assertThat(lag.oldestPendingAgeSeconds()).isGreaterThanOrEqualTo(600);
+            assertThat(metrics.oldestPendingAgeSeconds()).isGreaterThanOrEqualTo(600);
+        }
+
+        @Test
+        @DisplayName("사람이 처리해야 하는 FAILED 행의 수를 센다 — 알람이 없으면 아무도 모를 상태다")
+        void countsRowsParkedForAHuman() {
+            assertThat(metrics.failedRows()).isZero();
+            recorder.record("queue.fifo", "k1", new OutboxTestEvent(UUID.randomUUID(), "rejected"));
+            willThrow(new PermanentPublishException(new IllegalStateException("message rejected")))
+                    .given(messagePublisher).publish(anyString(), anyString(), anyString(), any());
+
+            relay.relay();
+
+            assertThat(metrics.failedRows()).isEqualTo(1);
         }
 
         /** The relay writes {@code created_at} itself, so waiting is simulated by moving it back. */

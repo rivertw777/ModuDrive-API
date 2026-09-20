@@ -87,18 +87,20 @@ sequenceDiagram
 
 ## 2. Publisher — Transactional Outbox
 
-### 2-1. outbox 상태
+이벤트를 SQS로 직접 보내면 DB는 커밋됐는데 전송이 실패하거나, 전송은 나갔는데 커밋이 롤백되는 경우를 막을 수 없다.
 
-`outbox_event`의 행은 항상 이 셋 중 하나다. 무엇이 상태를 바꾸는지는 아래 절들이 설명한다 — 기록([2-2](#2-2-기록))이 `PENDING`을 만들고, 전송([2-3](#2-3-전송))과 그 실패([2-4](#2-4-전송-실패))가 나머지를 결정한다.
+그래서 보낼 내용을 서비스 자기 DB의 `outbox_event` 테이블에 한 행으로 적어둔다. 비즈니스 데이터와 같은
+트랜잭션이라 둘이 같이 커밋되고 같이 롤백된다. 실제 전송은 별도 스레드(relay)가 그 행을 읽어서 한다.
+
+### 2-1. Outbox 상태
+
+행 하나가 이벤트 하나를 의미한다. 기록([2-2](#2-2-기록))·전송([2-3](#2-3-전송))·전송 실패([2-4](#2-4-전송-실패))가 이 상태를 바꾼다.
 
 | 상태 | 뜻 | 언제 사라지나 |
 |---|---|---|
 | `PENDING` | 기록됨, 아직 안 보냄 (전송될 때까지 계속 재시도) | 전송되면 SENT |
 | `SENT` | SQS가 받음 (`sent_at`) | **7일 보관** 후 relay가 1시간마다 정리 |
 | `FAILED` | 그 메시지 하나가 잘못됨 (`failed_at`, `failure_reason`) | 정리하지 않음, 사람이 처리 |
-
-`FAILED`가 되는 경우는 [2-4](#2-4-전송-실패)의 **재처리 불가** 3가지다.
-셋 다 그 행 하나만의 문제이고 **인프라 장애로는 생기지 않으므로**, 한 번에 한두 건이다.
 
 ```sql
 -- FAILED 행 원인 확인
@@ -165,8 +167,6 @@ N번에 `FAILED`로 보내면 멀쩡한 이벤트가 무더기로 빠지고 복�
 
 ### 2-5. 적체 알람
 
-> 아직 구현되지 않았다. 이 절은 확정된 설계이고, 남은 일은 [9장](#9-todo)에 있다.
-
 [2-4](#2-4-전송-실패)에서 전송 실패에 횟수 제한을 두지 않기로 했으므로, **장애가 나도 `FAILED` 행이 생기지 않는다.**
 로그에 경고가 쌓일 뿐 DB는 평온해 보인다. 그래서 감지는 전적으로 이 알람에 달려 있다 — 없으면 SQS가 죽어도
 아무도 모른 채 테이블만 쌓이고, 메일과 알림이 조용히 멈춘다.
@@ -194,28 +194,35 @@ max by (instance) (modudrive_outbox_lag_seconds) > 120   for 5m
   대응이 갈리기 시작하면 그때 쪼갠다.
 
 **어디에 거나**: Grafana 알림. 이미 떠 있고 알림 기능이 내장이라 컨테이너를 늘리지 않는다.
-Alertmanager를 붙이면 컨테이너 하나 + 라우팅 설정 + 수신처 설정이 새로 생기는데, 규칙 하나 때문에 치를 값이 아니다.
-규칙은 Grafana provisioning으로 파일에 둔다(`.docker/observability/grafana/alerting/`) — UI에서 손으로 만들면
-볼륨을 지우는 순간 사라지고, `make reset`이 일상이다. 지금 compose는 `grafana/`를 `provisioning/datasources`에
-바로 마운트하고 있어서, 상위를 `provisioning`으로 올리고 `datasources/`·`alerting/`을 그 아래로 옮겨야 한다.
+Alertmanager를 붙이면 컨테이너 하나 + 라우팅 설정 + 수신처 설정이 새로 생기는데, 규칙 두 개 때문에 치를 값이 아니다.
+규칙·수신처·알림 정책은 전부 `.docker/observability/grafana/alerting/outbox.yaml` 한 파일이다 —
+UI에서 손으로 만들면 볼륨을 지우는 순간 사라지고, `make reset`이 일상이다.
 
-**받는 곳**: 미정. `/oh-my-claudecode:configure-notifications`로 붙일 수 있는 Telegram/Discord/Slack 중 하나면 된다.
+**받는 곳**: 디스코드 웹후크 하나(채널 설정 → 연동 → 웹후크). Grafana에 내장된 연동이라 URL만 주면 끝이고,
+그 URL은 `.docker/.env`의 `DISCORD_WEBHOOK_URL`에서 온다 — 프로비저닝 파일이 `$DISCORD_WEBHOOK_URL`을
+치환하므로 레포에는 들어가지 않는다(`.env`에 없으면 compose가 더미 URL을 넣는다 — Grafana는 빈 URL이면
+기동 자체를 거부한다). 해제 알림은 Grafana가 알아서 같은 곳으로 보낸다.
+채널을 나누거나 심각도별로 수신처를 가르지 않았다 — 대응이 하나뿐이니 받는 곳도 하나면 된다.
 
 **AWS로 가면**: 이 지표는 앱이 내보내는 커스텀 메트릭이라 CloudWatch가 저절로 알지 못한다.
 OTel Collector에 CloudWatch EMF exporter를 붙이거나 ADOT를 쓰는 선택이 남아 있다 —
 [.docs/aws-migration.md](../aws-migration.md)의 모니터링 항목과 같이 정한다.
 
-#### 아직 지표가 없는 것: `FAILED` 행
+#### 같이 거는 것: `FAILED` 행 알람
 
-`FAILED`는 사람이 손대기 전까지 사라지지 않는데([2-1](#2-1-outbox-상태)) 알려주는 곳이 없다.
-lag 게이지는 `PENDING`만 보므로 `FAILED`가 쌓여도 조용하다. 알람을 걸려면 **게이지를 하나 더 내보내야 한다** —
-`modudrive.outbox.failed`(현재 `FAILED` 행 수), 규칙은 `> 0`. 적체 알람과 같은 PR에서 같이 나가는 게 맞다.
+`FAILED`는 사람이 손대기 전까지 사라지지 않는데([2-1](#2-1-outbox-상태)), lag 게이지는 `PENDING`만 보므로
+`FAILED`가 쌓여도 조용하다. 그래서 게이지를 하나 더 내보낸다 — `modudrive.outbox.failed`(현재 `FAILED` 행 수).
+
+```
+max by (instance) (modudrive_outbox_failed) > 0
+```
+
+지속 조건이 없다(`for: 0m`). 적체와 달리 저절로 없어지지 않으니 기다릴 이유가 없고, 인프라 장애로는 생기지
+않으므로([2-4](#2-4-전송-실패)) 한 번에 한두 건이라 시끄러울 일도 없다.
 
 ---
 
 ## 3. Consumer
-
-모든 리스너 클래스는 `@EventListener`(클래스용), 메서드는 `@SqsListener(큐)`. 페이로드 타입은 메서드 파라미터에서 추론한다(Jackson 3).
 
 ### 3-1. 멱등성 체크
 
@@ -234,9 +241,8 @@ SQS는 at-least-once라 같은 메시지가 두 번 올 수 있다(5분이 지�
 - 처리 기록은 7일(= outbox SENT 보관 기간) 뒤 정리한다. 그보다 오래된 재전송은 없기 때문.
   DB 쪽은 각 서비스에서 1시간마다 지우고, Redis 쪽은 키 TTL로 알아서 사라진다.
 - 재처리 불가로 DLQ에 간 메시지는 기록이 남지 않으므로, 원인을 고친 뒤 redrive하면 **다시 처리된다**.
-- 구현: `common:infrastructure:sqs`의 `ProcessedEvents`(포트) + JPA/Redis 구현. 리스너가 `MessageDeduplicationId`
+- 구현: `common:infrastructure:messaging`의 `ProcessedEvents`(포트) + JPA/Redis 구현. 리스너가 `MessageDeduplicationId`
   헤더를 받아 `isProcessed` → 비즈니스 처리 → `markProcessed` 순으로 부른다.
-- notification의 `notification.event_id` 고유 제약은 그대로 둔다 — DB 레벨의 마지막 방어선.
 
 ### 3-2. 처리 성공
 
@@ -376,7 +382,7 @@ flowchart TD
 - `ElasticMqQueueConfigTest` (sqs 모듈, Testcontainers): 실제 `elasticmq.conf`로 dedup 1회 전달, 재처리 가능 실패 → 백오프 4회 후 재시도 소진 사유와 함께 DLQ, 재처리 불가 실패 → 1회 만에 사유와 함께 DLQ, 깨진 JSON → redrive로 DLQ.
 - `SqsFailuresTest`: 전송 실패 분류(400·직렬화 실패는 영구, 장애·SDK가 던지는 IAE/NPE는 재시도), redrive 설정 파싱, 사유 추출, 그룹 id 해시, DLQ 이름 규칙. `PermanentFailuresTest`(messaging): Consumer 실패 분류 + Publisher는 변환 계열만 영구로 본다는 것.
 - `JpaProcessedEventsTest` (messaging 모듈, Postgres Testcontainers): 같은 id 재인식, 호출자 롤백 시 기록 없음, 보관 기간 지난 것만 정리.
-- `OutboxRelayTest` (messaging 모듈, Postgres Testcontainers): 순서, group/dedup 헤더, 일시 실패 시 중단, 브로커가 거절한 행만 격리, 복원 불가 행, SENT 정리, SKIP LOCKED, 전송 중 현재 Observation, 적체 게이지(대기 없으면 0 / 가장 오래된 행의 나이 / 막혀 있으면 FAILED 없이 올라감).
+- `OutboxRelayTest` (messaging 모듈, Postgres Testcontainers): 순서, group/dedup 헤더, 일시 실패 시 중단, 브로커가 거절한 행만 격리, 복원 불가 행, SENT 정리, SKIP LOCKED, 전송 중 현재 Observation, 게이지(대기 없으면 0 / 가장 오래된 행의 나이 / 막혀 있으면 FAILED 없이 올라감 / FAILED 행 수).
 
 ## 9. TODO
 
@@ -390,7 +396,6 @@ flowchart TD
 
 ### 운영
 
-- [ ] **outbox 적체 알람** — 설계는 [2-5](#2-5-적체-알람).
 - [ ] **DLQ 알람**: Consumer에서 실패한 메시지는 `<큐>-dlq.fifo`로 옮겨지기만 하고 알려주는 곳이 없다.
   DLQ에도 보관 기간(기본 4일, 최대 14일)이 있어 방치하면 결국 사라진다. DLQ마다 "`ApproximateNumberOfMessagesVisible > 0`이면
   알람"을 걸어서, 사유(`DeadLetterReason`)를 보고 원인을 고친 뒤 원래 큐로 redrive할 수 있게 한다.
