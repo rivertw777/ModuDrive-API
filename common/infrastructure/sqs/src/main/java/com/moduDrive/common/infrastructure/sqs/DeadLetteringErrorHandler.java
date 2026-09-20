@@ -69,7 +69,7 @@ class DeadLetteringErrorHandler implements AsyncErrorHandler<Object> {
     @Override
     public CompletableFuture<Void> handle(Message<Object> message, Throwable failure) {
         String queueUrl = message.getHeaders().get(SqsHeaders.SQS_QUEUE_URL_HEADER, String.class);
-        boolean permanent = PermanentFailures.isPermanent(failure);
+        boolean permanent = PermanentFailures.isPermanentForConsumer(failure);
         return redrivePolicy(queueUrl).thenCompose(policy -> {
             long receiveCount = receiveCount(message);
             boolean lastAttempt = policy.maxReceiveCount() != null && receiveCount >= policy.maxReceiveCount();
@@ -142,8 +142,8 @@ class DeadLetteringErrorHandler implements AsyncErrorHandler<Object> {
     /** The innermost permanent cause for a permanent failure, else the root cause: what actually went wrong,
      * not the listener-invocation wrapper around it. */
     static String reason(Throwable failure) {
-        Throwable shown = PermanentFailures.findCause(failure, c -> PermanentFailures.isPermanent(c)
-                && (c.getCause() == null || !PermanentFailures.isPermanent(c.getCause())));
+        Throwable shown = PermanentFailures.findCause(failure, c -> PermanentFailures.isPermanentForConsumer(c)
+                && (c.getCause() == null || !PermanentFailures.isPermanentForConsumer(c.getCause())));
         if (shown == null) {
             shown = failure;
             while (shown.getCause() != null && shown.getCause() != shown) {

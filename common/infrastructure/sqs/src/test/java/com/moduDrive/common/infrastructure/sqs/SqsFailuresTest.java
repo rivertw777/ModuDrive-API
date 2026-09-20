@@ -3,6 +3,7 @@ package com.moduDrive.common.infrastructure.sqs;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.messaging.converter.MessageConversionException;
 import software.amazon.awssdk.awscore.exception.AwsErrorDetails;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.services.sqs.model.SqsException;
@@ -41,12 +42,26 @@ class SqsFailuresTest {
         }
 
         @Test
+        @DisplayName("SQS까지 가지도 못한 직렬화 실패도 영구로 본다 — 릴레이가 배치를 멈추므로 뒤 행을 영원히 막는다")
+        void treatsAnUnserializablePayloadAsPermanent() {
+            assertThat(SqsFailures.isPermanentSendFailure(
+                    new MessageConversionException("could not write JSON: no serializer"))).isTrue();
+        }
+
+        @Test
         @DisplayName("스로틀링·5xx·권한 거부·연결 실패는 재시도 쪽으로 둔다")
         void treatsOutagesAndThrottlingAsRetryable() {
             assertThat(SqsFailures.isPermanentSendFailure(sqsError(400, "ThrottlingException"))).isFalse();
             assertThat(SqsFailures.isPermanentSendFailure(sqsError(500, "InternalError"))).isFalse();
             assertThat(SqsFailures.isPermanentSendFailure(sqsError(403, "AccessDenied"))).isFalse();
             assertThat(SqsFailures.isPermanentSendFailure(SdkClientException.create("connection refused"))).isFalse();
+        }
+
+        @Test
+        @DisplayName("SDK가 일시 장애에도 던지는 타입은 영구로 보지 않는다 — 컨슈머 기준을 그대로 쓰면 멀쩡한 행이 격리된다")
+        void doesNotReuseTheListenersPermanentTypes() {
+            assertThat(SqsFailures.isPermanentSendFailure(new IllegalArgumentException("null group id"))).isFalse();
+            assertThat(SqsFailures.isPermanentSendFailure(new NullPointerException())).isFalse();
         }
     }
 

@@ -35,6 +35,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -318,6 +319,59 @@ class OutboxRelayTest {
         then(messagePublisher).should(atLeastOnce())
                 .publish(anyString(), anyString(), captor.capture(), any());
         return captor.getAllValues();
+    }
+
+    @Nested
+    @DisplayName("적체를 재는 게이지는")
+    class TheLagGauge {
+
+        private final OutboxLag lag = new OutboxLag(entityManager);
+
+        @Test
+        @DisplayName("보낼 행이 없으면 0이다")
+        void readsZeroWhenNothingIsWaiting() {
+            assertThat(lag.oldestPendingAgeSeconds()).isZero();
+        }
+
+        @Test
+        @DisplayName("가장 오래 기다린 행의 나이를 재고, 보내고 나면 0으로 돌아온다")
+        void measuresTheOldestWaitingRowThenFallsBackToZero() {
+            recorder.record("queue-a.fifo", "k1", new OutboxTestEvent(UUID.randomUUID(), "old"));
+            recorder.record("queue-a.fifo", "k2", new OutboxTestEvent(UUID.randomUUID(), "new"));
+            backdateOldestPendingBy(Duration.ofMinutes(5));
+
+            assertThat(lag.oldestPendingAgeSeconds()).isGreaterThanOrEqualTo(300);
+
+            relay.relay();
+
+            assertThat(countByStatus(OutboxEventStatus.PENDING)).isZero();
+            assertThat(lag.oldestPendingAgeSeconds()).isZero();
+        }
+
+        @Test
+        @DisplayName("전송이 막혀 있으면 행이 PENDING으로 남아 나이가 올라간다 — 무한 재시도라 FAILED가 안 생기므로 이게 유일한 신호다")
+        void keepsClimbingWhileSendingIsStuck() {
+            willThrow(new IllegalStateException("sqs unreachable"))
+                    .given(messagePublisher).publish(anyString(), anyString(), anyString(), any());
+            recorder.record("queue-a.fifo", "k1", new OutboxTestEvent(UUID.randomUUID(), "stuck"));
+            backdateOldestPendingBy(Duration.ofMinutes(10));
+
+            relay.relay();
+
+            assertThat(countByStatus(OutboxEventStatus.FAILED)).isZero();
+            assertThat(countByStatus(OutboxEventStatus.PENDING)).isEqualTo(1);
+            assertThat(lag.oldestPendingAgeSeconds()).isGreaterThanOrEqualTo(600);
+        }
+
+        /** The relay writes {@code created_at} itself, so waiting is simulated by moving it back. */
+        private void backdateOldestPendingBy(Duration age) {
+            transactionTemplate.executeWithoutResult(tx -> entityManager
+                    .createQuery("update OutboxEventJpaEntity e set e.createdAt = :backdated "
+                            + "where e.id = (select min(o.id) from OutboxEventJpaEntity o where o.status = :pending)")
+                    .setParameter("backdated", Instant.now().minus(age))
+                    .setParameter("pending", OutboxEventStatus.PENDING)
+                    .executeUpdate());
+        }
     }
 
     private long countByStatus(OutboxEventStatus status) {

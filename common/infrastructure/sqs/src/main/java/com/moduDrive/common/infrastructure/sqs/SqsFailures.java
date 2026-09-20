@@ -10,12 +10,17 @@ final class SqsFailures {
     }
 
     /**
-     * A send that SQS rejected because of this message (queue missing, body too large, bad group id):
-     * a 400 that isn't throttling. Outages, 5xx, throttling and access denied are retryable, since they
-     * fail every message alike and clear up on their own or with a config fix.
+     * A send that can only ever fail: SQS rejected this message (queue missing, body too large, bad
+     * group id — a 400 that isn't throttling), or it never got that far because the event wouldn't
+     * serialize. Outages, 5xx, throttling and access denied are retryable, since they fail every
+     * message alike and clear up on their own or with a config fix.
+     * <p>
+     * The serialization half matters because the relay stops its batch on a retryable failure: without
+     * it one unserializable row would block every row behind it for good.
      */
     static boolean isPermanentSendFailure(Throwable failure) {
-        return PermanentFailures.findCause(failure, cause -> cause instanceof AwsServiceException aws
+        return PermanentFailures.isPermanentForPublisher(failure)
+                || PermanentFailures.findCause(failure, cause -> cause instanceof AwsServiceException aws
                 && aws.statusCode() == 400 && !aws.isThrottlingException()) != null;
     }
 }
