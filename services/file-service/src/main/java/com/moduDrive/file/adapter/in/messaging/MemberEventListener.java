@@ -1,7 +1,7 @@
 package com.moduDrive.file.adapter.in.messaging;
 
 import com.moduDrive.common.core.annotation.EventListener;
-import com.moduDrive.common.event.member.MemberDestinations;
+import com.moduDrive.common.event.member.MemberQueues;
 import com.moduDrive.common.event.member.MemberSignedUp;
 import com.moduDrive.common.infrastructure.messaging.idempotency.ProcessedEvents;
 import com.moduDrive.file.application.port.in.command.ClaimPendingFileSharesCommand;
@@ -23,14 +23,14 @@ class MemberEventListener {
     /** @Transactional so the "already handled" record commits with the claimed shares: if the claim
      * fails, both are rolled back and the retry starts over. */
     @Transactional
-    @SqsListener(MemberDestinations.SIGNED_UP + SqsQueues.FIFO_SUFFIX)
+    @SqsListener(MemberQueues.SIGNED_UP + SqsQueues.FIFO_SUFFIX)
     void onMemberSignedUp(MemberSignedUp event,
                           @Header(MessageSystemAttributes.SQS_MESSAGE_DEDUPLICATION_ID_HEADER) String deduplicationId) {
-        if (processedEvents.isProcessed(MemberDestinations.SIGNED_UP, deduplicationId)) {
+        if (processedEvents.isProcessed(MemberQueues.SIGNED_UP, deduplicationId)) {
             return;
         }
         claimPendingFileSharesUseCase.claimPendingFileShares(
                 new ClaimPendingFileSharesCommand(event.memberId(), event.email()));
-        processedEvents.markProcessed(MemberDestinations.SIGNED_UP, deduplicationId);
+        processedEvents.markProcessed(MemberQueues.SIGNED_UP, deduplicationId);
     }
 }

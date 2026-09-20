@@ -1,6 +1,6 @@
 package com.moduDrive.common.infrastructure.sqs;
 
-import com.moduDrive.common.event.member.MemberDestinations;
+import com.moduDrive.common.event.member.MemberQueues;
 import com.moduDrive.common.event.member.MemberSignedUp;
 import io.awspring.cloud.sqs.annotation.SqsListener;
 import io.awspring.cloud.sqs.listener.SqsHeaders.MessageSystemAttributes;
@@ -46,7 +46,7 @@ import static org.awaitility.Awaitility.await;
         properties = "spring.config.import=classpath:application-sqs.yml")
 class ElasticMqQueueConfigTest {
 
-    private static final String QUEUE = SqsQueues.queueName(MemberDestinations.SIGNED_UP);
+    private static final String QUEUE = SqsQueues.physicalName(MemberQueues.SIGNED_UP);
     private static final String DLQ = "member-signed-up-dlq.fifo";
 
     // Not stopped by hand: Spring's cached context still polls it until the JVM exits, and
@@ -205,7 +205,7 @@ class ElasticMqQueueConfigTest {
             return attempts.getOrDefault(email, new AtomicInteger()).get();
         }
 
-        @SqsListener(MemberDestinations.SIGNED_UP + SqsQueues.FIFO_SUFFIX)
+        @SqsListener(MemberQueues.SIGNED_UP + SqsQueues.FIFO_SUFFIX)
         void onSignedUp(MemberSignedUp event,
                         @Header(MessageSystemAttributes.SQS_MESSAGE_DEDUPLICATION_ID_HEADER) String deduplicationId) {
             attempts.computeIfAbsent(event.email(), e -> new AtomicInteger()).incrementAndGet();

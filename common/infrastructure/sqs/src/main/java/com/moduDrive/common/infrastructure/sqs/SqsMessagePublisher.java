@@ -10,8 +10,8 @@ import org.springframework.messaging.support.MessageBuilder;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
-/** Maps the broker-agnostic publish onto SQS FIFO: the destination gets the queue's {@code .fifo}
- * suffix, the ordering key becomes the {@code MessageGroupId} and the deduplication id the
+/** Maps the broker-agnostic publish onto SQS FIFO: the queue name gets its {@code .fifo} suffix,
+ * the ordering key becomes the {@code MessageGroupId} and the deduplication id the
  * {@code MessageDeduplicationId}. */
 class SqsMessagePublisher implements MessagePublisher {
 
@@ -25,13 +25,13 @@ class SqsMessagePublisher implements MessagePublisher {
     }
 
     @Override
-    public void publish(String destination, String orderingKey, String deduplicationId, Object payload) {
+    public void publish(String queue, String orderingKey, String deduplicationId, Object payload) {
         Message<Object> message = MessageBuilder.withPayload(payload)
                 .setHeader(MessageSystemAttributes.SQS_MESSAGE_GROUP_ID_HEADER, groupId(orderingKey))
                 .setHeader(MessageSystemAttributes.SQS_MESSAGE_DEDUPLICATION_ID_HEADER, deduplicationId)
                 .build();
         try {
-            sqsOperations.send(SqsQueues.queueName(destination), message);
+            sqsOperations.send(SqsQueues.physicalName(queue), message);
         } catch (RuntimeException e) {
             if (SqsFailures.isPermanentSendFailure(e)) {
                 throw new PermanentPublishException(e);

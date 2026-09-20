@@ -124,12 +124,12 @@ class OutboxRelay {
                 } catch (PermanentPublishException e) {
                     // The broker rejected this message itself: resending never helps, and stopping here
                     // would block every row behind it.
-                    log.error("Outbox row rejected by the broker, parking it: id={}, topic={}",
-                            row.getId(), row.getTopic(), e);
+                    log.error("Outbox row rejected by the broker, parking it: id={}, queue={}",
+                            row.getId(), row.getQueue(), e);
                     row.markFailed(rootCause(e));
                     continue;
                 } catch (Exception e) {
-                    log.warn("Outbox send failed, will retry: id={}, topic={}", row.getId(), row.getTopic(), e);
+                    log.warn("Outbox send failed, will retry: id={}, queue={}", row.getId(), row.getQueue(), e);
                     return;
                 }
                 row.markSent();
@@ -161,7 +161,7 @@ class OutboxRelay {
         Observation.createNotStarted("outbox.relay", () -> context, observationRegistry)
                 .contextualName("outbox relay")
                 .observe(() -> messagePublisher.publish(
-                        row.getTopic(), row.getMessageKey(), "outbox-" + row.getId(), event));
+                        row.getQueue(), row.getMessageKey(), "outbox-" + row.getId(), event));
     }
 
     /** The broker error itself, not the wrappers around it. */

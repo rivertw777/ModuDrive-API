@@ -112,7 +112,7 @@ class OutboxRelayTest {
         @DisplayName("호출자의 트랜잭션이 롤백되면 이벤트도 남지 않는다")
         void rollsBackWithTheCallersTransaction() {
             transactionTemplate.executeWithoutResult(status -> {
-                recorder.record("topic", "key", new OutboxTestEvent(UUID.randomUUID(), "a"));
+                recorder.record("queue", "key", new OutboxTestEvent(UUID.randomUUID(), "a"));
                 status.setRollbackOnly();
             });
 
@@ -197,9 +197,9 @@ class OutboxRelayTest {
         @DisplayName("복원할 수 없는 행은 실패로 표시해 이후 배치에서 빼고 나머지를 보낸다")
         void skipsARowThatCannotBeRebuilt() {
             transactionTemplate.executeWithoutResult(status -> entityManager.persist(
-                    new OutboxEventJpaEntity("topic", "k0", "com.example.Gone", "{}", null)));
+                    new OutboxEventJpaEntity("queue", "k0", "com.example.Gone", "{}", null)));
             OutboxTestEvent event = new OutboxTestEvent(UUID.randomUUID(), "ok");
-            recorder.record("topic", "k1", event);
+            recorder.record("queue", "k1", event);
 
             relay.relay();
             relay.relay();
@@ -247,7 +247,7 @@ class OutboxRelayTest {
         @Test
         @DisplayName("다른 인스턴스가 잠근 행은 기다리지 않고 건너뛴다")
         void skipsRowsLockedByAnotherInstance() throws Exception {
-            recorder.record("topic", "k1", new OutboxTestEvent(UUID.randomUUID(), "locked"));
+            recorder.record("queue", "k1", new OutboxTestEvent(UUID.randomUUID(), "locked"));
             CountDownLatch locked = new CountDownLatch(1);
             CountDownLatch release = new CountDownLatch(1);
             Thread otherInstance = Thread.ofVirtual().start(() -> transactionTemplate.executeWithoutResult(status -> {

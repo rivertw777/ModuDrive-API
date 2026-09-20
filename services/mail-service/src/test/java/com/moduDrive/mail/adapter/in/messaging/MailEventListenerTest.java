@@ -1,6 +1,6 @@
 package com.moduDrive.mail.adapter.in.messaging;
 
-import com.moduDrive.common.event.mail.MailDestinations;
+import com.moduDrive.common.event.mail.MailQueues;
 import com.moduDrive.common.event.mail.VerificationMailRequested;
 import com.moduDrive.common.infrastructure.messaging.idempotency.ProcessedEvents;
 import com.moduDrive.mail.application.port.in.command.SendVerificationMailCommand;
@@ -40,19 +40,19 @@ class MailEventListenerTest {
         @Test
         @DisplayName("메일을 보낸 뒤에 처리 기록을 남긴다")
         void sendsTheMailThenRecordsIt() {
-            given(processedEvents.isProcessed(MailDestinations.VERIFICATION_REQUESTED, "outbox-1")).willReturn(false);
+            given(processedEvents.isProcessed(MailQueues.VERIFICATION_REQUESTED, "outbox-1")).willReturn(false);
 
             listener.onVerificationRequested(event, "outbox-1");
 
             InOrder inOrder = inOrder(sendVerificationMailUseCase, processedEvents);
             inOrder.verify(sendVerificationMailUseCase).sendVerificationMail(any(SendVerificationMailCommand.class));
-            inOrder.verify(processedEvents).markProcessed(MailDestinations.VERIFICATION_REQUESTED, "outbox-1");
+            inOrder.verify(processedEvents).markProcessed(MailQueues.VERIFICATION_REQUESTED, "outbox-1");
         }
 
         @Test
         @DisplayName("발송이 실패하면 기록하지 않아 재시도 때 다시 보낸다")
         void doesNotRecordWhenSendingFails() {
-            given(processedEvents.isProcessed(MailDestinations.VERIFICATION_REQUESTED, "outbox-1")).willReturn(false);
+            given(processedEvents.isProcessed(MailQueues.VERIFICATION_REQUESTED, "outbox-1")).willReturn(false);
             willThrow(new IllegalStateException("smtp down")).given(sendVerificationMailUseCase)
                     .sendVerificationMail(any(SendVerificationMailCommand.class));
 
@@ -72,7 +72,7 @@ class MailEventListenerTest {
 
         @Test
         void skipsItWithoutSendingAgain() {
-            given(processedEvents.isProcessed(MailDestinations.VERIFICATION_REQUESTED, "outbox-1")).willReturn(true);
+            given(processedEvents.isProcessed(MailQueues.VERIFICATION_REQUESTED, "outbox-1")).willReturn(true);
 
             listener.onVerificationRequested(event, "outbox-1");
 
