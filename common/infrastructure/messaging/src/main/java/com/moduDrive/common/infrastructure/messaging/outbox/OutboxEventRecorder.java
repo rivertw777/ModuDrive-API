@@ -34,13 +34,13 @@ public class OutboxEventRecorder {
         this.propagator = propagator;
     }
 
-    public void record(String topic, String key, Object event) {
+    public void record(String queue, String key, Object event) {
         Map<String, String> traceHeaders = new HashMap<>();
         Span span = tracer.currentSpan();
         if (span != null) {
             propagator.inject(span.context(), traceHeaders, Map::put);
         }
-        OutboxEventJpaEntity row = new OutboxEventJpaEntity(topic, key, event.getClass().getName(),
+        OutboxEventJpaEntity row = new OutboxEventJpaEntity(queue, key, event.getClass().getName(),
                 jsonMapper.writeValueAsString(event), jsonMapper.writeValueAsString(traceHeaders));
         transactionTemplate.executeWithoutResult(status -> entityManager.persist(row));
     }

@@ -156,7 +156,7 @@ N번에 `FAILED`로 보내면 멀쩡한 이벤트가 무더기로 빠지고 복�
 
 ```sql
 -- FAILED 행 원인 확인
-select id, topic, failed_at, failure_reason from outbox_event where status = 'FAILED';
+select id, queue, failed_at, failure_reason from outbox_event where status = 'FAILED';
 -- 원인을 고친 뒤 다시 보내기
 update outbox_event set status = 'PENDING', failed_at = null, failure_reason = null where id = 123;
 ```

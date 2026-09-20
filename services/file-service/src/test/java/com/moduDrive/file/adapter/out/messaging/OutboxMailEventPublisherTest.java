@@ -1,6 +1,6 @@
 package com.moduDrive.file.adapter.out.messaging;
 
-import com.moduDrive.common.event.mail.MailDestinations;
+import com.moduDrive.common.event.mail.MailQueues;
 import com.moduDrive.common.event.mail.ShareInviteMailRequested;
 import com.moduDrive.common.infrastructure.messaging.outbox.OutboxEventRecorder;
 import org.junit.jupiter.api.DisplayName;
@@ -36,7 +36,7 @@ class OutboxMailEventPublisherTest {
                     "owner@modudrive.com", "확인 부탁드려요", null);
 
             then(outboxEventRecorder).should().record(
-                    MailDestinations.SHARE_INVITE_REQUESTED, "grantee@modudrive.com",
+                    MailQueues.SHARE_INVITE_REQUESTED, "grantee@modudrive.com",
                     new ShareInviteMailRequested(fileId, "grantee@modudrive.com", "report.pdf", false, "DOCUMENT",
                             "VIEWER", "홍길동", "owner@modudrive.com", "확인 부탁드려요", null));
         }
@@ -51,7 +51,7 @@ class OutboxMailEventPublisherTest {
                     "owner@modudrive.com", null, inviteToken);
 
             then(outboxEventRecorder).should().record(
-                    MailDestinations.SHARE_INVITE_REQUESTED, "grantee@modudrive.com",
+                    MailQueues.SHARE_INVITE_REQUESTED, "grantee@modudrive.com",
                     new ShareInviteMailRequested(fileId, "grantee@modudrive.com", "report.pdf", false, "DOCUMENT",
                             "VIEWER", "홍길동", "owner@modudrive.com", null, inviteToken));
         }

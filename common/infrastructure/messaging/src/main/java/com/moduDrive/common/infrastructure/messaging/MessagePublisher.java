@@ -7,7 +7,8 @@ package com.moduDrive.common.infrastructure.messaging;
 public interface MessagePublisher {
 
     /**
-     * @param destination     the queue/topic name
+     * @param queue           logical name of the queue this message is for, without any naming
+     *                        rule the broker adds of its own (the adapter applies that)
      * @param orderingKey     messages sharing a key are delivered in order; different keys may go in
      *                        parallel. Null means order doesn't matter
      * @param deduplicationId same value for the same event however often it's resent, so a broker that
@@ -15,5 +16,5 @@ public interface MessagePublisher {
      * @throws PermanentPublishException when the broker rejects this message itself, so resending it
      *                                   can never work. Anything else counts as transient
      */
-    void publish(String destination, String orderingKey, String deduplicationId, Object payload);
+    void publish(String queue, String orderingKey, String deduplicationId, Object payload);
 }

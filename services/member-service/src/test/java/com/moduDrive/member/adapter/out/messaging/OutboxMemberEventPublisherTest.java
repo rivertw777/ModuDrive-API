@@ -1,6 +1,6 @@
 package com.moduDrive.member.adapter.out.messaging;
 
-import com.moduDrive.common.event.member.MemberDestinations;
+import com.moduDrive.common.event.member.MemberQueues;
 import com.moduDrive.common.event.member.MemberSignedUp;
 import com.moduDrive.common.infrastructure.messaging.outbox.OutboxEventRecorder;
 import org.junit.jupiter.api.DisplayName;
@@ -28,13 +28,13 @@ class OutboxMemberEventPublisherTest {
     class WhenPublishingSignedUp {
 
         @Test
-        void sendsPayloadToSignedUpTopicKeyedByEmail() {
+        void sendsPayloadToSignedUpQueueKeyedByEmail() {
             UUID memberId = UUID.randomUUID();
 
             publisher.publishSignedUp(memberId, "river@modudrive.com");
 
             then(outboxEventRecorder).should().record(
-                    MemberDestinations.SIGNED_UP, "river@modudrive.com",
+                    MemberQueues.SIGNED_UP, "river@modudrive.com",
                     new MemberSignedUp(memberId, "river@modudrive.com"));
         }
     }

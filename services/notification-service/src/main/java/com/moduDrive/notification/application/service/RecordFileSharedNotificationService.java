@@ -26,7 +26,7 @@ class RecordFileSharedNotificationService implements RecordFileSharedNotificatio
      * {@code insertNotification} runs in its own REQUIRES_NEW transaction precisely so that
      * constraint violation can be caught here, in a transaction it never touched, and swallowed
      * as "already recorded" rather than rethrown — which would otherwise send a duplicate
-     * straight to the dead-letter topic.
+     * straight to the dead-letter queue.
      */
     @Transactional
     @Override
@@ -45,7 +45,7 @@ class RecordFileSharedNotificationService implements RecordFileSharedNotificatio
         } catch (DuplicateKeyException e) {
             // Narrowed to the unique-key subtype on purpose: a NOT NULL or length violation on a
             // malformed event is a real failure and must keep propagating to the dead-letter
-            // topic, not get swallowed under the same "already recorded" assumption.
+            // queue, not get swallowed under the same "already recorded" assumption.
             log.debug("Notification already recorded concurrently: eventId={}", command.getEventId().value());
         }
     }

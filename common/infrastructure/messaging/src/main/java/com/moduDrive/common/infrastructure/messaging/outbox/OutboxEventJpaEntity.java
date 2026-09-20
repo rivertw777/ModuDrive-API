@@ -30,9 +30,10 @@ class OutboxEventJpaEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    /** The destination queue name (the column predates the move from Kafka topics to SQS). */
+    /** Logical name of the queue this event goes to, as {@code common:event} declares it —
+     * without the suffix SQS adds of its own. */
     @Column(nullable = false)
-    private String topic;
+    private String queue;
 
     @Column(name = "message_key")
     private String messageKey;
@@ -68,9 +69,9 @@ class OutboxEventJpaEntity {
     @Column(length = FAILURE_REASON_LENGTH)
     private String failureReason;
 
-    OutboxEventJpaEntity(String topic, String messageKey, String payloadType, String payload,
+    OutboxEventJpaEntity(String queue, String messageKey, String payloadType, String payload,
                          String traceHeaders) {
-        this.topic = topic;
+        this.queue = queue;
         this.messageKey = messageKey;
         this.payloadType = payloadType;
         this.payload = payload;

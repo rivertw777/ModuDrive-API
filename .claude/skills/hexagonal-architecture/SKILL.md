@@ -77,7 +77,7 @@ adapter/
   out/persistence/<Entity>Mapper.java                JpaEntity <-> domain
   out/persistence/SpringData<Entity>Repository.java  extends JpaRepository
   in/messaging/<Source>EventListener.java            SQS consumer (@SqsListener methods), @EventListener
-  out/messaging/Outbox<Topic>EventPublisher.java     Outbox publisher, @EventPublisher
+  out/messaging/Outbox<Domain>EventPublisher.java     Outbox publisher, @EventPublisher
   out/<other>/...                                    security, client, etc.
 ```
 
