@@ -11,8 +11,11 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+import org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration;
+import org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.stereotype.Component;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -72,12 +75,24 @@ class ElasticMqQueueConfigTest {
     @BeforeEach
     void reset() {
         listener.received.clear();
+        listener.deduplicationIds.clear();
         listener.attempts.clear();
     }
 
     @Nested
     @DisplayName("FIFO 큐로 이벤트를 보낼 때")
     class WhenSending {
+
+        @Test
+        @DisplayName("리스너는 보낸 쪽이 붙인 중복 제거 id를 헤더로 받는다 (컨슈머 멱등성 체크의 키)")
+        void passesTheDeduplicationIdToTheListener() {
+            MemberSignedUp event = new MemberSignedUp(UUID.randomUUID(), "header@modudrive.com");
+
+            send(event, "outbox-42");
+
+            await().atMost(Duration.ofSeconds(10)).until(() -> !listener.received.isEmpty());
+            assertThat(listener.deduplicationIds).containsExactly("outbox-42");
+        }
 
         @Test
         @DisplayName("같은 중복 제거 id로 두 번 보내도 리스너는 한 번만 받는다")
@@ -175,7 +190,8 @@ class ElasticMqQueueConfigTest {
         return found.get();
     }
 
-    @EnableAutoConfiguration
+    // JPA is on this module's test classpath for JpaProcessedEventsTest; this test only needs SQS.
+    @EnableAutoConfiguration(exclude = {DataSourceAutoConfiguration.class, HibernateJpaAutoConfiguration.class})
     @Import(RecordingListener.class)
     static class TestApp {
     }
@@ -184,6 +200,7 @@ class ElasticMqQueueConfigTest {
     static class RecordingListener {
 
         final List<MemberSignedUp> received = new CopyOnWriteArrayList<>();
+        final List<String> deduplicationIds = new CopyOnWriteArrayList<>();
         final Map<String, AtomicInteger> attempts = new ConcurrentHashMap<>();
 
         int attempts(String email) {
@@ -191,7 +208,8 @@ class ElasticMqQueueConfigTest {
         }
 
         @SqsListener(MemberQueues.SIGNED_UP)
-        void onSignedUp(MemberSignedUp event) {
+        void onSignedUp(MemberSignedUp event,
+                        @Header(MessageSystemAttributes.SQS_MESSAGE_DEDUPLICATION_ID_HEADER) String deduplicationId) {
             attempts.computeIfAbsent(event.email(), e -> new AtomicInteger()).incrementAndGet();
             if (event.email().startsWith("retry")) {
                 throw new IllegalStateException("simulated outage");
@@ -200,6 +218,7 @@ class ElasticMqQueueConfigTest {
                 throw new IllegalArgumentException("simulated bad payload");
             }
             received.add(event);
+            deduplicationIds.add(deduplicationId);
         }
     }
 }

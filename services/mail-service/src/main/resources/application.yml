@@ -4,6 +4,7 @@ spring:
   config:
     import:
       - "classpath:application-observability.yml"
+      - "classpath:application-redis.yml"
       - "classpath:application-sqs.yml"
   mail:
     host: ${MAIL_HOST}
