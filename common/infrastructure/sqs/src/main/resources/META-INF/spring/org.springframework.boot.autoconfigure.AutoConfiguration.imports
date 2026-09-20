@@ -1,1 +1,1 @@
-com.moduDrive.common.infrastructure.sqs.SqsErrorHandlingAutoConfiguration
+com.moduDrive.common.infrastructure.sqs.SqsAutoConfiguration

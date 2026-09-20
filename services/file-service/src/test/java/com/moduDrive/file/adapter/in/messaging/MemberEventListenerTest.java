@@ -1,48 +1,65 @@
 package com.moduDrive.file.adapter.in.messaging;
 
+import com.moduDrive.common.event.member.MemberQueues;
 import com.moduDrive.common.event.member.MemberSignedUp;
+import com.moduDrive.common.infrastructure.sqs.ProcessedEvents;
 import com.moduDrive.file.application.port.in.command.ClaimPendingFileSharesCommand;
 import com.moduDrive.file.application.port.in.usecase.ClaimPendingFileSharesUseCase;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.UUID;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.never;
 
 @ExtendWith(MockitoExtension.class)
 class MemberEventListenerTest {
 
-    @Mock
-    private ClaimPendingFileSharesUseCase claimPendingFileSharesUseCase;
-    @InjectMocks
-    private MemberEventListener memberEventListener;
+    @Mock private ClaimPendingFileSharesUseCase claimPendingFileSharesUseCase;
+    @Mock private ProcessedEvents processedEvents;
+    @InjectMocks private MemberEventListener listener;
+
+    private final UUID memberId = UUID.randomUUID();
+    private final MemberSignedUp event = new MemberSignedUp(memberId, "river@modudrive.com");
 
     @Nested
-    @DisplayName("회원가입 이벤트를 수신했을 때")
-    class WhenMemberSignedUpReceived {
+    @DisplayName("처음 받은 메시지면")
+    class WhenMessageIsNew {
 
         @Test
-        void delegatesToClaimPendingFileSharesUseCase() {
-            UUID memberId = UUID.randomUUID();
-            MemberSignedUp event = new MemberSignedUp(memberId, "river@modudrive.com");
+        void claimsPendingSharesAndRecordsTheMessage() {
+            given(processedEvents.isProcessed(MemberQueues.SIGNED_UP, "outbox-1")).willReturn(false);
 
-            memberEventListener.onMemberSignedUp(event);
+            listener.onMemberSignedUp(event, "outbox-1");
 
-            // ClaimPendingFileSharesCommand has no equals() (like the other in-port commands), so
-            // capture and assert its fields instead of relying on value equality.
-            ArgumentCaptor<ClaimPendingFileSharesCommand> captor =
-                    ArgumentCaptor.forClass(ClaimPendingFileSharesCommand.class);
-            then(claimPendingFileSharesUseCase).should().claimPendingFileShares(captor.capture());
-            assertThat(captor.getValue().getMemberId()).isEqualTo(memberId);
-            assertThat(captor.getValue().getGranteeEmail()).isEqualTo("river@modudrive.com");
+            then(claimPendingFileSharesUseCase).should().claimPendingFileShares(argThat(
+                    (ClaimPendingFileSharesCommand c) -> c.getMemberId().equals(memberId)
+                            && c.getGranteeEmail().equals("river@modudrive.com")));
+            then(processedEvents).should().markProcessed(MemberQueues.SIGNED_UP, "outbox-1");
+        }
+    }
+
+    @Nested
+    @DisplayName("이미 처리한 메시지가 다시 오면")
+    class WhenMessageWasAlreadyHandled {
+
+        @Test
+        void skipsItWithoutClaimingAgain() {
+            given(processedEvents.isProcessed(MemberQueues.SIGNED_UP, "outbox-1")).willReturn(true);
+
+            listener.onMemberSignedUp(event, "outbox-1");
+
+            then(claimPendingFileSharesUseCase).shouldHaveNoInteractions();
+            then(processedEvents).should(never()).markProcessed(anyString(), anyString());
         }
     }
 }
