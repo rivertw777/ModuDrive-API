@@ -5,10 +5,9 @@ import org.springframework.stereotype.Component;
 
 import java.lang.annotation.*;
 
-/** Class-level stereotype for a class whose methods react to events: SQS consumers
- * ({@code adapter/in/messaging}) and in-process Spring event listeners ({@code application/event}).
- * Not Spring's method-level {@link org.springframework.context.event.EventListener}; the methods
- * still carry {@code @SqsListener} or {@code @TransactionalEventListener}. */
+/** Class-level stereotype for an inbound adapter that consumes events from other services
+ * ({@code adapter/in/messaging}). Not Spring's method-level
+ * {@link org.springframework.context.event.EventListener}; the methods still carry {@code @SqsListener}. */
 @Target({ElementType.TYPE})
 @Retention(RetentionPolicy.RUNTIME)
 @Documented

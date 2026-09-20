@@ -1,11 +1,12 @@
 package com.moduDrive.member.application.service;
 
 import com.moduDrive.common.core.exception.BusinessException;
-import com.moduDrive.member.application.event.MemberSignedUpEvent;
 import com.moduDrive.member.application.port.in.command.SignUpMemberCommand;
 import com.moduDrive.member.application.port.out.CheckEmailExistsPort;
+import com.moduDrive.member.application.port.out.CreateNamespacePort;
 import com.moduDrive.member.application.port.out.EmailVerificationTokenPort;
 import com.moduDrive.member.application.port.out.EncodePasswordPort;
+import com.moduDrive.member.application.port.out.PublishMemberEventPort;
 import com.moduDrive.member.application.port.out.SignUpMemberPort;
 import com.moduDrive.member.domain.model.Member;
 import com.moduDrive.member.domain.model.Member.MemberEmail;
@@ -23,7 +24,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.List;
 import java.util.UUID;
@@ -47,7 +49,9 @@ class SignUpMemberServiceTest {
     @Mock
     private EmailVerificationTokenPort emailVerificationTokenPort;
     @Mock
-    private ApplicationEventPublisher eventPublisher;
+    private PublishMemberEventPort publishMemberEventPort;
+    @Mock
+    private CreateNamespacePort createNamespacePort;
     @InjectMocks
     private SignUpMemberService signUpMemberService;
 
@@ -78,10 +82,27 @@ class SignUpMemberServiceTest {
 
             then(signUpMemberPort).should().createMember(
                     argThat((Member m) -> m.isValid() && m.getEmail().equals(command.getMemberEmail().emailValue())));
-            // Namespace creation and the event publish are no longer called directly here — they
-            // happen post-commit via MemberSignedUpEventListener (#208). This only publishes the event.
-            then(eventPublisher).should().publishEvent(
-                    new MemberSignedUpEvent(memberId, command.getMemberEmail().emailValue()));
+            then(publishMemberEventPort).should().publishSignedUp(memberId, command.getMemberEmail().emailValue());
+        }
+
+        @Test
+        @DisplayName("네임스페이스 생성은 가입이 커밋된 뒤에야 호출한다")
+        void createsTheNamespaceOnlyAfterCommit() {
+            given(checkEmailExistsPort.existsByEmail(command.getMemberEmail())).willReturn(false);
+            given(emailVerificationTokenPort.consumeVerified(command.getMemberEmail().emailValue())).willReturn(true);
+            given(encodePasswordPort.encodePassword(command.getMemberPassword()))
+                    .willReturn(new MemberPassword("encoded-password"));
+            given(signUpMemberPort.createMember(any(Member.class))).willReturn(savedMember);
+            TransactionSynchronizationManager.initSynchronization();
+            try {
+                signUpMemberService.signUpMember(command);
+
+                then(createNamespacePort).shouldHaveNoInteractions();
+                TransactionSynchronizationManager.getSynchronizations().forEach(TransactionSynchronization::afterCommit);
+                then(createNamespacePort).should().createNamespace(memberId);
+            } finally {
+                TransactionSynchronizationManager.clearSynchronization();
+            }
         }
     }
 
