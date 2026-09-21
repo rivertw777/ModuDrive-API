@@ -1,8 +1,16 @@
 apiVersion: 1
 
+# uid 없이 만들어진 예전 Prometheus 데이터소스가 볼륨에 남아 있으면 uid를 붙이는 순간
+# "data source not found"로 프로비저닝 전체가 죽는다(Grafana는 uid로 찾는다). 이름으로 먼저 지워서
+# 볼륨 상태와 무관하게 아래 정의가 그대로 적용되게 한다 — 삭제가 먼저, 생성이 나중이다.
+deleteDatasources:
+  - name: Prometheus
+    orgId: 1
+
 datasources:
   - name: Prometheus
     type: prometheus
+    uid: prometheus   # alerting/alerts.yaml의 규칙이 이 uid로 참조한다
     access: proxy
     url: http://prometheus:9090
     isDefault: true

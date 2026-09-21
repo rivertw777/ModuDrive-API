@@ -15,22 +15,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SqsFailuresTest {
 
     @Nested
-    @DisplayName("FIFO 메시지 그룹 id를 만들 때")
-    class WhenBuildingTheGroupId {
-
-        @Test
-        @DisplayName("128자를 넘는 키는 같은 키면 같은 값이 나오게 줄인다")
-        void shortensKeysPastSqsLimitStably() {
-            String longEmail = "a".repeat(200) + "@example.com";
-
-            assertThat(SqsMessagePublisher.groupId(longEmail)).hasSizeLessThanOrEqualTo(128)
-                    .isEqualTo(SqsMessagePublisher.groupId(longEmail));
-            assertThat(SqsMessagePublisher.groupId("river@modudrive.com")).isEqualTo("river@modudrive.com");
-            assertThat(SqsMessagePublisher.groupId(null)).isNotBlank();
-        }
-    }
-
-    @Nested
     @DisplayName("전송 실패를 분류할 때")
     class WhenClassifyingSendFailures {
 
@@ -73,12 +57,12 @@ class SqsFailuresTest {
         @DisplayName("최대 수신 횟수와 DLQ 이름을 꺼낸다 (AWS의 문자열 숫자도)")
         void readsTheLimitAndDlqName() {
             var fromElasticMq = DeadLetteringErrorHandler.RedrivePolicy.parse(
-                    "{\"deadLetterTargetArn\":\"arn:aws:sqs:elasticmq:000000000000:member-signed-up-dlq.fifo\",\"maxReceiveCount\":4}");
+                    "{\"deadLetterTargetArn\":\"arn:aws:sqs:elasticmq:000000000000:member-signed-up-dlq\",\"maxReceiveCount\":4}");
             var fromAws = DeadLetteringErrorHandler.RedrivePolicy.parse(
-                    "{\"deadLetterTargetArn\":\"arn:aws:sqs:ap-northeast-2:123:mail-dlq.fifo\",\"maxReceiveCount\":\"5\"}");
+                    "{\"deadLetterTargetArn\":\"arn:aws:sqs:ap-northeast-2:123:mail-dlq\",\"maxReceiveCount\":\"5\"}");
 
-            assertThat(fromElasticMq).isEqualTo(new DeadLetteringErrorHandler.RedrivePolicy(4, "member-signed-up-dlq.fifo"));
-            assertThat(fromAws).isEqualTo(new DeadLetteringErrorHandler.RedrivePolicy(5, "mail-dlq.fifo"));
+            assertThat(fromElasticMq).isEqualTo(new DeadLetteringErrorHandler.RedrivePolicy(4, "member-signed-up-dlq"));
+            assertThat(fromAws).isEqualTo(new DeadLetteringErrorHandler.RedrivePolicy(5, "mail-dlq"));
             assertThat(DeadLetteringErrorHandler.RedrivePolicy.parse(null)).isEqualTo(DeadLetteringErrorHandler.RedrivePolicy.NONE);
         }
     }
@@ -91,10 +75,10 @@ class SqsFailuresTest {
     }
 
     @Test
-    @DisplayName("DLQ 이름은 <이름>-dlq.fifo 규칙을 따른다")
+    @DisplayName("DLQ 이름은 <이름>-dlq 규칙을 따른다")
     void namesTheDeadLetterQueue() {
-        assertThat(DeadLetteringErrorHandler.deadLetterQueueName("member-signed-up.fifo"))
-                .isEqualTo("member-signed-up-dlq.fifo");
+        assertThat(DeadLetteringErrorHandler.deadLetterQueueName("member-signed-up"))
+                .isEqualTo("member-signed-up-dlq");
     }
 
     private static SqsException sqsError(int status, String code) {

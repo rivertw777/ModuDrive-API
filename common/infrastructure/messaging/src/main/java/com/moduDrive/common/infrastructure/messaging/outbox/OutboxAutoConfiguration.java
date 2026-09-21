@@ -43,12 +43,13 @@ public class OutboxAutoConfiguration {
                 tracer.getIfAvailable(() -> Tracer.NOOP), propagator.getIfAvailable(() -> Propagator.NOOP));
     }
 
-    /** Without a {@link MeterRegistry} the lag simply isn't published; nothing else depends on it. */
+    /** Without a {@link MeterRegistry} the gauges simply aren't published; nothing else depends on them. */
     @Bean
-    OutboxLag outboxLag(EntityManagerFactory entityManagerFactory, ObjectProvider<MeterRegistry> meterRegistry) {
-        OutboxLag lag = new OutboxLag(SharedEntityManagerCreator.createSharedEntityManager(entityManagerFactory));
-        meterRegistry.ifAvailable(lag::bindTo);
-        return lag;
+    OutboxMetrics outboxMetrics(EntityManagerFactory entityManagerFactory, ObjectProvider<MeterRegistry> meterRegistry) {
+        OutboxMetrics metrics =
+                new OutboxMetrics(SharedEntityManagerCreator.createSharedEntityManager(entityManagerFactory));
+        meterRegistry.ifAvailable(metrics::bindTo);
+        return metrics;
     }
 
     @Bean(initMethod = "start", destroyMethod = "stop")
@@ -56,9 +57,10 @@ public class OutboxAutoConfiguration {
                             PlatformTransactionManager transactionManager,
                             MessagePublisher messagePublisher,
                             JsonMapper jsonMapper,
-                            ObjectProvider<ObservationRegistry> observationRegistry) {
+                            ObjectProvider<ObservationRegistry> observationRegistry,
+                            OutboxMetrics metrics) {
         return new OutboxRelay(SharedEntityManagerCreator.createSharedEntityManager(entityManagerFactory),
                 new TransactionTemplate(transactionManager), messagePublisher, jsonMapper,
-                observationRegistry.getIfAvailable(() -> ObservationRegistry.NOOP));
+                observationRegistry.getIfAvailable(() -> ObservationRegistry.NOOP), metrics);
     }
 }

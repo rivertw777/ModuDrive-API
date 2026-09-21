@@ -1,0 +1,240 @@
+# 알림 규칙 전부 — 설계는 .docs/spec/discord-alert-spec.md.
+#
+# outbox: 전송 실패에 횟수 제한이 없어서 인프라 장애가 나도 FAILED 행이 안 생긴다. 테이블만 봐서는 멀쩡해
+# 보이므로 감지는 전적으로 이 규칙들에 달려 있다. services: 그 지표가 아예 안 올 때를 본다.
+# UI에서 만들면 grafana_data 볼륨과 함께 사라지니 파일로 둔다.
+#
+# 받는 곳은 Discord 웹후크 하나. Grafana에 내장된 연동이라 Alertmanager도, 컨테이너 추가도 필요 없다.
+# URL은 .docker/.env의 DISCORD_*_WEBHOOK_URL에서 온다(레포에 들어가지 않는다) — 프로비저닝 파일은
+# 환경변수를 $VAR로 치환한다.
+
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: discord-messaging
+    receivers:
+      - uid: discord-messaging-webhook
+        type: discord
+        settings: &discord_settings
+          url: $DISCORD_MESSAGING_WEBHOOK_URL
+          # 기본 템플릿은 Value/Labels/Annotations를 통째로 쏟아낸다. 새벽에 폰으로 보는 사람에게는
+          # 항목 이름이 붙은 몇 줄이 낫다 — 무슨 알림인지, 어느 서비스·큐인지, 뭘 해야 하는지, 붙여 쓸 쿼리.
+          #
+          # Discord는 제목/색만 embed로 그려주고 본문은 그 위에 평문으로 붙인다. 그래서 제목은 짧게 두고
+          # (색은 Grafana가 상태에 따라 칠한다) 본문에 항목을 세운다. 쿼리는 문장 안에 넣으면 줄바꿈이
+          # 깨지므로 코드 블록으로 뽑고, 링크는 Discord의 작은 글씨(`-# `)로 눌러 본문이 먼저 읽히게 한다.
+          #
+          # 링크 줄은 건마다가 아니라 메시지당 하나다. 한 그룹에 건이 여럿이면(서비스가 여럿 죽을 때)
+          # 건마다 붙는 링크만으로 디스코드 2000자 제한을 넘겨 메시지가 잘린다 — SilenceURL은 매처가
+          # 통째로 인코딩돼 들어가 특히 길다. 규칙 화면은 어차피 건별로 같으니 첫 건 것을 쓰고,
+          # 그 건 하나만 잠재우는 일시 중지는 건이 하나일 때만 단다.
+          title: '{{ .CommonLabels.alertname }}{{ if eq .Status "resolved" }} (해제){{ end }}'
+          message: |
+            {{ range .Alerts }}
+            {{- if eq .Status "resolved" }}
+            ✅  **{{ .Labels.alertname }} (해제)**
+
+            **서비스**: {{ reReplaceAll ":[0-9]+$" "" .Labels.instance }}
+            {{- if .Labels.queue }}
+
+            **큐**: `{{ .Labels.queue }}`
+            {{- end }}
+            {{- else }}
+            🚨  **{{ .Labels.alertname }}**
+
+            **서비스**: {{ reReplaceAll ":[0-9]+$" "" .Labels.instance }}
+            {{- if .Labels.queue }}
+
+            **큐**: `{{ .Labels.queue }}`
+            {{- end }}
+
+            **사유**: {{ .Annotations.summary }}
+
+            **조치**: {{ .Annotations.action }}
+            {{- if .Annotations.logs }}
+            **relay 로그 쿼리** (Grafana → Explore → Loki)
+            ```logql
+            {{ .Annotations.logs }}
+            ```
+            {{- end }}
+            {{- if .Annotations.query }}
+            **이벤트 조회 쿼리**
+            ```sql
+            {{ .Annotations.query }}
+            ```
+            {{- end }}
+            {{- if .Annotations.recovery }}
+            **이벤트 복구 쿼리**
+            ```sql
+            {{ .Annotations.recovery }}
+            ```
+            {{- end }}
+            {{- end }}
+            {{- end }}
+            -# [Grafana에서 보기]({{ (index .Alerts 0).GeneratorURL }}){{ if eq (len .Alerts) 1 }} · [알림 일시 중지]({{ (index .Alerts 0).SilenceURL }}){{ end }}
+
+  # 서비스 상태 알림(응답 없음, 나중에 CPU·메모리)을 받는 두 번째 채널. 문구는 위와 똑같아야 하므로
+  # YAML 병합(<<)으로 한 벌만 두고 웹후크 URL만 바꾼다 — 복사해 두면 한쪽만 고치는 날이 온다.
+  - orgId: 1
+    name: discord-service
+    receivers:
+      - uid: discord-service-webhook
+        type: discord
+        settings:
+          <<: *discord_settings
+          url: $DISCORD_SERVICE_WEBHOOK_URL
+
+policies:
+  - orgId: 1
+    # 어느 라벨에도 안 걸린 알림이 가는 곳. 정체를 모르는 알림은 인프라 쪽에서 받는 게 맞다.
+    receiver: discord-service
+    # instance를 넣어 서비스마다 메시지를 따로 보낸다. 한 통에 몰면 2000자 제한에 걸려 잘리고
+    # 어느 서비스 얘기인지 훑기도 어렵다. 대가는 있다: 여럿이 동시에 죽으면 그 수만큼 연속 POST가
+    # 나가 디스코드 레이트 리밋(429)에 걸리고, Grafana는 그걸 재시도 없이 버린다. 동시 다운이
+    # 흔해지면 그때 다시 묶는다.
+    group_by: [alertname, instance, queue, reason]
+    # 안 고치면 4시간마다 한 번 더 찌른다. 해제되면 Grafana가 알아서 복구 알림을 보낸다.
+    repeat_interval: 4h
+    # 규칙이 붙인 channel 라벨로 갈린다. 제목이 아니라 라벨로 거는 이유는 알림 제목을 고쳐도
+    # 라우팅이 깨지지 않게 하기 위해서다. 둘 다 적어두면 어떤 라벨이 어디로 가는지 여기만 봐도 된다.
+    routes:
+      - receiver: discord-messaging
+        object_matchers:
+          - [channel, =, messaging]
+      - receiver: discord-service
+        object_matchers:
+          - [channel, =, service]
+
+groups:
+  - orgId: 1
+    name: outbox
+    folder: ModuDrive
+    interval: 1m
+    rules:
+
+      # 정상값이 1초 근처(relay가 1초마다 돈다)라 120초면 명백히 비정상이다. 한편 한 틱에 100건씩
+      # 빠지므로 일시적인 몰림은 수십 초면 정리된다 — 그걸 장애로 오인하지 않을 만큼은 높다.
+      # 5분을 버텨야 알린다: SQS 짧은 장애는 저절로 복구되고 행도 알아서 나간다.
+      - uid: outbox-lag
+        title: 이벤트 전송 적체
+        condition: C
+        for: 5m
+        labels:
+          channel: messaging
+        # 서비스를 내린 것뿐인 NoData/오류로는 울리지 않는다 — 그건 이 알림이 볼 문제가 아니다.
+        noDataState: OK
+        execErrState: OK
+        annotations:
+          summary: '대기 중인 이벤트가 **{{ printf "%.0f" $values.A.Value }}초**째 적체 중'
+          action: '로그로 원인 확인 후 SQS 복구'
+          # 적체 지표는 밀린 초만 알지 왜 막혔는지는 모른다 — OutboxRelay는 일시적 실패를 로그로만 남기고
+          # 재시도한다. 그 한 줄로 바로 갈 수 있게 쿼리를 알림에 싣는다. 조회 SQL은 싣지 않는다:
+          # PENDING 행은 사람이 손댈 게 없고, 밀린 시간은 이미 사유에 있다.
+          logs: '{service=~".+-service"} |= "Outbox send failed"'
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              expr: max by (instance) (modudrive_outbox_lag_seconds)
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [120]
+
+      # FAILED는 사람이 손대기 전까지 사라지지 않는다. 한 건이라도 있으면 그대로 방치된다는 뜻이라
+      # 지속 조건 없이 바로 알린다 — 인프라 장애로는 생기지 않으므로 한 번에 한두 건이다.
+      - uid: outbox-failed
+        title: 이벤트 전송 실패
+        condition: C
+        for: 0m
+        labels:
+          channel: messaging
+        noDataState: OK
+        execErrState: OK
+        annotations:
+          summary: '`{{ $labels.reason }}{{ if $labels.detail }}: {{ $labels.detail }}{{ end }}` ({{ printf "%.0f" $values.A.Value }}건)'
+          action: '이벤트 확인 후 수동 처리'
+          query: 'select id, failed_at, failure_reason from outbox_event where status = ''FAILED'' and queue = ''{{ $labels.queue }}'';'
+          recovery: 'update outbox_event set status = ''PENDING'', failed_at = null, failure_reason = null where id = ?;'
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              expr: max by (instance, queue, reason, detail) (modudrive_outbox_failed)
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+
+  - orgId: 1
+    name: services
+    folder: ModuDrive
+    interval: 1m
+    rules:
+
+      # up은 Prometheus가 스크레이프 성공 여부로 직접 넣는 값이다(성공 1, 실패 0) — 앱이 내보내는 게 아니라
+      # 프로세스가 죽거나 액추에이터가 막히면 바로 0이 된다. 위 규칙들이 noDataState: OK인 것의 짝이다:
+      # 지표가 안 오는 것 자체는 여기서만 알린다.
+      # 2분을 버텨야 알린다 — 재배포로 잠깐 내려가는 것까지 알릴 필요는 없다.
+      - uid: service-down
+        title: 서비스 응답 없음
+        condition: C
+        for: 2m
+        labels:
+          channel: service
+        noDataState: OK
+        execErrState: OK
+        annotations:
+          summary: '스크레이프가 2분째 실패중 (프로세스 다운 · 액추에이터 응답 없음)'
+          # 명령은 문장에 섞지 않고 줄을 바꿔 세운다 — 폰에서 그대로 눈에 들어오게.
+          action: |-
+            컨테이너 상태와 앱 로그 확인
+            ```
+            docker ps / docker logs <container>
+            ```
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              expr: min by (instance) (up{job="services"})
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: lt
+                    params: [1]

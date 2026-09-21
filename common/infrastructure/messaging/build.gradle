@@ -16,6 +16,8 @@ dependencies {
     implementation 'io.micrometer:micrometer-core'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    // RedisProcessedEvents' claim is mocked, not run against a server.
+    testImplementation 'org.springframework.boot:spring-boot-starter-data-redis'
     // MessageConversionException, one of the permanent failure types the list names.
     testImplementation 'org.springframework:spring-messaging'
     testImplementation 'org.testcontainers:testcontainers-junit-jupiter'

@@ -35,10 +35,9 @@ import java.util.concurrent.TimeUnit;
  * broker outage would stall other {@code @Scheduled} jobs (file-service's trash sweep), and a long
  * sweep would stall event delivery.
  * <p>
- * The row key is the ordering key and the row id the deduplication id, so a resend of the same row —
- * the broker accepted it but marking the row SENT didn't commit — can be dropped by a broker that
- * deduplicates. Past that window delivery is at-least-once, which consumers handle with
- * {@link ProcessedEvents}.
+ * The row id is the deduplication id, so a resend of the same row — the broker accepted it but marking
+ * the row SENT didn't commit — carries the same id as the first send and the consumer recognises it.
+ * Delivery is at-least-once, which consumers handle with {@link ProcessedEvents}.
  * <p>
  * {@code FOR UPDATE SKIP LOCKED} lets several instances run this at once without sending a row
  * twice. Each instance takes a different batch, so order holds within an instance's batch, not
@@ -59,16 +58,18 @@ class OutboxRelay {
     private final MessagePublisher messagePublisher;
     private final JsonMapper jsonMapper;
     private final ObservationRegistry observationRegistry;
+    private final OutboxMetrics metrics;
     private ScheduledExecutorService executor;
 
     OutboxRelay(EntityManager entityManager, TransactionTemplate transactionTemplate,
                 MessagePublisher messagePublisher, JsonMapper jsonMapper,
-                ObservationRegistry observationRegistry) {
+                ObservationRegistry observationRegistry, OutboxMetrics metrics) {
         this.entityManager = entityManager;
         this.transactionTemplate = transactionTemplate;
         this.messagePublisher = messagePublisher;
         this.jsonMapper = jsonMapper;
         this.observationRegistry = observationRegistry;
+        this.metrics = metrics;
     }
 
     // ponytail: 1s polling, so an event waits up to ~1s. Wake the relay after commit if that's too slow.
@@ -77,6 +78,9 @@ class OutboxRelay {
         executor.scheduleWithFixedDelay(() -> {
             try {
                 relay();
+                // Here rather than on scrape: the parked-row gauge is one series per queue, and which
+                // queues exist changes as rows are parked and fixed.
+                metrics.refreshFailed();
             } catch (Exception e) {
                 // An escaped exception would cancel the schedule for good.
                 log.error("Outbox relay tick failed", e);
@@ -160,8 +164,7 @@ class OutboxRelay {
         context.setCarrier(traceHeaders);
         Observation.createNotStarted("outbox.relay", () -> context, observationRegistry)
                 .contextualName("outbox relay")
-                .observe(() -> messagePublisher.publish(
-                        row.getQueue(), row.getMessageKey(), "outbox-" + row.getId(), event));
+                .observe(() -> messagePublisher.publish(row.getQueue(), "outbox-" + row.getId(), event));
     }
 
     /** The broker error itself, not the wrappers around it. */

@@ -80,10 +80,21 @@ services:
       - "127.0.0.1:3001:3000"   # 3000은 ModuDrive-WEB(Vite) dev server가 씀
     environment:
       - GF_AUTH_ANONYMOUS_ENABLED=true
+      # 알림에 들어가는 링크가 이 값으로 만들어진다. 없으면 기본값 3000 — ModuDrive-WEB(Vite) 주소라
+      # 클릭하면 엉뚱한 데가 열린다.
+      - GF_SERVER_ROOT_URL=http://localhost:3001
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      # alerting/alerts.yaml이 contact point의 웹후크 URL 자리에 치환해서 쓴다.
+      # 빈 값이면 Grafana가 프로비저닝 단계에서 죽으므로(webhook url property 없음) 기본값을 준다 —
+      # .env에 진짜 URL을 넣기 전까지 알림은 평가되고 전송만 404로 실패한다.
+      - DISCORD_MESSAGING_WEBHOOK_URL=${DISCORD_MESSAGING_WEBHOOK_URL:-https://discord.com/api/webhooks/unset}
+      - DISCORD_SERVICE_WEBHOOK_URL=${DISCORD_SERVICE_WEBHOOK_URL:-https://discord.com/api/webhooks/unset}
     volumes:
-      - ./observability/grafana:/etc/grafana/provisioning/datasources:ro
+      # provisioning 디렉터리째 덮으면 이미지가 갖고 있는 dashboards/·plugins/가 사라져서
+      # 부팅 때마다 에러를 뱉는다. 우리가 쓰는 둘만 각각 얹는다.
+      - ./observability/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./observability/grafana/alerting:/etc/grafana/provisioning/alerting:ro
       - grafana_data:/var/lib/grafana
     depends_on:
       - prometheus

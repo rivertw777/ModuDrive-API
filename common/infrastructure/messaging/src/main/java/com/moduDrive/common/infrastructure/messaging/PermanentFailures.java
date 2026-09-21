@@ -22,11 +22,15 @@ public final class PermanentFailures {
             "tools.jackson.core.JacksonException");
 
     /** Business code judging the message it was handed. Only a consumer runs that code, so only a
-     * consumer reads this list. */
+     * consumer reads this list.
+     * <p>
+     * {@code DataIntegrityViolationException} is deliberately absent: on a standard queue two copies of
+     * one message can be handled at once, and the loser fails on {@code uk_processed_event} — a normal
+     * at-least-once redelivery, not a bad message. Retrying it finds the claim taken and skips it,
+     * whereas calling it permanent would fill the DLQ with messages that were handled correctly. */
     // ponytail: fixed list; make it configurable if a service ever needs its own permanent types.
     private static final Set<String> LISTENER_ONLY = Set.of(
             "jakarta.validation.ValidationException", // SelfValidating command rejected the payload
-            "org.springframework.dao.DataIntegrityViolationException",
             "java.lang.IllegalArgumentException",
             "java.lang.NullPointerException",
             "java.lang.ClassCastException");

@@ -15,9 +15,8 @@ class OutboxNotificationEventPublisher implements PublishNotificationEventPort {
 
     private final OutboxEventRecorder outboxEventRecorder;
 
-    /** Keyed by {@code recipientId}, not fileId: the key is the FIFO message group, so a file shared
-     * with many people fans out into one group per person, and per-recipient ordering is the only
-     * ordering that matters for a notification feed. */
+    /** Keyed by {@code recipientId}, not fileId: the key says who the event is about, which is how a
+     * person's notifications are found in {@code outbox_event}. */
     @Override
     public void publishFileShared(UUID fileId, UUID recipientId, String fileName, String role,
                                   boolean directory, String sharerName, String sharerEmail) {

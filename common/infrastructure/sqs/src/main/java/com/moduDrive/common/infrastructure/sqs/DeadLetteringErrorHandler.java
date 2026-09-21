@@ -8,7 +8,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.Message;
 import software.amazon.awssdk.services.sqs.SqsAsyncClient;
 import software.amazon.awssdk.services.sqs.model.MessageAttributeValue;
-import software.amazon.awssdk.services.sqs.model.MessageSystemAttributeName;
 import software.amazon.awssdk.services.sqs.model.QueueAttributeName;
 
 import java.util.HashMap;
@@ -22,7 +21,8 @@ import java.util.regex.Pattern;
  * Listener error handling for every SQS consumer. The message goes to the queue's DLQ with the
  * original body plus a {@code DeadLetterReason} attribute, and is deleted from the source queue, when
  * <ul>
- *   <li>the failure is permanent ({@link PermanentFailures}): no retries, so it doesn't hold up its FIFO group;</li>
+ *   <li>the failure is permanent ({@link PermanentFailures}): retrying can't fix it, so it moves now
+ *       instead of burning the queue's receive budget;</li>
  *   <li>it's the last receive the queue's redrive policy allows: retries are used up, so move it now
  *       with the reason instead of letting SQS redrive it on the next receive without one.</li>
  * </ul>
@@ -114,15 +114,10 @@ class DeadLetteringErrorHandler implements AsyncErrorHandler<Object> {
         if (attributes.size() < MAX_ATTRIBUTES) {
             attributes.put(REASON_ATTRIBUTE, MessageAttributeValue.builder().dataType("String").stringValue(reason).build());
         }
-        String groupId = raw.attributes().getOrDefault(MessageSystemAttributeName.MESSAGE_GROUP_ID, raw.messageId());
-
         return sqsAsyncClient.getQueueUrl(r -> r.queueName(deadLetterQueue))
                 .thenCompose(url -> sqsAsyncClient.sendMessage(r -> r.queueUrl(url.queueUrl())
                         .messageBody(raw.body())
-                        .messageAttributes(attributes)
-                        .messageGroupId(groupId)
-                        // Same source message moved twice within 5 minutes lands in the DLQ once.
-                        .messageDeduplicationId(raw.messageId())))
+                        .messageAttributes(attributes)))
                 .thenAccept(sent -> log.warn("Moved message {} from {} to {}: {}",
                         raw.messageId(), queue, deadLetterQueue, reason));
     }
@@ -132,11 +127,9 @@ class DeadLetteringErrorHandler implements AsyncErrorHandler<Object> {
         return count == null ? 0 : Long.parseLong(count.toString());
     }
 
-    /** Fallback when the queue has no redrive policy: {@code name.fifo} → {@code name-dlq.fifo}. */
+    /** Fallback when the queue has no redrive policy: {@code name} → {@code name-dlq}. */
     static String deadLetterQueueName(String queue) {
-        return queue.endsWith(".fifo")
-                ? queue.substring(0, queue.length() - ".fifo".length()) + "-dlq.fifo"
-                : queue + "-dlq";
+        return queue + "-dlq";
     }
 
     /** The innermost permanent cause for a permanent failure, else the root cause: what actually went wrong,

@@ -29,7 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * point, and neither shows up against a mock. */
 class JpaProcessedEventsTest {
 
-    private static final String QUEUE = "member-signed-up.fifo";
+    private static final String QUEUE = "member-signed-up";
 
     private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17-alpine");
 
@@ -76,14 +76,14 @@ class JpaProcessedEventsTest {
         @DisplayName("같은 큐·중복 제거 id는 두 번째부터 이미 처리한 것으로 본다")
         void recognisesTheSameMessageNextTime() {
             transactionTemplate.executeWithoutResult(status -> {
-                assertThat(processedEvents.isProcessed(QUEUE, "outbox-1")).isFalse();
+                assertThat(processedEvents.claim(QUEUE, "outbox-1")).isTrue();
                 processedEvents.markProcessed(QUEUE, "outbox-1");
             });
 
             transactionTemplate.executeWithoutResult(status -> {
-                assertThat(processedEvents.isProcessed(QUEUE, "outbox-1")).isTrue();
+                assertThat(processedEvents.claim(QUEUE, "outbox-1")).isFalse();
                 // Same id on another queue is a different event.
-                assertThat(processedEvents.isProcessed("mail-verification-requested.fifo", "outbox-1")).isFalse();
+                assertThat(processedEvents.claim("mail-verification-requested", "outbox-1")).isTrue();
             });
         }
 
@@ -96,7 +96,7 @@ class JpaProcessedEventsTest {
             });
 
             transactionTemplate.executeWithoutResult(status ->
-                    assertThat(processedEvents.isProcessed(QUEUE, "outbox-2")).isFalse());
+                    assertThat(processedEvents.claim(QUEUE, "outbox-2")).isTrue());
         }
     }
 
@@ -119,8 +119,8 @@ class JpaProcessedEventsTest {
             processedEvents.purgeExpired();
 
             transactionTemplate.executeWithoutResult(status -> {
-                assertThat(processedEvents.isProcessed(QUEUE, "old")).isFalse();
-                assertThat(processedEvents.isProcessed(QUEUE, "recent")).isTrue();
+                assertThat(processedEvents.claim(QUEUE, "old")).isTrue();
+                assertThat(processedEvents.claim(QUEUE, "recent")).isFalse();
             });
         }
     }
