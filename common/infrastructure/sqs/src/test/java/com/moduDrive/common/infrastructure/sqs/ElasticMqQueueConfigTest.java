@@ -3,7 +3,6 @@ package com.moduDrive.common.infrastructure.sqs;
 import com.moduDrive.common.event.member.MemberQueues;
 import com.moduDrive.common.event.member.MemberSignedUp;
 import io.awspring.cloud.sqs.annotation.SqsListener;
-import io.awspring.cloud.sqs.listener.SqsHeaders.MessageSystemAttributes;
 import io.awspring.cloud.sqs.operations.SqsTemplate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -46,8 +45,8 @@ import static org.awaitility.Awaitility.await;
         properties = "spring.config.import=classpath:application-sqs.yml")
 class ElasticMqQueueConfigTest {
 
-    private static final String QUEUE = SqsQueues.physicalName(MemberQueues.SIGNED_UP);
-    private static final String DLQ = "member-signed-up-dlq.fifo";
+    private static final String QUEUE = MemberQueues.SIGNED_UP;
+    private static final String DLQ = "member-signed-up-dlq";
 
     // Not stopped by hand: Spring's cached context still polls it until the JVM exits, and
     // Testcontainers' reaper removes the container then.
@@ -79,7 +78,7 @@ class ElasticMqQueueConfigTest {
     }
 
     @Nested
-    @DisplayName("FIFO 큐로 이벤트를 보낼 때")
+    @DisplayName("큐로 이벤트를 보낼 때")
     class WhenSending {
 
         @Test
@@ -93,18 +92,18 @@ class ElasticMqQueueConfigTest {
             assertThat(listener.deduplicationIds).containsExactly("outbox-42");
         }
 
+        // A standard queue doesn't deduplicate, so the outbox resending a row lands twice on purpose:
+        // both carry the same id and the consumer's idempotency check drops the second.
         @Test
-        @DisplayName("같은 중복 제거 id로 두 번 보내도 리스너는 한 번만 받는다")
-        void deliversOnceEvenWhenTheOutboxResends() {
+        @DisplayName("아웃박스가 같은 행을 다시 보내면 두 번 도착하고, 둘 다 같은 중복 제거 id를 달고 온다")
+        void deliversTheResendAgainUnderTheSameDeduplicationId() {
             MemberSignedUp event = new MemberSignedUp(UUID.randomUUID(), "river@modudrive.com");
 
             send(event, "outbox-1");
             send(event, "outbox-1");
 
-            await().atMost(Duration.ofSeconds(10)).until(() -> !listener.received.isEmpty());
-            await().during(Duration.ofSeconds(2)).atMost(Duration.ofSeconds(3))
-                    .until(() -> listener.received.size() == 1);
-            assertThat(listener.received).containsExactly(event);
+            await().atMost(Duration.ofSeconds(10)).until(() -> listener.received.size() == 2);
+            assertThat(listener.deduplicationIds).containsExactly("outbox-1", "outbox-1");
         }
     }
 
@@ -159,8 +158,7 @@ class ElasticMqQueueConfigTest {
         void movesTheRawBodyToTheDlqThroughRedrive() {
             String queueUrl = sqsAsyncClient.getQueueUrl(r -> r.queueName(QUEUE)).join().queueUrl();
 
-            sqsAsyncClient.sendMessage(r -> r.queueUrl(queueUrl).messageBody("{not json")
-                    .messageGroupId("poison").messageDeduplicationId("poison-1")).join();
+            sqsAsyncClient.sendMessage(r -> r.queueUrl(queueUrl).messageBody("{not json")).join();
 
             Message dead = awaitDeadLetter("{not json", Duration.ofSeconds(60));
             assertThat(dead.body()).isEqualTo("{not json");
@@ -170,8 +168,7 @@ class ElasticMqQueueConfigTest {
 
     private void send(MemberSignedUp event, String deduplicationId) {
         sqsTemplate.send(QUEUE, MessageBuilder.withPayload(event)
-                .setHeader(MessageSystemAttributes.SQS_MESSAGE_GROUP_ID_HEADER, event.email())
-                .setHeader(MessageSystemAttributes.SQS_MESSAGE_DEDUPLICATION_ID_HEADER, deduplicationId)
+                .setHeader(SqsAttributes.DEDUPLICATION_ID, deduplicationId)
                 .build());
     }
 
@@ -205,9 +202,9 @@ class ElasticMqQueueConfigTest {
             return attempts.getOrDefault(email, new AtomicInteger()).get();
         }
 
-        @SqsListener(MemberQueues.SIGNED_UP + SqsQueues.FIFO_SUFFIX)
+        @SqsListener(MemberQueues.SIGNED_UP)
         void onSignedUp(MemberSignedUp event,
-                        @Header(MessageSystemAttributes.SQS_MESSAGE_DEDUPLICATION_ID_HEADER) String deduplicationId) {
+                        @Header(SqsAttributes.DEDUPLICATION_ID) String deduplicationId) {
             attempts.computeIfAbsent(event.email(), e -> new AtomicInteger()).incrementAndGet();
             if (event.email().startsWith("retry")) {
                 throw new IllegalStateException("simulated outage");

@@ -9,9 +9,8 @@ import com.moduDrive.mail.application.port.in.command.SendShareInviteMailCommand
 import com.moduDrive.mail.application.port.in.command.SendVerificationMailCommand;
 import com.moduDrive.mail.application.port.in.usecase.SendShareInviteMailUseCase;
 import com.moduDrive.mail.application.port.in.usecase.SendVerificationMailUseCase;
-import com.moduDrive.common.infrastructure.sqs.SqsQueues;
+import com.moduDrive.common.infrastructure.sqs.SqsAttributes;
 import io.awspring.cloud.sqs.annotation.SqsListener;
-import io.awspring.cloud.sqs.listener.SqsHeaders.MessageSystemAttributes;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.handler.annotation.Header;
 
@@ -25,9 +24,9 @@ class MailEventListener {
 
     // Recorded after the send, not before: a mail can't be rolled back, and dying between the two
     // only risks one duplicate mail, while recording first would risk losing the mail entirely.
-    @SqsListener(MailQueues.VERIFICATION_REQUESTED + SqsQueues.FIFO_SUFFIX)
+    @SqsListener(MailQueues.VERIFICATION_REQUESTED)
     void onVerificationRequested(VerificationMailRequested event,
-                                 @Header(MessageSystemAttributes.SQS_MESSAGE_DEDUPLICATION_ID_HEADER) String deduplicationId) {
+                                 @Header(SqsAttributes.DEDUPLICATION_ID) String deduplicationId) {
         if (processedEvents.isProcessed(MailQueues.VERIFICATION_REQUESTED, deduplicationId)) {
             return;
         }
@@ -36,9 +35,9 @@ class MailEventListener {
         processedEvents.markProcessed(MailQueues.VERIFICATION_REQUESTED, deduplicationId);
     }
 
-    @SqsListener(MailQueues.SHARE_INVITE_REQUESTED + SqsQueues.FIFO_SUFFIX)
+    @SqsListener(MailQueues.SHARE_INVITE_REQUESTED)
     void onShareInviteRequested(ShareInviteMailRequested event,
-                                @Header(MessageSystemAttributes.SQS_MESSAGE_DEDUPLICATION_ID_HEADER) String deduplicationId) {
+                                @Header(SqsAttributes.DEDUPLICATION_ID) String deduplicationId) {
         if (processedEvents.isProcessed(MailQueues.SHARE_INVITE_REQUESTED, deduplicationId)) {
             return;
         }

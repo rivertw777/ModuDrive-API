@@ -1,7 +1,7 @@
 package com.moduDrive.common.event.notification;
 
 /** Queue names shared by in-app notification event producers (file) and the consumer (notification-service).
- * Logical names, without a broker's own naming rules — the adapter maps them (SQS appends {@code .fifo}). */
+ * The queue name as the broker knows it. */
 public final class NotificationQueues {
 
     public static final String FILE_SHARED = "notification-file-shared";

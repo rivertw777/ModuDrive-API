@@ -29,7 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * point, and neither shows up against a mock. */
 class JpaProcessedEventsTest {
 
-    private static final String QUEUE = "member-signed-up.fifo";
+    private static final String QUEUE = "member-signed-up";
 
     private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17-alpine");
 
@@ -83,7 +83,7 @@ class JpaProcessedEventsTest {
             transactionTemplate.executeWithoutResult(status -> {
                 assertThat(processedEvents.isProcessed(QUEUE, "outbox-1")).isTrue();
                 // Same id on another queue is a different event.
-                assertThat(processedEvents.isProcessed("mail-verification-requested.fifo", "outbox-1")).isFalse();
+                assertThat(processedEvents.isProcessed("mail-verification-requested", "outbox-1")).isFalse();
             });
         }
 

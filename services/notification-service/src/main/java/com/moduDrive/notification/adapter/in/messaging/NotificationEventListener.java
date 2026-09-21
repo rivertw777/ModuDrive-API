@@ -6,9 +6,8 @@ import com.moduDrive.common.event.notification.NotificationQueues;
 import com.moduDrive.common.infrastructure.messaging.idempotency.ProcessedEvents;
 import com.moduDrive.notification.application.port.in.command.RecordFileSharedNotificationCommand;
 import com.moduDrive.notification.application.port.in.usecase.RecordFileSharedNotificationUseCase;
-import com.moduDrive.common.infrastructure.sqs.SqsQueues;
+import com.moduDrive.common.infrastructure.sqs.SqsAttributes;
 import io.awspring.cloud.sqs.annotation.SqsListener;
-import io.awspring.cloud.sqs.listener.SqsHeaders.MessageSystemAttributes;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,9 +22,9 @@ class NotificationEventListener {
     /** @Transactional so the "already handled" record commits with the notification row: if recording
      * fails, both are rolled back and the retry starts over. */
     @Transactional
-    @SqsListener(NotificationQueues.FILE_SHARED + SqsQueues.FIFO_SUFFIX)
+    @SqsListener(NotificationQueues.FILE_SHARED)
     void onFileShared(FileSharedNotified event,
-                      @Header(MessageSystemAttributes.SQS_MESSAGE_DEDUPLICATION_ID_HEADER) String deduplicationId) {
+                      @Header(SqsAttributes.DEDUPLICATION_ID) String deduplicationId) {
         if (processedEvents.isProcessed(NotificationQueues.FILE_SHARED, deduplicationId)) {
             return;
         }

@@ -35,10 +35,9 @@ import java.util.concurrent.TimeUnit;
  * broker outage would stall other {@code @Scheduled} jobs (file-service's trash sweep), and a long
  * sweep would stall event delivery.
  * <p>
- * The row key is the ordering key and the row id the deduplication id, so a resend of the same row —
- * the broker accepted it but marking the row SENT didn't commit — can be dropped by a broker that
- * deduplicates. Past that window delivery is at-least-once, which consumers handle with
- * {@link ProcessedEvents}.
+ * The row id is the deduplication id, so a resend of the same row — the broker accepted it but marking
+ * the row SENT didn't commit — carries the same id as the first send and the consumer recognises it.
+ * Delivery is at-least-once, which consumers handle with {@link ProcessedEvents}.
  * <p>
  * {@code FOR UPDATE SKIP LOCKED} lets several instances run this at once without sending a row
  * twice. Each instance takes a different batch, so order holds within an instance's batch, not
@@ -160,8 +159,7 @@ class OutboxRelay {
         context.setCarrier(traceHeaders);
         Observation.createNotStarted("outbox.relay", () -> context, observationRegistry)
                 .contextualName("outbox relay")
-                .observe(() -> messagePublisher.publish(
-                        row.getQueue(), row.getMessageKey(), "outbox-" + row.getId(), event));
+                .observe(() -> messagePublisher.publish(row.getQueue(), "outbox-" + row.getId(), event));
     }
 
     /** The broker error itself, not the wrappers around it. */
