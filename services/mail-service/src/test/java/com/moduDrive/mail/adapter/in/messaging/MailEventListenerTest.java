@@ -40,7 +40,7 @@ class MailEventListenerTest {
         @Test
         @DisplayName("메일을 보낸 뒤에 처리 기록을 남긴다")
         void sendsTheMailThenRecordsIt() {
-            given(processedEvents.isProcessed(MailQueues.VERIFICATION_REQUESTED, "outbox-1")).willReturn(false);
+            given(processedEvents.claim(MailQueues.VERIFICATION_REQUESTED, "outbox-1")).willReturn(true);
 
             listener.onVerificationRequested(event, "outbox-1");
 
@@ -50,9 +50,9 @@ class MailEventListenerTest {
         }
 
         @Test
-        @DisplayName("발송이 실패하면 기록하지 않아 재시도 때 다시 보낸다")
-        void doesNotRecordWhenSendingFails() {
-            given(processedEvents.isProcessed(MailQueues.VERIFICATION_REQUESTED, "outbox-1")).willReturn(false);
+        @DisplayName("발송이 실패하면 선점을 돌려놓고 기록하지 않아 재시도 때 다시 보낸다")
+        void releasesTheClaimWhenSendingFails() {
+            given(processedEvents.claim(MailQueues.VERIFICATION_REQUESTED, "outbox-1")).willReturn(true);
             willThrow(new IllegalStateException("smtp down")).given(sendVerificationMailUseCase)
                     .sendVerificationMail(any(SendVerificationMailCommand.class));
 
@@ -62,6 +62,7 @@ class MailEventListenerTest {
                 // the listener lets it out so the message is retried
             }
 
+            then(processedEvents).should().release(MailQueues.VERIFICATION_REQUESTED, "outbox-1");
             then(processedEvents).should(never()).markProcessed(anyString(), anyString());
         }
     }
@@ -72,7 +73,7 @@ class MailEventListenerTest {
 
         @Test
         void skipsItWithoutSendingAgain() {
-            given(processedEvents.isProcessed(MailQueues.VERIFICATION_REQUESTED, "outbox-1")).willReturn(true);
+            given(processedEvents.claim(MailQueues.VERIFICATION_REQUESTED, "outbox-1")).willReturn(false);
 
             listener.onVerificationRequested(event, "outbox-1");
 

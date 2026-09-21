@@ -24,15 +24,24 @@ class JpaProcessedEvents implements ProcessedEvents {
         this.transactionTemplate = transactionTemplate;
     }
 
+    /** The insert in {@link #markProcessed} is the real guard — it runs in the caller's transaction
+     * and {@code uk_processed_event} rejects the second one. This is the cheap pre-check that keeps a
+     * redelivery of something long since handled from doing the work again. */
     @Override
-    public boolean isProcessed(String queue, String deduplicationId) {
-        return !entityManager.createQuery(
+    public boolean claim(String queue, String deduplicationId) {
+        return entityManager.createQuery(
                         "select e.id from ProcessedEventJpaEntity e "
                                 + "where e.queueName = :queue and e.deduplicationId = :id", Long.class)
                 .setParameter("queue", queue)
                 .setParameter("id", deduplicationId)
                 .setMaxResults(1)
                 .getResultList().isEmpty();
+    }
+
+    /** Nothing to give back: the record is written in the caller's transaction, which rolls back with
+     * the work that failed. */
+    @Override
+    public void release(String queue, String deduplicationId) {
     }
 
     @Override

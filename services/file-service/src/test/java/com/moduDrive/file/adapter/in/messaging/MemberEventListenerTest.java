@@ -37,7 +37,7 @@ class MemberEventListenerTest {
 
         @Test
         void claimsPendingSharesAndRecordsTheMessage() {
-            given(processedEvents.isProcessed(MemberQueues.SIGNED_UP, "outbox-1")).willReturn(false);
+            given(processedEvents.claim(MemberQueues.SIGNED_UP, "outbox-1")).willReturn(true);
 
             listener.onMemberSignedUp(event, "outbox-1");
 
@@ -54,7 +54,7 @@ class MemberEventListenerTest {
 
         @Test
         void skipsItWithoutClaimingAgain() {
-            given(processedEvents.isProcessed(MemberQueues.SIGNED_UP, "outbox-1")).willReturn(true);
+            given(processedEvents.claim(MemberQueues.SIGNED_UP, "outbox-1")).willReturn(false);
 
             listener.onMemberSignedUp(event, "outbox-1");
 

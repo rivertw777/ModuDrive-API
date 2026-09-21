@@ -199,13 +199,16 @@ SQS 표준 큐는 at-least-once라 같은 메시지가 두 번 올 수 있다(ou
 | Consumer | 기록 위치 | 방식 |
 |---|---|---|
 | file / notification (DB 있음) | 자기 DB의 `processed_event` 테이블 | 비즈니스 처리와 **같은 트랜잭션**에서 insert → 처리가 실패해 롤백되면 기록도 없음(재시도 때 다시 처리됨) |
-| mail (DB 없음, SMTP는 트랜잭션 불가) | Redis (`processed:<큐>:<dedupId>`, TTL 7일) | 메일 발송 **성공 후** 기록. 발송과 기록 사이에 죽으면 메일이 한 번 더 갈 수 있음(허용) |
+| mail (DB 없음, SMTP는 트랜잭션 불가) | Redis (`processed:<큐>:<dedupId>`, TTL 7일) | 발송 **전에 `SETNX`로 선점**하고 성공하면 TTL을 7일로 굳힌다. 발송이 실패하면 선점을 지워 재시도에 넘긴다. 선점은 10초(큐 가시성 타임아웃)만 버티므로, 발송 도중 프로세스가 죽으면 메시지가 다시 보일 때쯤 선점도 풀려 재시도가 가져간다 — 메일이 한 번 더 갈 수는 있어도 사라지지는 않는다 |
 
 - 처리 기록은 7일(= outbox SENT 보관 기간) 뒤 정리한다. 그보다 오래된 재전송은 없기 때문.
   DB 쪽은 각 서비스에서 1시간마다 지우고, Redis 쪽은 키 TTL로 알아서 사라진다.
 - 재처리 불가로 DLQ에 간 메시지는 기록이 남지 않으므로, 원인을 고친 뒤 redrive하면 **다시 처리된다**.
 - 구현: `common:infrastructure:messaging`의 `ProcessedEvents`(포트) + JPA/Redis 구현. 리스너가 `DeduplicationId`
-  속성(`SqsAttributes.DEDUPLICATION_ID`)을 받아 `isProcessed` → 비즈니스 처리 → `markProcessed` 순으로 부른다.
+  속성(`SqsAttributes.DEDUPLICATION_ID`)을 받아 `claim` → 비즈니스 처리 → `markProcessed` 순으로 부른다.
+- **확인이 아니라 선점이다.** 표준 큐에서는 같은 메시지의 복사본 둘이 동시에 처리될 수 있어서, 읽고 나서 쓰면 둘 다
+  "처리 안 됨"을 보고 지나간다. DB 쪽은 `uk_processed_event`가 두 번째 insert를 막고(그 제약 위반은 영구 실패가
+  아니라 재시도 대상이다 — 재시도하면 선점에서 걸러진다), Redis 쪽은 `SETNX`가 그 역할을 한다.
 
 ### 3-2. 처리 성공
 
@@ -272,7 +275,8 @@ flowchart TD
 - 큐 상태 보기: `curl "http://localhost:9324/?Action=GetQueueAttributes&QueueUrl=http://localhost:9324/000000000000/<큐>&AttributeName.1=All"`
 
 **왜 FIFO가 아닌가** — 순서 보장이 필요한 큐가 하나도 없기 때문이다(메일·알림은 받는 사람별로 1건씩, 가입은
-사람당 1건). FIFO가 주던 5분 중복 제거는 Consumer 멱등성 체크가 이미 하고 있고([3-1](#3-1-멱등성-체크)),
+사람당 1건). 알림 피드는 소비 시각(`created_at`) 순으로 보이므로, 같은 사람에게 1초 간격으로 두 건이 가면 순서가
+뒤집혀 보일 수 있다 — 그 순서에 의미가 생기면 이벤트에 발생 시각을 실어 그걸로 정렬한다. FIFO가 주던 5분 중복 제거는 Consumer 멱등성 체크가 이미 하고 있고([3-1](#3-1-멱등성-체크)),
 대신 FIFO는 300 TPS 상한과 **같은 그룹 머리 막힘**(한 건이 재시도하는 동안 뒤가 대기)을 물고 온다.
 
 ---

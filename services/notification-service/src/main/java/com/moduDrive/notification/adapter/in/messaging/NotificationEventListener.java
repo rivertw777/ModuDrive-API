@@ -25,7 +25,7 @@ class NotificationEventListener {
     @SqsListener(NotificationQueues.FILE_SHARED)
     void onFileShared(FileSharedNotified event,
                       @Header(SqsAttributes.DEDUPLICATION_ID) String deduplicationId) {
-        if (processedEvents.isProcessed(NotificationQueues.FILE_SHARED, deduplicationId)) {
+        if (!processedEvents.claim(NotificationQueues.FILE_SHARED, deduplicationId)) {
             return;
         }
         recordFileSharedNotificationUseCase.recordFileSharedNotification(

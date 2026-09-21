@@ -36,7 +36,7 @@ class NotificationEventListenerTest {
 
         @Test
         void delegatesToRecordFileSharedNotificationUseCase() {
-            given(processedEvents.isProcessed(NotificationQueues.FILE_SHARED, "outbox-1")).willReturn(false);
+            given(processedEvents.claim(NotificationQueues.FILE_SHARED, "outbox-1")).willReturn(true);
             UUID eventId = UUID.randomUUID();
             UUID fileId = UUID.randomUUID();
             UUID recipientId = UUID.randomUUID();
@@ -58,7 +58,7 @@ class NotificationEventListenerTest {
 
         @Test
         void skipsItWithoutRecordingAnotherNotification() {
-            given(processedEvents.isProcessed(NotificationQueues.FILE_SHARED, "outbox-1")).willReturn(true);
+            given(processedEvents.claim(NotificationQueues.FILE_SHARED, "outbox-1")).willReturn(false);
             FileSharedNotified event = new FileSharedNotified(
                     UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "report.pdf", "EDITOR", true,
                     "홍길동", "owner@modudrive.com");

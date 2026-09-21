@@ -25,7 +25,7 @@ class MemberEventListener {
     @SqsListener(MemberQueues.SIGNED_UP)
     void onMemberSignedUp(MemberSignedUp event,
                           @Header(SqsAttributes.DEDUPLICATION_ID) String deduplicationId) {
-        if (processedEvents.isProcessed(MemberQueues.SIGNED_UP, deduplicationId)) {
+        if (!processedEvents.claim(MemberQueues.SIGNED_UP, deduplicationId)) {
             return;
         }
         claimPendingFileSharesUseCase.claimPendingFileShares(
