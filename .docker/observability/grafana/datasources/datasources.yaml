@@ -10,7 +10,7 @@ deleteDatasources:
 datasources:
   - name: Prometheus
     type: prometheus
-    uid: prometheus   # alerting/outbox.yaml의 규칙이 이 uid로 참조한다
+    uid: prometheus   # alerting/alerts.yaml의 규칙이 이 uid로 참조한다
     access: proxy
     url: http://prometheus:9090
     isDefault: true
