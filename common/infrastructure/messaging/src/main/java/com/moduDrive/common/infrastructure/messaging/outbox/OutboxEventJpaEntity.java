@@ -24,7 +24,12 @@ import java.time.Instant;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 class OutboxEventJpaEntity {
 
-    static final int FAILURE_REASON_LENGTH = 1000;
+    /** What the column can hold. Left wide so the cut below can be raised without a migration. */
+    static final int FAILURE_REASON_COLUMN_LENGTH = 1000;
+    /** What is actually kept: enough for the exception's own message, which is all the alert shows and
+     * all a human reads before opening the logs. The class name is the simple one for the same reason —
+     * a package path would eat most of this. */
+    static final int FAILURE_REASON_LENGTH = 100;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -65,8 +70,8 @@ class OutboxEventJpaEntity {
      * and block the rows behind them. */
     private Instant failedAt;
 
-    /** Why it became FAILED: exception class and message, cut to the column size. */
-    @Column(length = FAILURE_REASON_LENGTH)
+    /** Why it became FAILED: exception class and message, cut to {@link #FAILURE_REASON_LENGTH}. */
+    @Column(length = FAILURE_REASON_COLUMN_LENGTH)
     private String failureReason;
 
     OutboxEventJpaEntity(String queue, String messageKey, String payloadType, String payload,
@@ -88,7 +93,7 @@ class OutboxEventJpaEntity {
     void markFailed(Throwable cause) {
         this.status = OutboxEventStatus.FAILED;
         this.failedAt = Instant.now();
-        String reason = cause.getClass().getName() + ": " + cause.getMessage();
+        String reason = cause.getClass().getSimpleName() + ": " + cause.getMessage();
         this.failureReason = reason.length() <= FAILURE_REASON_LENGTH ? reason : reason.substring(0, FAILURE_REASON_LENGTH);
     }
 }

@@ -58,16 +58,18 @@ class OutboxRelay {
     private final MessagePublisher messagePublisher;
     private final JsonMapper jsonMapper;
     private final ObservationRegistry observationRegistry;
+    private final OutboxMetrics metrics;
     private ScheduledExecutorService executor;
 
     OutboxRelay(EntityManager entityManager, TransactionTemplate transactionTemplate,
                 MessagePublisher messagePublisher, JsonMapper jsonMapper,
-                ObservationRegistry observationRegistry) {
+                ObservationRegistry observationRegistry, OutboxMetrics metrics) {
         this.entityManager = entityManager;
         this.transactionTemplate = transactionTemplate;
         this.messagePublisher = messagePublisher;
         this.jsonMapper = jsonMapper;
         this.observationRegistry = observationRegistry;
+        this.metrics = metrics;
     }
 
     // ponytail: 1s polling, so an event waits up to ~1s. Wake the relay after commit if that's too slow.
@@ -76,6 +78,9 @@ class OutboxRelay {
         executor.scheduleWithFixedDelay(() -> {
             try {
                 relay();
+                // Here rather than on scrape: the parked-row gauge is one series per queue, and which
+                // queues exist changes as rows are parked and fixed.
+                metrics.refreshFailed();
             } catch (Exception e) {
                 // An escaped exception would cancel the schedule for good.
                 log.error("Outbox relay tick failed", e);

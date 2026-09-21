@@ -57,9 +57,10 @@ public class OutboxAutoConfiguration {
                             PlatformTransactionManager transactionManager,
                             MessagePublisher messagePublisher,
                             JsonMapper jsonMapper,
-                            ObjectProvider<ObservationRegistry> observationRegistry) {
+                            ObjectProvider<ObservationRegistry> observationRegistry,
+                            OutboxMetrics metrics) {
         return new OutboxRelay(SharedEntityManagerCreator.createSharedEntityManager(entityManagerFactory),
                 new TransactionTemplate(transactionManager), messagePublisher, jsonMapper,
-                observationRegistry.getIfAvailable(() -> ObservationRegistry.NOOP));
+                observationRegistry.getIfAvailable(() -> ObservationRegistry.NOOP), metrics);
     }
 }

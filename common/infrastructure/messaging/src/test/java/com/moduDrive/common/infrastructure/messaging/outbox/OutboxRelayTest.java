@@ -101,7 +101,8 @@ class OutboxRelayTest {
         transactionTemplate.executeWithoutResult(status ->
                 entityManager.createQuery("delete from OutboxEventJpaEntity").executeUpdate());
         recorder = new OutboxEventRecorder(entityManager, transactionTemplate, jsonMapper, Tracer.NOOP, Propagator.NOOP);
-        relay = new OutboxRelay(entityManager, transactionTemplate, messagePublisher, jsonMapper, ObservationRegistry.NOOP);
+        relay = new OutboxRelay(entityManager, transactionTemplate, messagePublisher, jsonMapper, ObservationRegistry.NOOP,
+                new OutboxMetrics(entityManager));
     }
 
     @Nested
@@ -129,23 +130,23 @@ class OutboxRelayTest {
         void sendsTheOriginalEventsInOrderThenMarksTheRowsSent() {
             OutboxTestEvent first = new OutboxTestEvent(UUID.randomUUID(), "first");
             OutboxTestEvent second = new OutboxTestEvent(UUID.randomUUID(), "second");
-            recorder.record("queue-a.fifo", "k1", first);
-            recorder.record("queue-b.fifo", "k2", second);
+            recorder.record("queue-a", "k1", first);
+            recorder.record("queue-b", "k2", second);
 
             relay.relay();
 
             InOrder inOrder = inOrder(messagePublisher);
-            inOrder.verify(messagePublisher).publish(eq("queue-a.fifo"), eq("k1"), anyString(), eq(first));
-            inOrder.verify(messagePublisher).publish(eq("queue-b.fifo"), eq("k2"), anyString(), eq(second));
+            inOrder.verify(messagePublisher).publish(eq("queue-a"), anyString(), eq(first));
+            inOrder.verify(messagePublisher).publish(eq("queue-b"), anyString(), eq(second));
             assertThat(countByStatus(OutboxEventStatus.SENT)).isEqualTo(2);
             assertThat(countByStatus(OutboxEventStatus.PENDING)).isZero();
         }
 
         @Test
-        @DisplayName("행 id를 중복 제거 id로 붙여, 재전송돼도 SQS가 5분 안의 중복을 버리게 한다")
+        @DisplayName("행 id를 중복 제거 id로 붙여, 재전송된 행을 컨슈머가 알아볼 수 있게 한다")
         void usesTheRowIdAsTheDeduplicationId() {
-            recorder.record("queue.fifo", "k1", new OutboxTestEvent(UUID.randomUUID(), "a"));
-            recorder.record("queue.fifo", "k1", new OutboxTestEvent(UUID.randomUUID(), "b"));
+            recorder.record("queue", "k1", new OutboxTestEvent(UUID.randomUUID(), "a"));
+            recorder.record("queue", "k1", new OutboxTestEvent(UUID.randomUUID(), "b"));
 
             relay.relay();
 
@@ -159,14 +160,14 @@ class OutboxRelayTest {
         void stopsAtTheFirstFailedSendAndKeepsTheRest() {
             OutboxTestEvent first = new OutboxTestEvent(UUID.randomUUID(), "first");
             OutboxTestEvent second = new OutboxTestEvent(UUID.randomUUID(), "second");
-            recorder.record("queue.fifo", "k1", first);
-            recorder.record("queue.fifo", "k2", second);
+            recorder.record("queue", "k1", first);
+            recorder.record("queue", "k2", second);
             willThrow(new RuntimeException("broker down")).given(messagePublisher)
-                    .publish(anyString(), anyString(), anyString(), any());
+                    .publish(anyString(), anyString(), any());
 
             relay.relay();
 
-            then(messagePublisher).should(times(1)).publish(anyString(), anyString(), anyString(), any());
+            then(messagePublisher).should(times(1)).publish(anyString(), anyString(), any());
             assertThat(countByStatus(OutboxEventStatus.PENDING)).isEqualTo(2);
         }
 
@@ -175,22 +176,35 @@ class OutboxRelayTest {
         void parksARowSqsRejectsAndKeepsSending() {
             OutboxTestEvent rejected = new OutboxTestEvent(UUID.randomUUID(), "too-large");
             OutboxTestEvent next = new OutboxTestEvent(UUID.randomUUID(), "next");
-            recorder.record("queue.fifo", "k1", rejected);
-            recorder.record("queue.fifo", "k2", next);
+            recorder.record("queue", "k1", rejected);
+            recorder.record("queue", "k2", next);
             willAnswer(invocation -> {
-                if (invocation.getArgument(3).equals(rejected)) {
+                if (invocation.getArgument(2).equals(rejected)) {
                     throw new PermanentPublishException(new IllegalStateException("message rejected"));
                 }
                 return null;
-            }).given(messagePublisher).publish(anyString(), anyString(), anyString(), any());
+            }).given(messagePublisher).publish(anyString(), anyString(), any());
 
             relay.relay();
             relay.relay();
 
             assertThat(publishedPayloads()).containsExactly(rejected, next);
             assertThat(failedRow().getFailedAt()).isNotNull();
-            assertThat(failedRow().getFailureReason()).startsWith(IllegalStateException.class.getName());
+            assertThat(failedRow().getFailureReason()).startsWith(IllegalStateException.class.getSimpleName());
             assertThat(countByStatus(OutboxEventStatus.SENT)).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("실패 사유는 길어도 잘라서 남긴다 — SDK 메시지는 한 문단씩 오고, 알람에 실리는 건 앞부분뿐이다")
+        void cutsALongFailureReasonDownToSize() {
+            recorder.record("queue", "k1", new OutboxTestEvent(UUID.randomUUID(), "rejected"));
+            willThrow(new PermanentPublishException(new IllegalStateException("x".repeat(500))))
+                    .given(messagePublisher).publish(anyString(), anyString(), any());
+
+            relay.relay();
+
+            assertThat(failedRow().getFailureReason())
+                    .hasSize(OutboxEventJpaEntity.FAILURE_REASON_LENGTH);
         }
 
         @Test
@@ -230,11 +244,12 @@ class OutboxRelayTest {
             willAnswer(invocation -> {
                 currentDuringSend.set(registry.getCurrentObservation());
                 return null;
-            }).given(messagePublisher).publish(anyString(), anyString(), anyString(), any());
+            }).given(messagePublisher).publish(anyString(), anyString(), any());
 
             new OutboxEventRecorder(entityManager, transactionTemplate, jsonMapper, tracer, propagator)
-                    .record("queue.fifo", "k1", new OutboxTestEvent(UUID.randomUUID(), "traced"));
-            new OutboxRelay(entityManager, transactionTemplate, messagePublisher, jsonMapper, registry).relay();
+                    .record("queue", "k1", new OutboxTestEvent(UUID.randomUUID(), "traced"));
+            new OutboxRelay(entityManager, transactionTemplate, messagePublisher, jsonMapper, registry,
+                    new OutboxMetrics(entityManager)).relay();
 
             // The publisher parents its send span on exactly this, wherever the client finishes the send.
             assertThat(currentDuringSend.get()).isNotNull();
@@ -284,18 +299,18 @@ class OutboxRelayTest {
         @Test
         @DisplayName("보관 기간이 지난 SENT 행만 지우고, 최근 SENT·PENDING·FAILED 행은 남긴다")
         void deletesOnlySentRowsPastRetention() {
-            recorder.record("queue.fifo", "old", new OutboxTestEvent(UUID.randomUUID(), "old"));
-            recorder.record("queue.fifo", "recent", new OutboxTestEvent(UUID.randomUUID(), "recent"));
+            recorder.record("queue", "old", new OutboxTestEvent(UUID.randomUUID(), "old"));
+            recorder.record("queue", "recent", new OutboxTestEvent(UUID.randomUUID(), "recent"));
             relay.relay();
             transactionTemplate.executeWithoutResult(status -> entityManager
                     .createQuery("update OutboxEventJpaEntity e set e.sentAt = :old where e.messageKey = 'old'")
                     .setParameter("old", Instant.now().minus(OutboxRelay.SENT_RETENTION).minusSeconds(60))
                     .executeUpdate());
-            recorder.record("queue.fifo", "pending", new OutboxTestEvent(UUID.randomUUID(), "pending"));
+            recorder.record("queue", "pending", new OutboxTestEvent(UUID.randomUUID(), "pending"));
             transactionTemplate.executeWithoutResult(status -> entityManager.persist(
-                    new OutboxEventJpaEntity("queue.fifo", "failed", "com.example.Gone", "{}", null)));
+                    new OutboxEventJpaEntity("queue", "failed", "com.example.Gone", "{}", null)));
             willThrow(new RuntimeException("broker down")).given(messagePublisher)
-                    .publish(anyString(), anyString(), anyString(), any());
+                    .publish(anyString(), anyString(), any());
             relay.relay();
 
             relay.purgeSent();
@@ -310,14 +325,14 @@ class OutboxRelayTest {
     private List<Object> publishedPayloads() {
         ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
         then(messagePublisher).should(atLeastOnce())
-                .publish(anyString(), anyString(), anyString(), captor.capture());
+                .publish(anyString(), anyString(), captor.capture());
         return captor.getAllValues();
     }
 
     private List<String> deduplicationIds() {
         ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
         then(messagePublisher).should(atLeastOnce())
-                .publish(anyString(), anyString(), captor.capture(), any());
+                .publish(anyString(), captor.capture(), any());
         return captor.getAllValues();
     }
 
@@ -336,8 +351,8 @@ class OutboxRelayTest {
         @Test
         @DisplayName("가장 오래 기다린 행의 나이를 재고, 보내고 나면 0으로 돌아온다")
         void measuresTheOldestWaitingRowThenFallsBackToZero() {
-            recorder.record("queue-a.fifo", "k1", new OutboxTestEvent(UUID.randomUUID(), "old"));
-            recorder.record("queue-a.fifo", "k2", new OutboxTestEvent(UUID.randomUUID(), "new"));
+            recorder.record("queue-a", "k1", new OutboxTestEvent(UUID.randomUUID(), "old"));
+            recorder.record("queue-a", "k2", new OutboxTestEvent(UUID.randomUUID(), "new"));
             backdateOldestPendingBy(Duration.ofMinutes(5));
 
             assertThat(metrics.oldestPendingAgeSeconds()).isGreaterThanOrEqualTo(300);
@@ -352,8 +367,8 @@ class OutboxRelayTest {
         @DisplayName("전송이 막혀 있으면 행이 PENDING으로 남아 나이가 올라간다 — 무한 재시도라 FAILED가 안 생기므로 이게 유일한 신호다")
         void keepsClimbingWhileSendingIsStuck() {
             willThrow(new IllegalStateException("sqs unreachable"))
-                    .given(messagePublisher).publish(anyString(), anyString(), anyString(), any());
-            recorder.record("queue-a.fifo", "k1", new OutboxTestEvent(UUID.randomUUID(), "stuck"));
+                    .given(messagePublisher).publish(anyString(), anyString(), any());
+            recorder.record("queue-a", "k1", new OutboxTestEvent(UUID.randomUUID(), "stuck"));
             backdateOldestPendingBy(Duration.ofMinutes(10));
 
             relay.relay();
@@ -364,16 +379,20 @@ class OutboxRelayTest {
         }
 
         @Test
-        @DisplayName("사람이 처리해야 하는 FAILED 행의 수를 센다 — 알람이 없으면 아무도 모를 상태다")
-        void countsRowsParkedForAHuman() {
-            assertThat(metrics.failedRows()).isZero();
-            recorder.record("queue.fifo", "k1", new OutboxTestEvent(UUID.randomUUID(), "rejected"));
+        @DisplayName("사람이 처리해야 하는 FAILED 행을 큐·사유별로 센다 — 알람이 어느 이벤트가 왜 멈췄는지 말해야 한다")
+        void countsRowsParkedForAHumanByQueueAndReason() {
+            assertThat(metrics.failedGroups()).isEmpty();
+            recorder.record("queue-a", "k1", new OutboxTestEvent(UUID.randomUUID(), "rejected"));
+            recorder.record("queue-a", "k2", new OutboxTestEvent(UUID.randomUUID(), "rejected"));
+            recorder.record("queue-b", "k3", new OutboxTestEvent(UUID.randomUUID(), "rejected"));
             willThrow(new PermanentPublishException(new IllegalStateException("message rejected")))
-                    .given(messagePublisher).publish(anyString(), anyString(), anyString(), any());
+                    .given(messagePublisher).publish(anyString(), anyString(), any());
 
             relay.relay();
 
-            assertThat(metrics.failedRows()).isEqualTo(1);
+            assertThat(metrics.failedGroups()).containsExactlyInAnyOrder(
+                    new OutboxMetrics.FailedGroup("queue-a", "IllegalStateException", "message rejected", 2),
+                    new OutboxMetrics.FailedGroup("queue-b", "IllegalStateException", "message rejected", 1));
         }
 
         /** The relay writes {@code created_at} itself, so waiting is simulated by moving it back. */
