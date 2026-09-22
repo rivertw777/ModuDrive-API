@@ -1,8 +1,11 @@
 package com.moduDrive.common.infrastructure.sqs;
 
 import com.moduDrive.common.infrastructure.messaging.MessagePublisher;
+import io.awspring.cloud.sqs.listener.MessageListenerContainerRegistry;
 import io.awspring.cloud.sqs.listener.errorhandler.AsyncErrorHandler;
 import io.awspring.cloud.sqs.listener.errorhandler.ExponentialBackoffErrorHandler;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
@@ -24,6 +27,15 @@ public class SqsAutoConfiguration {
                 .maxVisibilityTimeoutSeconds(10)
                 .build();
         return new DeadLetteringErrorHandler(sqsAsyncClient, retry);
+    }
+
+    /** Without a {@link MeterRegistry} the gauge isn't published and the queues aren't polled; a
+     * service with no listener has no DLQ to watch and does nothing either. */
+    @Bean(initMethod = "start", destroyMethod = "stop")
+    DeadLetterQueueMetrics deadLetterQueueMetrics(SqsAsyncClient sqsAsyncClient,
+                                                  MessageListenerContainerRegistry containers,
+                                                  ObjectProvider<MeterRegistry> meterRegistry) {
+        return new DeadLetterQueueMetrics(sqsAsyncClient, containers, meterRegistry.getIfAvailable());
     }
 
     @Bean

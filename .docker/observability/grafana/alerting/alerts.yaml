@@ -1,7 +1,8 @@
 # 알림 규칙 전부 — 설계는 .docs/spec/discord-alert-spec.md.
 #
 # outbox: 전송 실패에 횟수 제한이 없어서 인프라 장애가 나도 FAILED 행이 안 생긴다. 테이블만 봐서는 멀쩡해
-# 보이므로 감지는 전적으로 이 규칙들에 달려 있다. services: 그 지표가 아예 안 올 때를 본다.
+# 보이므로 감지는 전적으로 이 규칙들에 달려 있다. consumer: 처리에 실패해 DLQ로 빠진 메시지를 본다 —
+# 옮겨진 뒤엔 원래 큐가 다시 비어 보인다. services: 그 지표가 아예 안 올 때를 본다.
 # UI에서 만들면 grafana_data 볼륨과 함께 사라지니 파일로 둔다.
 #
 # 받는 곳은 Discord 웹후크 하나. Grafana에 내장된 연동이라 Alertmanager도, 컨테이너 추가도 필요 없다.
@@ -183,6 +184,54 @@ groups:
               refId: A
               editorMode: code
               expr: max by (instance, queue, reason, detail) (modudrive_outbox_failed)
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+
+  - orgId: 1
+    name: consumer
+    folder: ModuDrive
+    interval: 1m
+    rules:
+
+      # DLQ에 들어간 메시지는 사람이 원인을 고쳐 redrive하기 전까지 스스로 나오지 않는다. 옮겨질 때
+      # 로그 한 줄이 남을 뿐 원래 큐는 다시 비어 보이므로, 이 알림이 없으면 보관 기간(AWS 기본 4일)이
+      # 지나 조용히 사라진다. 그래서 한 건이라도 보이면 지속 조건 없이 바로 알린다 — outbox FAILED와 같다.
+      - uid: dlq-messages
+        title: 이벤트 처리 실패
+        condition: C
+        for: 0m
+        labels:
+          channel: messaging
+        noDataState: OK
+        execErrState: OK
+        annotations:
+          # 사유는 메시지마다 다르고 지표로는 셀 수만 있다(라벨로 빼려면 DLQ를 실제로 받아 봐야 한다).
+          # 그래서 건수만 말하고, 사유는 DeadLetterReason을 직접 보라고 조치에 적는다.
+          summary: '`{{ $labels.queue }}`의 DLQ에 **{{ printf "%.0f" $values.A.Value }}건** 쌓여 있음 (재시도 소진 · 재처리 불가)'
+          action: |-
+            메시지의 DeadLetterReason으로 원인 확인 → 고친 뒤 원래 큐로 redrive
+            ```
+            aws sqs start-message-move-task --source-arn <{{ $labels.queue }}-dlq의 ARN>
+            ```
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              expr: max by (instance, queue) (modudrive_dlq_messages)
               instant: true
           - refId: C
             datasourceUid: __expr__
