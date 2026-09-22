@@ -1,6 +1,5 @@
 package com.moduDrive.common.infrastructure.messaging.outbox;
 
-import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.MultiGauge;
 import io.micrometer.core.instrument.Tags;
@@ -24,9 +23,9 @@ import java.util.Map;
  * until someone deals with it, silently. Alert on these instead: the lag sits near a second in normal
  * running and climbs for as long as sending is stuck, and the failed count is 0 or a problem.
  * <p>
- * The failed count carries the queue as a tag so the alert can name the events that are stuck instead
- * of only the service. It can't be read on scrape like the lag — the set of queues changes — so the
- * relay refreshes it on its tick.
+ * Both carry the queue as a tag so an alert can name the events that are stuck instead of only the
+ * service. Neither can be read on scrape, because the set of queues changes as rows pile up and drain,
+ * so the relay refreshes them on its tick.
  */
 class OutboxMetrics {
 
@@ -36,6 +35,7 @@ class OutboxMetrics {
     private static final int MAX_DETAIL_LENGTH = 100;
 
     private final EntityManager entityManager;
+    private MultiGauge lagByQueue;
     private MultiGauge failedByQueue;
 
     OutboxMetrics(EntityManager entityManager) {
@@ -43,26 +43,45 @@ class OutboxMetrics {
     }
 
     void bindTo(MeterRegistry registry) {
-        Gauge.builder(LAG_METER_NAME, this, OutboxMetrics::oldestPendingAgeSeconds)
+        lagByQueue = MultiGauge.builder(LAG_METER_NAME)
                 .description("Age of the oldest outbox row still waiting to be sent")
                 .baseUnit("seconds")
                 .register(registry);
         failedByQueue = MultiGauge.builder(FAILED_METER_NAME)
                 .description("Outbox rows parked for a human to deal with")
                 .register(registry);
+        refresh();
+    }
+
+    void refresh() {
+        refreshLag();
         refreshFailed();
     }
 
-    /** 0 when nothing is waiting. */
-    // ponytail: reads every PENDING row per scrape. They're few unless sending is stuck, which is
-    // exactly when the alert has already fired; add created_at to the partial index if that changes.
-    double oldestPendingAgeSeconds() {
-        Instant oldest = entityManager
-                .createQuery("select min(e.createdAt) from OutboxEventJpaEntity e where e.status = :pending",
-                        Instant.class)
+    /**
+     * Republishes one series per queue that has something waiting. A queue that drains drops out and
+     * its series is removed, which resolves the alert — the same way the parked count works.
+     */
+    void refreshLag() {
+        if (lagByQueue == null) {
+            return; // No registry, so nothing is published and there's nothing to refresh.
+        }
+        lagByQueue.register(pendingLag().stream()
+                .map(group -> MultiGauge.Row.of(Tags.of("queue", group.queue()), group.ageSeconds()))
+                .toList(), true);
+    }
+
+    /** How long the oldest row still waiting has waited, per queue. Empty when nothing is waiting. */
+    List<LagGroup> pendingLag() {
+        Instant now = Instant.now();
+        return entityManager
+                .createQuery("select e.queue, min(e.createdAt) from OutboxEventJpaEntity e "
+                        + "where e.status = :pending group by e.queue", Object[].class)
                 .setParameter("pending", OutboxEventStatus.PENDING)
-                .getSingleResult();
-        return oldest == null ? 0 : Duration.between(oldest, Instant.now()).toMillis() / 1000d;
+                .getResultList().stream()
+                .map(row -> new LagGroup((String) row[0],
+                        Duration.between((Instant) row[1], now).toMillis() / 1000d))
+                .toList();
     }
 
     /**
@@ -126,6 +145,8 @@ class OutboxMetrics {
         String message = failureReason.split(":", 2)[1].replaceAll("\\s+", " ").trim();
         return message.length() <= MAX_DETAIL_LENGTH ? message : message.substring(0, MAX_DETAIL_LENGTH) + "…";
     }
+
+    record LagGroup(String queue, double ageSeconds) {}
 
     record FailedGroup(String queue, String reason, String detail, long count) {
 

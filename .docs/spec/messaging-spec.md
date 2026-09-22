@@ -178,7 +178,7 @@ N번에 `FAILED`로 보내면 멀쩡한 이벤트가 무더기로 빠지고 복�
 
 | 지표 | 알림 조건 | 무슨 뜻인가 |
 |---|---|---|
-| `modudrive_outbox_lag_seconds` — 가장 오래 기다린 `PENDING` 행의 나이(초) | `> 120`이 5분 지속 | 전송이 막혔다 (SQS 장애 등) |
+| `modudrive_outbox_lag_seconds` — 가장 오래 기다린 `PENDING` 행의 나이(초, 큐별) | `> 120`이 5분 지속 | 전송이 막혔다 (SQS 장애 등) |
 | `modudrive_outbox_failed` — 현재 `FAILED` 행 수 (큐·사유별) | `> 0` 즉시 | 사람이 손대야 하는 행이 있다 |
 
 (상세 내용은 [.docs/spec/discord-alert-spec.md 7장](discord-alert-spec.md#7-사용-알림) 참고)
