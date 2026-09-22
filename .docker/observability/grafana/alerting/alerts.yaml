@@ -54,6 +54,20 @@ contactPoints:
             **사유**: {{ .Annotations.summary }}
 
             **조치**: {{ .Annotations.action }}
+            {{- if .Annotations.inspect }}
+
+            **확인 명령어**
+            ```
+            {{ .Annotations.inspect }}
+            ```
+            {{- end }}
+            {{- if .Annotations.redrive }}
+            {{- /* 앞이 코드 블록이라 여백을 더 주지 않는다 — 복구 쿼리 항목과 같은 이유. */}}
+            **SQS 리드라이브 명령어**
+            ```
+            {{ .Annotations.redrive }}
+            ```
+            {{- end }}
             {{- if .Annotations.logs }}
 
             **relay 로그 쿼리** (Grafana → Explore → Loki)
@@ -217,11 +231,10 @@ groups:
           # 사유는 메시지마다 다르고 지표로는 셀 수만 있다(라벨로 빼려면 DLQ를 실제로 받아 봐야 한다).
           # 그래서 건수만 말하고, 사유는 DeadLetterReason을 직접 보라고 조치에 적는다.
           summary: '`{{ $labels.queue }}`의 DLQ에 **{{ printf "%.0f" $values.A.Value }}건** 쌓여 있음 (재시도 소진 · 재처리 불가)'
-          action: |-
-            메시지의 DeadLetterReason으로 원인 확인 → 고친 뒤 원래 큐로 redrive
-            ```
-            aws sqs start-message-move-task --source-arn <{{ $labels.queue }}-dlq의 ARN>
-            ```
+          action: '메시지의 DeadLetterReason으로 원인 확인 후 수정 → 원래 큐로 리드라이브'
+          # 속성은 기본으로 안 실려 온다 — All을 줘야 DeadLetterReason이 보인다.
+          inspect: 'aws sqs receive-message --queue-url <{{ $labels.queue }}-dlq의 URL> --message-attribute-names All'
+          redrive: 'aws sqs start-message-move-task --source-arn <{{ $labels.queue }}-dlq의 ARN>'
         data:
           - refId: A
             datasourceUid: prometheus
@@ -265,11 +278,8 @@ groups:
         annotations:
           summary: '스크레이프가 2분째 실패중 (프로세스 다운 · 액추에이터 응답 없음)'
           # 명령은 문장에 섞지 않고 줄을 바꿔 세운다 — 폰에서 그대로 눈에 들어오게.
-          action: |-
-            컨테이너 상태와 앱 로그 확인
-            ```
-            docker ps / docker logs <container>
-            ```
+          action: '컨테이너 상태와 앱 로그 확인'
+          inspect: 'docker ps / docker logs <container>'
         data:
           - refId: A
             datasourceUid: prometheus
