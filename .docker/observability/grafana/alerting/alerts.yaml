@@ -25,10 +25,10 @@ contactPoints:
           # (색은 Grafana가 상태에 따라 칠한다) 본문에 항목을 세운다. 쿼리는 문장 안에 넣으면 줄바꿈이
           # 깨지므로 코드 블록으로 뽑고, 링크는 Discord의 작은 글씨(`-# `)로 눌러 본문이 먼저 읽히게 한다.
           #
-          # 링크 줄은 건마다가 아니라 메시지당 하나다. 한 그룹에 건이 여럿이면(서비스가 여럿 죽을 때)
-          # 건마다 붙는 링크만으로 디스코드 2000자 제한을 넘겨 메시지가 잘린다 — SilenceURL은 매처가
-          # 통째로 인코딩돼 들어가 특히 길다. 규칙 화면은 어차피 건별로 같으니 첫 건 것을 쓰고,
-          # 그 건 하나만 잠재우는 일시 중지는 건이 하나일 때만 단다.
+          # 링크 줄은 건마다 그 건 밑에 붙는다 — 한 메시지에 발생과 해제가 같이 묶여도 어느 건의 링크인지
+          # 헷갈리지 않고, 일시 중지도 그 건만 정확히 잠재운다. group_by에 instance·queue·reason이 들어가
+          # 한 메시지의 건 수는 보통 1~2건이라, 링크가 길어도(SilenceURL은 매처가 통째로 인코딩된다)
+          # 디스코드 2000자 제한에 닿지 않는다. 한 메시지에 건이 많이 몰리기 시작하면 그때 다시 묶는다.
           title: '{{ .CommonLabels.alertname }}{{ if eq .Status "resolved" }} (해제){{ end }}'
           message: |
             {{ range .Alerts }}
@@ -40,6 +40,7 @@ contactPoints:
 
             **큐**: `{{ .Labels.queue }}`
             {{- end }}
+            {{/* 링크 줄 앞 한 줄 띄우기. 발생 알림은 코드 블록으로 끝나 디스코드가 알아서 띄운다. */}}
             {{- else }}
             🚨  **{{ .Labels.alertname }}**
 
@@ -53,12 +54,14 @@ contactPoints:
 
             **조치**: {{ .Annotations.action }}
             {{- if .Annotations.logs }}
+
             **relay 로그 쿼리** (Grafana → Explore → Loki)
             ```logql
             {{ .Annotations.logs }}
             ```
             {{- end }}
             {{- if .Annotations.query }}
+
             **이벤트 조회 쿼리**
             ```sql
             {{ .Annotations.query }}
@@ -71,8 +74,9 @@ contactPoints:
             ```
             {{- end }}
             {{- end }}
+            -# [Grafana에서 보기]({{ .GeneratorURL }}) · [알림 일시 중지]({{ .SilenceURL }})
+            {{/* 건과 건 사이 한 줄 띄우기. 마지막 건 뒤에 남는 줄은 디스코드가 지운다. */}}
             {{- end }}
-            -# [Grafana에서 보기]({{ (index .Alerts 0).GeneratorURL }}){{ if eq (len .Alerts) 1 }} · [알림 일시 중지]({{ (index .Alerts 0).SilenceURL }}){{ end }}
 
   # 서비스 상태 알림(응답 없음, 나중에 CPU·메모리)을 받는 두 번째 채널. 문구는 위와 똑같아야 하므로
   # YAML 병합(<<)으로 한 벌만 두고 웹후크 URL만 바꾼다 — 복사해 두면 한쪽만 고치는 날이 온다.
@@ -128,7 +132,7 @@ groups:
         annotations:
           summary: '대기 중인 이벤트가 **{{ printf "%.0f" $values.A.Value }}초**째 적체 중'
           action: '로그로 원인 확인 후 SQS 복구'
-          # 적체 지표는 밀린 초만 알지 왜 막혔는지는 모른다 — OutboxRelay는 일시적 실패를 로그로만 남기고
+          # 적체 지표는 어느 큐가 얼마나 밀렸는지까지만 알지 왜 막혔는지는 모른다 — OutboxRelay는 일시적 실패를 로그로만 남기고
           # 재시도한다. 그 한 줄로 바로 갈 수 있게 쿼리를 알림에 싣는다. 조회 SQL은 싣지 않는다:
           # PENDING 행은 사람이 손댈 게 없고, 밀린 시간은 이미 사유에 있다.
           logs: '{service=~".+-service"} |= "Outbox send failed"'
@@ -141,7 +145,7 @@ groups:
             model:
               refId: A
               editorMode: code
-              expr: max by (instance) (modudrive_outbox_lag_seconds)
+              expr: max by (instance, queue) (modudrive_outbox_lag_seconds)
               instant: true
           - refId: C
             datasourceUid: __expr__
