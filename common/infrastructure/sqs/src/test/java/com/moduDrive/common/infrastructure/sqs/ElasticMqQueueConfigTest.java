@@ -4,6 +4,7 @@ import com.moduDrive.common.event.member.MemberQueues;
 import com.moduDrive.common.event.member.MemberSignedUp;
 import io.awspring.cloud.sqs.annotation.SqsListener;
 import io.awspring.cloud.sqs.operations.SqsTemplate;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -69,6 +70,9 @@ class ElasticMqQueueConfigTest {
     @Autowired private SqsTemplate sqsTemplate;
     @Autowired private SqsAsyncClient sqsAsyncClient;
     @Autowired private RecordingListener listener;
+    @Autowired private MeterRegistry meterRegistry;
+    // Refreshed by hand instead of waiting out the 30s poll.
+    @Autowired private DeadLetterQueueMetrics deadLetterQueueMetrics;
 
     @BeforeEach
     void reset() {
@@ -142,6 +146,29 @@ class ElasticMqQueueConfigTest {
             assertThat(dead.body()).contains(event.memberId().toString());
             assertThat(dead.messageAttributes().get(DeadLetteringErrorHandler.REASON_ATTRIBUTE).stringValue())
                     .contains("IllegalArgumentException");
+        }
+    }
+
+    @Nested
+    @DisplayName("DLQ에 메시지가 쌓이면")
+    class WhenMessagesPileUpInTheDlq {
+
+        // The whole point of the gauge: once a message is moved the source queue looks empty again,
+        // so without this number nothing anywhere says a consumer gave up.
+        @Test
+        @DisplayName("소비하는 큐 이름을 단 게이지로 DLQ 건수가 나온다")
+        void publishesTheDeadLetterCountTaggedWithTheConsumedQueue() {
+            // Not read back from the DLQ here: receiving makes a message invisible, and the count is
+            // what's waiting to be read — exactly what it should say while nobody has looked yet.
+            MemberSignedUp event = new MemberSignedUp(UUID.randomUUID(), "invalid-gauge@modudrive.com");
+
+            send(event, "outbox-4");
+
+            await().atMost(Duration.ofSeconds(15)).pollInterval(500, TimeUnit.MILLISECONDS).untilAsserted(() -> {
+                deadLetterQueueMetrics.refresh();
+                assertThat(meterRegistry.get(DeadLetterQueueMetrics.METER_NAME).tag("queue", QUEUE).gauge().value())
+                        .isGreaterThanOrEqualTo(1);
+            });
         }
     }
 

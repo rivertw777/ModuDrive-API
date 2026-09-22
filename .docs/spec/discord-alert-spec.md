@@ -115,7 +115,7 @@ max by (instance, queue, reason) (modudrive_outbox_failed) > 0
 
 | 채널 | 무엇을 받나 | 웹후크 |
 |---|---|---|
-| `messaging` | 이벤트가 제대로 전달되는가 — 적체·실패, 나중에 DLQ | `DISCORD_MESSAGING_WEBHOOK_URL` |
+| `messaging` | 이벤트가 제대로 전달되는가 — 전송 적체·전송 실패·처리 실패(DLQ) | `DISCORD_MESSAGING_WEBHOOK_URL` |
 | `service` | 서비스가 살아 있는가 — 응답 없음, 나중에 CPU·메모리 | `DISCORD_SERVICE_WEBHOOK_URL` |
 
 ---
@@ -128,31 +128,29 @@ max by (instance, queue, reason) (modudrive_outbox_failed) > 0
 |---|---|---|---|
 | 이벤트 전송 적체 | `messaging` | `max by (instance, queue) (modudrive_outbox_lag_seconds) > 120` · `for: 5m` | 이벤트가 SQS로 안 나가고 쌓인다 |
 | 이벤트 전송 실패 | `messaging` | `max by (instance, queue, reason, detail) (modudrive_outbox_failed) > 0` | 사람이 손대야 하는 행이 있다 |
+| 이벤트 처리 실패 | `messaging` | `max by (instance, queue) (modudrive_dlq_messages) > 0` | 컨슈머가 포기한 메시지가 DLQ에 있다 |
 | 서비스 응답 없음 | `service` | `min by (instance) (up{job="services"}) < 1` · `for: 2m` | 스크레이프 실패 = 프로세스가 죽었다 |
 
-1. **이벤트 전송 적체** — 전송 실패에 횟수 제한이 없어 장애가 나도 `FAILED` 행이 안 생긴다
-([messaging 2-2](messaging-spec.md#2-2-전송-실패)). 테이블만 봐서는 멀쩡해 보이므로 감지는 이 알림뿐이다.
-정상값이 0~1초(relay가 1초마다 돈다)라 120초면 명백히 비정상이고, 5분을 버티면 저절로 복구될 장애가 아니다.
-지표는 큐별로 나가므로 알림이 **어느 큐가 몇 초째 밀렸는지**는 말하지만 **왜 막혔는지는 모른다** — `OutboxRelay`는
-일시적 실패를 로그로만 남기고 재시도하기 때문이다([messaging 2-2](messaging-spec.md#2-2-전송-실패)). 그래서 사유 대신
-그 로그로 가는 LogQL(`logs` 문구)을 알림에 실어 보낸다. 원인까지 알림이 말하게 하려면 실패 사유를 지표 라벨로 내보내야 한다.
+1. **이벤트 전송 적체** — SQS가 막히면 `PENDING` 행이 나가지 못하고 가장 오래된 행의 나이가 계속 커진다.
+120초를 5분간 넘기면 알린다. 왜 막혔는지는 지표에 없으니(relay는 일시적 실패를 로그로만 남긴다),
+그 로그로 가는 LogQL을 알림에 같이 실어 보낸다.
 
-2. **이벤트 전송 실패** — `FAILED`는 사람이 손대기 전까지 사라지지 않으니 지속 조건 없이 바로 알린다. 큐·사유별로
-쪼개서 "이 큐의 이벤트가 이래서 멈췄다"라고 말하게 했고, 그 라벨이 알림 문구와 조회 SQL에 그대로 들어간다.
-사유는 라벨로 나가므로 저장할 때부터 100자로 자른다(`OutboxEventJpaEntity.FAILURE_REASON_LENGTH`).
+2. **이벤트 전송 실패** — `FAILED` 행은 사람이 손대기 전까지 사라지지 않으니 한 건이라도 생기면 바로 알린다.
+큐·사유별로 쪼개 보내고, 그 라벨이 박힌 조회·복구 SQL이 알림에 같이 간다.
 
-3. **서비스 응답 없음** — Prometheus가 15초마다 긁는 액추에이터가 2분 내내 응답하지 않으면 울린다.
-프로세스가 죽었거나 액추에이터가 막힌 경우다. 2분을 주는 건 재배포로 잠깐 내려가는 것까지 알리지 않기
-위해서다.
+3. **이벤트 처리 실패** — 컨슈머가 포기한 메시지는 `<큐>-dlq`로 옮겨지고, 사람이 redrive하기 전까지 거기 남는다
+([messaging 3-2](messaging-spec.md#3-2-처리-실패)). 컨슈머가 30초마다 DLQ 건수를 재서 내보내고, 한 건이라도
+있으면 바로 알린다. 사유는 지표에 못 담으니 DLQ 메시지의 `DeadLetterReason`을 보고 고친 뒤 redrive한다.
+
+4. **서비스 응답 없음** — Prometheus가 15초마다 긁는 액추에이터가 2분 내내 응답하지 않으면 알린다.
+프로세스가 죽었거나 액추에이터가 막힌 경우다. 2분을 주는 건 재배포로 잠깐 내려가는 것까지 알리지 않기 위해서다.
 
 ---
 
 ## 8. TODO
 
-- [ ] **DLQ 알림**: Consumer에서 실패한 메시지는 `<큐>-dlq`로 옮겨지기만 하고 알려주는 곳이 없다
-  ([messaging 3-3](messaging-spec.md#3-3-실패-처리)). DLQ에도 보관 기간(기본 4일, 최대 14일)이 있어 방치하면
-  결국 사라진다. DLQ마다 "`ApproximateNumberOfMessagesVisible > 0`이면 알림"을 걸어서, 사유(`DeadLetterReason`)를
-  보고 원인을 고친 뒤 원래 큐로 redrive할 수 있게 한다. Terraform으로 큐를 만들 때(CloudWatch Alarm) 같이 넣는다.
-- [ ] **AWS로 가면**: 두 지표 모두 앱이 내보내는 커스텀 메트릭이라 CloudWatch가 저절로 알지 못한다.
+- [ ] **AWS로 가면**: 세 지표 모두 앱이 내보내는 커스텀 메트릭이라 CloudWatch가 저절로 알지 못한다.
   OTel Collector에 CloudWatch EMF exporter를 붙이거나 ADOT를 쓰는 선택이 남아 있다 —
-  [.docs/aws-migration.md](../aws-migration.md)의 모니터링 항목과 같이 정한다.
+  [.docs/aws-migration.md](../aws-migration.md)의 모니터링 항목과 같이 정한다. DLQ 건수만은 예외로
+  CloudWatch가 `ApproximateNumberOfMessagesVisible`을 이미 알고 있으므로, Terraform으로 큐를 만들 때
+  CloudWatch Alarm을 같이 걸어 앱 폴링을 걷어내는 선택지도 있다.

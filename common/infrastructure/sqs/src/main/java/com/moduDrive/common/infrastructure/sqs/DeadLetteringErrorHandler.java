@@ -8,14 +8,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.Message;
 import software.amazon.awssdk.services.sqs.SqsAsyncClient;
 import software.amazon.awssdk.services.sqs.model.MessageAttributeValue;
-import software.amazon.awssdk.services.sqs.model.QueueAttributeName;
 
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * Listener error handling for every SQS consumer. The message goes to the queue's DLQ with the
@@ -27,9 +23,11 @@ import java.util.regex.Pattern;
  *       with the reason instead of letting SQS redrive it on the next receive without one.</li>
  * </ul>
  * Anything else backs off exponentially (visibility 1s, 2s, 4s...). The DLQ and the receive limit come
- * from the queue's own {@code RedrivePolicy}, so they're set in one place (elasticmq.conf / Terraform).
+ * from the queue's own {@link RedrivePolicy}, so they're set in one place (elasticmq.conf / Terraform).
  * The redrive policy still catches what never reaches this handler (a crashed consumer, a body that
  * isn't JSON). If moving to the DLQ fails, the message falls back to the retry path rather than being lost.
+ * <p>
+ * Nothing here tells anyone a message was parked — that's {@link DeadLetterQueueMetrics}' job.
  */
 @Slf4j
 class DeadLetteringErrorHandler implements AsyncErrorHandler<Object> {
@@ -38,39 +36,22 @@ class DeadLetteringErrorHandler implements AsyncErrorHandler<Object> {
     // SQS allows at most 10 message attributes.
     private static final int MAX_ATTRIBUTES = 10;
     private static final int MAX_REASON_LENGTH = 500;
-    private static final Pattern MAX_RECEIVE_COUNT = Pattern.compile("\"maxReceiveCount\"\\s*:\\s*\"?(\\d+)");
-    private static final Pattern DEAD_LETTER_ARN = Pattern.compile("\"deadLetterTargetArn\"\\s*:\\s*\"([^\"]+)\"");
 
     private final SqsAsyncClient sqsAsyncClient;
     private final AsyncErrorHandler<Object> retry;
-    private final Map<String, CompletableFuture<RedrivePolicy>> redrivePolicies = new ConcurrentHashMap<>();
+    private final RedrivePolicy.Cache redrivePolicies;
 
     DeadLetteringErrorHandler(SqsAsyncClient sqsAsyncClient, AsyncErrorHandler<Object> retry) {
         this.sqsAsyncClient = sqsAsyncClient;
         this.retry = retry;
-    }
-
-    /** The queue's redrive settings; null fields when the queue has no redrive policy. */
-    record RedrivePolicy(Integer maxReceiveCount, String deadLetterQueue) {
-
-        static final RedrivePolicy NONE = new RedrivePolicy(null, null);
-
-        static RedrivePolicy parse(String json) {
-            if (json == null) {
-                return NONE;
-            }
-            Matcher count = MAX_RECEIVE_COUNT.matcher(json);
-            Matcher arn = DEAD_LETTER_ARN.matcher(json);
-            return new RedrivePolicy(count.find() ? Integer.valueOf(count.group(1)) : null,
-                    arn.find() ? arn.group(1).substring(arn.group(1).lastIndexOf(':') + 1) : null);
-        }
+        this.redrivePolicies = new RedrivePolicy.Cache(sqsAsyncClient);
     }
 
     @Override
     public CompletableFuture<Void> handle(Message<Object> message, Throwable failure) {
         String queueUrl = message.getHeaders().get(SqsHeaders.SQS_QUEUE_URL_HEADER, String.class);
         boolean permanent = PermanentFailures.isPermanentForConsumer(failure);
-        return redrivePolicy(queueUrl).thenCompose(policy -> {
+        return redrivePolicies.get(queueUrl).thenCompose(policy -> {
             long receiveCount = receiveCount(message);
             boolean lastAttempt = policy.maxReceiveCount() != null && receiveCount >= policy.maxReceiveCount();
             if (!permanent && !lastAttempt) {
@@ -86,22 +67,6 @@ class DeadLetteringErrorHandler implements AsyncErrorHandler<Object> {
         });
     }
 
-    /** Cached per queue. A failed lookup isn't cached and counts as "no policy" this time: permanent
-     * failures still move (by the naming convention), retryable ones just retry. */
-    private CompletableFuture<RedrivePolicy> redrivePolicy(String queueUrl) {
-        if (queueUrl == null) {
-            return CompletableFuture.completedFuture(RedrivePolicy.NONE);
-        }
-        CompletableFuture<RedrivePolicy> policy = redrivePolicies.computeIfAbsent(queueUrl, url -> sqsAsyncClient
-                .getQueueAttributes(r -> r.queueUrl(url).attributeNames(QueueAttributeName.REDRIVE_POLICY))
-                .thenApply(response -> RedrivePolicy.parse(response.attributes().get(QueueAttributeName.REDRIVE_POLICY))));
-        return policy.exceptionally(lookupFailure -> {
-            redrivePolicies.remove(queueUrl, policy);
-            log.warn("Couldn't read the redrive policy of {}", queueUrl, lookupFailure);
-            return RedrivePolicy.NONE;
-        });
-    }
-
     private CompletableFuture<Void> moveToDeadLetterQueue(Message<Object> message, RedrivePolicy policy, String reason) {
         var raw = message.getHeaders().get(SqsHeaders.SQS_SOURCE_DATA_HEADER,
                 software.amazon.awssdk.services.sqs.model.Message.class);
@@ -109,7 +74,7 @@ class DeadLetteringErrorHandler implements AsyncErrorHandler<Object> {
         if (raw == null || queue == null) {
             return CompletableFuture.failedFuture(new IllegalStateException("No SQS source data on the message"));
         }
-        String deadLetterQueue = policy.deadLetterQueue() != null ? policy.deadLetterQueue() : deadLetterQueueName(queue);
+        String deadLetterQueue = policy.deadLetterQueueOr(queue);
         Map<String, MessageAttributeValue> attributes = new HashMap<>(raw.messageAttributes());
         if (attributes.size() < MAX_ATTRIBUTES) {
             attributes.put(REASON_ATTRIBUTE, MessageAttributeValue.builder().dataType("String").stringValue(reason).build());
@@ -125,11 +90,6 @@ class DeadLetteringErrorHandler implements AsyncErrorHandler<Object> {
     private static long receiveCount(Message<Object> message) {
         Object count = message.getHeaders().get(MessageSystemAttributes.SQS_APPROXIMATE_RECEIVE_COUNT);
         return count == null ? 0 : Long.parseLong(count.toString());
-    }
-
-    /** Fallback when the queue has no redrive policy: {@code name} → {@code name-dlq}. */
-    static String deadLetterQueueName(String queue) {
-        return queue + "-dlq";
     }
 
     /** The innermost permanent cause for a permanent failure, else the root cause: what actually went wrong,

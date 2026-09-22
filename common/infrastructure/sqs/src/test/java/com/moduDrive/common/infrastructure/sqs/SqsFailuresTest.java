@@ -56,14 +56,14 @@ class SqsFailuresTest {
         @Test
         @DisplayName("최대 수신 횟수와 DLQ 이름을 꺼낸다 (AWS의 문자열 숫자도)")
         void readsTheLimitAndDlqName() {
-            var fromElasticMq = DeadLetteringErrorHandler.RedrivePolicy.parse(
+            var fromElasticMq = RedrivePolicy.parse(
                     "{\"deadLetterTargetArn\":\"arn:aws:sqs:elasticmq:000000000000:member-signed-up-dlq\",\"maxReceiveCount\":4}");
-            var fromAws = DeadLetteringErrorHandler.RedrivePolicy.parse(
+            var fromAws = RedrivePolicy.parse(
                     "{\"deadLetterTargetArn\":\"arn:aws:sqs:ap-northeast-2:123:mail-dlq\",\"maxReceiveCount\":\"5\"}");
 
-            assertThat(fromElasticMq).isEqualTo(new DeadLetteringErrorHandler.RedrivePolicy(4, "member-signed-up-dlq"));
-            assertThat(fromAws).isEqualTo(new DeadLetteringErrorHandler.RedrivePolicy(5, "mail-dlq"));
-            assertThat(DeadLetteringErrorHandler.RedrivePolicy.parse(null)).isEqualTo(DeadLetteringErrorHandler.RedrivePolicy.NONE);
+            assertThat(fromElasticMq).isEqualTo(new RedrivePolicy(4, "member-signed-up-dlq"));
+            assertThat(fromAws).isEqualTo(new RedrivePolicy(5, "mail-dlq"));
+            assertThat(RedrivePolicy.parse(null)).isEqualTo(RedrivePolicy.NONE);
         }
     }
 
@@ -75,10 +75,10 @@ class SqsFailuresTest {
     }
 
     @Test
-    @DisplayName("DLQ 이름은 <이름>-dlq 규칙을 따른다")
+    @DisplayName("redrive 설정이 없으면 DLQ 이름은 <이름>-dlq 규칙으로 정한다")
     void namesTheDeadLetterQueue() {
-        assertThat(DeadLetteringErrorHandler.deadLetterQueueName("member-signed-up"))
-                .isEqualTo("member-signed-up-dlq");
+        assertThat(RedrivePolicy.NONE.deadLetterQueueOr("member-signed-up")).isEqualTo("member-signed-up-dlq");
+        assertThat(new RedrivePolicy(4, "custom-dlq").deadLetterQueueOr("member-signed-up")).isEqualTo("custom-dlq");
     }
 
     private static SqsException sqsError(int status, String code) {
