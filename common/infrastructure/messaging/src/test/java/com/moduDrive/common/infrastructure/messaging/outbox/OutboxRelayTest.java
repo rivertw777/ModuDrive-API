@@ -343,24 +343,33 @@ class OutboxRelayTest {
         private final OutboxMetrics metrics = new OutboxMetrics(entityManager);
 
         @Test
-        @DisplayName("보낼 행이 없으면 0이다")
-        void readsZeroWhenNothingIsWaiting() {
-            assertThat(metrics.oldestPendingAgeSeconds()).isZero();
+        @DisplayName("보낼 행이 없으면 아무 큐도 내보내지 않는다")
+        void publishesNothingWhenNothingIsWaiting() {
+            assertThat(metrics.pendingLag()).isEmpty();
         }
 
         @Test
-        @DisplayName("가장 오래 기다린 행의 나이를 재고, 보내고 나면 0으로 돌아온다")
-        void measuresTheOldestWaitingRowThenFallsBackToZero() {
+        @DisplayName("큐마다 가장 오래 기다린 행의 나이를 재고, 보내고 나면 그 큐가 사라진다 — 알람이 어느 큐가 막혔는지 말해야 한다")
+        void measuresTheOldestWaitingRowPerQueueThenDropsTheQueue() {
             recorder.record("queue-a", "k1", new OutboxTestEvent(UUID.randomUUID(), "old"));
             recorder.record("queue-a", "k2", new OutboxTestEvent(UUID.randomUUID(), "new"));
+            recorder.record("queue-b", "k3", new OutboxTestEvent(UUID.randomUUID(), "fresh"));
             backdateOldestPendingBy(Duration.ofMinutes(5));
 
-            assertThat(metrics.oldestPendingAgeSeconds()).isGreaterThanOrEqualTo(300);
+            assertThat(metrics.pendingLag())
+                    .anySatisfy(group -> {
+                        assertThat(group.queue()).isEqualTo("queue-a");
+                        assertThat(group.ageSeconds()).isGreaterThanOrEqualTo(300);
+                    })
+                    .anySatisfy(group -> {
+                        assertThat(group.queue()).isEqualTo("queue-b");
+                        assertThat(group.ageSeconds()).isLessThan(300);
+                    });
 
             relay.relay();
 
             assertThat(countByStatus(OutboxEventStatus.PENDING)).isZero();
-            assertThat(metrics.oldestPendingAgeSeconds()).isZero();
+            assertThat(metrics.pendingLag()).isEmpty();
         }
 
         @Test
@@ -375,7 +384,10 @@ class OutboxRelayTest {
 
             assertThat(countByStatus(OutboxEventStatus.FAILED)).isZero();
             assertThat(countByStatus(OutboxEventStatus.PENDING)).isEqualTo(1);
-            assertThat(metrics.oldestPendingAgeSeconds()).isGreaterThanOrEqualTo(600);
+            assertThat(metrics.pendingLag()).singleElement().satisfies(group -> {
+                assertThat(group.queue()).isEqualTo("queue-a");
+                assertThat(group.ageSeconds()).isGreaterThanOrEqualTo(600);
+            });
         }
 
         @Test

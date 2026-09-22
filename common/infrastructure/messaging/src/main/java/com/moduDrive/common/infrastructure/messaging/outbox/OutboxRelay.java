@@ -78,9 +78,9 @@ class OutboxRelay {
         executor.scheduleWithFixedDelay(() -> {
             try {
                 relay();
-                // Here rather than on scrape: the parked-row gauge is one series per queue, and which
-                // queues exist changes as rows are parked and fixed.
-                metrics.refreshFailed();
+                // Here rather than on scrape: both gauges are one series per queue, and which queues
+                // have rows waiting or parked changes as rows pile up, drain and are fixed.
+                metrics.refresh();
             } catch (Exception e) {
                 // An escaped exception would cancel the schedule for good.
                 log.error("Outbox relay tick failed", e);

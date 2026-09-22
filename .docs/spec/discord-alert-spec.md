@@ -92,6 +92,13 @@ max by (instance, queue, reason) (modudrive_outbox_failed) > 0
 | `.Annotations.*` | 규칙에 적어둔 문구(사유·조치·로그 쿼리·조회 SQL·복구 SQL). 평가 시점에 `$labels`·`$values`가 박혀 굳는다 |
 | `.GeneratorURL` / `.SilenceURL` | 규칙 상세 / 무음(Silence) 화면 링크 |
 
+한 메시지에 알림이 여러 개 담길 수 있다([5장](#5-그룹핑과-재발송)). 섞이지 않게 알림마다
+**제목 → 내용 → 링크**를 한 덩어리로 쓰고, 덩어리 사이는 빈 줄로 나눈다.
+
+- 링크는 그 알림의 것을 단다 — `알림 일시 중지`가 그 알림 하나만 잠재우기 때문이다.
+- 줄바꿈 하나는 디스코드가 같은 문단으로 붙여 그리므로, 항목 사이는 빈 줄로 띄운다.
+  단 코드 블록 뒤에는 디스코드가 여백을 이미 줘서 넣지 않는다.
+
 ---
 
 ## 5. 그룹핑과 재발송
@@ -119,16 +126,16 @@ max by (instance, queue, reason) (modudrive_outbox_failed) > 0
 
 | 알림 | 채널 | 조건 | 무슨 뜻인가 |
 |---|---|---|---|
-| 이벤트 전송 적체 | `messaging` | `max by (instance) (modudrive_outbox_lag_seconds) > 120` · `for: 5m` | 이벤트가 SQS로 안 나가고 쌓인다 |
+| 이벤트 전송 적체 | `messaging` | `max by (instance, queue) (modudrive_outbox_lag_seconds) > 120` · `for: 5m` | 이벤트가 SQS로 안 나가고 쌓인다 |
 | 이벤트 전송 실패 | `messaging` | `max by (instance, queue, reason, detail) (modudrive_outbox_failed) > 0` | 사람이 손대야 하는 행이 있다 |
 | 서비스 응답 없음 | `service` | `min by (instance) (up{job="services"}) < 1` · `for: 2m` | 스크레이프 실패 = 프로세스가 죽었다 |
 
 1. **이벤트 전송 적체** — 전송 실패에 횟수 제한이 없어 장애가 나도 `FAILED` 행이 안 생긴다
 ([messaging 2-2](messaging-spec.md#2-2-전송-실패)). 테이블만 봐서는 멀쩡해 보이므로 감지는 이 알림뿐이다.
 정상값이 0~1초(relay가 1초마다 돈다)라 120초면 명백히 비정상이고, 5분을 버티면 저절로 복구될 장애가 아니다.
-지표가 아는 건 **밀린 초뿐이고 왜 막혔는지는 모른다** — `OutboxRelay`는 일시적 실패를 로그로만 남기고
-재시도하기 때문이다([messaging 2-2](messaging-spec.md#2-2-전송-실패)). 그래서 사유 대신 그 로그로 가는
-LogQL(`logs` 문구)을 알림에 실어 보낸다. 원인까지 알림이 말하게 하려면 실패 사유를 지표 라벨로 내보내야 한다.
+지표는 큐별로 나가므로 알림이 **어느 큐가 몇 초째 밀렸는지**는 말하지만 **왜 막혔는지는 모른다** — `OutboxRelay`는
+일시적 실패를 로그로만 남기고 재시도하기 때문이다([messaging 2-2](messaging-spec.md#2-2-전송-실패)). 그래서 사유 대신
+그 로그로 가는 LogQL(`logs` 문구)을 알림에 실어 보낸다. 원인까지 알림이 말하게 하려면 실패 사유를 지표 라벨로 내보내야 한다.
 
 2. **이벤트 전송 실패** — `FAILED`는 사람이 손대기 전까지 사라지지 않으니 지속 조건 없이 바로 알린다. 큐·사유별로
 쪼개서 "이 큐의 이벤트가 이래서 멈췄다"라고 말하게 했고, 그 라벨이 알림 문구와 조회 SQL에 그대로 들어간다.
