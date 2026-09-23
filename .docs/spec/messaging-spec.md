@@ -286,21 +286,43 @@ DLQ로 옮겨지고 나면 원래 큐는 다시 비어 보여서, 알림이 없�
 
 ## 6. 인프라
 
-| | 로컬 | AWS |
-|---|---|---|
-| SQS | LocalStack 컨테이너 (`.docker/docker-compose.infra.yml`, 포트 4566 — S3와 같이 씀) | Amazon SQS |
-| 큐/DLQ/redrive 정의 | `.docker/localstack/init-aws.sh` (LocalStack이 뜰 때마다 실행) | Terraform (스크립트와 똑같이 맞출 것) |
-| 접속 | `SPRING_CLOUD_AWS_SQS_ENDPOINT=http://localstack:4566` + 더미 키 | endpoint/키 미설정 → ECS task role, `AWS_REGION` |
+### 6-1. 로컬
 
-- LocalStack은 2026-03-23부터 **auth token 필수** — `.docker/.env`의 `LOCALSTACK_AUTH_TOKEN` (app.localstack.cloud → Auth Tokens, 무료 플랜은 비상업 용도 한정). `./gradlew test`의 큐 테스트도 같은 토큰을 셸 환경변수로 읽는다.
-- **메모리 저장** — 무료 플랜엔 영속화가 없어서 재시작하면 큐에 떠 있던 메시지와 **업로드한 S3 파일이 전부 사라진다**(Postgres의 파일 행은 남으니 재시작 후엔 `make reset`). 아직 안 보낸 메시지는 outbox 테이블에 남아 있으니 SQS 쪽 유실은 "전송 완료 후 소비 전"인 것만. 큐와 버킷은 init 스크립트가 뜰 때마다 다시 만든다.
-- 앱은 큐를 만들지 않음(`queue-not-found-strategy: fail`) — 없으면 기동 실패. 자동 생성하면 DLQ/redrive 없는 큐가 생기기 때문.
+| 항목 | 내용 |
+|---|---|
+| 브로커 | LocalStack 컨테이너 (`.docker/docker-compose.infra.yml`, 포트 4566) |
+| 큐/DLQ/redrive 정의 | `.docker/localstack/init-aws.sh` — LocalStack이 뜰 때마다 큐 + DLQ + 버킷을 만든다 |
+| 접속 | `SPRING_CLOUD_AWS_SQS_ENDPOINT=http://localstack:4566` + 더미 키(`test`) |
+| 인증 토큰 | `.docker/.env`의 `LOCALSTACK_AUTH_TOKEN` (app.localstack.cloud → Auth Tokens). `./gradlew test`의 큐 테스트도 여기서 읽는다 |
+
+- **토큰 필수** — LocalStack은 2026-03-23부터 토큰 없이는 안 뜬다. 무료(Hobby) 플랜은 비상업 용도 한정.
+- **메모리 저장** — 무료 플랜엔 영속화가 없어서, 재시작하면 큐에 떠 있던 메시지가 전부 사라진다. Postgres의 파일 행은 남으니 재시작 후엔 `make reset` 필요.
 - 큐 상태 보기: `docker exec modudrive-infra-localstack-1 awslocal sqs get-queue-attributes --queue-url http://localhost:4566/000000000000/<큐> --attribute-names All`
 
-**왜 FIFO가 아닌가** — 순서 보장이 필요한 큐가 하나도 없기 때문이다(메일·알림은 받는 사람별로 1건씩, 가입은
-사람당 1건). 알림 피드는 소비 시각(`created_at`) 순으로 보이므로, 같은 사람에게 1초 간격으로 두 건이 가면 순서가
-뒤집혀 보일 수 있다 — 그 순서에 의미가 생기면 이벤트에 발생 시각을 실어 그걸로 정렬한다. FIFO가 주던 5분 중복 제거는 Consumer 멱등성 체크가 이미 하고 있고([3-1-1](#3-1-1-멱등성-체크)),
-대신 FIFO는 300 TPS 상한과 **같은 그룹 머리 막힘**(한 건이 재시도하는 동안 뒤가 대기)을 물고 온다.
+### 6-2. 운영 (AWS)
+
+| 항목 | 내용 |
+|---|---|
+| 브로커 | Amazon SQS (표준 큐) |
+| 큐/DLQ/redrive 정의 | Terraform (예정) — `init-aws.sh`와 **똑같이** 맞출 것: 큐 + `-dlq`, visibility 10초, maxReceiveCount 4 |
+| 접속 | endpoint·키 **미설정** → SDK 기본 체인이 ECS task role + `AWS_REGION`을 쓴다 |
+
+**task role 권한** — 로컬 LocalStack은 권한을 검사하지 않아서, 하나라도 빠지면 운영에서만 `AccessDenied`가 난다.
+서비스마다 **자기가 쓰는 큐에만** 준다(최소 권한 — 한 서비스가 뚫려도 남의 큐는 못 건드리게).
+
+| 누가 | 권한 | 왜 |
+|---|---|---|
+| Publisher (member/file-service) | `SendMessage` | outbox 릴레이가 큐로 전송 |
+| Consumer (file/mail/notification-service) | `ReceiveMessage` | 큐에서 메시지 가져오기 |
+| | `DeleteMessage` | 처리 성공 시 삭제 — 없으면 같은 메시지가 계속 다시 옴 |
+| | `ChangeMessageVisibility` | 재시도 백오프(1s/2s/4s 뒤 다시 받기) |
+| | DLQ에 `SendMessage` | 재처리 불가 실패를 에러 핸들러가 바로 DLQ로 옮김 |
+| | `GetQueueUrl`, `GetQueueAttributes` | 큐 이름 → 주소 조회, redrive 설정(DLQ·최대 수신 횟수)과 DLQ 건수 읽기 |
+
+- DLQ 메시지는 SQS 보관 기간(기본 4일)이 지나면 사라진다 — 알림([3-2-1](#3-2-1-dlq에-들어간-뒤))을 받으면 그 안에 redrive 필요.
+
+### 6-3. SQS 도입 배경과 STANDARD 큐 사용 이유
+
 
 ---
 
