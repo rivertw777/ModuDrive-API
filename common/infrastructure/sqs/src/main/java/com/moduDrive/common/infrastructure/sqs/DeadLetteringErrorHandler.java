@@ -23,7 +23,7 @@ import java.util.concurrent.CompletableFuture;
  *       with the reason instead of letting SQS redrive it on the next receive without one.</li>
  * </ul>
  * Anything else backs off exponentially (visibility 1s, 2s, 4s...). The DLQ and the receive limit come
- * from the queue's own {@link RedrivePolicy}, so they're set in one place (elasticmq.conf / Terraform).
+ * from the queue's own {@link RedrivePolicy}, so they're set in one place (init-aws.sh / Terraform).
  * The redrive policy still catches what never reaches this handler (a crashed consumer, a body that
  * isn't JSON). If moving to the DLQ fails, the message falls back to the retry path rather than being lost.
  * <p>

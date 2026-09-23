@@ -17,7 +17,7 @@ import java.net.URI;
 @EnableConfigurationProperties(StorageProperties.class)
 public class S3Config {
 
-    /** An endpoint means an S3-compatible store (local MinIO); without one this talks to real S3.
+    /** An endpoint means an S3 emulator (local LocalStack); without one this talks to real S3.
      * Without keys the SDK's default credential chain applies — the ECS task role on AWS. */
     @Bean
     public S3Client s3Client(StorageProperties properties) {

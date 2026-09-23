@@ -56,12 +56,12 @@ class SqsFailuresTest {
         @Test
         @DisplayName("최대 수신 횟수와 DLQ 이름을 꺼낸다 (AWS의 문자열 숫자도)")
         void readsTheLimitAndDlqName() {
-            var fromElasticMq = RedrivePolicy.parse(
-                    "{\"deadLetterTargetArn\":\"arn:aws:sqs:elasticmq:000000000000:member-signed-up-dlq\",\"maxReceiveCount\":4}");
+            var fromLocalStack = RedrivePolicy.parse(
+                    "{\"deadLetterTargetArn\":\"arn:aws:sqs:ap-northeast-2:000000000000:member-signed-up-dlq\",\"maxReceiveCount\":4}");
             var fromAws = RedrivePolicy.parse(
                     "{\"deadLetterTargetArn\":\"arn:aws:sqs:ap-northeast-2:123:mail-dlq\",\"maxReceiveCount\":\"5\"}");
 
-            assertThat(fromElasticMq).isEqualTo(new RedrivePolicy(4, "member-signed-up-dlq"));
+            assertThat(fromLocalStack).isEqualTo(new RedrivePolicy(4, "member-signed-up-dlq"));
             assertThat(fromAws).isEqualTo(new RedrivePolicy(5, "mail-dlq"));
             assertThat(RedrivePolicy.parse(null)).isEqualTo(RedrivePolicy.NONE);
         }

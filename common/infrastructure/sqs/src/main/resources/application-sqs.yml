@@ -1,8 +1,8 @@
 # Shared by every SQS service (member/file produce via the outbox; file/mail/notification consume).
-# Connection comes from the environment: locally SPRING_CLOUD_AWS_SQS_ENDPOINT points at ElasticMQ with
+# Connection comes from the environment: locally SPRING_CLOUD_AWS_SQS_ENDPOINT points at LocalStack with
 # dummy keys; on AWS both are unset, so the SDK's default chain (ECS task role, AWS_REGION) applies.
 # Queues, DLQs and retry counts (redrive policy) belong to the infrastructure, not the app:
-# .docker/elasticmq/elasticmq.conf locally, Terraform on AWS.
+# .docker/localstack/init-aws.sh locally, Terraform on AWS.
 spring:
   cloud:
     aws:

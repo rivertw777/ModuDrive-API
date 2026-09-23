@@ -288,14 +288,14 @@ DLQ로 옮겨지고 나면 원래 큐는 다시 비어 보여서, 알림이 없�
 
 | | 로컬 | AWS |
 |---|---|---|
-| SQS | ElasticMQ 컨테이너 (`.docker/docker-compose.infra.yml`, 포트 9324) | Amazon SQS |
-| 큐/DLQ/redrive 정의 | `.docker/elasticmq/elasticmq.conf` | Terraform (conf와 똑같이 맞출 것) |
-| 접속 | `SPRING_CLOUD_AWS_SQS_ENDPOINT=http://elasticmq:9324` + 더미 키 | endpoint/키 미설정 → ECS task role, `AWS_REGION` |
+| SQS | LocalStack 컨테이너 (`.docker/docker-compose.infra.yml`, 포트 4566 — S3와 같이 씀) | Amazon SQS |
+| 큐/DLQ/redrive 정의 | `.docker/localstack/init-aws.sh` (LocalStack이 뜰 때마다 실행) | Terraform (스크립트와 똑같이 맞출 것) |
+| 접속 | `SPRING_CLOUD_AWS_SQS_ENDPOINT=http://localstack:4566` + 더미 키 | endpoint/키 미설정 → ECS task role, `AWS_REGION` |
 
-- LocalStack이 아니라 ElasticMQ인 이유: LocalStack 이미지가 2026-03-23부터 auth token 필수가 됨. ElasticMQ는 무료·가입 불필요, 표준/FIFO 큐와 redrive 지원.
-- ElasticMQ는 **메모리 저장** — 재시작하면 큐에 떠 있던 메시지는 사라짐. 아직 안 보낸 건 outbox 테이블에 남아 있으니 유실은 "전송 완료 후 소비 전"인 것만.
+- LocalStack은 2026-03-23부터 **auth token 필수** — `.docker/.env`의 `LOCALSTACK_AUTH_TOKEN` (app.localstack.cloud → Auth Tokens, 무료 플랜은 비상업 용도 한정). `./gradlew test`의 큐 테스트도 같은 토큰을 셸 환경변수로 읽는다.
+- `PERSISTENCE=1` — 재시작해도 큐에 떠 있던 메시지와 S3 객체가 `localstack_data` 볼륨에 남는다. 그래서 init 스크립트는 "생성"이 아니라 "맞추기"로 짬(create-queue 후 set-queue-attributes).
 - 앱은 큐를 만들지 않음(`queue-not-found-strategy: fail`) — 없으면 기동 실패. 자동 생성하면 DLQ/redrive 없는 큐가 생기기 때문.
-- 큐 상태 보기: `curl "http://localhost:9324/?Action=GetQueueAttributes&QueueUrl=http://localhost:9324/000000000000/<큐>&AttributeName.1=All"`
+- 큐 상태 보기: `docker exec modudrive-infra-localstack-1 awslocal sqs get-queue-attributes --queue-url http://localhost:4566/000000000000/<큐> --attribute-names All`
 
 **왜 FIFO가 아닌가** — 순서 보장이 필요한 큐가 하나도 없기 때문이다(메일·알림은 받는 사람별로 1건씩, 가입은
 사람당 1건). 알림 피드는 소비 시각(`created_at`) 순으로 보이므로, 같은 사람에게 1초 간격으로 두 건이 가면 순서가

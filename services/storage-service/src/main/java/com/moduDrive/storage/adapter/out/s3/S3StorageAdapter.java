@@ -85,7 +85,7 @@ class S3StorageAdapter implements StoreBlocksPort, RetrieveBlocksPort, DeleteBlo
         return rawBlocks.size();
     }
 
-    // S3's (and MinIO's) DeleteObjects rejects more than 1000 keys per request — a multi-GB file
+    // S3's DeleteObjects rejects more than 1000 keys per request — a multi-GB file
     // easily has more blocks than that, so a single request would fail outright above this size.
     private static final int DELETE_BATCH_SIZE = 1000;
 

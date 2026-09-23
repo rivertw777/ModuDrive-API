@@ -19,6 +19,6 @@ dependencies {
     // MessageConversionException: the serialization failure the send path has to classify.
     testImplementation 'org.springframework:spring-messaging'
     testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
-    // SimpleMeterRegistry, so the DLQ gauge is actually published in the ElasticMQ test.
+    // SimpleMeterRegistry, so the DLQ gauge is actually published in the LocalStack test.
     testImplementation 'org.springframework.boot:spring-boot-starter-actuator'
 }

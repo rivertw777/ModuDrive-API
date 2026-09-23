@@ -14,8 +14,8 @@
 | gateway-service (Spring Cloud Gateway) | 그대로 유지 + 앞단 **ALB** | 라우트 URI만 |
 | Postgres 18 | **RDS for PostgreSQL** | 없음 (접속 정보만) |
 | Redis 7 | **ElastiCache for Valkey** | 설정 (TLS on) |
-| Kafka (단일 브로커) | **SQS 표준 큐** (확정, #365) — 로컬은 ElasticMQ | 완료 — PR #368 |
-| MinIO | **S3** | 작음 — `S3Config` 수정 |
+| Kafka (단일 브로커) | **SQS 표준 큐** (확정, #365) — 로컬은 LocalStack (#403) | 완료 — PR #368 |
+| MinIO → LocalStack (#403) | **S3** | 작음 — `S3Config` 수정 |
 | SMTP (MAIL_HOST) | **SES** (SMTP 인터페이스) | 없음 (설정만) |
 | `.env` 시크릿 | **Secrets Manager** / SSM Parameter Store | 없음 (ECS가 env로 주입) |
 | Prometheus/Promtail/Loki/Tempo/Grafana | ★ **CloudWatch + X-Ray (ADOT)** 또는 Grafana 스택 자체 호스팅 | 없음 (OTLP 유지) |
@@ -62,20 +62,20 @@
 | 순서 보장 | 없음 — 순서가 필요한 큐가 없어 표준 큐를 쓴다 | 파티션 키 그대로 |
 | 재시도/DLT | redrive policy + DLQ (지금 `<topic>-dlt` 대응) | 지금 구조 그대로 |
 | replay | 없음 | 가능 |
-| 로컬 개발 | ElasticMQ (LocalStack은 2026-03부터 auth token 필수라 제외) | 지금 Kafka 그대로 |
+| 로컬 개발 | LocalStack (#403, 무료 비상업 auth token 필요. 그 전엔 ElasticMQ) | 지금 Kafka 그대로 |
 
 - 나중에 fan-out이 생기면 SNS 토픽 → SQS 큐들로 확장.
 - replay: 실패분은 DLQ redrive로 충분. 성공분 replay가 필요해지면 outbox 행 보관(`sent_at` + N일) + 재발행으로 해결 (`.docs/spec/messaging-spec.md` 6장).
-- Terraform: 큐 4개 + `-dlq`(표준), visibility 10s, maxReceiveCount 4 — `.docker/elasticmq/elasticmq.conf`와 동일하게.
+- Terraform: 큐 4개 + `-dlq`(표준), visibility 10s, maxReceiveCount 4 — `.docker/localstack/init-aws.sh`와 동일하게.
 - outbox 패턴(#350)은 그대로 유지 — relay의 전송 대상만 바뀐다.
 
 ### 2-7. MinIO → S3
 - `S3Config` 수정 필요:
-  - `endpointOverride`, `forcePathStyle`은 endpoint가 설정된 경우(로컬 MinIO)에만 적용
+  - `endpointOverride`, `forcePathStyle`은 endpoint가 설정된 경우(로컬 LocalStack)에만 적용
   - 키가 없으면 `DefaultCredentialsProvider` 사용 → ECS **Task Role**로 인증 (액세스 키 제거)
   - 기동 시 `createBucket`은 로컬 전용으로 — 운영 버킷은 Terraform이 만들고 태스크엔 버킷 생성 권한을 주지 않음
 - 버킷: 퍼블릭 액세스 차단, SSE-S3/SSE-KMS 기본 암호화, 수명주기 정책.
-- 로컬은 MinIO 그대로 써도 됨 (S3 호환).
+- 로컬은 LocalStack S3 (#403, 그 전엔 MinIO).
 
 ### 2-8. 메일 → SES
 - SES SMTP 엔드포인트(`email-smtp.<region>.amazonaws.com:587`)를 `MAIL_HOST`에 넣으면 **코드 변경 없음**.
@@ -118,7 +118,7 @@ Promtail은 docker socket 기반이라 **Fargate에서 못 쓴다** — 로그 �
 1. **이식성 작업** (로컬에서 검증 가능한 것들)
    - Eureka 제거 → 고정 URL 기반 호출 (Service Connect 대비) — #363 / PR #366 (완료)
    - `S3Config` IAM Role 대응 — #364 / PR #367 (완료)
-   - Kafka → SQS: 어댑터 교체 + 로컬 ElasticMQ (Kafka 컨테이너 제거) — #365 / PR #368 (완료)
+   - Kafka → SQS: 어댑터 교체 + 로컬 ElasticMQ (Kafka 컨테이너 제거, 이후 #403에서 LocalStack으로) — #365 / PR #368 (완료)
 2. **Terraform 기반 인프라** — VPC, RDS, ElastiCache, S3, SES, ECR, ECS, ALB, Secrets
 3. **CI/CD** — GitHub Actions → ECR → ECS
 4. **모니터링** — ADOT + CloudWatch/X-Ray
