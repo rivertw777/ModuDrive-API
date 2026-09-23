@@ -139,7 +139,7 @@ Promtail은 docker socket 기반이라 **Fargate에서 못 쓴다** — 로그 �
    - 서비스 레지스트리 제거 → 고정 URL 호출 — #363 / PR #366
    - `S3Config` task role 대응 — #364 / PR #367
    - SQS 어댑터 — #365 / PR #368
-   - 로컬 SQS·S3를 LocalStack으로 통일 — #403 (진행 중)
+   - 로컬 SQS·S3를 LocalStack으로 통일 — #403 / PR #404
 2. ⬜ **Terraform 기반 인프라** — VPC, RDS, ElastiCache, S3, SQS, SES, ECR, ECS, ALB, Secrets
 3. ⬜ **CI/CD** — GitHub Actions → ECR → ECS
 4. ⬜ **모니터링 · 알림** — 2-10 결정 후
