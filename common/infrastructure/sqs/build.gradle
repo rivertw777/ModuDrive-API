@@ -19,6 +19,18 @@ dependencies {
     // MessageConversionException: the serialization failure the send path has to classify.
     testImplementation 'org.springframework:spring-messaging'
     testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
-    // SimpleMeterRegistry, so the DLQ gauge is actually published in the ElasticMQ test.
+    // SimpleMeterRegistry, so the DLQ gauge is actually published in the LocalStack test.
     testImplementation 'org.springframework.boot:spring-boot-starter-actuator'
+}
+
+// The queue test starts LocalStack itself and needs the same auth token compose reads from .docker/.env;
+// hand it over from there so it lives in one place. An exported LOCALSTACK_AUTH_TOKEN still wins.
+tasks.named('test') {
+    def envFile = rootProject.file('.docker/.env')
+    if (!System.getenv('LOCALSTACK_AUTH_TOKEN') && envFile.exists()) {
+        def line = envFile.readLines().find { it.startsWith('LOCALSTACK_AUTH_TOKEN=') }
+        if (line) {
+            environment 'LOCALSTACK_AUTH_TOKEN', line.substring('LOCALSTACK_AUTH_TOKEN='.length()).trim()
+        }
+    }
 }

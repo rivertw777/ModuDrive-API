@@ -5,6 +5,16 @@
 
 ---
 
+## 목차
+
+- [1. 한눈에 보기](#1-한눈에-보기)
+- [2. 구성 파일](#2-구성-파일)
+- [3. 컴포넌트별 정리](#3-컴포넌트별-정리)
+- [4. 실행](#4-실행)
+- [5. 운영 메모 / 트러블슈팅](#5-운영-메모--트러블슈팅)
+
+---
+
 ## 1. 한눈에 보기
 
 ```
@@ -49,7 +59,7 @@
 - 노출 엔드포인트: `health`, `prometheus`만
 - `management.tracing.sampling.probability: 1.0` — 앱은 전량 export, 샘플링은 collector가 결정
 - `logging.pattern.correlation` — 로그 줄에 `[앱이름,traceId,spanId]`를 찍음 (Loki→Tempo 링크의 근거)
-- SQS observation 켬(`application-sqs.yml`) — 프로듀서→컨슈머로 trace가 이어지게 (`.docs/spec/messaging-spec.md` 7장)
+- SQS observation 켬(`application-sqs.yml`) — 프로듀서→컨슈머로 trace가 이어지게 (`.docs/spec/messaging-spec.md` 6장)
 
 ---
 
@@ -66,7 +76,7 @@
 ### Promtail (`grafana/promtail`) + Loki (`grafana/loki`)
 - Promtail은 `docker_sd_configs`로 컨테이너를 5초마다 재발견 → 서비스가 몇 개 뜨든 설정 변경 불필요.
 - 라벨: `container`(컨테이너 이름), `service`(compose 서비스 이름). Grafana에서 `{service="file-service"}` 식으로 조회.
-- infra/observability 컨테이너 로그(postgres, elasticmq, loki 자신 등)도 전부 수집됨.
+- infra/observability 컨테이너 로그(postgres, localstack, loki 자신 등)도 전부 수집됨.
 - Loki는 단일 노드, 파일시스템 저장, `retention_period: 72h` + compactor `retention_enabled`로 실제 삭제.
 - Promtail은 `/var/run/docker.sock`을 마운트함 — 사실상 호스트 root 권한. **로컬 dev 전용.**
 
@@ -82,7 +92,7 @@
 
 ### Tempo (`grafana/tempo`)
 - monolithic 모드, 로컬 파일시스템 백엔드(`/var/tempo`).
-- 운영 전환 시 S3/MinIO 백엔드로 교체 — 주석 참고. MinIO root 계정 재사용 금지, 전용 버킷·계정 발급.
+- 운영 전환 시 S3 백엔드로 교체 — 주석 참고. storage-service 권한 재사용 금지, 전용 버킷·IAM 발급.
 
 ### Grafana (`grafana/grafana`, `127.0.0.1:3001`)
 - 3000은 ModuDrive-WEB(Vite)이 쓰므로 3001.

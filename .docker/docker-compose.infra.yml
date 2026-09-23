@@ -12,13 +12,13 @@ services:
       - POSTGRES_DB=postgres
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      # Per-service logins, created by init/01_postgres_init.sh
+      # Per-service logins, created by postgres/01_postgres_init.sh
       - MEMBER_DB_PASSWORD=${MEMBER_DB_PASSWORD:?}
       - FILE_DB_PASSWORD=${FILE_DB_PASSWORD:?}
       - NOTIFICATION_DB_PASSWORD=${NOTIFICATION_DB_PASSWORD:?}
     volumes:
       - postgres_data:/var/lib/postgresql
-      - ./init:/docker-entrypoint-initdb.d
+      - ./postgres:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d postgres"]
       interval: 10s
@@ -44,36 +44,31 @@ services:
       retries: 5
     restart: unless-stopped
 
-  minio:
-    image: minio/minio:latest
+  # Local stand-in for Amazon SQS and S3. Queues and the bucket come from localstack/init-aws.sh, run
+  # on every start. In memory only — the free plan has no persistence, so a restart drops queued
+  # messages and every uploaded block while Postgres keeps the file rows: `make reset` after one.
+  # localstack_data only caches the license. Needs a (free, non-commercial) auth token.
+  localstack:
+    image: localstack/localstack:2026.08.3
     networks:
       - modudrive_network
     ports:
-      - "127.0.0.1:9000:9000"
-      - "127.0.0.1:9001:9001"
+      - "127.0.0.1:4566:4566"
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-    command: server /data --console-address ":9001"
+      - LOCALSTACK_AUTH_TOKEN=${LOCALSTACK_AUTH_TOKEN:?set LOCALSTACK_AUTH_TOKEN in .docker/.env}
+      - SERVICES=s3,sqs
+      # What the init script creates: queues in the services' SQS_REGION, storage-service's bucket.
+      - AWS_DEFAULT_REGION=${SQS_REGION}
+      - STORAGE_S3_BUCKET=${STORAGE_S3_BUCKET}
+      - STORAGE_S3_REGION=${STORAGE_S3_REGION}
     volumes:
-      - minio_data:/data
+      - localstack_data:/var/lib/localstack
+      - ./localstack/init-aws.sh:/etc/localstack/init/ready.d/init-aws.sh:ro
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD-SHELL", "curl -sf localhost:4566/_localstack/init/ready | grep -Eq '\"completed\": *true'"]
       interval: 10s
       timeout: 5s
-      retries: 5
-    restart: unless-stopped
-
-  # Local stand-in for Amazon SQS. Queues are declared in elasticmq/elasticmq.conf, in memory only:
-  # a restart drops whatever was in flight (the producers' outbox tables still hold anything unsent).
-  elasticmq:
-    image: softwaremill/elasticmq-native:1.7.1
-    networks:
-      - modudrive_network
-    ports:
-      - "127.0.0.1:9324:9324"
-    volumes:
-      - ./elasticmq/elasticmq.conf:/opt/elasticmq.conf:ro
+      retries: 10
     restart: unless-stopped
 
 # Observability (otel-collector, tempo, loki, promtail, prometheus, grafana) lives
@@ -87,4 +82,4 @@ networks:
 volumes:
   postgres_data:
   redis_data:
-  minio_data:
+  localstack_data:

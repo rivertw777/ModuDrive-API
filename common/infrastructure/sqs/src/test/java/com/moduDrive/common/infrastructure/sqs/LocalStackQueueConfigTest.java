@@ -19,6 +19,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.utility.MountableFile;
 import software.amazon.awssdk.services.sqs.SqsAsyncClient;
 import software.amazon.awssdk.services.sqs.model.Message;
@@ -28,6 +29,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -39,32 +41,40 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
-/** Runs the real {@code .docker/elasticmq/elasticmq.conf} against the real SQS client stack and this
+/** Runs the real {@code .docker/localstack/init-aws.sh} against the real SQS client stack and this
  * module's error handling, so a queue-name typo, a missing DLQ, a broken redrive policy or a
  * misclassified failure fails here instead of in the E2E. */
-@SpringBootTest(classes = ElasticMqQueueConfigTest.TestApp.class,
+@SpringBootTest(classes = LocalStackQueueConfigTest.TestApp.class,
         properties = "spring.config.import=classpath:application-sqs.yml")
-class ElasticMqQueueConfigTest {
+class LocalStackQueueConfigTest {
 
     private static final String QUEUE = MemberQueues.SIGNED_UP;
     private static final String DLQ = "member-signed-up-dlq";
 
     // Not stopped by hand: Spring's cached context still polls it until the JVM exits, and
     // Testcontainers' reaper removes the container then.
-    private static final GenericContainer<?> ELASTICMQ = new GenericContainer<>("softwaremill/elasticmq-native:1.7.1")
+    private static final GenericContainer<?> LOCALSTACK = new GenericContainer<>("localstack/localstack:2026.08.3")
+            .withEnv("LOCALSTACK_AUTH_TOKEN", Objects.requireNonNull(System.getenv("LOCALSTACK_AUTH_TOKEN"),
+                    "LOCALSTACK_AUTH_TOKEN isn't set — export it (app.localstack.cloud → Auth Tokens)"))
+            .withEnv("SERVICES", "sqs")
+            .withEnv("AWS_DEFAULT_REGION", "ap-northeast-2")
             .withCopyFileToContainer(
-                    MountableFile.forHostPath(Path.of("../../../.docker/elasticmq/elasticmq.conf").toAbsolutePath()),
-                    "/opt/elasticmq.conf")
-            .withExposedPorts(9324);
+                    MountableFile.forHostPath(Path.of("../../../.docker/localstack/init-aws.sh").toAbsolutePath(), 0755),
+                    "/etc/localstack/init/ready.d/init-aws.sh")
+            .withExposedPorts(4566)
+            // The queues exist only once the init script has finished, not when the port opens.
+            .waitingFor(Wait.forHttp("/_localstack/init/ready")
+                    .forResponsePredicate(body -> body.matches("(?s).*\"completed\":\\s*true.*"))
+                    .withStartupTimeout(Duration.ofMinutes(2)));
 
     @DynamicPropertySource
     static void sqsProperties(DynamicPropertyRegistry registry) {
-        ELASTICMQ.start();
+        LOCALSTACK.start();
         registry.add("spring.cloud.aws.sqs.endpoint",
-                () -> "http://" + ELASTICMQ.getHost() + ":" + ELASTICMQ.getMappedPort(9324));
+                () -> "http://" + LOCALSTACK.getHost() + ":" + LOCALSTACK.getMappedPort(4566));
         registry.add("spring.cloud.aws.region.static", () -> "ap-northeast-2");
-        registry.add("spring.cloud.aws.credentials.access-key", () -> "local");
-        registry.add("spring.cloud.aws.credentials.secret-key", () -> "local");
+        registry.add("spring.cloud.aws.credentials.access-key", () -> "test");
+        registry.add("spring.cloud.aws.credentials.secret-key", () -> "test");
     }
 
     @Autowired private SqsTemplate sqsTemplate;

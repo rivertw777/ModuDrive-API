@@ -27,6 +27,6 @@ public class StorageProperties {
         private String bucket = "modudrive";
         private String accessKey;
         private String secretKey;
-        private String region = "us-east-1";
+        private String region = "ap-northeast-2";
     }
 }

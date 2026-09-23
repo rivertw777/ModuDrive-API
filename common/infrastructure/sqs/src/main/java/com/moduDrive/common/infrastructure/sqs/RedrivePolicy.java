@@ -13,7 +13,7 @@ import java.util.regex.Pattern;
 /**
  * A queue's redrive settings, read from the queue itself: which DLQ its failures go to and how many
  * receives it allows before SQS moves a message there. The app never writes either down — they're set
- * once in {@code .docker/elasticmq/elasticmq.conf} and Terraform, and both
+ * once in {@code .docker/localstack/init-aws.sh} and Terraform, and both
  * {@link DeadLetteringErrorHandler} (to move a message with a reason) and {@link DeadLetterQueueMetrics}
  * (to watch the DLQ) ask the queue.
  * <p>

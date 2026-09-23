@@ -17,7 +17,7 @@ import java.net.URI;
 @EnableConfigurationProperties(StorageProperties.class)
 public class S3Config {
 
-    /** An endpoint means an S3-compatible store (local MinIO); without one this talks to real S3.
+    /** An endpoint means an S3 emulator (local LocalStack); without one this talks to real S3.
      * Without keys the SDK's default credential chain applies — the ECS task role on AWS. */
     @Bean
     public S3Client s3Client(StorageProperties properties) {
@@ -36,16 +36,22 @@ public class S3Config {
 
         // Real buckets are provisioned by Terraform and the task role has no CreateBucket permission.
         if (customEndpoint) {
-            createBucketIfMissing(client, s3.getBucket());
+            createBucketIfMissing(client, s3.getBucket(), s3.getRegion());
         }
         return client;
     }
 
-    private void createBucketIfMissing(S3Client client, String bucket) {
+    private void createBucketIfMissing(S3Client client, String bucket, String region) {
         try {
             client.headBucket(b -> b.bucket(bucket));
         } catch (NoSuchBucketException e) {
-            client.createBucket(b -> b.bucket(bucket));
+            // S3 wants the region spelled out for every region but us-east-1, its default.
+            client.createBucket(b -> {
+                b.bucket(bucket);
+                if (!Region.US_EAST_1.id().equals(region)) {
+                    b.createBucketConfiguration(c -> c.locationConstraint(region));
+                }
+            });
         }
     }
 }

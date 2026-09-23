@@ -32,7 +32,7 @@ import java.util.concurrent.TimeUnit;
  */
 // ponytail: polls GetQueueAttributes, because the depth isn't something the consumer can observe —
 // it never sees the DLQ. On AWS a CloudWatch alarm on ApproximateNumberOfMessagesVisible would do the
-// same without the app, but the alerting pipeline is Prometheus for now, and ElasticMQ has no alarms.
+// same without the app, but the alerting pipeline is Prometheus for now, and it has to work locally too.
 @Slf4j
 class DeadLetterQueueMetrics {
 

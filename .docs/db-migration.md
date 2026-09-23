@@ -4,6 +4,18 @@ JPA 서비스(member / file / notification)의 테이블 구조를 Flyway로 관
 
 ---
 
+## 목차
+
+- [1. 도입 배경](#1-도입-배경)
+- [2. 동작 순서](#2-동작-순서)
+- [3. 구성](#3-구성)
+- [4. 새 마이그레이션 추가하기](#4-새-마이그레이션-추가하기)
+- [5. 자주 하는 변경 레시피](#5-자주-하는-변경-레시피)
+- [6. 테스트](#6-테스트)
+- [7. 한계와 후속 과제](#7-한계와-후속-과제)
+
+---
+
 ## 1. 도입 배경
 
 Hibernate `ddl-auto=update`로 스키마를 자동 관리하던 방식을 Flyway 버전 마이그레이션으로 바꿨다. 기대 효과는 다음과 같다.
@@ -48,7 +60,7 @@ flowchart LR
 | `common/infrastructure/jpa/src/main/resources/application-jpa.yml` | `ddl-auto: validate`, `dev` 프로필일 때만 `flyway.locations`에 `db/seed` 추가 |
 | `services/<svc>/src/main/resources/db/migration/` | 운영 포함 모든 환경에 적용되는 스키마 마이그레이션 |
 | `services/<svc>/src/main/resources/db/seed/` | 로컬 개발용 데이터(테스트 유저). `dev` 프로필에서만 적용 |
-| `.docker/init/01_postgres_init.sh` | DB와 서비스별 계정 생성만 담당. 테이블·데이터는 만들지 않음 |
+| `.docker/postgres/01_postgres_init.sh` | DB와 서비스별 계정 생성만 담당. 테이블·데이터는 만들지 않음 |
 | `services/<svc>/src/test/resources/config/application.yml` | 테스트 DB를 Testcontainers Postgres로 지정 (6장) |
 
 역할 분리:

@@ -1,14 +1,129 @@
 # 비동기 메시징 스펙
 
-이 문서는 서비스끼리 AWS SQS로 이벤트를 주고받는 기능(메일 발송, 인앱 알림, 가입 후 대기 공유 연결)이
-어떤 규칙으로 동작하는지 정의한 문서입니다.
+이 문서는 서비스 간 비동기 메시징(SQS)의 동작 규칙을 정의합니다.
 
 ⚠️ 이 문서가 기준입니다. 코드가 이 문서와 다르면 코드를 고치고, 동작을 바꾸려면 이 문서를 먼저 고칩니다.
-지금은 문서와 코드가 일치하며, 아직 손대지 않은 성능·운영 항목만 [8장](#8-todo)에 남아 있습니다.
 
 ---
 
-## 1. 전체 흐름
+## 목차
+
+- [1. 인프라](#1-인프라)
+  - [1-1. SQS 사용 이유](#1-1-sqs-사용-이유)
+  - [1-2. 운영 (AWS)](#1-2-운영-aws)
+  - [1-3. 로컬](#1-3-로컬)
+- [2. 전체 흐름](#2-전체-흐름)
+  - [2-1. 예시 — 파일을 공유하면 초대 메일이 나가기까지](#2-1-예시--파일을-공유하면-초대-메일이-나가기까지)
+- [3. Publisher](#3-publisher)
+  - [3-1. Transaction Outbox](#3-1-transaction-outbox)
+  - [3-2. 이벤트 발행 과정](#3-2-이벤트-발행-과정)
+  - [3-3. 전송 실패](#3-3-전송-실패)
+- [4. Consumer](#4-consumer)
+  - [4-1. 이벤트 처리 과정](#4-1-이벤트-처리-과정)
+  - [4-2. 처리 실패](#4-2-처리-실패)
+- [5. 재처리 (replay)](#5-재처리-replay)
+- [6. 트레이싱](#6-트레이싱)
+- [7. 사용 큐 목록](#7-사용-큐-목록)
+- [8. TODO](#8-todo)
+
+---
+
+## 1. 인프라
+
+### 1-1. SQS 사용 이유
+
+AWS SQS는 완전관리형 큐 서비스로 시간당 과금이 아닌 월 100만 요청까지 무료로 사용할 수 있다.
+**현재 시스템의 메시징은 "한 서비스가 보내고 한 서비스가 받는" 작은 작업 큐 뿐이며, 비용 및 운영 부담이 적은 SQS 도입한다.**
+
+#### 1-1-1. 다른 선택지와 비교
+
+관리형 서비스만 비교한다. Kafka·RabbitMQ를 EC2 등에 **직접 설치해 운영하는 방식은 비용 및 운영 부담 문제로 고려하지 않는다**
+(서버를 24시간 띄워야 하고, 설치·디스크·백업·패치·업그레이드를 직접 해야 하며, 1대로 돌리면 그 서버가 곧 메시징 전체의 장애 지점이 된다).
+
+| | **SQS** | Kafka (MSK) | RabbitMQ (Amazon MQ) |
+|---|---|---|---|
+| 성격 | 작업 큐 — 받아서 처리하면 지움 | 이벤트 로그 — 메시지를 기간 동안 쌓아두고 여러 구독자가 각자 읽음 | 작업 큐 + 라우팅(exchange) |
+| 비용 (서울, SQS급 구성) | 시간 과금 없음 — 요청 100만 건당 USD 0.40 (월 100만 건 무료). 기본이 여러 AZ 복제 | 프로비저닝: m7g.large 브로커 3대(3 AZ) **USD 0.75/시간**<br/>Serverless: 클러스터 1개 **USD 0.92/시간** (+ 파티션 요금) | m7g.large 3노드 클러스터(여러 AZ) **USD 1.01/시간** |
+| 운영 | 없음 — 서버·디스크·버전 관리가 AWS 몫 | (프로비저닝 기준) 브로커 수·디스크 크기 결정, 버전 업그레이드 실행. OS 패치는 AWS | 인스턴스 크기 결정, 버전 업그레이드 |
+| 재시도/DLQ | **기본 기능** (redrive policy) + 재시도 간격은 visibility로 조절 | 브로커엔 없음 — 클라이언트 라이브러리로 구성 (예: Spring Kafka `DeadLetterPublishingRecoverer` → `-dlt`) | DLQ는 기본 기능(dead-letter exchange). 단 **간격 두고 재시도하는 기능은 없음** — 보통 쓰는 delayed-message 플러그인을 Amazon MQ가 지원 안 함 |
+| 순서 보장 | 표준: 없음 / FIFO: 그룹 단위 | 파티션 단위 | 큐 단위(재시도 섞이면 깨짐) |
+| replay | 없음 (처리하면 삭제) | **있음** — offset 되감기 | 없음 |
+| fan-out | SNS 붙이면 가능 | 기본 (컨슈머 그룹) | 기본 (exchange) |
+| 인증 | ECS task role(IAM) 그대로 | IAM 인증 가능 — 클라이언트에 `aws-msk-iam-auth` 라이브러리 + 설정 추가 | 사용자/비밀번호, OAuth 2.0·LDAP·mTLS. IAM은 STS 토큰을 비밀번호로 넘기는 방식(OAuth 2.0 경유)이라 설정 추가 |
+
+비용은 서울 리전(ap-northeast-2) 온디맨드 단가, 2026-09-23 AWS Price List 기준. SQS는 기본으로 여러 AZ에 복제되고 처리량 상한도 사실상 없으므로, 비교 대상도 여러 AZ에 걸친 클러스터 + 버스터블(t 계열)이 아닌 인스턴스로 맞췄다(두 서비스 모두 가진 m7g.large). 스토리지(GB당 월 USD 0.114)·데이터 전송은 제외했다.
+
+- **SQS로 부족해지는 때**
+  - 한 이벤트를 여러 서비스가 받아야 할 때 → **SNS 토픽 → SQS 큐 여러 개**로 확장 (코드 구조는 그대로).
+  - 지난 이벤트를 다시 처리해야 할 때 → 실패분은 DLQ redrive, 성공분은 outbox에 7일 남은 행을 `PENDING`으로 되돌려 재발행 ([5장](#5-재처리-replay)).
+  - 초당 수천 건 이상의 이벤트 스트림, 여러 팀이 같은 이벤트를 각자 읽는 구조가 생기면 그때 다른 메시지 큐 사용을 다시 검토.
+
+#### 1-1-2. FIFO가 아니라 STANDARD를 사용하는 이유
+
+현재 순서 보장이 필요한 큐가 없기 때문이다.
+
+| | STANDARD | FIFO |
+|---|---|---|
+| 순서 | 보장 안 함 | 같은 그룹 안에서 보장 |
+| 중복 | 가끔 두 번 올 수 있음 → **Consumer 멱등성 체크가 거름** ([4-1-1](#4-1-1-멱등성-체크)) | 5분 안의 중복 제거 |
+| 처리량 | 사실상 무제한 | 초당 300건 상한 (배치 시 3,000) |
+| 재시도 중 | 다른 메시지는 계속 처리 | **같은 그룹 뒤 메시지가 전부 대기** (머리 막힘) |
+
+- FIFO의 두 장점 중 중복 제거는 멱등성 체크가 이미 하고 있고, 순서 보장은 쓸 곳이 없다 — 남는 건 처리량 상한과 머리 막힘뿐.
+- 알림 피드는 소비 시각(`created_at`) 순으로 보이므로, 같은 사람에게 1초 간격으로 두 건이 가면 순서가 뒤집혀 보일 수 있다 —
+  그 순서에 의미가 생기면 FIFO로 바꾸기보다 이벤트에 발생 시각을 실어 그걸로 정렬한다.
+
+### 1-2. 운영 (AWS)
+
+| 항목 | 내용 |
+|---|---|
+| 브로커 | Amazon SQS (표준 큐) |
+| 큐/DLQ/redrive 정의 | Terraform (예정) — [1-2-1](#1-2-1-큐-설정) |
+| 접속 | endpoint·키 **미설정** → SDK 기본 체인이 ECS task role + `AWS_REGION`을 쓴다 |
+
+#### 1-2-1. 큐 설정
+
+Terraform으로 만들 때 `init-aws.sh`와 **똑같이** 맞춘다 — 로컬에서 테스트한 재시도 동작이 운영에서도 그대로 나오도록.
+큐마다 아래 설정 한 벌 + 짝 DLQ(`<이름>-dlq`) 하나.
+
+| 옵션 | 값 | 의미 |
+|---|---|---|
+| 큐 종류 | 표준(standard) | 순서 보장·중복 제거 없음. 중복은 Consumer 멱등성 체크가 거른다 ([1-1-2](#1-1-2-fifo가-아니라-standard를-사용하는-이유)) |
+| `VisibilityTimeout` | 10초 | 메시지를 가져간 Consumer에게 주는 **처리 시간**. 10초 안에 못 끝내면 큐에 다시 나타난다 |
+| `RedrivePolicy.maxReceiveCount` | 4 | 같은 메시지를 4번 받고도 못 지우면 SQS가 DLQ로 옮긴다 = 첫 시도 1 + 재시도 3. 에러 핸들러는 이 값을 큐에서 읽어서, 마지막 시도에 실패하면 사유를 달아 직접 DLQ로 옮긴다 ([4-2](#4-2-처리-실패)) |
+| `RedrivePolicy.deadLetterTargetArn` | `<이름>-dlq`의 ARN | 옮겨갈 DLQ. SQS 규칙상 원래 큐와 **같은 종류**(표준)여야 한다 |
+| DLQ `MessageRetentionPeriod` | 기본값(4일) | DLQ 메시지는 이 기간이 지나면 사라진다 — 알림([4-2-1](#4-2-1-dlq에-들어간-뒤))을 받으면 그 안에 redrive. 최대 14일까지 늘릴 수 있음 |
+
+#### 1-2-2. task role 권한
+
+로컬 LocalStack은 권한을 검사하지 않아서, 하나라도 빠지면 운영에서만 `AccessDenied`가 난다.
+서비스마다 **자기가 쓰는 큐에만** 준다(최소 권한 — 한 서비스가 뚫려도 남의 큐는 못 건드리게).
+
+| 누가 | 권한 | 왜 |
+|---|---|---|
+| Publisher | `SendMessage` | outbox 릴레이가 큐로 전송 |
+| Consumer | `ReceiveMessage` | 큐에서 메시지 가져오기 |
+| | `DeleteMessage` | 처리 성공 시 삭제 — 없으면 같은 메시지가 계속 다시 옴 |
+| | `ChangeMessageVisibility` | 재시도 백오프(1s/2s/4s 뒤 다시 받기) |
+| | DLQ에 `SendMessage` | 재처리 불가 실패를 에러 핸들러가 바로 DLQ로 옮김 |
+| | `GetQueueUrl`, `GetQueueAttributes` | 큐 이름 → 주소 조회, redrive 설정(DLQ·최대 수신 횟수)과 DLQ 건수 읽기 |
+
+### 1-3. 로컬
+
+| 항목 | 내용 |
+|---|---|
+| 브로커 | LocalStack 컨테이너 (`.docker/docker-compose.infra.yml`, 포트 4566) |
+| 큐/DLQ/redrive 정의 | `.docker/localstack/init-aws.sh` — LocalStack이 뜰 때마다 큐 + DLQ + 버킷을 만든다 |
+| 접속 | `SPRING_CLOUD_AWS_SQS_ENDPOINT=http://localstack:4566` + 더미 키(`test`) |
+| 인증 토큰 | `.docker/.env`의 `LOCALSTACK_AUTH_TOKEN` (app.localstack.cloud → Auth Tokens). `./gradlew test`의 큐 테스트도 여기서 읽는다 |
+
+- **토큰 필수** — LocalStack은 2026-03-23부터 토큰 없이는 안 뜬다. 무료(Hobby) 플랜은 비상업 용도 한정.
+- **메모리 저장** — 무료 플랜엔 영속화가 없어서, 재시작하면 큐에 떠 있던 메시지가 전부 사라진다. Postgres의 파일 행은 남으니 재시작 후엔 `make reset` 필요.
+- 큐 상태 보기: `docker exec modudrive-infra-localstack-1 awslocal sqs get-queue-attributes --queue-url http://localhost:4566/000000000000/<큐> --attribute-names All`
+
+---
+
+## 2. 전체 흐름
 
 이벤트는 **DB에 먼저 적고(outbox) → 나중에 SQS로 보내고 → Consumer가 처리**한다. 세 단계가 서로 다른 시점에 일어난다.
 
@@ -40,7 +155,7 @@ flowchart LR
 - **③은 따로 돈다**: SQS가 잠깐 죽어 있어도 행이 테이블에 남아 있다가 다음 틱에 전송됨.
 - **④가 처리에 성공하면** 메시지가 큐에서 삭제됨.
 
-### 1-1. 예시 — 파일을 공유하면 초대 메일이 나가기까지
+### 2-1. 예시 — 파일을 공유하면 초대 메일이 나가기까지
 
 ```mermaid
 sequenceDiagram
@@ -83,11 +198,11 @@ sequenceDiagram
 
 ---
 
-## 2. Publisher
+## 3. Publisher
 
 Publisher는 이벤트를 만들어 큐로 내보낸다.
 
-### 2-1. Transaction Outbox
+### 3-1. Transaction Outbox
 
 트랜잭션 아웃박스 패턴은 데이터베이스 업데이트와 메시지 브로커 발행 간의 이중 쓰기(Dual Write) 문제를 해결하고 데이터 일관성을 보장하는 디자인 패턴이다.
 
@@ -114,30 +229,30 @@ Publisher는 이벤트를 만들어 큐로 내보낸다.
 | `SENT` | SQS가 받음 (`sent_at`) | **7일 보관** 후 relay가 1시간마다 정리 |
 | `FAILED` | 그 메시지 하나가 잘못됨 (`failed_at`, `failure_reason`) | 정리하지 않음, 사람이 처리 |
 
-### 2-2. 이벤트 발행 과정
+### 3-2. 이벤트 발행 과정
 
-#### 2-2-1. 이벤트 기록
+#### 3-2-1. 이벤트 기록
 
 - 비즈니스 코드는 SQS로 직접 보내지 않고 `OutboxEventRecorder.record(queue, key, event)`를 부른다 → `outbox_event` 행 insert.
 - 기록은 **유스케이스 서비스가 자기 `@Transactional` 안에서 이벤트 포트를 직접 호출**해서 한다. 
   비즈니스 데이터 저장과 같은 트랜잭션이라 같이 커밋되거나 같이 롤백된다.
 - 호출자 트랜잭션이 없으면(예: 가입 인증 메일 요청 — 인증 코드는 Redis) 기록기가 outbox insert만 담은 트랜잭션을 스스로 연다.
 
-#### 2-2-2. 이벤트 전송
+#### 3-2-2. 이벤트 전송
 
 - `OutboxRelay`가 1초마다(한 틱) `PENDING` 행을 id 순으로 **최대 100개 읽어**(`FOR UPDATE SKIP LOCKED`) **1건씩** 동기 전송한다.
   SQS 일괄 전송(`SendMessageBatch`)은 쓰지 않는다 — 100개를 읽으면 SQS 호출도 100번.
 - `SKIP LOCKED`라 인스턴스가 여러 대여도 같은 행을 두 번 보내지 않는다.
 - **중복 제거 id = `outbox-<행 id>`**: `DeduplicationId` 메시지 속성으로 같이 나간다. SQS가 받았는데 SENT 표시 커밋
-  전에 죽어 재전송되면 같은 id로 다시 가므로, Consumer가 그걸 보고 재전송인 줄 안다([3-1-1](#3-1-1-멱등성-체크)).
+  전에 죽어 재전송되면 같은 id로 다시 가므로, Consumer가 그걸 보고 재전송인 줄 안다([4-1-1](#4-1-1-멱등성-체크)).
 - 성공하면 `status = SENT`, `sent_at` 기록.
 
-#### 2-2-3. 이벤트 정리
+#### 3-2-3. 이벤트 정리
 
-`SENT` 행은 **7일 보관** 후 relay가 1시간마다 지운다. 바로 지우지 않는 이유는 재처리([4장](#4-재처리-replay))와
+`SENT` 행은 **7일 보관** 후 relay가 1시간마다 지운다. 바로 지우지 않는 이유는 재처리([5장](#5-재처리-replay))와
 사고 조사 때 "그 이벤트가 정말 나갔나"를 확인할 곳이 현재 이 테이블뿐이기 때문이다.
 
-### 2-3. 전송 실패
+### 3-3. 전송 실패
 
 전송 실패는 2가지 분류로 나누어 처리한다.
 
@@ -163,7 +278,7 @@ N번에 `FAILED`로 보내면 멀쩡한 이벤트가 무더기로 빠지고 복�
 (기본 LEGACY 모드, 100ms부터 지수 백오프 + jitter). 다 합쳐도 1초가 안 된다.
 그 안에 성공하면 relay는 실패가 있었는지도 모르고 넘어간다. **위 표의 "일시 장애"는 1초를 넘게 끊겼다는 뜻이다.**
 
-#### 2-3-1. 전송 실패 시 알림
+#### 3-3-1. 전송 실패 시 알림
 
 `outbox_event`의 `FAILED` 발생과 인프라 장애로 이벤트 전송 지체가 지속될 경우, 다음과 같은 알림을 보낸다.
 
@@ -176,13 +291,13 @@ N번에 `FAILED`로 보내면 멀쩡한 이벤트가 무더기로 빠지고 복�
 
 ---
 
-## 3. Consumer
+## 4. Consumer
 
 Consumer는 큐에서 메시지를 받아 처리한다.
 
-### 3-1. 이벤트 처리 과정
+### 4-1. 이벤트 처리 과정
 
-#### 3-1-1. 멱등성 체크
+#### 4-1-1. 멱등성 체크
 
 SQS 표준 큐는 at-least-once라 같은 메시지가 두 번 올 수 있다(outbox 재전송, 처리 후 삭제 전 Consumer 다운, 브로커 자체 중복 등).
 그래서 **처리 전에 "이미 처리한 메시지인가"를 확인**하고, 처리했으면 건너뛰고 메시지만 지운다.
@@ -200,10 +315,10 @@ flowchart LR
 - **확인이 아니라 선점이다.** 묻지 않고 바로 쓰고, 쓰기 성공 여부로 판단한다.
   - DB: `processed_event`에 insert → `uk_processed_event`가 두 번째를 막는다
   - Redis: `SETNX processed:<큐>:<중복 제거 id>` → 키가 없을 때만 써진다
-- 처리에 실패하면 선점도 같이 풀린다([3-1-2](#3-1-2-처리-기록)).
+- 처리에 실패하면 선점도 같이 풀린다([4-1-2](#4-1-2-처리-기록)).
 - 구현: `common:infrastructure:messaging`의 `ProcessedEvents` 포트 + JPA/Redis 구현.
 
-#### 3-1-2. 처리 기록
+#### 4-1-2. 처리 기록
 
 비즈니스 로직이 예외 없이 끝나면 **처리 기록을 남기고 메시지를 삭제한다(ACK).**
 
@@ -211,12 +326,12 @@ flowchart LR
 - Redis: 선점 키의 TTL을 10초 → 7일로 늘려 **"처리 완료"로 굳힌다** — 그동안 오는 재전송은 전부 선점에서
   걸러진다. 실패하면 키를 지워 재시도에 넘긴다
 
-#### 3-1-3. 처리 기록 정리
+#### 4-1-3. 처리 기록 정리
 
 처리 기록은 **7일 보관**(= outbox SENT 보관 기간) 뒤 정리한다. 그보다 오래된 재전송은 없기 때문이다.
 DB 쪽은 각 서비스에서 1시간마다 지우고, Redis 쪽은 키 TTL로 알아서 사라진다.
 
-### 3-2. 처리 실패
+### 4-2. 처리 실패
 
 ```mermaid
 flowchart LR
@@ -238,7 +353,7 @@ flowchart LR
 - DLQ로 옮기는 것 자체가 실패하면 재시도로 돌린다 — 유실 없음.
 - 구현: `PermanentFailures`(분류) + `DeadLetteringErrorHandler`(모든 `@SqsListener`에 자동 적용).
 
-#### 3-2-1. DLQ에 들어간 뒤
+#### 4-2-1. DLQ에 들어간 뒤
 
 **DLQ에서 메시지를 꺼내 자동으로 다시 처리하는 코드는 없고, 두지 않는다.** DLQ에 있다는 건 "재시도로는 안 되는
 것을 확인했다"는 뜻이라, 자동으로 다시 넣으면 같은 실패를 무한히 돈다. DLQ는 **사람이 볼 때까지 안전하게
@@ -250,11 +365,11 @@ flowchart LR
 | 2. 확인 | DLQ 메시지의 `DeadLetterReason` 속성과 원본 본문을 본다 — 왜 실패했는지가 거기 적혀 있다 |
 | 3. 수정 | 원인을 고친다 (코드 배포 · 데이터 정정 · 설정 변경) |
 | 4. redrive | DLQ → 원래 큐로 되돌린다. AWS 콘솔의 `Start DLQ redrive` 버튼 또는 `aws sqs start-message-move-task --source-arn <dlq-arn>` |
-| 5. 재처리 | 멱등성 기록(`processed_event`)은 처리에 성공했을 때만 남으므로, DLQ로 빠진 메시지는 기록이 없어 그대로 다시 처리된다 ([3-1-1](#3-1-1-멱등성-체크)) |
+| 5. 재처리 | 멱등성 기록(`processed_event`)은 처리에 성공했을 때만 남으므로, DLQ로 빠진 메시지는 기록이 없어 그대로 다시 처리된다 ([4-1-1](#4-1-1-멱등성-체크)) |
 
 버릴 메시지는 DLQ에서 지우면 끝이다. 아무것도 안 하면 SQS 보관 기간(기본 4일, 최대 14일)이 지나 사라진다.
 
-#### 3-2-2. 처리 실패 시 알림
+#### 4-2-2. 처리 실패 시 알림
 
 DLQ로 옮겨지고 나면 원래 큐는 다시 비어 보여서, 알림이 없으면 아무도 모른 채 보관 기간이 지나 사라진다.
 
@@ -266,41 +381,40 @@ DLQ로 옮겨지고 나면 원래 큐는 다시 비어 보여서, 알림이 없�
 
 ---
 
-## 4. 재처리 (replay)
+## 5. 재처리 (replay)
 
-- **Consumer 실패 재처리**: DLQ → 원래 큐로 redrive ([3-2-1](#3-2-1-dlq에-들어간-뒤)).
-- **Publisher 실패 재처리**: `FAILED` 행을 `PENDING`으로 되돌림 ([2-1](#2-1-transaction-outbox)).
+- **Publisher 실패 재처리**: `FAILED` 행을 `PENDING`으로 되돌림 ([3-1](#3-1-transaction-outbox)).
+- **Consumer 실패 재처리**: DLQ → 원래 큐로 redrive ([4-2-1](#4-2-1-dlq에-들어간-뒤)).
 - **성공한 과거 이벤트 replay**: SQS는 처리 후 삭제라 Kafka식 offset 되감기는 불가. 대신 보낸 행이 outbox에 **7일간 SENT로 남아 있으므로**,
-  그 기간 안이면 `PENDING`으로 되돌려 다시 발행할 수 있다. 단 중복 제거 id가 같아서 **Consumer 멱등성 체크에 걸려 건너뛴다** —
-  정말 다시 처리시키려면 Consumer의 처리 기록도 지워야 한다. 현재 이 기능을 쓰는 곳은 없음.
+  그 기간 안이면 `PENDING`으로 되돌려 다시 발행할 수 있다. 단, Consumer 멱등성 체크 떄문에 처리 기록 삭제 필요.
 
 ---
 
-## 5. 트레이싱
+## 6. 트레이싱
 
-- `spring.cloud.aws.sqs.observation-enabled: true` — `traceparent`가 SQS 메시지 속성으로 전달돼 Consumer 스팬이 원래 요청 트레이스에 붙음.
-- 기록 시 요청의 trace 헤더를 `outbox_event.trace_headers`에 저장 → 릴레이가 그걸로 **Observation**(`ReceiverContext`)을 열고 그 안에서 전송.
-  bare span이 아니라 Observation이어야 하는 이유: `SqsTemplate`은 현재 Observation을 부모로 잡는데, 큐별 첫 전송은 큐 URL 조회 때문에 SDK 스레드에서 이어져서 thread-local span이 안 보임 → 첫 메시지만 트레이스가 끊겼었음.
+**한 줄 요약: API 요청의 trace id를 Consumer까지 들고 가서, Tempo에서 요청부터 소비까지 한 트레이스로 보이게 한다.**
 
----
+outbox를 거치면 요청과 전송이 따로 일어나서(요청은 이미 끝났고 전송은 1초 뒤 다른 스레드) trace id가 그냥은 안 넘어간다. 그래서 **DB에 적어뒀다가 꺼내 쓴다.**
 
-## 6. 인프라
+```mermaid
+sequenceDiagram
+    participant API as API 요청<br/>(trace id = abc)
+    participant DB as outbox_event
+    participant RL as 릴레이
+    participant Q as SQS
+    participant C as Consumer
 
-| | 로컬 | AWS |
+    API->>DB: ① 이벤트 저장할 때 trace id(abc)도 같이 저장
+    RL->>DB: ② 꺼낼 때 trace id(abc)도 꺼냄
+    RL->>Q: ③ 메시지에 trace id(abc) 붙여서 전송
+    Q->>C: ④ Consumer가 abc를 보고 같은 트레이스에 이어 붙임
+```
+
+| 단계 | 누가 | 코드 |
 |---|---|---|
-| SQS | ElasticMQ 컨테이너 (`.docker/docker-compose.infra.yml`, 포트 9324) | Amazon SQS |
-| 큐/DLQ/redrive 정의 | `.docker/elasticmq/elasticmq.conf` | Terraform (conf와 똑같이 맞출 것) |
-| 접속 | `SPRING_CLOUD_AWS_SQS_ENDPOINT=http://elasticmq:9324` + 더미 키 | endpoint/키 미설정 → ECS task role, `AWS_REGION` |
-
-- LocalStack이 아니라 ElasticMQ인 이유: LocalStack 이미지가 2026-03-23부터 auth token 필수가 됨. ElasticMQ는 무료·가입 불필요, 표준/FIFO 큐와 redrive 지원.
-- ElasticMQ는 **메모리 저장** — 재시작하면 큐에 떠 있던 메시지는 사라짐. 아직 안 보낸 건 outbox 테이블에 남아 있으니 유실은 "전송 완료 후 소비 전"인 것만.
-- 앱은 큐를 만들지 않음(`queue-not-found-strategy: fail`) — 없으면 기동 실패. 자동 생성하면 DLQ/redrive 없는 큐가 생기기 때문.
-- 큐 상태 보기: `curl "http://localhost:9324/?Action=GetQueueAttributes&QueueUrl=http://localhost:9324/000000000000/<큐>&AttributeName.1=All"`
-
-**왜 FIFO가 아닌가** — 순서 보장이 필요한 큐가 하나도 없기 때문이다(메일·알림은 받는 사람별로 1건씩, 가입은
-사람당 1건). 알림 피드는 소비 시각(`created_at`) 순으로 보이므로, 같은 사람에게 1초 간격으로 두 건이 가면 순서가
-뒤집혀 보일 수 있다 — 그 순서에 의미가 생기면 이벤트에 발생 시각을 실어 그걸로 정렬한다. FIFO가 주던 5분 중복 제거는 Consumer 멱등성 체크가 이미 하고 있고([3-1-1](#3-1-1-멱등성-체크)),
-대신 FIFO는 300 TPS 상한과 **같은 그룹 머리 막힘**(한 건이 재시도하는 동안 뒤가 대기)을 물고 온다.
+| ① 저장 | `OutboxEventRecorder.record()` | 현재 trace id → `trace_headers` 컬럼 |
+| ② 꺼냄 | `OutboxRelay.send()` | `trace_headers`로 Observation 열기 |
+| ③④ 전달 | Spring Cloud AWS | `observation-enabled: true` 한 줄이면 자동 |
 
 ---
 
@@ -321,9 +435,28 @@ DLQ로 옮겨지고 나면 원래 큐는 다시 비어 보여서, 알림이 없�
 
 ### 성능 개선
 
-- [ ] **일괄 전송(`SendMessageBatch`)** ([2-2-2](#2-2-2-이벤트-전송)): 지금은 한 행씩 동기 전송이라 SQS 호출 한 번에 5~20ms,
-  한 틱(1초)에 보낼 수 있는 양이 대략 50~200건이다. 초당 50건을 꾸준히 넘기면 outbox가 밀리기 시작한다.
-  `SqsTemplate.sendMany`로 10건씩 묶으면 호출 수와 비용이 1/10이 되지만, **부분 실패**(10건 중 일부만 실패) 처리가
-  생겨 "실패하면 멈춘다"는 지금 규칙을 다시 짜야 한다.
-  **도입 신호**: 적체 알림([2-3](#2-3-전송-실패))이 울리기 시작할 때.
+- [ ] **일괄 전송(`SendMessageBatch`)** ([3-2-2](#3-2-2-이벤트-전송))
+
+  **지금 방식** — `OutboxRelay`가 1건씩 보낸다.
+
+  | 항목 | 현재 코드 |
+  |---|---|
+  | 한 번에 읽는 행 | 최대 100개 (`BATCH_SIZE`), 한 트랜잭션 |
+  | 전송 | 1건씩 동기 전송 → 100행이면 SQS 호출 100번 |
+  | 다음 틱 | 이번 틱이 **끝난 뒤** 1초 쉬고 시작 (`scheduleWithFixedDelay`) |
+  | 여러 인스턴스 | `SKIP LOCKED`로 서로 다른 행을 가져가서 나눠 보낸다 |
+
+  **일괄 전송으로 바꾸면** — 같은 큐의 행을 최대 10건씩 묶어 `SqsTemplate.sendMany`로 보낸다.
+  - SQS 한도: 한 번에 최대 10건, 합계 1 MiB.
+  - SQS 호출 수가 최대 1/10로 준다. 과금도 호출(64KB 단위) 기준이라 전송 요청 비용도 같이 준다.
+
+  **바꿀 때 다시 짜야 하는 것**
+
+  | 문제 | 왜 |
+  |---|---|
+  | 부분 실패 | `sendMany`는 성공 목록과 실패 목록을 따로 돌려준다(`SendResult.Batch`). 지금은 "재처리 가능한 실패가 나면 그 행부터 다음 틱으로"인데, 묶음에선 실패한 행 뒤의 행이 이미 나갔을 수 있다 → 성공 행만 `SENT`, 실패 행은 사유에 따라 `PENDING` 유지 / `FAILED` |
+  | 큐별 묶음 | 한 틱에 읽은 행에는 여러 큐가 섞여 있는데, 한 번의 일괄 전송은 큐 하나에만 보낼 수 있다 |
+  | 트레이싱 | 지금은 행마다 저장된 trace를 이어서 보낸다([6장](#6-트레이싱)). 묶어 보낼 때도 메시지마다 자기 trace가 붙는지 확인 필요 |
+
+  **도입 신호** — 인스턴스를 늘려도 적체 알림(`modudrive_outbox_lag_seconds`, [3-3-1](#3-3-1-전송-실패-시-알림))이 계속 울릴 때.
 

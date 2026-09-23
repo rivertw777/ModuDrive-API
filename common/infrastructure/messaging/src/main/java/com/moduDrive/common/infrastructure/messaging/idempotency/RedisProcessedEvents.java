@@ -13,7 +13,7 @@ class RedisProcessedEvents implements ProcessedEvents {
     /** How long a claim survives without being confirmed or given back — a process that dies mid-send
      * leaves one. Kept at the queues' visibility timeout so it lapses about when SQS hands the message
      * to someone else: a second mail is better than none. */
-    // ponytail: hardcoded to match .docker/elasticmq/elasticmq.conf; make it a property if a queue
+    // ponytail: hardcoded to match .docker/localstack/init-aws.sh; make it a property if a queue
     // ever needs a different visibility timeout.
     private static final Duration CLAIM_LEASE = Duration.ofSeconds(10);
 
