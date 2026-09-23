@@ -101,6 +101,6 @@ JPA services' schema is managed by Flyway (`db/migration`, `ddl-auto: validate`)
 
 ## Testing
 
-Tests use **JUnit 5** (`useJUnitPlatform()`). JPA services' persistence tests run on real Postgres via Testcontainers (`src/test/resources/config/application.yml` sets a `jdbc:tc:` URL), on the schema Flyway builds, with `ddl-auto: validate` — so Docker must be running for `./gradlew test` — and `LOCALSTACK_AUTH_TOKEN` must be exported for the SQS module's queue test. Test heap is capped at 1 GB. Test classes live in `src/test/java` mirroring the main package structure.
+Tests use **JUnit 5** (`useJUnitPlatform()`). JPA services' persistence tests run on real Postgres via Testcontainers (`src/test/resources/config/application.yml` sets a `jdbc:tc:` URL), on the schema Flyway builds, with `ddl-auto: validate` — so Docker must be running for `./gradlew test` — and the SQS module's queue test needs `LOCALSTACK_AUTH_TOKEN` (read from `.docker/.env`, or the environment). Test heap is capped at 1 GB. Test classes live in `src/test/java` mirroring the main package structure.
 
 For which classes require tests, which test type per layer, the given-when-then/BDDMockito/AssertJ conventions, and the 70% coverage policy, use the `test-writing` skill.

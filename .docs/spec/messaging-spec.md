@@ -293,7 +293,7 @@ DLQ로 옮겨지고 나면 원래 큐는 다시 비어 보여서, 알림이 없�
 | 접속 | `SPRING_CLOUD_AWS_SQS_ENDPOINT=http://localstack:4566` + 더미 키 | endpoint/키 미설정 → ECS task role, `AWS_REGION` |
 
 - LocalStack은 2026-03-23부터 **auth token 필수** — `.docker/.env`의 `LOCALSTACK_AUTH_TOKEN` (app.localstack.cloud → Auth Tokens, 무료 플랜은 비상업 용도 한정). `./gradlew test`의 큐 테스트도 같은 토큰을 셸 환경변수로 읽는다.
-- `PERSISTENCE=1` — 재시작해도 큐에 떠 있던 메시지와 S3 객체가 `localstack_data` 볼륨에 남는다. 그래서 init 스크립트는 "생성"이 아니라 "맞추기"로 짬(create-queue 후 set-queue-attributes).
+- **메모리 저장** — 무료 플랜엔 영속화가 없어서 재시작하면 큐에 떠 있던 메시지와 **업로드한 S3 파일이 전부 사라진다**(Postgres의 파일 행은 남으니 재시작 후엔 `make reset`). 아직 안 보낸 메시지는 outbox 테이블에 남아 있으니 SQS 쪽 유실은 "전송 완료 후 소비 전"인 것만. 큐와 버킷은 init 스크립트가 뜰 때마다 다시 만든다.
 - 앱은 큐를 만들지 않음(`queue-not-found-strategy: fail`) — 없으면 기동 실패. 자동 생성하면 DLQ/redrive 없는 큐가 생기기 때문.
 - 큐 상태 보기: `docker exec modudrive-infra-localstack-1 awslocal sqs get-queue-attributes --queue-url http://localhost:4566/000000000000/<큐> --attribute-names All`
 

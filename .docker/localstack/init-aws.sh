@@ -1,9 +1,9 @@
 #!/bin/bash
-# Local SQS queues, run by LocalStack once it's ready (and on every restart — PERSISTENCE keeps the
-# queues, so this has to converge rather than create). Mirror of the AWS queues Terraform creates —
-# keep the two in step: every queue is standard, a failed message comes back after the visibility
-# timeout, and after maxReceiveCount receives (1 try + 3 retries) it moves to its "-dlq" queue.
-# The S3 bucket isn't here: storage-service creates it on startup when pointed at an endpoint.
+# Local SQS queues and S3 bucket, run by LocalStack every time it's ready. Nothing survives a restart
+# (the free plan has no persistence), so this recreates everything — written to converge anyway, in
+# case it runs against a LocalStack that kept its state. Mirror of the AWS resources Terraform
+# creates — keep the two in step: every queue is standard, a failed message comes back after the
+# visibility timeout, and after maxReceiveCount receives (1 try + 3 retries) it moves to its "-dlq".
 set -euo pipefail
 
 QUEUES=(
@@ -22,3 +22,11 @@ for queue in "${QUEUES[@]}"; do
     \"RedrivePolicy\": \"{\\\"deadLetterTargetArn\\\":\\\"arn:aws:sqs:${AWS_DEFAULT_REGION}:000000000000:$queue-dlq\\\",\\\"maxReceiveCount\\\":4}\"
   }"
 done
+
+# storage-service also creates it on startup, but only then — a LocalStack restarted on its own would
+# otherwise leave uploads failing with NoSuchBucket until storage-service restarts too.
+# Unset in the SQS module's queue test, which runs LocalStack without S3.
+if [ -n "${STORAGE_S3_BUCKET:-}" ]; then
+  awslocal s3api head-bucket --bucket "$STORAGE_S3_BUCKET" 2>/dev/null \
+    || awslocal s3api create-bucket --bucket "$STORAGE_S3_BUCKET" --region "$STORAGE_S3_REGION" >/dev/null
+fi

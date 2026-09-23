@@ -44,9 +44,10 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # Local stand-in for Amazon SQS and S3. Queues come from localstack/init-aws.sh (run on every
-  # start); the bucket is created by storage-service. PERSISTENCE keeps queues, in-flight messages and
-  # uploaded blocks across restarts in localstack_data. Needs a (free, non-commercial) auth token.
+  # Local stand-in for Amazon SQS and S3. Queues and the bucket come from localstack/init-aws.sh, run
+  # on every start. In memory only — the free plan has no persistence, so a restart drops queued
+  # messages and every uploaded block while Postgres keeps the file rows: `make reset` after one.
+  # localstack_data only caches the license. Needs a (free, non-commercial) auth token.
   localstack:
     image: localstack/localstack:2026.08.3
     networks:
@@ -56,9 +57,10 @@ services:
     environment:
       - LOCALSTACK_AUTH_TOKEN=${LOCALSTACK_AUTH_TOKEN:?set LOCALSTACK_AUTH_TOKEN in .docker/.env}
       - SERVICES=s3,sqs
-      - PERSISTENCE=1
-      # Region the init script creates the queues in — the services' SQS_REGION.
+      # What the init script creates: queues in the services' SQS_REGION, storage-service's bucket.
       - AWS_DEFAULT_REGION=${SQS_REGION}
+      - STORAGE_S3_BUCKET=${STORAGE_S3_BUCKET}
+      - STORAGE_S3_REGION=${STORAGE_S3_REGION}
     volumes:
       - localstack_data:/var/lib/localstack
       - ./localstack/init-aws.sh:/etc/localstack/init/ready.d/init-aws.sh:ro
