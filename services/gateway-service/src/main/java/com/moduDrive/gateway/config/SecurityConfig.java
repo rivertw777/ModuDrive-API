@@ -38,6 +38,7 @@ class SecurityConfig {
                         .pathMatchers("/api/v1/auth/login", "/api/v1/auth/reissue", "/api/v1/auth/logout").permitAll()
                         .pathMatchers(HttpMethod.GET, "/api/v1/files/public/**").permitAll()
                         .pathMatchers(HttpMethod.GET, "/api/v1/storage/public/**").permitAll()
+                        .pathMatchers(HttpMethod.POST, "/api/v1/storage/public/archive").permitAll()
                         // A native <video>/<audio> element can't attach an Authorization header, so
                         // this route also accepts a streamToken query param (see StorageController)
                         // as an alternate credential — enforced in storage-service, not here. Bearer

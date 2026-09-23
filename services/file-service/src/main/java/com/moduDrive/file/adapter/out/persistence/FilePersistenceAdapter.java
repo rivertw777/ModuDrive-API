@@ -20,6 +20,7 @@ import org.springframework.data.domain.Window;
 import org.springframework.data.jpa.domain.Specification;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -291,6 +292,13 @@ class FilePersistenceAdapter implements
                 fileVersion.getBlockCount(), fileVersion.getS3Path()
         );
         return fileMapper.mapFileVersionToDomain(fileVersionRepository.save(entity));
+    }
+
+    @Override
+    public List<FileVersion> findAllByIds(Collection<UUID> versionIds) {
+        return fileVersionRepository.findAllById(versionIds).stream()
+                .map(fileMapper::mapFileVersionToDomain)
+                .toList();
     }
 
     @Override

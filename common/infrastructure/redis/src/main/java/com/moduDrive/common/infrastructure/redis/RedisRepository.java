@@ -24,6 +24,11 @@ public class RedisRepository {
         return redisTemplate.opsForValue().get(key);
     }
 
+    /** Atomic read-and-remove — for single-use tokens, so two concurrent redeems can't both win. */
+    public String getAndDelete(String key) {
+        return redisTemplate.opsForValue().getAndDelete(key);
+    }
+
     public void delete(String key) {
         redisTemplate.delete(key);
     }

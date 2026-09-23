@@ -432,6 +432,23 @@ class FilePersistenceAdapterTest {
     }
 
     @Nested
+    @DisplayName("버전을 id 여러 개로 한 번에 찾을 때")
+    class WhenFindingVersionsByIds {
+
+        @Test
+        @DisplayName("요청한 id의 버전만 돌려준다")
+        void returnsOnlyTheRequestedVersions() {
+            UUID fileIdValue = UUID.randomUUID();
+            UUID v1 = springDataFileVersionRepository.save(new FileVersionJpaEntity(fileIdValue, 10L, 1, "s3://b/v1")).getId();
+            springDataFileVersionRepository.save(new FileVersionJpaEntity(fileIdValue, 20L, 2, "s3://b/v2"));
+
+            assertThat(filePersistenceAdapter.findAllByIds(java.util.List.of(v1)))
+                    .extracting(com.moduDrive.file.domain.model.FileVersion::getS3Path)
+                    .containsExactly("s3://b/v1");
+        }
+    }
+
+    @Nested
     @DisplayName("파일을 영구 삭제할 때")
     class WhenDeletingAFile {
 
