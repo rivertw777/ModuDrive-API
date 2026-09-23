@@ -97,6 +97,33 @@ class UpdateFileStatusControllerTest {
     }
 
     @Nested
+    @DisplayName("0바이트 파일일 때")
+    class WhenFileIsEmpty {
+
+        @Test
+        @DisplayName("빈 파일도 정상 파일이므로 받아들인다")
+        void acceptsZeroFileSize() throws Exception {
+            given(updateFileStatusUseCase.updateFileStatus(any(UpdateFileStatusCommand.class)))
+                    .willReturn(uploadedFile);
+
+            mockMvc.perform(put("/api/v1/files/{fileId}/uploaded", FILE_ID)
+                            .header("X_USER_ID", USER_ID.toString())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"fileSize\":0,\"blockCount\":1,\"s3Path\":\"s3://bucket/key\"}"))
+                    .andExpect(status().isOk());
+        }
+
+        @Test
+        void rejectsNegativeFileSize() throws Exception {
+            mockMvc.perform(put("/api/v1/files/{fileId}/uploaded", FILE_ID)
+                            .header("X_USER_ID", USER_ID.toString())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"fileSize\":-1,\"blockCount\":1,\"s3Path\":\"s3://bucket/key\"}"))
+                    .andExpect(status().isBadRequest());
+        }
+    }
+
+    @Nested
     @DisplayName("blockCount가 상한을 초과할 때")
     class WhenBlockCountExceedsCap {
 

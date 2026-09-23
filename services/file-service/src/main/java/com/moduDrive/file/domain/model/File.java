@@ -205,6 +205,16 @@ public class File {
                 throw new IllegalArgumentException("파일/디렉토리 이름에 /, \\, ., .. 는 사용할 수 없습니다.");
             }
         }
+
+        /** "report.pdf" + 1 -> "report (1).pdf" — the "keep both" name on a conflict. A directory
+         * has no extension ("v1.2" -> "v1.2 (1)"), and neither does a dotfile (".env" -> ".env (1)"),
+         * so for both the number goes last. */
+        public FileName numbered(int n, boolean directory) {
+            int dot = value.lastIndexOf('.');
+            return !directory && dot > 0
+                    ? new FileName(value.substring(0, dot) + " (" + n + ")" + value.substring(dot))
+                    : new FileName(value + " (" + n + ")");
+        }
     }
     public record FilePath(String value) {}
     public record FileOwnerId(UUID value) {}

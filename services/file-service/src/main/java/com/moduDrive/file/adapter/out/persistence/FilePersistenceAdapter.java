@@ -21,8 +21,10 @@ import org.springframework.data.jpa.domain.Specification;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @PersistenceAdapter
@@ -90,6 +92,26 @@ class FilePersistenceAdapter implements
         // onto a slot a later upload already took over) — this used to throw a raw
         // DataIntegrityViolationException out through the transaction commit as a 500.
         return fileMapper.mapFileToDomain(saveAndTranslateSlotConflict(entity));
+    }
+
+    @Override
+    public List<File> saveNewFiles(List<File> files) {
+        List<FileJpaEntity> entities = files.stream()
+                .map(file -> new FileJpaEntity(file.getNamespaceId(), file.getName(), file.getPath(),
+                        file.getOwnerId(), file.getStatus(), file.isDirectory()))
+                .toList();
+        try {
+            List<FileJpaEntity> saved = fileRepository.saveAll(entities);
+            // One flush for the whole list, still inside this try — same reason saveAndFlush is
+            // used below: the slot violation must surface here to be translated.
+            fileRepository.flush();
+            return saved.stream().map(fileMapper::mapFileToDomain).toList();
+        } catch (DataIntegrityViolationException e) {
+            if (isActiveSlotConflict(e)) {
+                throw new BusinessException(FileExceptionCase.FILE_ALREADY_EXISTS);
+            }
+            throw e;
+        }
     }
 
     /** saveAndFlush (not save): forces uk_file_namespace_path_active_name's violation to surface
@@ -382,6 +404,23 @@ class FilePersistenceAdapter implements
                 .stream()
                 .map(fileMapper::mapFileShareToDomain)
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    public void recordAccesses(UUID userId, List<UUID> fileIds, LocalDateTime accessedAt) {
+        Map<UUID, FileAccessJpaEntity> existing = fileAccessRepository.findByUserIdAndFileIdIn(userId, fileIds)
+                .stream()
+                .collect(Collectors.toMap(FileAccessJpaEntity::getFileId, Function.identity()));
+        fileAccessRepository.saveAll(fileIds.stream()
+                .map(fileId -> {
+                    FileAccessJpaEntity entity = existing.get(fileId);
+                    if (entity == null) {
+                        return new FileAccessJpaEntity(userId, fileId, accessedAt);
+                    }
+                    entity.touch(accessedAt);
+                    return entity;
+                })
+                .toList());
     }
 
     @Override

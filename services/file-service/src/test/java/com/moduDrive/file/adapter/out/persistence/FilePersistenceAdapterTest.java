@@ -24,6 +24,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -146,6 +147,37 @@ class FilePersistenceAdapterTest {
             Throwable thrown = catchThrowable(() -> filePersistenceAdapter.saveFile(File.create(
                     new FileNamespaceId(namespaceIdValue), new FileName("report.pdf"),
                     new FilePath("/1/docs"), new FileOwnerId(UUID.randomUUID()), new FileIsDirectory(false))));
+
+            assertThat(thrown)
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(FileExceptionCase.FILE_ALREADY_EXISTS);
+        }
+
+        @Test
+        @DisplayName("새 파일 여러 개를 한 번에 저장하면 입력 순서대로 id가 붙어 돌아온다")
+        void savesNewFilesInBulkInInputOrder() {
+            var result = filePersistenceAdapter.saveNewFiles(List.of(
+                    File.createDirectory(new FileNamespaceId(namespaceIdValue), new FileName("사진"),
+                            new FilePath("/"), new FileOwnerId(UUID.randomUUID())),
+                    File.create(new FileNamespaceId(namespaceIdValue), new FileName("a.jpg"),
+                            new FilePath("/사진"), new FileOwnerId(UUID.randomUUID()), new FileIsDirectory(false))));
+
+            assertThat(result).extracting(File::getName).containsExactly("사진", "a.jpg");
+            assertThat(result).allSatisfy(file -> assertThat(file.getId()).isNotNull());
+            assertThat(springDataFileRepository.findAll()).hasSize(2);
+        }
+
+        @Test
+        @DisplayName("한 번에 저장하는 중 활성 파일과 자리가 겹치면 비즈니스 예외로 변환된다")
+        void translatesASlotConflictInABulkSave() {
+            save("/1/docs", "report.pdf");
+
+            Throwable thrown = catchThrowable(() -> filePersistenceAdapter.saveNewFiles(List.of(
+                    File.create(new FileNamespaceId(namespaceIdValue), new FileName("other.pdf"),
+                            new FilePath("/1/docs"), new FileOwnerId(UUID.randomUUID()), new FileIsDirectory(false)),
+                    File.create(new FileNamespaceId(namespaceIdValue), new FileName("report.pdf"),
+                            new FilePath("/1/docs"), new FileOwnerId(UUID.randomUUID()), new FileIsDirectory(false)))));
 
             assertThat(thrown)
                     .isInstanceOf(BusinessException.class)
@@ -514,6 +546,25 @@ class FilePersistenceAdapterTest {
             var result = filePersistenceAdapter.findByUserIdOrderByAccessedAtDesc(userId, 1);
 
             assertThat(result).extracting(FileAccess::getFileId).containsExactly(newerFileId);
+        }
+
+        @Test
+        @DisplayName("여러 파일을 한 번에 기록하면 없던 행은 만들고 있던 행은 시각만 갱신한다")
+        void recordsManyAtOnceUpsertingExistingRows() {
+            UUID userId = UUID.randomUUID();
+            UUID seenFileId = UUID.randomUUID();
+            UUID newFileId = UUID.randomUUID();
+            LocalDateTime now = LocalDateTime.now();
+            filePersistenceAdapter.recordAccess(FileAccess.of(
+                    new FileAccessUserId(userId), new FileAccessFileId(seenFileId), now.minusDays(1)));
+
+            filePersistenceAdapter.recordAccesses(userId, List.of(seenFileId, newFileId), now);
+            entityManager.flush();
+
+            var rows = springDataFileAccessRepository.findByUserIdOrderByAccessedAtDesc(
+                    userId, org.springframework.data.domain.PageRequest.of(0, 10));
+            assertThat(rows).hasSize(2);
+            assertThat(rows).allSatisfy(row -> assertThat(row.getAccessedAt()).isEqualToIgnoringNanos(now));
         }
     }
 

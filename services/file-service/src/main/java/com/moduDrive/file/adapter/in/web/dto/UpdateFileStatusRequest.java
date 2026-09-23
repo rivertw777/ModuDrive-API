@@ -4,9 +4,11 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.PositiveOrZero;
 
 public record UpdateFileStatusRequest(
-        @NotNull @Positive Long fileSize,
+        // Zero is a real file (an empty .gitkeep in an uploaded folder), not a missing value.
+        @NotNull @PositiveOrZero Long fileSize,
         // ponytail: same 100_000 ceiling as storage-service's S3StorageAdapter — keep in sync,
         // both exist so a caller-supplied blockCount can't drive an oversized allocation.
         @NotNull @Positive @Max(100_000) Integer blockCount,
