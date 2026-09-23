@@ -5,6 +5,16 @@
 
 ---
 
+## 목차
+
+- [1. 한눈에 보기](#1-한눈에-보기)
+- [2. 구성 파일](#2-구성-파일)
+- [3. 컴포넌트별 정리](#3-컴포넌트별-정리)
+- [4. 실행](#4-실행)
+- [5. 운영 메모 / 트러블슈팅](#5-운영-메모--트러블슈팅)
+
+---
+
 ## 1. 한눈에 보기
 
 ```
@@ -49,7 +59,7 @@
 - 노출 엔드포인트: `health`, `prometheus`만
 - `management.tracing.sampling.probability: 1.0` — 앱은 전량 export, 샘플링은 collector가 결정
 - `logging.pattern.correlation` — 로그 줄에 `[앱이름,traceId,spanId]`를 찍음 (Loki→Tempo 링크의 근거)
-- SQS observation 켬(`application-sqs.yml`) — 프로듀서→컨슈머로 trace가 이어지게 (`.docs/spec/messaging-spec.md` 7장)
+- SQS observation 켬(`application-sqs.yml`) — 프로듀서→컨슈머로 trace가 이어지게 (`.docs/spec/messaging-spec.md` 6장)
 
 ---
 
