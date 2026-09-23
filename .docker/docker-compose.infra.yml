@@ -12,13 +12,13 @@ services:
       - POSTGRES_DB=postgres
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      # Per-service logins, created by init/01_postgres_init.sh
+      # Per-service logins, created by postgres/01_postgres_init.sh
       - MEMBER_DB_PASSWORD=${MEMBER_DB_PASSWORD:?}
       - FILE_DB_PASSWORD=${FILE_DB_PASSWORD:?}
       - NOTIFICATION_DB_PASSWORD=${NOTIFICATION_DB_PASSWORD:?}
     volumes:
       - postgres_data:/var/lib/postgresql
-      - ./init:/docker-entrypoint-initdb.d
+      - ./postgres:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d postgres"]
       interval: 10s

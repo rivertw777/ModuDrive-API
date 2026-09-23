@@ -48,7 +48,7 @@ flowchart LR
 | `common/infrastructure/jpa/src/main/resources/application-jpa.yml` | `ddl-auto: validate`, `dev` 프로필일 때만 `flyway.locations`에 `db/seed` 추가 |
 | `services/<svc>/src/main/resources/db/migration/` | 운영 포함 모든 환경에 적용되는 스키마 마이그레이션 |
 | `services/<svc>/src/main/resources/db/seed/` | 로컬 개발용 데이터(테스트 유저). `dev` 프로필에서만 적용 |
-| `.docker/init/01_postgres_init.sh` | DB와 서비스별 계정 생성만 담당. 테이블·데이터는 만들지 않음 |
+| `.docker/postgres/01_postgres_init.sh` | DB와 서비스별 계정 생성만 담당. 테이블·데이터는 만들지 않음 |
 | `services/<svc>/src/test/resources/config/application.yml` | 테스트 DB를 Testcontainers Postgres로 지정 (6장) |
 
 역할 분리:
