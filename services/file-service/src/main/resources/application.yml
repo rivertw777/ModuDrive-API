@@ -7,6 +7,14 @@ spring:
       - "classpath:application-observability.yml"
       - "classpath:application-sqs.yml"
       - "classpath:application-resilience4j.yml"
+  jpa:
+    properties:
+      hibernate:
+        # Groups inserts into JDBC batches — an upload batch (POST /api/v1/files/batch) inserts
+        # up to 5,000 file rows plus their file_access rows in one flush.
+        jdbc:
+          batch_size: 100
+        order_inserts: true
 
 modudrive:
   messaging:

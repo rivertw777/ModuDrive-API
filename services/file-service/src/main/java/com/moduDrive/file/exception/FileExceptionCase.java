@@ -23,7 +23,9 @@ public enum FileExceptionCase implements ExceptionCase {
     FILE_ACCESS_DENIED(HttpStatus.FORBIDDEN, "파일에 접근할 권한이 없습니다."),
     INVALID_LINK_ROLE(HttpStatus.BAD_REQUEST, "링크 공유는 뷰어 권한만 가능합니다."),
     SHARE_TARGET_NOT_FOUND(HttpStatus.NOT_FOUND, "해당 이메일의 회원을 찾을 수 없습니다."),
-    INVALID_MOVE_TARGET(HttpStatus.BAD_REQUEST, "디렉토리를 자기 자신의 하위 경로로 이동할 수 없습니다.");
+    INVALID_MOVE_TARGET(HttpStatus.BAD_REQUEST, "디렉토리를 자기 자신의 하위 경로로 이동할 수 없습니다."),
+    FILE_BATCH_CONFLICT(HttpStatus.CONFLICT, "같은 이름의 파일이 이미 있습니다."),
+    INVALID_BATCH_ITEM(HttpStatus.BAD_REQUEST, "업로드 항목의 경로나 크기가 올바르지 않습니다.");
 
     private final HttpStatus httpStatus;
     private final String message;
