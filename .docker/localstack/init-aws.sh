@@ -27,6 +27,11 @@ done
 # otherwise leave uploads failing with NoSuchBucket until storage-service restarts too.
 # Unset in the SQS module's queue test, which runs LocalStack without S3.
 if [ -n "${STORAGE_S3_BUCKET:-}" ]; then
+  # Every region but us-east-1 has to be named again as the bucket's LocationConstraint.
+  location=()
+  if [ "$STORAGE_S3_REGION" != us-east-1 ]; then
+    location=(--create-bucket-configuration "LocationConstraint=$STORAGE_S3_REGION")
+  fi
   awslocal s3api head-bucket --bucket "$STORAGE_S3_BUCKET" 2>/dev/null \
-    || awslocal s3api create-bucket --bucket "$STORAGE_S3_BUCKET" --region "$STORAGE_S3_REGION" >/dev/null
+    || awslocal s3api create-bucket --bucket "$STORAGE_S3_BUCKET" --region "$STORAGE_S3_REGION" "${location[@]}" >/dev/null
 fi

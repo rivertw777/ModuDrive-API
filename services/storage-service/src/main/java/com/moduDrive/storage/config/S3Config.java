@@ -36,16 +36,22 @@ public class S3Config {
 
         // Real buckets are provisioned by Terraform and the task role has no CreateBucket permission.
         if (customEndpoint) {
-            createBucketIfMissing(client, s3.getBucket());
+            createBucketIfMissing(client, s3.getBucket(), s3.getRegion());
         }
         return client;
     }
 
-    private void createBucketIfMissing(S3Client client, String bucket) {
+    private void createBucketIfMissing(S3Client client, String bucket, String region) {
         try {
             client.headBucket(b -> b.bucket(bucket));
         } catch (NoSuchBucketException e) {
-            client.createBucket(b -> b.bucket(bucket));
+            // S3 wants the region spelled out for every region but us-east-1, its default.
+            client.createBucket(b -> {
+                b.bucket(bucket);
+                if (!Region.US_EAST_1.id().equals(region)) {
+                    b.createBucketConfiguration(c -> c.locationConstraint(region));
+                }
+            });
         }
     }
 }
