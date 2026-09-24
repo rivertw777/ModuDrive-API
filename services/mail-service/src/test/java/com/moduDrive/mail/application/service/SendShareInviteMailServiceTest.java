@@ -10,6 +10,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.Arrays;
 import java.util.Map;
 import java.util.UUID;
 
@@ -32,9 +33,8 @@ class SendShareInviteMailServiceTest {
         sendShareInviteMailService = new SendShareInviteMailService(sendMailPort, CLIENT_URL);
     }
 
-    private static boolean fileIconContains(Map<String, String> inlineSvgImages, String snippet) {
-        String fileIcon = inlineSvgImages.get("fileIcon");
-        return fileIcon != null && fileIcon.contains(snippet);
+    private static boolean hasFileIcon(Map<String, byte[]> images, SendShareInviteMailService.FileIcon expected) {
+        return Arrays.equals(images.get("fileIcon"), expected.png);
     }
 
     @Nested
@@ -63,19 +63,36 @@ class SendShareInviteMailServiceTest {
         }
 
         @Test
-        void picksTheFileIconColorByCategoryFromFileService() {
+        void linksToTheFileItselfWithoutAKey() {
+            UUID fileId = UUID.randomUUID();
+            SendShareInviteMailCommand command = new SendShareInviteMailCommand(
+                    "grantee@modudrive.com", "report.pdf", false, "DOCUMENT", "VIEWER", fileId,
+                    "홍길동", "owner@modudrive.com", null, null);
+
+            sendShareInviteMailService.sendShareInviteMail(command);
+
+            // /files/{fileId} opens the file for a signed-in member and routes a signed-out one
+            // through login and back — not the site root, which always lands on login.
+            then(sendMailPort).should().sendHtml(eq("grantee@modudrive.com"), contains("공유"),
+                    argThat(html -> html.contains("href=\"" + CLIENT_URL + "/files/" + fileId + "\"")
+                            && !html.contains("?key=")),
+                    eq("홍길동 (ModuDrive에서 공유)"),
+                    argThat(images -> !images.containsKey("warning")));
+        }
+
+        @Test
+        void picksTheFileIconByCategoryFromFileService() {
             SendShareInviteMailCommand command = new SendShareInviteMailCommand(
                     "grantee@modudrive.com", "report.pdf", false, "DOCUMENT", "VIEWER", UUID.randomUUID(),
                     "홍길동", "owner@modudrive.com", null, null);
 
             sendShareInviteMailService.sendShareInviteMail(command);
 
-            // DOCUMENT -> #3b82f6, matching entry-icon.tsx's category color. The category comes
-            // straight from file-service (FileCategory.of), not from mail-service guessing the
-            // extension itself.
+            // The category comes straight from file-service (FileCategory.of), not from mail-service
+            // guessing the extension itself.
             then(sendMailPort).should().sendHtml(eq("grantee@modudrive.com"), contains("공유"),
                     org.mockito.ArgumentMatchers.any(), eq("홍길동 (ModuDrive에서 공유)"),
-                    argThat(images -> fileIconContains(images, "#3b82f6")));
+                    argThat(images -> hasFileIcon(images, SendShareInviteMailService.FileIcon.DOCUMENT)));
         }
 
         @Test
@@ -87,10 +104,10 @@ class SendShareInviteMailServiceTest {
             sendShareInviteMailService.sendShareInviteMail(command);
 
             // "ARCHIVE" isn't a category this enum knows (e.g. file-service added it first) —
-            // must fall back to OTHER's color rather than blow up the whole mail.
+            // must fall back to OTHER's icon rather than blow up the whole mail.
             then(sendMailPort).should().sendHtml(eq("grantee@modudrive.com"), contains("공유"),
                     org.mockito.ArgumentMatchers.any(), eq("홍길동 (ModuDrive에서 공유)"),
-                    argThat(images -> fileIconContains(images, "#94a3b8")));
+                    argThat(images -> hasFileIcon(images, SendShareInviteMailService.FileIcon.OTHER)));
         }
 
         @Test
@@ -103,7 +120,7 @@ class SendShareInviteMailServiceTest {
 
             then(sendMailPort).should().sendHtml(eq("grantee@modudrive.com"), contains("공유"),
                     org.mockito.ArgumentMatchers.any(), eq("홍길동 (ModuDrive에서 공유)"),
-                    argThat(images -> fileIconContains(images, "#336fa3")));
+                    argThat(images -> hasFileIcon(images, SendShareInviteMailService.FileIcon.FOLDER)));
         }
 
         @Test
@@ -187,7 +204,7 @@ class SendShareInviteMailServiceTest {
 
             then(sendMailPort).should().sendHtml(eq("grantee@modudrive.com"), contains("공유"),
                     contains("로그인하지 않아도"), eq("홍길동 (ModuDrive에서 공유)"),
-                    org.mockito.ArgumentMatchers.any());
+                    argThat(images -> images.containsKey("warning")));
         }
     }
 }

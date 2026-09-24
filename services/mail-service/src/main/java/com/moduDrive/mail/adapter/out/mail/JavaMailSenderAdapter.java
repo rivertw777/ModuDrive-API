@@ -4,12 +4,10 @@ import com.moduDrive.mail.application.port.out.SendMailPort;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import java.io.UnsupportedEncodingException;
-import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.mail.MailParseException;
-import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Component;
@@ -26,22 +24,8 @@ class JavaMailSenderAdapter implements SendMailPort {
     }
 
     @Override
-    public void send(String to, String subject, String body) {
-        SimpleMailMessage message = new SimpleMailMessage();
-        message.setFrom(from);
-        message.setTo(to);
-        message.setSubject(subject);
-        message.setText(body);
-
-        // Throws MailException on SMTP failure — left uncaught so the SQS message isn't deleted: it
-        // comes back after the visibility timeout and, once the queue's redrive maxReceiveCount is
-        // used up, moves to the DLQ.
-        javaMailSender.send(message);
-    }
-
-    @Override
     public void sendHtml(String to, String subject, String htmlBody, String fromDisplayName,
-            Map<String, String> inlineSvgImages) {
+            Map<String, byte[]> inlinePngImages) {
         MimeMessage message = javaMailSender.createMimeMessage();
         try {
             // multipart=true (multipart/related) is required for addInline below — without it
@@ -55,10 +39,8 @@ class JavaMailSenderAdapter implements SendMailPort {
             helper.setTo(to);
             helper.setSubject(subject);
             helper.setText(htmlBody, true);
-            for (Map.Entry<String, String> image : inlineSvgImages.entrySet()) {
-                helper.addInline(image.getKey(),
-                        new ByteArrayResource(image.getValue().getBytes(StandardCharsets.UTF_8)),
-                        "image/svg+xml");
+            for (Map.Entry<String, byte[]> image : inlinePngImages.entrySet()) {
+                helper.addInline(image.getKey(), new ByteArrayResource(image.getValue()), "image/png");
             }
         } catch (MessagingException | UnsupportedEncodingException e) {
             // Malformed MIME structure, not an SMTP failure — retrying the same body would fail
@@ -66,6 +48,9 @@ class JavaMailSenderAdapter implements SendMailPort {
             throw new MailParseException(e);
         }
 
+        // Throws MailException on SMTP failure — left uncaught so the SQS message isn't deleted: it
+        // comes back after the visibility timeout and, once the queue's redrive maxReceiveCount is
+        // used up, moves to the DLQ.
         javaMailSender.send(message);
     }
 }

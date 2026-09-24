@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ModuDrive 공유</title>
+</head>
+<!-- Member invite: the recipient already has a ModuDrive account, so {{LINK}} needs a login.
+     Table layout + inline styles only — Naver/Daum/Outlook drop <style> blocks and flexbox. -->
+<body style="margin:0;padding:0;background:#f4f6f9;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4f6f9;">
+  <tr>
+    <td align="center" style="padding:40px 16px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:694px;font-family:'Apple SD Gothic Neo','Malgun Gothic','맑은 고딕',Arial,sans-serif;color:#1f2937;">
+        <tr>
+          <td style="background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;padding:40px 40px 36px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;">
+              <tr>
+                <td valign="middle" style="width:44px;">
+                  <div style="width:44px;height:44px;line-height:44px;border-radius:22px;background:#27547c;color:#ffffff;font-size:18px;font-weight:700;text-align:center;">{{GRANTER_INITIAL}}</div>
+                </td>
+                <td valign="middle" style="padding-left:14px;font-size:20px;line-height:1.5;color:#334155;">
+                  <strong style="color:#0f172a;">{{GRANTER_NAME}}</strong><span style="color:#64748b;">({{GRANTER_EMAIL}})</span>님이 다음 항목을 공유했습니다.
+                </td>
+              </tr>
+            </table>
+
+            {{MESSAGE_BLOCK}}
+
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 28px;">
+              <tr>
+                <td style="border:1px solid #d8e6f3;border-radius:999px;">
+                  <a href="{{LINK}}" style="display:inline-block;vertical-align:top;padding:10px 18px 10px 14px;font-size:0;line-height:20px;text-decoration:none;border-radius:999px;">
+                    <img src="cid:fileIcon" width="20" height="20" alt="" style="vertical-align:middle;border:0;" />
+                    <span style="vertical-align:middle;padding-left:8px;font-size:15px;line-height:20px;font-weight:600;color:#1c3d5a;">{{FILE_NAME}}</span>
+                  </a>
+                </td>
+              </tr>
+            </table>
+
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="border-radius:999px;background:#27547c;">
+                  <a href="{{LINK}}" style="display:inline-block;padding:11px 28px;font-size:15px;line-height:20px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:999px;">열기</a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:20px 24px 0;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td valign="middle" style="font-size:12px;line-height:1.6;color:#94a3b8;">
+                  {{GRANTER_EMAIL}}님이 ModuDrive에 있는 파일 또는 폴더를 나와 공유하여 발송된 이메일입니다.
+                </td>
+                <td valign="middle" align="right" style="padding-left:16px;white-space:nowrap;">
+                  <img src="cid:logo" width="122" height="25" alt="ModuDrive" style="display:block;border:0;" />
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>
