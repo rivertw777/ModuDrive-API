@@ -12,7 +12,7 @@ services:
       - POSTGRES_DB=postgres
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      # Per-service logins, created by postgres/01_postgres_init.sh
+      # Per-service logins, created by postgres/postgres_init.sh
       - MEMBER_DB_PASSWORD=${MEMBER_DB_PASSWORD:?}
       - FILE_DB_PASSWORD=${FILE_DB_PASSWORD:?}
       - NOTIFICATION_DB_PASSWORD=${NOTIFICATION_DB_PASSWORD:?}

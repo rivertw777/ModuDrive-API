@@ -66,7 +66,7 @@
 
 ### 2-4. DB: RDS for PostgreSQL
 - 현재 서비스별 DB 3개 + 서비스별 로그인(#355 / PR #358): `member_db`/`member_service`, `file_db`/`file_service`,
-  `notification_db`/`notification_service`. 로컬은 `.docker/postgres/01_postgres_init.sh`가 만든다 — **RDS에선 이 DB·로그인을 따로 만들어야 한다**.
+  `notification_db`/`notification_service`. 로컬은 `.docker/postgres/postgres_init.sh`가 만든다 — **RDS에선 이 DB·로그인을 따로 만들어야 한다**.
 - 테이블은 각 서비스가 기동할 때 Flyway가 만든다(#359 / PR #360, `.docs/db-migration.md`) — 별도 작업 없음.
 - 처음엔 단일 인스턴스(db.t4g 계열) + 자동 백업. 트래픽 늘면 Multi-AZ → Aurora 검토.
 
