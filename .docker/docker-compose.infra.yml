@@ -63,7 +63,8 @@ services:
       - STORAGE_S3_REGION=${STORAGE_S3_REGION}
     volumes:
       - localstack_data:/var/lib/localstack
-      - ./localstack/init-aws.sh:/etc/localstack/init/ready.d/init-aws.sh:ro
+      # 폴더째 마운트: 파일 하나만 마운트하면 Docker Desktop(WSL) 재시작 때 마운트가 깨져 exit 127로 죽는다.
+      - ./localstack:/etc/localstack/init/ready.d:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -sf localhost:4566/_localstack/init/ready | grep -Eq '\"completed\": *true'"]
       interval: 10s
