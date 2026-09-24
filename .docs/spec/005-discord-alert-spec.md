@@ -3,8 +3,6 @@
 이 문서는 **서비스에 문제가 생겼을 때 사람에게 알리는 기능**이 어떤 규칙으로 동작하는지 정의한 문서입니다.
 현재 받는 곳은 디스코드 채널입니다.
 
-1~6장은 알림을 거는 **공통 규칙**이고, 지금 걸려 있는 알림은 [7장](#7-사용-알림)에 정리했습니다.
-
 ⚠️ 이 문서가 기준입니다. 코드가 이 문서와 다르면 코드를 고치고, 동작을 바꾸려면 이 문서를 먼저 고칩니다.
 
 ---
@@ -16,7 +14,7 @@
 - [3. 규칙](#3-규칙)
 - [4. 알림 메시지](#4-알림-메시지)
 - [5. 그룹핑과 재발송](#5-그룹핑과-재발송)
-- [6. 디스코드 채널](#6-디스코드-채널)
+- [6. 사용 디스코드 채널](#6-사용-디스코드-채널)
 - [7. 사용 알림](#7-사용-알림)
 - [8. TODO](#8-todo)
 
@@ -57,13 +55,13 @@ Alertmanager 컨테이너는 따로 안 띄운다 — Grafana에 내장된 것�
 앱이 `:9464/actuator/prometheus`에 이런 줄을 내놓는 것이 전부다 — **이름 + 라벨 + 숫자**.
 
 ```
-modudrive_outbox_failed{instance="member-service",queue="mail-verification-requested",reason="SqsException"} 1
+modudrive_outbox_failed{instance="member-service",queue="mail-verification-requested",reason="SqsException",detail="The specified queue does not exist."} 1
 ```
 
 Prometheus가 15초마다 긁어 시계열로 쌓고, 규칙은 그걸 PromQL로 본다.
 
 ```
-max by (instance, queue, reason) (modudrive_outbox_failed) > 0
+max by (instance, queue, reason, detail) (modudrive_outbox_failed) > 0
 ```
 
 - **`by (...)`에 넣은 라벨만 알림 문구에 쓸 수 있다.** 나머지는 집계에 묻혀 사라진다.
@@ -83,7 +81,7 @@ max by (instance, queue, reason) (modudrive_outbox_failed) > 0
   labels: {channel: messaging}               # 어느 채널로 → 6장
   annotations: {summary: ..., action: ..., query: ...}   # 메시지 문구 → 4장
   data:
-    - expr: max by (instance, queue, reason) (modudrive_outbox_failed)   # 무엇을 보나 → 2장
+    - expr: max by (instance, queue, reason, detail) (modudrive_outbox_failed)   # 무엇을 보나 → 2장
     - conditions: [{evaluator: {type: gt, params: [0]}}]                 # 조건
 ```
 
@@ -126,7 +124,7 @@ max by (instance, queue, reason) (modudrive_outbox_failed) > 0
 
 ---
 
-## 6. 디스코드 채널
+## 6. 사용 디스코드 채널
 
 | 채널 | 무엇을 받나 | 웹후크 |
 |---|---|---|
@@ -154,7 +152,7 @@ max by (instance, queue, reason) (modudrive_outbox_failed) > 0
 큐·사유별로 쪼개 보내고, 그 라벨이 박힌 조회·복구 SQL이 알림에 같이 간다.
 
 3. **이벤트 처리 실패** — 컨슈머가 포기한 메시지는 `<큐>-dlq`로 옮겨지고, 사람이 redrive하기 전까지 거기 남는다
-([messaging 4-2](messaging-spec.md#4-2-처리-실패)). 컨슈머가 30초마다 DLQ 건수를 재서 내보내고, 한 건이라도
+([004-messaging-spec.md 4-2](004-messaging-spec.md#4-2-처리-실패)). 컨슈머가 30초마다 DLQ 건수를 재서 내보내고, 한 건이라도
 있으면 바로 알린다. 사유는 지표에 못 담으니 DLQ 메시지의 `DeadLetterReason`을 보고 고친 뒤 redrive한다.
 
 4. **서비스 응답 없음** — Prometheus가 15초마다 긁는 액추에이터가 2분 내내 응답하지 않으면 알린다.
@@ -166,6 +164,6 @@ max by (instance, queue, reason) (modudrive_outbox_failed) > 0
 
 - [ ] **AWS로 가면**: 세 지표 모두 앱이 내보내는 커스텀 메트릭이라 CloudWatch가 저절로 알지 못한다.
   OTel Collector에 CloudWatch EMF exporter를 붙이거나 ADOT를 쓰는 선택이 남아 있다 —
-  [.docs/aws-migration.md](../aws-migration.md)의 모니터링 항목과 같이 정한다. DLQ 건수만은 예외로
+  [aws-migration.md 2-10](../aws-migration.md#2-10--모니터링--알림)의 모니터링 항목과 같이 정한다. DLQ 건수만은 예외로
   CloudWatch가 `ApproximateNumberOfMessagesVisible`을 이미 알고 있으므로, Terraform으로 큐를 만들 때
   CloudWatch Alarm을 같이 걸어 앱 폴링을 걷어내는 선택지도 있다.
