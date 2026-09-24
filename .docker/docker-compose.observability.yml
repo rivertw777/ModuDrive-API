@@ -53,7 +53,9 @@ services:
       - ./observability:/etc/modudrive:ro
       # docker.sock을 :ro로 마운트해도 Docker Engine API 자체는 전부 열린다(호스트 root 상당 권한).
       # 로컬 dev compose 전용 트레이드오프 — 공유 호스트/서버로 절대 승격하지 말 것.
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # .raw = Docker Desktop VM 안의 소켓. WSL 쪽 /var/run/docker.sock을 파일 마운트하면
+      # Docker Desktop 재시작 시 WSL 마운트가 준비되기 전에 컨테이너가 떠서 exit 127로 죽는다.
+      - /var/run/docker.sock.raw:/var/run/docker.sock:ro
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
     depends_on:
       loki:
