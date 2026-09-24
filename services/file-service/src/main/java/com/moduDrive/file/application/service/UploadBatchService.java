@@ -37,8 +37,8 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /** Registers a whole upload selection in one transaction — see .docs/spec/001-file-upload-spec.md.
- * Only top-level entries can collide with what's already in the target folder: everything below
- * them lands inside a folder this batch creates, and folders are never merged. */
+ * Only top-level entries are asked about; a folder the user chose to replace is merged into, so
+ * its contents then reuse or sit beside what's already there. */
 @UseCase
 @RequiredArgsConstructor
 class UploadBatchService implements UploadBatchUseCase {
@@ -90,7 +90,7 @@ class UploadBatchService implements UploadBatchUseCase {
             if (!taken.contains(name)) {
                 finalTopNames.put(name, name);
                 taken.add(name);
-            } else if (clash != null && !clash.isDirectory() && !node.directory()) {
+            } else if (clash != null && clash.isDirectory() == node.directory()) {
                 ConflictResolution resolution = command.getResolutions().get(name);
                 if (resolution == null) {
                     conflicts.add(name);
@@ -99,11 +99,11 @@ class UploadBatchService implements UploadBatchUseCase {
                     replacing.put(name, clash);
                     finalTopNames.put(name, name);
                 } else if (resolution == ConflictResolution.KEEP_BOTH) {
-                    finalTopNames.put(name, takeFreeName(name, false, taken, requested));
+                    finalTopNames.put(name, takeFreeName(name, node.directory(), taken, requested));
                 }
                 // SKIP: no final name, so the loop below leaves it out.
             } else {
-                // Folder vs folder or file vs folder — never asked, always kept side by side.
+                // File vs folder — never asked, always kept side by side.
                 finalTopNames.put(name, takeFreeName(name, node.directory(), taken, requested));
             }
         }
@@ -118,22 +118,67 @@ class UploadBatchService implements UploadBatchUseCase {
         Set<String> replacedPaths = new HashSet<>();
         List<String> newPaths = new ArrayList<>();
         List<File> newFiles = new ArrayList<>();
+        // Where each batch folder lives in the drive, and which of those are existing folders a
+        // REPLACE merges into (Google Drive's "기존 폴더 대체"): inside one, a same-kind name reuses
+        // the existing entry — a folder merges again, a file gets a new version — and a clash of
+        // kinds is numbered, same as at the top level.
+        Map<String, String> folderPaths = new HashMap<>();
+        Set<String> mergedFolderPaths = new HashSet<>();
+        Map<String, Map<String, File>> mergedChildren = new HashMap<>();
+        Map<String, Set<String>> mergedTaken = new HashMap<>();
+        Map<String, Set<String>> requestedSiblings = nodes.values().stream()
+                .filter(node -> !node.isTopLevel())
+                .collect(Collectors.groupingBy(Node::parentRelativePath, Collectors.mapping(Node::name, Collectors.toSet())));
         for (Node node : nodes.values()) {
-            String top = node.segments()[0];
-            String finalTop = finalTopNames.get(top);
-            if (finalTop == null) {
-                continue;
+            String parent;
+            String name;
+            File reused;
+            if (node.isTopLevel()) {
+                parent = target;
+                name = finalTopNames.get(node.name());
+                if (name == null) {
+                    continue;
+                }
+                reused = replacing.get(node.name());
+            } else {
+                parent = folderPaths.get(node.parentRelativePath());
+                if (parent == null) {
+                    continue; // under a skipped top-level entry
+                }
+                name = node.name();
+                reused = null;
+                if (mergedFolderPaths.contains(parent)) {
+                    // ponytail: one children query per merged folder; fine for hand-picked
+                    // uploads, batch it if merging deep trees ever shows up in latency.
+                    Map<String, File> children = mergedChildren.computeIfAbsent(parent, path ->
+                            findFilePort.findByNamespaceIdAndPath(namespaceId, path).stream()
+                                    .collect(Collectors.toMap(File::getName, Function.identity(), (a, b) -> a)));
+                    File clash = children.get(name);
+                    if (clash != null && clash.isDirectory() == node.directory()) {
+                        fileAccessGuard.requireOwner(clash, command.getUserId());
+                        reused = clash;
+                    } else if (clash != null) {
+                        Set<String> takenHere = mergedTaken.computeIfAbsent(parent, path -> new HashSet<>(children.keySet()));
+                        name = takeFreeName(name, node.directory(), takenHere,
+                                requestedSiblings.get(node.parentRelativePath()));
+                    }
+                }
             }
             order.add(node.relativePath());
-            File replaced = node.isTopLevel() ? replacing.get(top) : null;
-            if (replaced != null) {
-                replaced.restartUpload();
-                saved.put(node.relativePath(), saveFilePort.saveFile(replaced));
+            if (node.directory()) {
+                folderPaths.put(node.relativePath(), child(parent, name));
+            }
+            if (reused != null) {
+                if (reused.isDirectory()) {
+                    mergedFolderPaths.add(child(parent, name));
+                    saved.put(node.relativePath(), reused);
+                } else {
+                    reused.restartUpload();
+                    saved.put(node.relativePath(), saveFilePort.saveFile(reused));
+                }
                 replacedPaths.add(node.relativePath());
                 continue;
             }
-            String name = node.isTopLevel() ? finalTop : node.name();
-            String parent = parentPath(target, finalTop, node.segments());
             // After renaming, so a " (1)" suffix that tips a name over the limit is caught too.
             if (name.length() > MAX_COLUMN_LENGTH || parent.length() > MAX_COLUMN_LENGTH) {
                 throw invalidItem();
@@ -259,19 +304,6 @@ class UploadBatchService implements UploadBatchUseCase {
         }
     }
 
-    /** Where a node's row goes: the target, then the (possibly renamed) top-level folder, then
-     * every segment between it and the node itself. */
-    private static String parentPath(String target, String finalTop, String[] segments) {
-        if (segments.length == 1) {
-            return target;
-        }
-        String path = child(target, finalTop);
-        for (int i = 1; i < segments.length - 1; i++) {
-            path = child(path, segments[i]);
-        }
-        return path;
-    }
-
     private static String child(String parent, String name) {
         return "/".equals(parent) ? "/" + name : parent + "/" + name;
     }
@@ -284,6 +316,10 @@ class UploadBatchService implements UploadBatchUseCase {
 
         String name() {
             return segments[segments.length - 1];
+        }
+
+        String parentRelativePath() {
+            return relativePath.substring(0, relativePath.lastIndexOf('/'));
         }
     }
 }

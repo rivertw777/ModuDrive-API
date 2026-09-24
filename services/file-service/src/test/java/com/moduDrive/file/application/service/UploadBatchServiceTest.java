@@ -217,17 +217,19 @@ class UploadBatchServiceTest {
     }
 
     @Nested
-    @DisplayName("최상위 폴더나 종류가 다른 항목과 이름이 겹칠 때")
-    class WhenTopLevelNameClashesWithoutAsking {
+    @DisplayName("번호를 붙일 때 (둘 다 유지, 또는 종류가 다른 항목과 겹침)")
+    class WhenTopLevelNameIsNumbered {
+
+        private final Map<String, ConflictResolution> keepBoth = Map.of("사진", ConflictResolution.KEEP_BOTH);
 
         @Test
-        @DisplayName("폴더끼리 겹치면 묻지 않고 번호를 붙이고, 하위 항목도 바뀐 폴더 아래로 간다")
+        @DisplayName("폴더에 둘 다 유지를 고르면 번호를 붙이고, 하위 항목도 바뀐 폴더 아래로 간다")
         void numbersAFolderAndMovesItsChildrenUnderTheNewName() {
             givenNamespace();
             givenExistingInTarget("/", existing("사진", "/", true));
             givenSaveReturnsArgument();
 
-            List<UploadedItem> result = uploadBatchService.uploadBatch(command("/", List.of(file("사진/a.jpg"))));
+            List<UploadedItem> result = uploadBatchService.uploadBatch(command("/", List.of(file("사진/a.jpg")), keepBoth));
 
             assertThat(result)
                     .extracting(UploadedItem::relativePath, i -> i.file().getPath(), i -> i.file().getName())
@@ -243,7 +245,7 @@ class UploadBatchServiceTest {
             givenExistingInTarget("/", existing("사진", "/", true), existing("사진 (1)", "/", true));
             givenSaveReturnsArgument();
 
-            List<UploadedItem> result = uploadBatchService.uploadBatch(command("/", List.of(folder("사진"))));
+            List<UploadedItem> result = uploadBatchService.uploadBatch(command("/", List.of(folder("사진")), keepBoth));
 
             assertThat(result).extracting(i -> i.file().getName()).containsExactly("사진 (2)");
         }
@@ -269,9 +271,75 @@ class UploadBatchServiceTest {
             givenSaveReturnsArgument();
 
             List<UploadedItem> result = uploadBatchService.uploadBatch(command("/", List.of(
-                    folder("사진"), folder("사진 (1)"))));
+                    folder("사진"), folder("사진 (1)")), keepBoth));
 
             assertThat(result).extracting(i -> i.file().getName()).containsExactly("사진 (2)", "사진 (1)");
+        }
+    }
+
+    @Nested
+    @DisplayName("최상위 폴더가 같은 이름의 폴더와 겹칠 때")
+    class WhenTopLevelFolderClashesWithAFolder {
+
+        private final File photos = existing("사진", "/", true);
+
+        @Test
+        @DisplayName("선택이 없으면 파일 충돌과 함께 409로 묻고 아무것도 만들지 않는다")
+        void asksLikeAFileConflict() {
+            givenNamespace();
+            givenExistingInTarget("/", photos, existing("a.txt", "/", false));
+
+            Throwable thrown = catchThrowable(() -> uploadBatchService.uploadBatch(command("/", List.of(
+                    file("사진/b.jpg"), file("a.txt")))));
+
+            assertFails(thrown, FileExceptionCase.FILE_BATCH_CONFLICT);
+            assertThat(((BusinessException) thrown).getData()).isEqualTo(Map.of("conflicts", List.of("사진", "a.txt")));
+            then(saveFilePort).shouldHaveNoInteractions();
+        }
+
+        @Test
+        @DisplayName("대체를 고르면 기존 폴더에 합친다 — 같은 이름 파일은 새 버전, 폴더는 다시 합치고, 없던 항목은 새로 만든다")
+        void replaceMergesIntoTheExistingFolder() {
+            File oldPhoto = existing("a.jpg", "/사진", false);
+            File year = existing("2024", "/사진", true);
+            File clashingKind = existing("메모", "/사진", false);
+            givenNamespace();
+            givenExistingInTarget("/", photos);
+            givenExistingInTarget("/사진", oldPhoto, year, clashingKind);
+            givenExistingInTarget("/사진/2024", existing("c.jpg", "/사진/2024", false));
+            givenSaveReturnsArgument();
+
+            List<UploadedItem> result = uploadBatchService.uploadBatch(command("/", List.of(
+                    file("사진/a.jpg"), file("사진/b.jpg"), file("사진/2024/d.jpg"), folder("사진/메모")),
+                    Map.of("사진", ConflictResolution.REPLACE)));
+
+            assertThat(result)
+                    .extracting(UploadedItem::relativePath, i -> i.file().getPath(), i -> i.file().getName(),
+                            UploadedItem::replaced)
+                    .containsExactly(
+                            tuple("사진", "/", "사진", true),
+                            tuple("사진/a.jpg", "/사진", "a.jpg", true),
+                            tuple("사진/b.jpg", "/사진", "b.jpg", false),
+                            tuple("사진/2024", "/사진", "2024", true),
+                            tuple("사진/2024/d.jpg", "/사진/2024", "d.jpg", false),
+                            tuple("사진/메모", "/사진", "메모 (1)", false));
+            assertThat(result.get(0).file().getId()).isEqualTo(photos.getId());
+            assertThat(oldPhoto.getStatus()).isEqualTo(FileStatus.PENDING);
+            then(fileAccessGuard).should().requireOwner(photos, userId);
+            then(fileAccessGuard).should().requireOwner(oldPhoto, userId);
+        }
+
+        @Test
+        @DisplayName("건너뛰기를 고르면 그 폴더와 하위 항목을 전부 뺀다")
+        void skipLeavesTheWholeFolderOut() {
+            givenNamespace();
+            givenExistingInTarget("/", photos);
+            givenSaveReturnsArgument();
+
+            List<UploadedItem> result = uploadBatchService.uploadBatch(command("/",
+                    List.of(file("사진/2024/a.jpg"), file("b.txt")), Map.of("사진", ConflictResolution.SKIP)));
+
+            assertThat(result).extracting(UploadedItem::relativePath).containsExactly("b.txt");
         }
     }
 
@@ -461,7 +529,8 @@ class UploadBatchServiceTest {
             givenNamespace();
             givenExistingInTarget("/", existing(longName, "/", true));
 
-            Throwable thrown = catchThrowable(() -> uploadBatchService.uploadBatch(command("/", List.of(folder(longName)))));
+            Throwable thrown = catchThrowable(() -> uploadBatchService.uploadBatch(command("/", List.of(folder(longName)),
+                    Map.of(longName, ConflictResolution.KEEP_BOTH))));
 
             assertFails(thrown, FileExceptionCase.INVALID_BATCH_ITEM);
             then(saveFilePort).shouldHaveNoInteractions();
