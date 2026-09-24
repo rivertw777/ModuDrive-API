@@ -5,7 +5,6 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -28,9 +27,7 @@ interface SpringDataFileShareRepository extends JpaRepository<FileShareJpaEntity
 
     Optional<FileShareJpaEntity> findByFileIdAndGranteeEmail(UUID fileId, String granteeEmail);
 
-    /** Excludes a pending guest share whose invite is older than {@code createdAfter} — see
-     * {@code FilePersistenceAdapter#findByToken} (#211: this token had no expiry at all). */
-    Optional<FileShareJpaEntity> findByTokenAndCreatedAtAfter(UUID token, LocalDateTime createdAfter);
+    Optional<FileShareJpaEntity> findByToken(UUID token);
 
     List<FileShareJpaEntity> findByFileId(UUID fileId);
 

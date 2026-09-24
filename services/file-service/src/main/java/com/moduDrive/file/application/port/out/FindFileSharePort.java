@@ -26,7 +26,7 @@ public interface FindFileSharePort {
 
     /** Resolves a pending guest share's own per-invite token (see {@link FileShare#createPending}) —
      * independent of link sharing (issue #303), which is judged purely by scope, not a token.
-     * Empty once the invite is older than the adapter's TTL, even if the row still exists (#211). */
+     * No expiry: the invite lasts until the share is revoked. */
     Optional<FileShare> findByToken(UUID token);
 
     Optional<FileShare> findByShareId(FileShareId shareId);

@@ -95,9 +95,8 @@ public class FileShare {
 
     /** Links a pending guest share to the member who just signed up with its {@code granteeEmail}.
      * Clears {@code granteeEmail} (there is a real member behind it now) but keeps {@code token}
-     * so the {@code /files/{fileId}?key=} link the guest was emailed keeps working — bounded by
-     * the same invite TTL, which measures from {@code createdAt} (the original invite), not the
-     * claim. "Still unclaimed" is therefore {@code sharedWithUserId == null}. */
+     * so the {@code /files/{fileId}?key=} link the guest was emailed keeps working. "Still
+     * unclaimed" is therefore {@code sharedWithUserId == null}. */
     public void claim(UUID memberId) {
         this.sharedWithUserId = memberId;
         this.granteeEmail = null;
