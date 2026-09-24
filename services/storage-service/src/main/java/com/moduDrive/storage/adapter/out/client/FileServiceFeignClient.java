@@ -4,6 +4,7 @@ import com.moduDrive.common.core.web.ApiResponse;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -43,4 +44,13 @@ interface FileServiceFeignClient {
     ApiResponse<List<FileVersionDto>> getPublicFileRevisions(@PathVariable String fileId,
                                                              @RequestParam(required = false) String key,
                                                              @RequestParam(defaultValue = "1") int limit);
+
+    // Zip download layout (see file-service's ResolveArchiveEntriesController): checks DOWNLOAD
+    // on every picked item and expands folders into their contents.
+    @PostMapping("/internal/files/archive")
+    ApiResponse<List<ArchiveEntryDto>> resolveArchiveEntries(@RequestBody ResolveArchiveEntriesRequest request);
+
+    // Anonymous counterpart — each picked item is authorized the way a single public download is.
+    @PostMapping("/internal/files/public/archive")
+    ApiResponse<List<ArchiveEntryDto>> resolvePublicArchiveEntries(@RequestBody ResolvePublicArchiveEntriesRequest request);
 }

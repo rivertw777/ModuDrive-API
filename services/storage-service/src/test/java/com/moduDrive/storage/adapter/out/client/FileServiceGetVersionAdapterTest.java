@@ -128,4 +128,39 @@ class FileServiceGetVersionAdapterTest {
                     .isEqualTo(StorageExceptionCase.FILE_NOT_FOUND_IN_STORAGE);
         }
     }
+
+    @Nested
+    @DisplayName("zip 구성을 요청할 때")
+    class WhenResolvingArchiveEntries {
+
+        @Test
+        void callsTheSignedInRouteAndMapsDirectoriesWithoutALocation() {
+            List<UUID> ids = List.of(fileId);
+            given(feignClient.resolveArchiveEntries(new ResolveArchiveEntriesRequest(userId, ids)))
+                    .willReturn(ApiResponse.success(List.of(
+                            new ArchiveEntryDto("docs/", null, null, null, null),
+                            new ArchiveEntryDto("docs/a.txt", fileId, "s3/a", 2, 7L))));
+
+            var entries = adapter.getArchiveEntries(
+                    new com.moduDrive.storage.application.port.out.ArchiveRequest(userId, null, ids));
+
+            assertThat(entries).containsExactly(
+                    new com.moduDrive.storage.application.port.out.GetArchiveEntriesPort.ArchiveEntry("docs/", null, null, 0, 0),
+                    new com.moduDrive.storage.application.port.out.GetArchiveEntriesPort.ArchiveEntry("docs/a.txt", fileId, "s3/a", 2, 7));
+            assertThat(entries.get(0).isDirectory()).isTrue();
+        }
+
+        @Test
+        void callsThePublicRouteForAnAnonymousRequest() {
+            List<UUID> ids = List.of(fileId);
+            given(feignClient.resolvePublicArchiveEntries(new ResolvePublicArchiveEntriesRequest("k", ids)))
+                    .willReturn(ApiResponse.success(List.of()));
+
+            var entries = adapter.getArchiveEntries(
+                    new com.moduDrive.storage.application.port.out.ArchiveRequest(null, "k", ids));
+
+            assertThat(entries).isEmpty();
+            then(feignClient).should(org.mockito.Mockito.never()).resolveArchiveEntries(org.mockito.ArgumentMatchers.any());
+        }
+    }
 }

@@ -28,7 +28,9 @@ public enum StorageExceptionCase implements ExceptionCase {
     PREVIEW_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "미리보기는 100MB를 초과하는 파일을 지원하지 않습니다."),
     /** A single file served more than its per-file daily volume — blocked until the ~24h window
      * rolls over, the same way Google Drive locks an over-downloaded shared file. */
-    DOWNLOAD_QUOTA_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, "이 파일의 다운로드 한도를 초과했습니다. 잠시 후 다시 시도해 주세요.");
+    DOWNLOAD_QUOTA_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, "이 파일의 다운로드 한도를 초과했습니다. 잠시 후 다시 시도해 주세요."),
+    /** Missing, already used, or expired — the zip link is single-use and short-lived. */
+    ARCHIVE_TOKEN_INVALID(HttpStatus.NOT_FOUND, "다운로드 링크가 만료되었습니다. 다시 시도해 주세요.");
 
     private final HttpStatus httpStatus;
     private final String message;
