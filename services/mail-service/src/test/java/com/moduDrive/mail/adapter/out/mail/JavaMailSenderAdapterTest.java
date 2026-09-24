@@ -5,10 +5,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 
 import java.io.ByteArrayOutputStream;
@@ -26,24 +24,6 @@ class JavaMailSenderAdapterTest {
 
     private JavaMailSenderAdapter adapter() {
         return new JavaMailSenderAdapter(javaMailSender, "noreply@modudrive.com");
-    }
-
-    @Nested
-    @DisplayName("메일을 발송할 때")
-    class WhenSending {
-
-        @Test
-        void buildsMessageFromFromAddressAndDelegatesToJavaMailSender() {
-            adapter().send("river@modudrive.com", "subject", "body");
-
-            ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
-            then(javaMailSender).should().send(captor.capture());
-            SimpleMailMessage sent = captor.getValue();
-            assertThat(sent.getFrom()).isEqualTo("noreply@modudrive.com");
-            assertThat(sent.getTo()).containsExactly("river@modudrive.com");
-            assertThat(sent.getSubject()).isEqualTo("subject");
-            assertThat(sent.getText()).isEqualTo("body");
-        }
     }
 
     @Nested
@@ -84,12 +64,12 @@ class JavaMailSenderAdapterTest {
             given(javaMailSender.createMimeMessage()).willReturn(mimeMessage);
 
             adapter().sendHtml("river@modudrive.com", "subject", "<img src=\"cid:logo\">", null,
-                    Map.of("logo", "<svg>icon</svg>"));
+                    Map.of("logo", new byte[] {(byte) 0x89, 'P', 'N', 'G'}));
 
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             mimeMessage.writeTo(out);
             String raw = out.toString();
-            assertThat(raw).contains("Content-ID: <logo>").contains("image/svg+xml");
+            assertThat(raw).contains("Content-ID: <logo>").contains("image/png");
         }
     }
 }

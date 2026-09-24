@@ -10,6 +10,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.then;
@@ -33,10 +34,12 @@ class SendVerificationMailServiceTest {
 
             sendVerificationMailService.sendVerificationMail(command);
 
-            then(sendMailPort).should().send(
+            then(sendMailPort).should().sendHtml(
                     eq("river@modudrive.com"),
                     contains("인증"),
-                    contains("인증 코드: 042917"));
+                    argThat(html -> html.contains("042917") && html.contains("cid:logo") && !html.contains("{{")),
+                    eq("ModuDrive"),
+                    argThat(images -> images.containsKey("logo") && images.containsKey("warning")));
         }
     }
 }
