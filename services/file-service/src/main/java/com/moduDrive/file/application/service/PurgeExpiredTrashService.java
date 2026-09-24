@@ -18,9 +18,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 class PurgeExpiredTrashService implements PurgeExpiredTrashUseCase {
 
-    // ponytail: hardcoded retention, not a config value yet — same call as
-    // FilePersistenceAdapter's GUEST_SHARE_TOKEN_TTL_DAYS; bump to @Value if a real need to tune
-    // it per deployment shows up.
+    // ponytail: hardcoded retention, not a config value yet — bump to @Value if a real need to
+    // tune it per deployment shows up.
     private static final int TRASH_RETENTION_DAYS = 30;
 
     private final FindFilePort findFilePort;

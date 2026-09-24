@@ -37,10 +37,6 @@ class FilePersistenceAdapter implements
         SaveFileSharePort, FindFileSharePort, DeleteFileSharePort,
         SaveFileAccessPort, FindFileAccessPort {
 
-    // ponytail: hardcoded TTL, not a config value yet — bump to a @Value if a real need to tune
-    // it per deployment shows up.
-    private static final int GUEST_SHARE_TOKEN_TTL_DAYS = 7;
-
     private final SpringDataNamespaceRepository namespaceRepository;
     private final SpringDataFileRepository fileRepository;
     private final SpringDataFileVersionRepository fileVersionRepository;
@@ -374,8 +370,7 @@ class FilePersistenceAdapter implements
 
     @Override
     public Optional<FileShare> findByToken(UUID token) {
-        LocalDateTime cutoff = LocalDateTime.now().minusDays(GUEST_SHARE_TOKEN_TTL_DAYS);
-        return fileShareRepository.findByTokenAndCreatedAtAfter(token, cutoff)
+        return fileShareRepository.findByToken(token)
                 .map(fileMapper::mapFileShareToDomain);
     }
 
