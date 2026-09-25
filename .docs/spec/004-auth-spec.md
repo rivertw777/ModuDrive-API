@@ -221,10 +221,10 @@ sequenceDiagram
 | auth → member | `POST /internal/v1/member/authenticate` | 내부 토큰 |
 | file → storage | `DELETE /internal/storage/{fileId}` | 내부 토큰 |
 | storage → file | `/internal/files/...` (버전·zip 항목 조회, 업로드 완료 콜백) | 내부 토큰 + 원래 사용자 ID (`userId` 파라미터) |
-| file → member | `GET /api/v1/member/find-by-email`, `/find` | `X_USER_ID`만 (공개 경로) |
+| file → member | `GET /internal/v1/member/{memberId}`, `/by-email` (공유 대상·공유한 사람 조회) | 내부 토큰 |
 
 > ⚠️ 알려진 문제
-> - file → member 조회(`find-by-email`, `find`)가 공개 경로 — 로그인한 사용자라면 누구나 게이트웨이로 이메일 → 회원 조회 가능 (공유 대상 입력 UX용). 내부 호출은 `/internal/`로 분리하는 게 맞다.
+> - WEB의 공유 대상 확인(`GET /api/v1/member/find-by-email`)으로 로그인한 사용자는 누구나 이메일의 가입 여부를 알 수 있다 (계정 열거). 공유 입력 UX에 필요해 남겨 둠.
 > - 내부 인증이 **모든 서비스 공용 비밀 하나**이고 게이트웨이도 갖고 있다 — 한 서비스가 뚫리면 모든 내부 경로가 열린다. 서비스별 권한 구분 없음. AWS 이관 때 **서비스별 보안 그룹**으로 호출 관계를 네트워크에서 강제한다 ([aws-migration 2-13](../aws-migration.md#2-13--서비스-간-접근-제어-서비스별-보안-그룹-필수)).
 
 ---
