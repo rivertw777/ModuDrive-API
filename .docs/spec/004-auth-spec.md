@@ -4,12 +4,6 @@
 
 ⚠️ 이 문서가 기준입니다. 코드가 이 문서와 다르면 코드를 고치고, 동작을 바꾸려면 이 문서를 먼저 고칩니다.
 
-> 기준 소스 (2026-09-25): API #430, WEB #231 — JWT(access + refresh)에서 **서버 세션**으로 전환. 바꾼 이유와 없어진 것은 [부록 A](#부록-a-jwt-방식에서-바뀌는-것).
-> - API: gateway `SecurityConfig`, `CustomServerSecurityContextRepository`, `AuthClient`, `WebClientConfig`, `UserContextFilter`, `CsrfOriginGuardFilter`, `SessionCookieStripFilter`, `CustomAuthenticationEntryPoint`, `RouteConfig` / auth-service `LoginService`, `ValidateSessionService`, `LogoutService`, `RedisSessionStore`, `create-session.lua`, `touch-session.lua`, `SessionCookieFactory`, `GetSessionController`, `InternalTokenFilter`, `MemberClient` / common:api `SessionCookie`, `ValidateSessionRequest` / member-service `AuthenticateMemberService`, `InternalTokenFilter` / file·storage-service `InternalTokenFilter`
-> - WEB: `lib/api-client.ts`, `stores/auth-store.ts`, `features/auth/api/get-session.ts`, `login.ts`, `logout.ts`, `features/notifications/api/list-notifications.ts`, `features/drive/components/file-preview.tsx`
-
-알려진 문제는 각 장 끝에 **⚠️ 알려진 문제**로 적었습니다. 고칠지는 이슈로 따로 정합니다.
-
 ---
 
 ## 목차
@@ -24,13 +18,10 @@
 - [5. WEB 동작](#5-web-동작)
 - [6. 서비스 간 인증](#6-서비스-간-인증)
 - [7. 위협별 방어 요약](#7-위협별-방어-요약)
-- [부록 A. JWT 방식에서 바뀌는 것](#부록-a-jwt-방식에서-바뀌는-것)
 
 ---
 
 ## 1. 구성 요소
-
-**원칙: 브라우저에는 JS가 읽을 수 있는 자격 증명을 두지 않는다.** 브라우저가 가진 것은 `HttpOnly` 세션 쿠키 하나뿐이고, 그 쿠키도 무작위 식별자일 뿐 안에 정보가 없다. 사용자 정보와 만료는 전부 서버(Redis)에 있다.
 
 | 구성 요소 | 역할 |
 |---|---|
@@ -39,10 +30,9 @@
 | **member-service** | 비밀번호 확인(BCrypt, 기본 강도 10) |
 | **각 내부 서비스** | 사용자 신원은 `X_USER_ID` 헤더만 믿는다. 세션 쿠키는 받지도 않는다 (게이트웨이가 지움) |
 | **Redis** | 세션 저장 |
-| **세션** | 로그인 1번 = 세션 1개. 유휴 30분, 절대 12시간 ([1-1](#1-1-세션)) |
+| **세션** | 로그인 상태(누가, 어떤 권한으로)를 서버에 보관하고, 쿠키의 세션 ID로 요청한 사람을 식별한다 |
 
-- 내부 서비스는 compose/ECS 내부 네트워크에만 있고 **호스트 포트를 열지 않는다** (`docker-compose.service.yml`에서 `ports`는 gateway뿐). 그래서 `X_USER_ID`를 위조하려면 내부 네트워크에 들어와야 한다.
-- 게이트웨이는 클라이언트가 보낸 `X_USER_ID` / `X_USER_ROLE` 헤더를 **무조건 지운 뒤**, 세션 확인에 성공한 경우에만 세션의 memberId·roles로 다시 채운다 (`UserContextFilter`). 따라서 클라이언트가 헤더를 위조해도 내부 서비스에 전달되지 않는다.
+- 내부 서비스는 내부 네트워크에만 있고 **외부에 포트를 열지 않는다** (외부에 열린 건 gateway뿐). 그래서 `X_USER_ID`를 위조하려면 내부 네트워크에 들어와야 한다.
 
 ### 1-1. 세션
 
@@ -65,21 +55,20 @@ auth-service가 로그인 응답에서 `Set-Cookie`로 내려준다 (`SessionCoo
 | `SameSite` | `Strict` | 다른 사이트에서 시작된 요청에는 실리지 않는다 (CSRF 1차 방어). WEB과 API는 한 사이트(등록 도메인)에서만 서비스한다 |
 | `Path` | `/` | 모든 API에 실린다 |
 | `Domain` | 없음 | API 호스트에만 전송 (host-only) |
-| `Max-Age` / `Expires` | 없음 | 브라우저 세션 쿠키. 수명은 서버가 정한다 (1-1-4). 로그아웃 시 `Max-Age=0`으로 지움 |
+| `Max-Age` / `Expires` | 없음 | 만료는 Redis TTL로만 판단한다 ([1-1-4](#1-1-4-세션-만료)) — 쿠키에 수명을 두면 유휴 연장 때마다 다시 내려줘야 한다. 브라우저를 닫으면 쿠키도 사라진다 |
 
-- 로컬(http)에서는 `Secure`를 켤 수 없고, `__Host-` 접두어는 `Secure`를 요구하므로 **이름을 `session`으로, `Secure` 없이** 내린다. `SESSION_COOKIE_SECURE=false`일 때만 그렇다 (기본 `true`). 나머지 속성은 같다.
-- 쿠키 이름은 auth-service(쿠키를 심음)와 gateway(쿠키를 읽음)가 같은 `SESSION_COOKIE_SECURE`로 정한다 (common:api `SessionCookie`). 게이트웨이는 설정된 이름의 쿠키만 읽는다 — 운영에서 접두어 없는 `session` 쿠키를 심어도 무시된다.
+- auth-service(쿠키를 심음)와 gateway(쿠키를 읽음)는 common:api `SessionCookie`에 정의된 같은 이름을 쓴다. 게이트웨이는 `__Host-session`만 읽으므로 다른 이름으로 심은 쿠키는 무시된다.
 
 #### 1-1-3. Redis 키
 
 | 키 | 타입 | 값 | TTL |
 |---|---|---|---|
-| `session:{SHA-256(세션 ID) hex}` | hash | `memberId`, `roles`(쉼표 구분), `createdAt`(epoch ms) | 1-1-4 규칙 |
+| `session:{SHA-256(세션 ID) hex}` | hash | `memberId`, `roles`(쉼표 구분), `createdAt`(epoch ms) | 30분 (최대 로그인 후 12시간, [1-1-4](#1-1-4-세션-만료)) |
 
 - 로그인 1번에 키 1개. 로그아웃은 키 삭제, 만료는 TTL이 알아서 지운다.
 - 세션 확인·연장은 Lua 스크립트(`touch-session.lua`)로 **읽기 + 절대 만료 확인 + TTL 연장을 원자적으로** 한다.
 
-#### 1-1-4. 만료
+#### 1-1-4. 세션 만료
 
 | 종류 | 값 | 규칙 |
 |---|---|---|
@@ -87,16 +76,11 @@ auth-service가 로그인 응답에서 `Set-Cookie`로 내려준다 (`SessionCoo
 | **절대 만료** | 12시간 | 계속 사용 중이어도 로그인 12시간 뒤에는 만료 → 다시 로그인 |
 
 - 세션 확인 때마다 TTL을 `min(30분, createdAt + 12시간 − 지금)`으로 다시 건다. 이 값이 0 이하면 키를 지우고 만료로 처리한다.
-- 두 값은 설정이 아니라 코드 상수다 (`SessionPolicy.IDLE_TIMEOUT`, `ABSOLUTE_TIMEOUT`).
-- `createdAt`과 "지금"은 둘 다 **Redis 서버 시계**(`TIME`)로 잰다 — auth-service 인스턴스마다 시계가 달라도 절대 만료가 흔들리지 않는다.
 - **백그라운드 요청은 유휴 시간을 늘리지 않는다.** 알림 폴링처럼 사용자가 아무것도 안 해도 주기적으로 나가는 요청이 세션을 영원히 살려 두지 않게 하기 위함이다.
   - WEB이 이런 요청에 `X-Background-Request: true` 헤더를 붙인다.
   - 게이트웨이는 이 헤더가 있으면 세션 확인을 `touch=false`로 요청한다 → 확인만 하고 TTL은 그대로.
   - 클라이언트가 조작할 수 있는 헤더지만, 할 수 있는 일은 **자기 세션을 연장하지 않는 것**뿐이라 신뢰해도 안전하다.
-- 탭을 연 채 자리를 비우면 30분 뒤 다음 요청이 401이 되고 WEB은 로그인 화면으로 간다 (5장).
-
-> ⚠️ 알려진 문제
-> - **회원 상태가 바뀌어도 기존 세션을 지울 수단이 없다.** 지금은 회원 비활성화·권한 변경·비밀번호 변경 기능이 없어서 문제가 되지 않는다. 이런 기능을 만들 때 `member-sessions:{memberId}`(그 회원의 세션 해시 집합) 색인을 추가하고, 변경 즉시 그 회원의 세션을 전부 지워야 한다. "모든 기기에서 로그아웃"도 같은 색인으로 만든다.
+- 탭을 연 채 자리를 비우면 30분 뒤 다음 요청이 401이 되고 WEB은 로그인 화면으로 간다 ([5장](#5-web-동작)).
 
 ---
 
@@ -199,13 +183,13 @@ auth-service의 세션 확인 `POST /internal/v1/auth/sessions/validate` `{sessi
 
 - permitAll 경로라도 세션 쿠키가 있으면 확인하고 `X_USER_ID`를 붙인다 (로그인한 사용자가 공개 링크를 열 때 등).
 - `GET /api/v1/storage/view/**`는 **더 이상 permitAll이 아니다.** `<video>`/`<audio>`의 직접 요청에도 세션 쿠키가 자동으로 실리므로 다른 경로와 똑같이 인증한다 ([002 다운로드 6장](002-file-download-spec.md#6-미리보기-인라인-보기)).
-- `/internal/**`은 라우팅하지 않는다 (6장).
+- `/internal/**`은 라우팅하지 않는다 ([6장](#6-서비스-간-인증)).
 
 ### CSRF
 
 모든 인증이 쿠키로 이뤄지므로, 쿠키가 자동으로 실리는 **모든 변경 요청**을 막아야 한다. 두 겹으로 막는다.
 
-1. **`SameSite=Strict`** (1-1-2): 브라우저가 다른 사이트에서 시작된 요청에 세션 쿠키를 싣지 않는다.
+1. **`SameSite=Strict`** ([1-1-2](#1-1-2-세션-쿠키)): 브라우저가 다른 사이트에서 시작된 요청에 세션 쿠키를 싣지 않는다.
 2. **게이트웨이 `CsrfOriginGuardFilter`**: 메서드가 `POST` / `PUT` / `PATCH` / `DELETE`이면 **경로와 상관없이**
    - `Origin`이 `CLIENT_URL`과 정확히 같아야 한다.
    - `Origin`이 없으면 `Referer`가 `CLIENT_URL + "/"`로 시작하거나 `CLIENT_URL`과 같아야 한다.
@@ -213,7 +197,7 @@ auth-service의 세션 확인 `POST /internal/v1/auth/sessions/validate` `{sessi
 
 - 브라우저는 변경 요청에 `Origin`을 스스로 붙이고, 페이지가 이를 바꿀 수 없다. 그래서 WEB은 따로 CSRF 토큰을 보낼 필요가 없다.
 - `GET` / `HEAD` / `OPTIONS`는 상태를 바꾸지 않는다는 전제다. **GET으로 상태를 바꾸는 API를 만들지 않는다.**
-- 결과적으로 `Origin`·`Referer`가 없는 도구(curl 등)나 게이트웨이의 Swagger UI에서 보내는 변경 요청도 403이다.
+- 결과적으로 `Origin`·`Referer`가 없는 도구(curl 등)에서 보내는 변경 요청도 403이다.
 
 ### CORS
 
@@ -254,7 +238,7 @@ auth-service의 세션 확인 `POST /internal/v1/auth/sessions/validate` `{sessi
 | 로그인 성공 | React Query 캐시 비움 → 로그인 상태로 전환 (쿠키는 응답이 이미 심었다) |
 | API가 401 | 비로그인 상태로 바꾸고 로그인 화면으로. **재발급 같은 재시도는 없다** |
 | 로그아웃 | `POST /api/v1/auth/logout` **성공 후에만** 캐시 비움 → 첫 화면. 실패하면 로그인 상태를 유지하고 "로그아웃하지 못했습니다" 알림 — 쿠키가 HttpOnly라 JS가 지울 수 없으므로, 서버가 끝내지 못한 세션을 로그아웃된 것처럼 보여 주면 공용 PC에 살아 있는 세션이 남는다 |
-| 백그라운드 폴링 (알림 개수 등) | `X-Background-Request: true` 헤더를 붙인다 (1-1-4) |
+| 백그라운드 폴링 (알림 개수 등) | `X-Background-Request: true` 헤더를 붙인다 ([1-1-4](#1-1-4-세션-만료)) |
 | 다운로드·텍스트/이미지 미리보기 | axios `withCredentials: true`로 Blob 요청. 인증 헤더 없음 |
 | 오디오·비디오 미리보기 | `<video src="…/api/v1/storage/view/{fileId}?fileName=">` 직접 URL. 세션 쿠키가 자동으로 실린다 |
 
@@ -312,38 +296,3 @@ auth-service의 세션 확인 `POST /internal/v1/auth/sessions/validate` `{sessi
 | 세션 ID가 로그·URL로 유출 | 쿠키로만 전달, 검증 호출은 본문, 내부 서비스로는 쿠키를 넘기지 않음 |
 | `X_USER_ID` 위조 | 게이트웨이가 항상 지우고 세션 확인 후에만 채움, 내부 서비스는 호스트 포트 없음 |
 | 방치된 탭이 폴링으로 세션 유지 | 백그라운드 요청은 유휴 시간을 연장하지 않음 |
-
----
-
-## 부록 A. JWT 방식에서 바뀌는 것
-
-### 왜 바꾸나
-
-JWT 방식은 access 토큰을 `localStorage`에 두어 XSS 한 번으로 토큰을 들고 나가 최대 1시간 동안 다른 곳에서 쓸 수 있었다. 서버 세션은 브라우저에 읽을 수 있는 자격 증명을 두지 않고, 폐기가 즉시 반영된다. 우리는 게이트웨이가 요청마다 auth-service에 이미 묻고 있었기 때문에 JWT의 장점(서버 조회 없는 검증)을 쓰고 있지 않았다.
-
-### 없어지는 것
-
-| 영역 | 항목 |
-|---|---|
-| auth-service | JWT 발급·검증(`TokenManager`, jjwt 의존성), refresh 회전(`rotate-refresh-token.lua`, `RedisTokenStore`), 재발급 API(`POST /api/v1/auth/reissue`), 공개 경로였던 `POST /api/v1/auth/validate-token`, `RefreshTokenCookieFactory`, `TokenPair`·`AccessTokenClaims`·`RefreshTokenClaims` |
-| Redis 키 | `refresh:{fid}`, `prev:{fid}`, `revoked:{fid}` |
-| member-service | `GET /internal/v1/member/{id}/status` (재발급에서만 썼음) |
-| storage-service | 스트림 토큰 (`POST /api/v1/storage/stream-token`, `RedisStreamTokenStore`, `/view`의 `streamToken` 파라미터) |
-| gateway | Bearer 헤더 처리, `/storage/view/**` permitAll |
-| common:api | `ValidateTokenRequest` / `ValidateTokenResponse` → 세션용으로 대체 |
-| WEB | `localStorage` 토큰, 재발급 인터셉터, `issue-stream-token.ts`, 요청마다 `Authorization` 헤더 |
-| 환경변수 | `JWT_SECRET_KEY`, `JWT_ACCESS_TOKEN_EXPIRATION`, `JWT_REFRESH_TOKEN_EXPIRATION`, `JWT_REFRESH_TOKEN_COOKIE_SECURE` |
-
-### 새로 생기는 것
-
-| 영역 | 항목 |
-|---|---|
-| auth-service | 세션 저장소(`session:` 키, `touch-session.lua`), `SessionCookieFactory`, `POST /internal/v1/auth/sessions/validate`, `GET /api/v1/auth/session`, `InternalTokenFilter` |
-| gateway | 세션 쿠키 확인, 모든 변경 요청 Origin 검사, 내부 서비스로 가는 요청의 세션 쿠키 제거, `INTERNAL_SERVICE_TOKEN` |
-| WEB | 앱 시작 시 세션 확인, `X-Background-Request` 헤더 |
-| 환경변수 | `SESSION_COOKIE_SECURE` (기본 `true`, 로컬만 `false`), gateway에 `INTERNAL_SERVICE_TOKEN` |
-
-### 전환
-
-- 배포하면 기존 JWT 로그인은 모두 끊기고 **한 번 다시 로그인**해야 한다. 남은 `refresh:` / `prev:` / `revoked:` 키는 TTL로 알아서 사라진다.
-- API와 WEB을 같이 배포한다. 한쪽만 바뀌면 로그인이 되지 않는다.
