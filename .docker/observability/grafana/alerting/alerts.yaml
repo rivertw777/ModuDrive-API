@@ -1,4 +1,4 @@
-# 알림 규칙 전부 — 설계는 .docs/spec/005-discord-alert-spec.md.
+# 알림 규칙 전부 — 설계는 .docs/spec/006-discord-alert-spec.md.
 #
 # outbox: 전송 실패에 횟수 제한이 없어서 인프라 장애가 나도 FAILED 행이 안 생긴다. 테이블만 봐서는 멀쩡해
 # 보이므로 감지는 전적으로 이 규칙들에 달려 있다. consumer: 처리에 실패해 DLQ로 빠진 메시지를 본다 —

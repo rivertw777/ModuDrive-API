@@ -152,7 +152,7 @@ max by (instance, queue, reason, detail) (modudrive_outbox_failed) > 0
 큐·사유별로 쪼개 보내고, 그 라벨이 박힌 조회·복구 SQL이 알림에 같이 간다.
 
 3. **이벤트 처리 실패** — 컨슈머가 포기한 메시지는 `<큐>-dlq`로 옮겨지고, 사람이 redrive하기 전까지 거기 남는다
-([004-messaging-spec.md 4-2](004-messaging-spec.md#4-2-처리-실패)). 컨슈머가 30초마다 DLQ 건수를 재서 내보내고, 한 건이라도
+([005-messaging-spec.md 4-2](005-messaging-spec.md#4-2-처리-실패)). 컨슈머가 30초마다 DLQ 건수를 재서 내보내고, 한 건이라도
 있으면 바로 알린다. 사유는 지표에 못 담으니 DLQ 메시지의 `DeadLetterReason`을 보고 고친 뒤 redrive한다.
 
 4. **서비스 응답 없음** — Prometheus가 15초마다 긁는 액추에이터가 2분 내내 응답하지 않으면 알린다.
