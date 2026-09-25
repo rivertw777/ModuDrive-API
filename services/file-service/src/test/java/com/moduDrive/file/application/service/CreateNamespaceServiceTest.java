@@ -1,12 +1,10 @@
 package com.moduDrive.file.application.service;
 
-import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.file.application.port.in.command.CreateNamespaceCommand;
 import com.moduDrive.file.application.port.out.FindNamespacePort;
 import com.moduDrive.file.application.port.out.SaveNamespacePort;
 import com.moduDrive.file.domain.model.Namespace;
 import com.moduDrive.file.domain.model.Namespace.NamespaceUserId;
-import com.moduDrive.file.exception.FileExceptionCase;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -15,10 +13,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
@@ -49,7 +47,7 @@ class CreateNamespaceServiceTest {
 
         @Test
         void createsAndReturnsNamespace() {
-            given(findNamespacePort.existsByUserId(command.getUserId())).willReturn(false);
+            given(findNamespacePort.findByUserId(command.getUserId())).willReturn(Optional.empty());
             given(saveNamespacePort.saveNamespace(any(Namespace.class)))
                     .willAnswer(inv -> inv.getArgument(0));
 
@@ -67,15 +65,14 @@ class CreateNamespaceServiceTest {
     class WhenNamespaceAlreadyExists {
 
         @Test
-        void throwsBusinessException() {
-            given(findNamespacePort.existsByUserId(command.getUserId())).willReturn(true);
+        @DisplayName("새로 만들지 않고 기존 네임스페이스를 반환한다 (가입 이벤트 재전달)")
+        void returnsTheExistingNamespace() {
+            Namespace existing = Namespace.create(command.getUserId(), new Namespace.NamespaceQuotaBytes(TEST_QUOTA_BYTES));
+            given(findNamespacePort.findByUserId(command.getUserId())).willReturn(Optional.of(existing));
 
-            Throwable thrown = catchThrowable(() -> createNamespaceService.createNamespace(command));
+            Namespace result = createNamespaceService.createNamespace(command);
 
-            assertThat(thrown)
-                    .isInstanceOf(BusinessException.class)
-                    .extracting(e -> ((BusinessException) e).getExceptionCase())
-                    .isEqualTo(FileExceptionCase.NAMESPACE_ALREADY_EXISTS);
+            assertThat(result).isSameAs(existing);
             then(saveNamespacePort).shouldHaveNoInteractions();
         }
     }

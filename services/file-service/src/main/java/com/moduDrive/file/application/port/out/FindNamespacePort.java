@@ -7,7 +7,5 @@ import java.util.Optional;
 
 public interface FindNamespacePort {
 
-    boolean existsByUserId(NamespaceUserId userId);
-
     Optional<Namespace> findByUserId(NamespaceUserId userId);
 }

@@ -52,11 +52,6 @@ class FilePersistenceAdapter implements
     }
 
     @Override
-    public boolean existsByUserId(NamespaceUserId userId) {
-        return namespaceRepository.existsByUserId(userId.value());
-    }
-
-    @Override
     public Optional<Namespace> findByUserId(NamespaceUserId userId) {
         return namespaceRepository.findByUserId(userId.value())
                 .map(fileMapper::mapNamespaceToDomain);

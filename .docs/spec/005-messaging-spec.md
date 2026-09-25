@@ -287,7 +287,7 @@ N번에 `FAILED`로 보내면 멀쩡한 이벤트가 무더기로 빠지고 복�
 | `modudrive_outbox_lag_seconds` — 가장 오래 기다린 `PENDING` 행의 나이(초, 큐별) | `> 120`이 5분 지속 | 전송이 막혔다 (SQS 장애 등) |
 | `modudrive_outbox_failed` — 현재 `FAILED` 행 수 (큐·사유별) | `> 0` 즉시 | 사람이 손대야 하는 행이 있다 |
 
-(상세 내용은 [005-discord-alert-spec.md 7장](005-discord-alert-spec.md#7-사용-알림) 참고)
+(상세 내용은 [006-discord-alert-spec.md 7장](006-discord-alert-spec.md#7-사용-알림) 참고)
 
 ---
 
@@ -377,7 +377,7 @@ DLQ로 옮겨지고 나면 원래 큐는 다시 비어 보여서, 알림이 없�
 |---|---|---|
 | `modudrive_dlq_messages` — DLQ에 쌓인 건수(큐별) | `> 0` 즉시 | 컨슈머가 포기한 메시지가 있다 |
 
-(상세 내용은 [005-discord-alert-spec.md 7장](005-discord-alert-spec.md#7-사용-알림) 참고)
+(상세 내용은 [006-discord-alert-spec.md 7장](006-discord-alert-spec.md#7-사용-알림) 참고)
 
 ---
 
@@ -427,7 +427,7 @@ sequenceDiagram
 | `mail-verification-requested` | member-service — 가입 인증 코드를 Redis에 넣고 기록 | mail-service — 코드 메일 발송 | 가입 화면에서 "인증 코드 받기" |
 | `mail-share-invite-requested` | file-service — 공유 행 저장과 같은 트랜잭션 | mail-service — 초대 메일 발송 | 파일/폴더를 이메일로 공유 (비회원이면 로그인 없이 여는 링크) |
 | `notification-file-shared` | file-service — 초대 메일 이벤트와 같이 기록 | notification-service — 알림 행 저장 | 공유 대상이 **회원**일 때 벨 아이콘 알림 |
-| `member-signed-up` | member-service — 가입 트랜잭션 안에서 기록 | file-service — 대기 공유를 새 회원에게 연결 | 가입 전에 받은 초대가 "공유 문서함"에 나타남 |
+| `member-signed-up` | member-service — 가입 트랜잭션 안에서 기록 | file-service — 네임스페이스 생성(자기 트랜잭션으로 먼저 커밋) → 대기 공유를 새 회원에게 연결 | 새 회원의 드라이브가 생기고, 가입 전에 받은 초대가 "공유 문서함"에 나타남 |
 
 ---
 
