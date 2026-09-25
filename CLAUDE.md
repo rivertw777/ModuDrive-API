@@ -87,7 +87,7 @@ Server-side sessions — the browser holds only an `HttpOnly` session cookie, ne
 1. Client sends credentials to `POST /api/v1/auth/login` via the gateway.
 2. `auth-service` calls `member-service` via Feign (`POST /internal/v1/member/authenticate`) to verify credentials.
 3. On success, `auth-service` stores a session in Redis (`session:{sha256(id)}`, idle 30 min / absolute 12 h) and sets the `__Host-session` cookie (`session` when `SESSION_COOKIE_SECURE=false` for local http).
-4. For every request, the gateway's `CustomServerSecurityContextRepository` sends the cookie's session id to `auth-service` (`POST /internal/v1/auth/sessions/validate`, `X-Internal-Token`) via `WebClient` and injects the `SecurityContext`; `UserContextFilter` then sets `X_USER_ID`/`X_USER_ROLE`. `CsrfOriginGuardFilter` rejects any POST/PUT/PATCH/DELETE whose `Origin` isn't `CLIENT_URL`.
+4. For every request, the gateway's `AuthenticationWebFilter` (`SessionAuthenticationConverter` → `SessionAuthenticationManager`) sends the cookie's session id to `auth-service` (`POST /internal/v1/auth/sessions/validate`, `X-Internal-Token`) via `WebClient` and injects the `SecurityContext`; `UserContextFilter` then sets `X_USER_ID`/`X_USER_ROLE`. `CsrfOriginGuardFilter` rejects any POST/PUT/PATCH/DELETE whose `Origin` isn't `CLIENT_URL`.
 
 ## Error Handling
 
