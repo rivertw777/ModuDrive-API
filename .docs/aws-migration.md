@@ -21,6 +21,7 @@
   - [2-10. ★ 모니터링 · 알림](#2-10--모니터링--알림)
   - [2-11. 네트워크 / 도메인 / 프론트](#2-11-네트워크--도메인--프론트)
   - [2-12. IaC / 배포](#2-12-iac--배포)
+  - [2-13. ★ 서비스 간 접근 제어: 서비스별 보안 그룹 (필수)](#2-13--서비스-간-접근-제어-서비스별-보안-그룹-필수)
 - [3. 진행 순서와 현황](#3-진행-순서와-현황)
 - [4. 결정 현황](#4-결정-현황)
 
@@ -130,6 +131,48 @@ Promtail은 docker socket 기반이라 **Fargate에서 못 쓴다** — 로그 �
 - **Terraform**으로 전부 코드화 (콘솔 수작업 금지 — 재현·리뷰 불가).
 - GitHub Actions: OIDC로 AWS 인증(장기 키 없음) → 이미지 빌드 → ECR 푸시 → ECS 서비스 업데이트.
 
+### 2-13. ★ 서비스 간 접근 제어: 서비스별 보안 그룹 (필수)
+
+**이관할 때 반드시 적용한다.** 지금 서비스 간 인증은 모든 서비스가 같은 `INTERNAL_SERVICE_TOKEN` 하나를 쓰고, 외부에 열린 게이트웨이도 그 값을 갖고 있다 ([004 인증](spec/004-auth-spec.md) 6장). 그래서 한 서비스가 뚫리면 비밀번호 하나로 모든 서비스의 `/internal` 경로를 부를 수 있다. 서비스별 보안 그룹은 **"누가 누구를 부를 수 있나"를 네트워크에서 강제**해서 이 피해 범위를 호출 관계 그대로 줄인다.
+
+- 서비스(ECS 서비스)마다 보안 그룹을 **하나씩** 만든다. 여러 서비스가 보안 그룹을 공유하지 않는다.
+- 인바운드는 **"허용할 호출자의 보안 그룹 → 내 앱 포트"**만 연다. CIDR(`10.0.0.0/16` 같은 대역)로 열지 않는다 — 대역으로 열면 같은 VPC 안의 모든 태스크가 닿는다.
+- 공용 토큰은 **두 번째 방어선으로 그대로 둔다** — 보안 그룹 설정 실수가 있어도 한 번 더 막는다.
+- 효과 예: 게이트웨이가 뚫려도 네트워크상 member·file·storage의 `/internal`에는 닿지 않는다 (게이트웨이는 그 서비스들의 **공개 API 포트**로만 라우팅하고, 그 요청은 게이트웨이 세션 확인을 거친다). 게이트웨이 전용 토큰을 따로 만들 필요가 없어진다.
+
+#### 인바운드 규칙 (2026-09-25 코드 기준 호출 관계)
+
+| 보안 그룹 | 허용할 출발지 | 포트 | 이유 (코드) |
+|---|---|---|---|
+| `alb-sg` | 인터넷 `0.0.0.0/0` | 443 | 유일한 외부 진입점 |
+| `gateway-sg` | `alb-sg` | 10001 | ALB → gateway |
+| `auth-sg` | `gateway-sg` | 10011 | 라우팅(`/api/v1/auth/**`) + 세션 확인(`AuthClient`) |
+| `member-sg` | `gateway-sg`, `auth-sg`, `file-sg` | 10010 | 라우팅 / 로그인 확인(auth `MemberClient`) / 공유 대상 조회(file `MemberClient`) |
+| `file-sg` | `gateway-sg`, `storage-sg` | 10012 | 라우팅 / 버전·zip 항목 조회·업로드 완료(storage `FileServiceFeignClient`) |
+| `storage-sg` | `gateway-sg`, `file-sg` | 10013 | 라우팅 / 파일 삭제(file `StorageServiceClient`) |
+| `notification-sg` | `gateway-sg` | 10015 | 라우팅(`/api/v1/notifications/**`) |
+| `mail-sg` | **없음** | — | HTTP API가 없다 (SQS 소비만). 게이트웨이도 라우팅하지 않는다 |
+
+데이터 저장소도 같은 원칙으로 **쓰는 서비스만** 연다.
+
+| 보안 그룹 | 허용할 출발지 | 포트 |
+|---|---|---|
+| `rds-sg` | `member-sg`, `file-sg`, `notification-sg` (각자 자기 DB 로그인만 가능 — 2-4) | 5432 |
+| `redis-sg` | `auth-sg`, `member-sg`, `storage-sg`, `mail-sg` | 6379 |
+
+- 관리 포트(9464, actuator·Prometheus)는 모니터링 수집기(ADOT 또는 Prometheus)의 보안 그룹에서만 연다 (2-10 결정 후).
+- 아웃바운드: SQS·S3·Secrets Manager·ECR·CloudWatch는 VPC 엔드포인트로 가고(2-11), SES(메일)와 외부 알림(디스코드)만 NAT로 나간다. 아웃바운드도 좁히려면 엔드포인트용 보안 그룹과 NAT 경로만 허용한다.
+- ECS Service Connect를 써도 그대로 적용된다 — 호출은 호출하는 태스크의 네트워크 인터페이스에서 출발하므로, 받는 쪽 보안 그룹에서 출발지 보안 그룹으로 걸러진다.
+
+#### 유지 규칙
+
+- **새 Feign/WebClient 호출을 추가하면 이 표와 Terraform 규칙을 같이 고친다.** 안 고치면 AWS에서만 타임아웃이 난다 (로컬 compose는 전부 열려 있어 문제가 안 보인다).
+- 표는 `@FeignClient`·`clients.<서비스>.url` 목록과 맞아야 한다: `grep -rn "@FeignClient\|clients\." services/*/src/main`.
+
+#### 이후 단계 (선택)
+
+보안 그룹은 **네트워크 수준**이라 "허용된 서비스가 허용되지 않은 경로를 부르는 것"은 못 막는다 (예: file이 member의 로그인 확인 API 호출). 경로 단위 권한과 비밀번호 제거가 필요해지면 **VPC Lattice + IAM 인증**으로 옮긴다 — 각 태스크 역할로 SigV4 서명, Lattice 정책으로 "gateway 역할만 auth의 세션 확인 허용" 같은 규칙, 공용 토큰 제거(로컬만 유지). 서비스별 요금과 Service Connect 설계 변경이 따르므로 이관이 안정된 뒤 검토한다.
+
 ---
 
 ## 3. 진행 순서와 현황
@@ -141,7 +184,7 @@ Promtail은 docker socket 기반이라 **Fargate에서 못 쓴다** — 로그 �
    - `S3Config` task role 대응 — #364 / PR #367
    - SQS 어댑터 — #365 / PR #368
    - 로컬 SQS·S3를 LocalStack으로 통일 — #403 / PR #404
-2. ⬜ **Terraform 기반 인프라** — VPC, RDS, ElastiCache, S3, SQS, SES, ECR, ECS, ALB, Secrets
+2. ⬜ **Terraform 기반 인프라** — VPC, RDS, ElastiCache, S3, SQS, SES, ECR, ECS, ALB, Secrets, **서비스별 보안 그룹 (2-13, 필수)**
 3. ⬜ **CI/CD** — GitHub Actions → ECR → ECS
 4. ⬜ **모니터링 · 알림** — 2-10 결정 후
 5. ⬜ **WEB** — S3 + CloudFront, 도메인 연결
@@ -154,4 +197,5 @@ Promtail은 docker socket 기반이라 **Fargate에서 못 쓴다** — 로그 �
 |---|---|
 | 메시징 | **SQS** (2026-09-19 확정) |
 | 컴퓨팅 | **ECS Fargate** (2026-09-19 확정) |
+| 서비스 간 접근 제어 | **서비스별 보안 그룹 + 공용 토큰 유지** (2026-09-25 확정, 2-13). VPC Lattice + IAM은 이관 안정화 후 검토 |
 | ★ 모니터링 · 알림 | 미정 — AWS 네이티브(추천) vs Grafana 스택 자체 호스팅 |
