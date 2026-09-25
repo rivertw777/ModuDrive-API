@@ -13,7 +13,6 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
-import org.springframework.http.HttpHeaders;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -38,18 +37,17 @@ class LogoutControllerTest {
     private static final Cookie REFRESH_TOKEN_COOKIE = new Cookie("refresh_token", "refresh-token");
 
     @Nested
-    @DisplayName("Authorization 헤더 없이 로그아웃을 요청할 때")
-    class WhenAuthorizationHeaderIsAbsent {
+    @DisplayName("리프레시 토큰 쿠키로 로그아웃을 요청할 때")
+    class WhenRefreshTokenCookieIsPresent {
 
         @Test
-        void passesCookieRefreshTokenWithoutAccessToken() throws Exception {
+        void passesCookieRefreshTokenToUseCase() throws Exception {
             mockMvc.perform(post("/api/v1/auth/logout").cookie(REFRESH_TOKEN_COOKIE))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.message").value("success"));
 
             ArgumentCaptor<LogoutCommand> captor = ArgumentCaptor.forClass(LogoutCommand.class);
             then(logoutUseCase).should().logout(captor.capture());
-            assertThat(captor.getValue().getAccessToken()).isNull();
             assertThat(captor.getValue().getRefreshToken().getTokenValue()).isEqualTo("refresh-token");
         }
 
@@ -61,41 +59,6 @@ class LogoutControllerTest {
                     .andExpect(cookie().maxAge("refresh_token", 0))
                     .andExpect(cookie().httpOnly("refresh_token", true))
                     .andExpect(cookie().path("refresh_token", "/api/v1/auth"));
-        }
-    }
-
-    @Nested
-    @DisplayName("Bearer 액세스 토큰과 함께 로그아웃을 요청할 때")
-    class WhenAuthorizationHeaderIsPresent {
-
-        @Test
-        void passesStrippedAccessTokenToUseCase() throws Exception {
-            mockMvc.perform(post("/api/v1/auth/logout")
-                            .cookie(REFRESH_TOKEN_COOKIE)
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer access-token"))
-                    .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.message").value("success"));
-
-            ArgumentCaptor<LogoutCommand> captor = ArgumentCaptor.forClass(LogoutCommand.class);
-            then(logoutUseCase).should().logout(captor.capture());
-            assertThat(captor.getValue().getAccessToken().getTokenValue()).isEqualTo("access-token");
-        }
-    }
-
-    @Nested
-    @DisplayName("Authorization 헤더가 Bearer 형식이 아닐 때")
-    class WhenAuthorizationHeaderIsNotBearer {
-
-        @Test
-        void treatsAccessTokenAsAbsent() throws Exception {
-            mockMvc.perform(post("/api/v1/auth/logout")
-                            .cookie(REFRESH_TOKEN_COOKIE)
-                            .header(HttpHeaders.AUTHORIZATION, "Basic dXNlcjpwYXNz"))
-                    .andExpect(status().isOk());
-
-            ArgumentCaptor<LogoutCommand> captor = ArgumentCaptor.forClass(LogoutCommand.class);
-            then(logoutUseCase).should().logout(captor.capture());
-            assertThat(captor.getValue().getAccessToken()).isNull();
         }
     }
 

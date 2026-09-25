@@ -117,9 +117,7 @@ class TokenManager implements GenerateTokenPort, ValidateTokenPort {
 
         return AccessTokenClaims.create(
                 toMemberAuthData(claims),
-                new TokenJti(claims.getId()),
-                new TokenFamilyId(claims.get(CLAIM_FAMILY_ID, String.class)),
-                claims.getExpiration()
+                new TokenFamilyId(claims.get(CLAIM_FAMILY_ID, String.class))
         );
     }
 

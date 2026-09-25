@@ -13,7 +13,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.script.RedisScript;
 
 import java.time.Duration;
-import java.util.Date;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -28,7 +27,6 @@ class RedisTokenStoreTest {
     private static final long ONE_HOUR = 60 * 60 * 1000L;
     private static final long SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000L;
     private static final String KEY = "refresh:family-id";
-    private static final String BLACKLIST_KEY = "blacklist:access-jti";
     private static final String REVOKED_KEY = "revoked:family-id";
     private static final String PREV_KEY = "prev:family-id";
     private static final long GRACE_WINDOW_MS = 10_000L;
@@ -36,7 +34,6 @@ class RedisTokenStoreTest {
     private static final TokenFamilyId FAMILY_ID = new TokenFamilyId("family-id");
     private static final TokenJti PRESENTED_JTI = new TokenJti("presented-jti");
     private static final TokenJti NEW_JTI = new TokenJti("new-jti");
-    private static final TokenJti ACCESS_JTI = new TokenJti("access-jti");
 
     @Mock
     private RedisRepository redisRepository;
@@ -167,53 +164,6 @@ class RedisTokenStoreTest {
             given(redisRepository.hasKey(REVOKED_KEY)).willReturn(false);
 
             assertThat(store().isRevoked(FAMILY_ID)).isFalse();
-        }
-    }
-
-    @Nested
-    @DisplayName("아직 유효한 액세스 토큰을 블랙리스트에 올릴 때")
-    class WhenBlacklistingUnexpiredAccessToken {
-
-        @Test
-        void writesBlacklistKeyWithRemainingTtl() {
-            Date expiresAt = new Date(System.currentTimeMillis() + ONE_HOUR);
-
-            store().blacklist(ACCESS_JTI, expiresAt);
-
-            then(redisRepository).should().set(eq(BLACKLIST_KEY), eq("1"), any(Duration.class));
-        }
-    }
-
-    @Nested
-    @DisplayName("이미 자연 만료된 액세스 토큰을 블랙리스트에 올릴 때")
-    class WhenBlacklistingAlreadyExpiredAccessToken {
-
-        @Test
-        void doesNothing() {
-            Date expiresAt = new Date(System.currentTimeMillis() - ONE_HOUR);
-
-            store().blacklist(ACCESS_JTI, expiresAt);
-
-            then(redisRepository).shouldHaveNoInteractions();
-        }
-    }
-
-    @Nested
-    @DisplayName("블랙리스트 등록 여부를 조회할 때")
-    class WhenCheckingBlacklist {
-
-        @Test
-        void returnsTrueWhenKeyExists() {
-            given(redisRepository.hasKey(BLACKLIST_KEY)).willReturn(true);
-
-            assertThat(store().isBlacklisted(ACCESS_JTI)).isTrue();
-        }
-
-        @Test
-        void returnsFalseWhenKeyIsAbsent() {
-            given(redisRepository.hasKey(BLACKLIST_KEY)).willReturn(false);
-
-            assertThat(store().isBlacklisted(ACCESS_JTI)).isFalse();
         }
     }
 }
