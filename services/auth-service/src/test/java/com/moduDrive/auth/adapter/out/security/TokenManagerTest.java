@@ -140,32 +140,6 @@ class TokenManagerTest {
         }
 
         @Test
-        void returnsRoundTrippedJti() {
-            TokenManager tokenManager = new TokenManager(secret, ONE_HOUR, ONE_HOUR);
-            MemberAuthData memberAuthData = MemberAuthDataTestFixture.aMemberAuthData();
-            TokenPair tokenPair = tokenManager.generateToken(memberAuthData);
-
-            AccessTokenClaims claims = tokenManager.getAccessTokenClaims(
-                    new AccessToken(tokenPair.getAccessToken()));
-
-            assertThat(claims.getJti().getJtiValue()).isNotBlank();
-        }
-
-        @Test
-        void returnsExpiryOneAccessTokenLifetimeAfterIssue() {
-            TokenManager tokenManager = new TokenManager(secret, ONE_HOUR, ONE_HOUR);
-            MemberAuthData memberAuthData = MemberAuthDataTestFixture.aMemberAuthData();
-            TokenPair tokenPair = tokenManager.generateToken(memberAuthData);
-
-            AccessTokenClaims claims = tokenManager.getAccessTokenClaims(
-                    new AccessToken(tokenPair.getAccessToken()));
-
-            // JWT exp has second precision, so compare against the truncated issuedAt + lifetime.
-            long expectedEpochSecond = (tokenPair.getIssuedAt().getTime() + ONE_HOUR) / 1000L;
-            assertThat(claims.getExpiresAt().getTime() / 1000L).isEqualTo(expectedEpochSecond);
-        }
-
-        @Test
         void returnsFamilyIdMatchingTheRefreshToken() {
             TokenManager tokenManager = new TokenManager(secret, ONE_HOUR, ONE_HOUR);
             MemberAuthData memberAuthData = MemberAuthDataTestFixture.aMemberAuthData();
@@ -189,18 +163,6 @@ class TokenManagerTest {
                     new AccessToken(rotated.getAccessToken()));
 
             assertThat(claims.getFamilyId().getFamilyIdValue()).isEqualTo(original.getFamilyId());
-        }
-
-        @Test
-        void mintsDistinctAccessJtiFromRefreshJti() {
-            TokenManager tokenManager = new TokenManager(secret, ONE_HOUR, ONE_HOUR);
-            MemberAuthData memberAuthData = MemberAuthDataTestFixture.aMemberAuthData();
-            TokenPair tokenPair = tokenManager.generateToken(memberAuthData);
-
-            AccessTokenClaims claims = tokenManager.getAccessTokenClaims(
-                    new AccessToken(tokenPair.getAccessToken()));
-
-            assertThat(claims.getJti().getJtiValue()).isNotEqualTo(tokenPair.getJti());
         }
     }
 

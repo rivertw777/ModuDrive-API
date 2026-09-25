@@ -1,7 +1,5 @@
 package com.moduDrive.auth.adapter.out.security;
 
-import com.moduDrive.auth.application.port.out.BlacklistAccessTokenPort;
-import com.moduDrive.auth.application.port.out.IsAccessTokenBlacklistedPort;
 import com.moduDrive.auth.application.port.out.IsFamilyRevokedPort;
 import com.moduDrive.auth.application.port.out.RevokeRefreshTokenPort;
 import com.moduDrive.auth.application.port.out.RotateRefreshTokenPort;
@@ -14,15 +12,13 @@ import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
-import java.util.Date;
 import java.util.List;
 
 @Component
 class RedisTokenStore implements SaveRefreshTokenPort, RotateRefreshTokenPort, RevokeRefreshTokenPort,
-        BlacklistAccessTokenPort, IsAccessTokenBlacklistedPort, IsFamilyRevokedPort {
+        IsFamilyRevokedPort {
 
     private static final String KEY_PREFIX = "refresh:";
-    private static final String BLACKLIST_KEY_PREFIX = "blacklist:";
     private static final String REVOKED_KEY_PREFIX = "revoked:";
     private static final String PREV_KEY_PREFIX = "prev:";
 
@@ -93,30 +89,8 @@ class RedisTokenStore implements SaveRefreshTokenPort, RotateRefreshTokenPort, R
         return redisRepository.hasKey(revokedKey(familyId));
     }
 
-    @Override
-    public void blacklist(TokenJti jti, Date expiresAt) {
-        long ttlMillis = expiresAt.getTime() - System.currentTimeMillis();
-        if (ttlMillis <= 0) {
-            return; // already expired naturally, nothing to blacklist
-        }
-        redisRepository.set(
-                blacklistKey(jti),
-                "1",
-                Duration.ofMillis(ttlMillis)
-        );
-    }
-
-    @Override
-    public boolean isBlacklisted(TokenJti jti) {
-        return redisRepository.hasKey(blacklistKey(jti));
-    }
-
     private String key(TokenFamilyId familyId) {
         return KEY_PREFIX + familyId.getFamilyIdValue();
-    }
-
-    private String blacklistKey(TokenJti jti) {
-        return BLACKLIST_KEY_PREFIX + jti.getJtiValue();
     }
 
     private String revokedKey(TokenFamilyId familyId) {
