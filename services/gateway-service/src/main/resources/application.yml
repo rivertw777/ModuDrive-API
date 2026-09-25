@@ -36,8 +36,6 @@ resilience4j:
         baseConfig: default
       storageServiceCircuitBreaker:
         baseConfig: default
-      mailServiceCircuitBreaker:
-        baseConfig: default
       notificationServiceCircuitBreaker:
         baseConfig: default
 
@@ -64,7 +62,5 @@ clients:
     url: http://file-service:10012
   storage-service:
     url: http://storage-service:10013
-  mail-service:
-    url: http://mail-service:10014
   notification-service:
     url: http://notification-service:10015
