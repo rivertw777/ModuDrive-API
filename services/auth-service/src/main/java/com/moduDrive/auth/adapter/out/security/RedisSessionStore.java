@@ -6,9 +6,9 @@ import com.moduDrive.auth.application.port.out.FindSessionPort;
 import com.moduDrive.auth.domain.model.MemberAuthData;
 import com.moduDrive.auth.domain.model.MemberAuthData.MemberId;
 import com.moduDrive.auth.domain.model.MemberAuthData.MemberRoles;
-import com.moduDrive.auth.domain.model.SessionPolicy;
 import com.moduDrive.auth.domain.vo.SessionId;
 import com.moduDrive.common.infrastructure.redis.RedisRepository;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 
@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.HexFormat;
@@ -40,9 +41,17 @@ class RedisSessionStore implements CreateSessionPort, FindSessionPort, DeleteSes
 
     private final SecureRandom secureRandom = new SecureRandom();
     private final RedisRepository redisRepository;
+    private final String idleTimeoutMillis;
+    private final String absoluteTimeoutMillis;
 
-    RedisSessionStore(RedisRepository redisRepository) {
+    RedisSessionStore(
+            RedisRepository redisRepository,
+            @Value("${session.idle-timeout}") Duration idleTimeout,
+            @Value("${session.absolute-timeout}") Duration absoluteTimeout
+    ) {
         this.redisRepository = redisRepository;
+        this.idleTimeoutMillis = String.valueOf(idleTimeout.toMillis());
+        this.absoluteTimeoutMillis = String.valueOf(absoluteTimeout.toMillis());
     }
 
     @Override
@@ -53,7 +62,7 @@ class RedisSessionStore implements CreateSessionPort, FindSessionPort, DeleteSes
                 List.of(key(sessionId)),
                 memberAuthData.getMemberId(),
                 String.join(",", memberAuthData.getMemberRoles()),
-                String.valueOf(SessionPolicy.IDLE_TIMEOUT.toMillis())
+                idleTimeoutMillis
         );
         return sessionId;
     }
@@ -63,8 +72,8 @@ class RedisSessionStore implements CreateSessionPort, FindSessionPort, DeleteSes
         List<?> result = redisRepository.executeScript(
                 TOUCH_SCRIPT,
                 List.of(key(sessionId)),
-                String.valueOf(SessionPolicy.IDLE_TIMEOUT.toMillis()),
-                String.valueOf(SessionPolicy.ABSOLUTE_TIMEOUT.toMillis()),
+                idleTimeoutMillis,
+                absoluteTimeoutMillis,
                 touch ? "1" : "0"
         );
         if (result == null || result.size() < 2) {

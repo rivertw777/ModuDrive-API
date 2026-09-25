@@ -11,6 +11,9 @@ session:
   cookie:
     # HTTPS 환경 기본값. 로컬(http)에서만 false로 내린다 — 그때는 __Host- 접두어 없는 이름을 쓴다
     secure: ${SESSION_COOKIE_SECURE:true}
+  # spec 004 1-1-4 — 유휴 만료(마지막 사용자 요청 기준) / 절대 만료(로그인 기준)
+  idle-timeout: ${SESSION_IDLE_TIMEOUT:30m}
+  absolute-timeout: ${SESSION_ABSOLUTE_TIMEOUT:12h}
 
 resilience4j:
   retry:
