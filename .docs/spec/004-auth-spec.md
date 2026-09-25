@@ -1,11 +1,11 @@
 # 인증 스펙
 
-이 문서는 회원가입, 로그인, 인가, 토큰 재발급, 로그아웃, 서비스 간 인증이 **현재 소스 기준으로** 어떻게 동작하는지 정의합니다.
+이 문서는 로그인, 인가, 토큰 재발급, 로그아웃, 서비스 간 인증이 **현재 소스 기준으로** 어떻게 동작하는지 정의합니다.
 
 ⚠️ 이 문서가 기준입니다. 코드가 이 문서와 다르면 코드를 고치고, 동작을 바꾸려면 이 문서를 먼저 고칩니다.
 
 > 기준 소스 (2026-09-24): API `dev` (f16377a), WEB `dev` (b607b54)
-> - API: gateway `SecurityConfig`, `CustomServerSecurityContextRepository`, `AuthClient`, `WebClientConfig`, `UserContextFilter`, `CsrfOriginGuardFilter`, `CustomAuthenticationEntryPoint`, `RouteConfig`, `FallbackController` / auth-service `LoginService`, `ValidateTokenService`, `ReissueTokenService`, `LogoutService`, `TokenManager`, `RedisTokenStore`, `rotate-refresh-token.lua`, `RefreshTokenCookieFactory`, `MemberClient` / member-service `AuthenticateMemberService`, `SignUpMemberService`, `FileServiceClient`, `InternalTokenFilter` / file·storage-service `InternalTokenFilter`, `InternalTokenRequestInterceptorConfig`
+> - API: gateway `SecurityConfig`, `CustomServerSecurityContextRepository`, `AuthClient`, `WebClientConfig`, `UserContextFilter`, `CsrfOriginGuardFilter`, `CustomAuthenticationEntryPoint`, `RouteConfig`, `FallbackController` / auth-service `LoginService`, `ValidateTokenService`, `ReissueTokenService`, `LogoutService`, `TokenManager`, `RedisTokenStore`, `rotate-refresh-token.lua`, `RefreshTokenCookieFactory`, `MemberClient` / member-service `AuthenticateMemberService`, `InternalTokenFilter` / file·storage-service `InternalTokenFilter`, `InternalTokenRequestInterceptorConfig`
 > - WEB: `lib/api-client.ts`, `stores/auth-store.ts`, `features/auth/api/login.ts`, `logout.ts`
 
 알려진 문제는 각 장 끝에 **⚠️ 알려진 문제**로 적었습니다. 고칠지는 이슈로 따로 정합니다.
@@ -15,17 +15,15 @@
 ## 목차
 
 - [1. 구성 요소](#1-구성-요소)
-- [2. 회원가입](#2-회원가입)
+  - [1-1. 인증 토큰](#1-1-인증-토큰)
+- [2. 로그인](#2-로그인)
   - [2-1. 장애 시 동작](#2-1-장애-시-동작)
-- [3. 로그인](#3-로그인)
-  - [3-1. 인증 토큰](#3-1-인증-토큰)
-  - [3-2. 장애 시 동작](#3-2-장애-시-동작)
-- [4. 인가](#4-인가)
+- [3. 인가](#3-인가)
+  - [3-1. 장애 시 동작](#3-1-장애-시-동작)
+- [4. 토큰 재발급](#4-토큰-재발급)
   - [4-1. 장애 시 동작](#4-1-장애-시-동작)
-- [5. 토큰 재발급](#5-토큰-재발급)
-  - [5-1. 장애 시 동작](#5-1-장애-시-동작)
-- [6. 로그아웃](#6-로그아웃)
-- [7. 서비스 간 인증](#7-서비스-간-인증)
+- [5. 로그아웃](#5-로그아웃)
+- [6. 서비스 간 인증](#6-서비스-간-인증)
 
 ---
 
@@ -35,50 +33,15 @@
 |---|---|
 | **gateway-service** | 외부에 열린 유일한 서비스. 모든 요청의 Bearer 토큰을 auth-service에 물어 검증하고, 통과하면 `X_USER_ID` / `X_USER_ROLE` 헤더를 붙여 내부 서비스로 넘긴다 |
 | **auth-service** | JWT 발급·검증, refresh token 회전, 로그아웃. 사용자 DB는 없고 member-service에 묻는다. 토큰 상태는 Redis로 관리 |
-| **member-service** | 회원가입, 비밀번호 확인(BCrypt, 기본 강도 10) |
+| **member-service** | 비밀번호 확인(BCrypt, 기본 강도 10) |
 | **각 내부 서비스** | 사용자 신원은 `X_USER_ID` 헤더만 믿는다. 토큰을 직접 보지 않는다 |
 | **Redis** | 토큰 상태 저장 |
+| **인증 토큰** | JWT(HS256) 두 종류. access(1시간)는 `Authorization: Bearer`로 API 호출에, refresh(7일)는 `HttpOnly` 쿠키로 재발급에만 쓴다 ([1-1](#1-1-인증-토큰)) |
 
 - 내부 서비스는 compose/ECS 내부 네트워크에만 있고 **호스트 포트를 열지 않는다** (`docker-compose.service.yml`에서 `ports`는 gateway뿐). 그래서 `X_USER_ID`를 위조하려면 내부 네트워크에 들어와야 한다.
 - 게이트웨이는 클라이언트가 보낸 `X_USER_ID` / `X_USER_ROLE` 헤더를 **무조건 지운 뒤**, 토큰 검증에 성공한 경우에만 토큰의 memberId·roles로 다시 채운다 (`UserContextFilter`). 따라서 클라이언트가 헤더를 위조해도 내부 서비스에 전달되지 않는다.
 
----
-
-## 2. 회원가입
-
-`POST /api/v1/member/sign-up` — 인증 없이 호출한다. 이메일 인증을 먼저 마친 이메일만 가입할 수 있다 (이메일 인증 절차는 이 문서 범위 밖).
-
-1. 이미 가입된 이메일이면 `DUPLICATE_EMAIL`(400).
-2. 이메일 인증 완료 표시를 **소비(삭제)** 하며 확인 — 없으면 `EMAIL_NOT_VERIFIED`(400). 가입 1번에 한 번만 쓰인다.
-3. 비밀번호 BCrypt 해시 → member insert (`isValid = true`, 이미 확인된 이메일이므로) + `MemberSignedUp` outbox 기록 (같은 트랜잭션). 응답은 여기서 끝난다.
-4. file-service가 `MemberSignedUp`을 받아 **네임스페이스 생성**(자기 트랜잭션으로 먼저 커밋, 이미 있으면 그대로) → 받은 공유 초대가 있으면 연결한다 ([005 메시징](005-messaging-spec.md)). 가입 직후 네임스페이스는 outbox 릴레이 주기(1초)만큼 늦게 생긴다 (#424).
-
-- 이메일 unique 제약이 DB에 있어, 동시 가입은 둘 중 하나가 실패한다.
-
-### 2-1. 장애 시 동작
-
-| 장애 | 결과 |
-|---|---|
-| member-service 다운 (가입 요청 중) | 게이트웨이 라우트 서킷브레이커 → fallback 503 (`SERVICE_UNAVAILABLE` / 타임아웃 `CONNECTION_TIMEOUT` / open 상태 `SERVICE_IS_OPEN`) |
-| Redis 다운 | 인증 완료 확인이 예외 → 가입 실패(500). 회원은 만들어지지 않는다 |
-| file-service 다운 | 가입은 **성공**한다. 네임스페이스 생성·공유 연결은 이벤트가 큐에 남아 있다가 복구 후 처리된다. 그 사이 드라이브 조회는 `NAMESPACE_NOT_FOUND` |
-| member-service 다운 (이벤트 처리 중) | 공유 연결만 실패·재시도. 네임스페이스는 이미 커밋돼 있어 드라이브는 쓸 수 있다 |
-
----
-
-## 3. 로그인
-
-1. `POST /api/v1/auth/login {email, password}` — 인증 없음.
-2. auth-service → member-service `POST /internal/v1/member/authenticate` (Feign, `X-Internal-Token`).
-   - member-service가 이메일로 찾고 `BCryptPasswordEncoder.matches`로 확인.
-   - 없는 이메일 → `MEMBER_NOT_FOUND`(400), 비밀번호 틀림 → `PASSWORD_NOT_MATCHED`(400). auth-service는 이 Feign 400을 **그대로 클라이언트에 전달**한다 (`GlobalExceptionHandler`의 FeignException 처리).
-   - `isValid = false`면 auth-service가 `MEMBER_NOT_VALID`(401).
-3. 새 family로 토큰 쌍 발급, `SET refresh:{fid} = jti` (7일).
-4. 응답: body `{accessToken, grantType: "Bearer", issuedAt}` + refresh 쿠키.
-
-WEB은 로그인 성공 시 React Query 캐시를 비우고(이전 계정 데이터가 잠깐 보이지 않게) access 토큰을 저장한다.
-
-### 3-1. 인증 토큰
+### 1-1. 인증 토큰
 
 인증 토큰은 **JWT(JSON Web Token)** 이다. 두 종류를 쓴다.
 
@@ -87,11 +50,11 @@ WEB은 로그인 성공 시 React Query 캐시를 비우고(이전 계정 데이
 | **access token** | JWT | API 호출 시 `Authorization: Bearer`로 보내 사용자를 증명한다 | 1시간 |
 | **refresh token** | JWT | access 토큰이 만료되면 새 토큰 쌍을 받는 데만 쓴다 (`/api/v1/auth/reissue`) | 7일 |
 
-- 서명 알고리즘: **HS256** (HMAC-SHA256, 대칭키). 두 토큰 모두 같은 비밀키 `JWT_SECRET_KEY`(Base64)로 서명·검증한다. 비밀키는 auth-service만 가진다 — 게이트웨이는 직접 검증하지 않고 auth-service에 묻는다 (4장).
+- 서명 알고리즘: **HS256** (HMAC-SHA256, 대칭키). 두 토큰 모두 같은 비밀키 `JWT_SECRET_KEY`(Base64)로 서명·검증한다. 비밀키는 auth-service만 가진다 — 게이트웨이는 직접 검증하지 않고 auth-service에 묻는다 (3장).
 - 발급·검증: auth-service `TokenManager` (jjwt).
-- JWT 자체는 서버에 저장하지 않는다(stateless). 대신 회전·로그아웃·폐기를 위해 `jti` / `fid` 상태만 Redis에 둔다 (아래 Redis 키).
+- JWT 자체는 서버에 저장하지 않는다(stateless). 대신 회전·로그아웃·폐기를 위해 `jti` / `fid` 상태만 Redis에 둔다 ([1-1-3](#1-1-3-redis-키)).
 
-**claim 구성**
+#### 1-1-1. claim 구성
 
 | claim | access | refresh |
 |---|---|---|
@@ -106,7 +69,7 @@ WEB은 로그인 성공 시 React Query 캐시를 비우고(이전 계정 데이
 - **family(`fid`)**: 로그인 1번 = family 1개. 재발급은 같은 family 안에서 토큰만 바꾼다. 로그아웃·재사용 감지는 family 단위로 끊는다.
 - access와 refresh의 `jti`는 **서로 다른 값**이다.
 
-**전달·보관**
+#### 1-1-2. 전달·보관
 
 | 토큰 | 서버 → 클라이언트 | WEB 보관 | 클라이언트 → 서버 |
 |---|---|---|---|
@@ -120,14 +83,14 @@ refresh 쿠키 속성 (`RefreshTokenCookieFactory`):
 | `HttpOnly` | 항상 |
 | `Path` | `/api/v1/auth` — 인증 API에만 실려 간다 |
 | `Max-Age` | 7일 (로그아웃 시 0) |
-| `Secure` / `SameSite` | `JWT_REFRESH_TOKEN_COOKIE_SECURE=true`(기본) → `Secure; SameSite=None`<br/>`false`(로컬 dev) → `SameSite=Lax` |
+| `Secure` / `SameSite` | `Secure; SameSite=Strict` — HTTPS에서만 전송, 같은 사이트(등록 도메인)에서 보낸 요청에만 실린다. WEB과 API는 한 사이트에서만 서비스한다 |
 
-**Redis 키**
+#### 1-1-3. Redis 키
 
 | 키 | 값 | TTL | 용도 |
 |---|---|---|---|
 | `refresh:{fid}` | 현재 유효한 refresh `jti` | 로그인 시 7일, **회전해도 늘어나지 않음** | 회전 CAS |
-| `prev:{fid}` | 직전에 회전된 `jti` | 10초 | 동시 재발급 유예 (5장) |
+| `prev:{fid}` | 직전에 회전된 `jti` | 10초 | 동시 재발급 유예 (4장) |
 | `revoked:{fid}` | `1` | access 수명(1시간) | family 폐기 표시 — 그 family의 access 토큰도 거부 |
 | `blacklist:{access jti}` | `1` | 그 access 토큰의 남은 수명 | 로그아웃한 access 토큰 거부 |
 
@@ -137,7 +100,45 @@ refresh 쿠키 속성 (`RefreshTokenCookieFactory`):
 > ⚠️ 알려진 문제
 > - access 토큰을 `localStorage`에 보관 — XSS가 있으면 토큰을 가져갈 수 있다 (refresh는 httpOnly라 안전).
 
-### 3-2. 장애 시 동작
+---
+
+## 2. 로그인
+
+이메일·비밀번호를 받아 auth-service가 member-service에 확인을 맡기고, 맞으면 access·refresh 토큰 한 쌍을 발급한다. refresh 토큰의 현재 `jti`는 Redis에 저장해 이후 재발급·로그아웃 때 대조한다. access는 응답 본문으로, refresh는 `HttpOnly` 쿠키로 내려준다.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as 사용자 (WEB)
+    participant G as gateway-service
+    participant A as auth-service
+    participant M as member-service
+    participant R as Redis
+
+    U->>G: POST /api/v1/auth/login {email, password}
+    Note over G: 인증 없이 통과하는 경로
+    G->>A: 그대로 전달
+    A->>M: POST /internal/v1/member/authenticate<br/>(Feign, X-Internal-Token)
+    M->>M: 이메일로 조회 + BCrypt matches
+    M-->>A: 회원 정보 (memberId, roles)
+    A->>A: 새 family(fid)로 access·refresh 발급
+    A->>R: SET refresh:{fid} = jti (7일)
+    A-->>G: body {accessToken, grantType, issuedAt}<br/>+ Set-Cookie refresh_token
+    G-->>U: 응답
+    U->>U: React Query 캐시 비움 + access 토큰 저장
+```
+
+1. `POST /api/v1/auth/login {email, password}` — 인증 없음.
+2. auth-service → member-service `POST /internal/v1/member/authenticate` (Feign, `X-Internal-Token`).
+   - member-service가 이메일로 찾고 `BCryptPasswordEncoder.matches`로 확인.
+   - 없는 이메일 → `MEMBER_NOT_FOUND`(400), 비밀번호 틀림 → `PASSWORD_NOT_MATCHED`(400). auth-service는 이 Feign 400을 **그대로 클라이언트에 전달**한다 (`GlobalExceptionHandler`의 FeignException 처리).
+   - `isValid = false`면 auth-service가 `MEMBER_NOT_VALID`(401).
+3. 새 family로 토큰 쌍 발급, `SET refresh:{fid} = jti` (7일).
+4. 응답: body `{accessToken, grantType: "Bearer", issuedAt}` + refresh 쿠키.
+
+WEB은 로그인 성공 시 React Query 캐시를 비우고(이전 계정 데이터가 잠깐 보이지 않게) access 토큰을 저장한다.
+
+### 2-1. 장애 시 동작
 
 | 장애 | 결과 |
 |---|---|
@@ -151,7 +152,7 @@ refresh 쿠키 속성 (`RefreshTokenCookieFactory`):
 
 ---
 
-## 4. 인가
+## 3. 인가
 
 ### 검증 과정
 
@@ -177,7 +178,7 @@ auth-service의 `POST /api/v1/auth/validate-token`(게이트웨이 전용)은:
 3. `{memberId, memberRoles}` 반환
 
 - Redis 조회 2번(블랙리스트, 폐기)이 요청마다 일어난다. 게이트웨이에 캐시는 없다.
-- **회원 상태(`isValid`)는 여기서 보지 않는다.** 재발급 때만 본다 (5장). 비활성 처리된 회원도 access 만료(최대 1시간)까지는 통과한다.
+- **회원 상태(`isValid`)는 여기서 보지 않는다.** 재발급 때만 본다 (4장). 비활성 처리된 회원도 access 만료(최대 1시간)까지는 통과한다.
 - 에러는 모두 401: `NO_AUTH_TOKEN`(보호 경로에 Bearer 없음), `TOKEN_EXPIRED`, `TOKEN_INVALID`, `ACCESS_TOKEN_REVOKED`. body는 `{status, message}` (`CustomAuthenticationEntryPoint`).
 
 ### 인증 없이 통과하는 경로 (`SecurityConfig`)
@@ -198,12 +199,12 @@ permitAll 경로라도 Bearer가 있으면 검증하고 `X_USER_ID`를 붙인다
 - 허용 Origin은 `CLIENT_URL` 하나, `allowCredentials=true` (refresh 쿠키 때문).
 - 메서드: GET, POST, PUT, PATCH, DELETE, OPTIONS. 헤더: 전부.
 
-### 4-1. 장애 시 동작
+### 3-1. 장애 시 동작
 
 | 장애 | 결과 |
 |---|---|
 | auth-service 무응답 | 게이트웨이 WebClient connect/read/write 3초 + `Mono.timeout(3s)` → 인증 실패로 처리 → 보호 경로 **401** (#206). 이전에는 모든 요청이 무한 대기했다 |
-| auth-service 다운 | 위와 같이 401 → WEB이 재발급 시도 → 실패 → **WEB이 로그아웃** (5-1) |
+| auth-service 다운 | 위와 같이 401 → WEB이 재발급 시도 → 실패 → **WEB이 로그아웃** (4-1) |
 | Redis 다운 | 블랙리스트·폐기 조회 실패 → 보호 경로 401 |
 
 > ⚠️ 알려진 문제
@@ -214,12 +215,12 @@ permitAll 경로라도 Bearer가 있으면 검증하고 `X_USER_ID`를 붙인다
 
 ---
 
-## 5. 토큰 재발급
+## 4. 토큰 재발급
 
 ### 과정
 
 1. `POST /api/v1/auth/reissue` (쿠키만, body 없음).
-2. 게이트웨이 `CsrfOriginGuardFilter`: `Origin`이 `CLIENT_URL`과 같아야 함 (없으면 `Referer`가 `CLIENT_URL`로 시작해야 함). 아니면 **403** (본문 없음). — CSRF 토큰 없이 `SameSite=None` 쿠키만으로 인증하는 경로라서 (#205).
+2. 게이트웨이 `CsrfOriginGuardFilter`: `Origin`이 `CLIENT_URL`과 같아야 함 (없으면 `Referer`가 `CLIENT_URL`로 시작해야 함). 아니면 **403** (본문 없음). — CSRF 토큰 없이 쿠키만으로 인증하는 경로라서, `SameSite=Strict`에 더한 두 번째 방어선 (#205).
 3. refresh 서명·만료·`type=refresh` 확인. 쿠키가 없거나 유효하지 않으면 `TOKEN_INVALID`(401).
 4. member-service `GET /internal/v1/member/{id}/status` → `isValid=false`면 `MEMBER_NOT_VALID`(401). **roles도 여기서 최신 값으로 다시 받는다.**
 5. 같은 family로 새 토큰 쌍 생성.
@@ -250,7 +251,7 @@ permitAll 경로라도 Bearer가 있으면 검증하고 `X_USER_ID`를 붙인다
 
 재발급은 axios가 아닌 `fetch`로 호출한다 — axios 인터셉터를 타면 재발급 실패의 401이 다시 재발급을 부르며 스스로를 기다리게 된다.
 
-### 5-1. 장애 시 동작
+### 4-1. 장애 시 동작
 
 | 장애 | 결과 |
 |---|---|
@@ -259,12 +260,12 @@ permitAll 경로라도 Bearer가 있으면 검증하고 `X_USER_ID`를 붙인다
 | Redis 다운 | 회전 스크립트 실패 → 재발급 불가 → WEB 로그아웃 |
 
 > ⚠️ 알려진 문제
-> - 의존 서비스 장애가 모두 **로그아웃**으로 끝난다 — WEB이 재발급 실패 이유를 구분하지 않는다 (4-1과 같은 문제).
+> - 의존 서비스 장애가 모두 **로그아웃**으로 끝난다 — WEB이 재발급 실패 이유를 구분하지 않는다 (3-1과 같은 문제).
 > - 10초 유예로 회전할 때 먼저 회전한 쪽의 jti는 `prev`에만 10초 남는다. 두 응답이 순서가 바뀌어 도착해 브라우저 쿠키가 먼저 회전한 쪽 값으로 남으면, 10초 뒤 다음 재발급에서 재사용으로 감지돼 로그아웃될 수 있다 (드묾).
 
 ---
 
-## 6. 로그아웃
+## 5. 로그아웃
 
 1. `POST /api/v1/auth/logout` (refresh 쿠키 + 있으면 Bearer). 게이트웨이 Origin 검사는 재발급과 같다 — 다른 사이트의 form이 POST해도 403.
 2. refresh 쿠키가 없거나 유효하지 않으면 `TOKEN_INVALID`(401) — 로그아웃 자체가 실패한다.
@@ -277,7 +278,7 @@ permitAll 경로라도 Bearer가 있으면 검증하고 `X_USER_ID`를 붙인다
 
 ---
 
-## 7. 서비스 간 인증
+## 6. 서비스 간 인증
 
 ### 공유 비밀 (`X-Internal-Token`)
 
