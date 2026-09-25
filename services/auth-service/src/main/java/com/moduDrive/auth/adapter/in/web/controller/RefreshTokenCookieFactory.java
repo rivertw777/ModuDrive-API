@@ -45,8 +45,8 @@ class RefreshTokenCookieFactory {
         ResponseCookie cookie = ResponseCookie.from(COOKIE_NAME, value)
                 .httpOnly(true)
                 .secure(secure)
-                // SameSite=None은 명세상 Secure 쿠키에서만 유효하므로 secure와 함께 움직인다
-                .sameSite(secure ? "None" : "Lax")
+                // WEB과 API는 같은 사이트에서만 서비스하므로, 다른 사이트에서 온 요청엔 쿠키를 싣지 않는다
+                .sameSite("Strict")
                 .path(COOKIE_PATH)
                 .maxAge(maxAge)
                 .build();

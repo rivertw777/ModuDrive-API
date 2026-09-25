@@ -16,9 +16,10 @@ import java.util.Set;
 
 /**
  * /logout and /reissue are permitAll (see SecurityConfig) and authenticate purely off the
- * refresh_token cookie — with SameSite=None in production (RefreshTokenCookieFactory) and CSRF
- * disabled globally, a cross-site auto-submitting form could POST to either and ride along on the
- * victim's cookie without ever needing CORS preflight. Requiring a custom header would need every
+ * refresh_token cookie with CSRF disabled globally. The cookie is SameSite=Strict
+ * (RefreshTokenCookieFactory), so browsers already keep it off cross-site requests; this filter is
+ * the second line, so a cross-site auto-submitting form still can't POST to either if that
+ * attribute is ever loosened or ignored. Requiring a custom header would need every
  * caller (including the SPA) to send one; checking Origin/Referer against the configured
  * clientUrl instead needs no client-side change — browsers attach Origin to state-changing
  * requests themselves, and don't let a page spoof it (#205).

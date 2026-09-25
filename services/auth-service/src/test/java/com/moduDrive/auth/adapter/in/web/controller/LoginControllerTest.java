@@ -74,7 +74,7 @@ class LoginControllerTest {
                     .andExpect(cookie().secure("refresh_token", true))
                     .andExpect(cookie().path("refresh_token", "/api/v1/auth"))
                     .andExpect(cookie().maxAge("refresh_token", 604800))
-                    .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("SameSite=None")));
+                    .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("SameSite=Strict")));
         }
     }
 
