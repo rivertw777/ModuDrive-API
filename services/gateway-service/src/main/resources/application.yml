@@ -44,6 +44,16 @@ resilience4j:
 client:
   url: ${CLIENT_URL}
 
+session:
+  cookie:
+    # auth-service와 같은 값이어야 한다 — 쿠키 이름이 이 값으로 정해진다 (SessionCookie)
+    secure: ${SESSION_COOKIE_SECURE:true}
+
+# Shared service-to-service secret, sent on the session check to auth-service's /internal/**.
+internal:
+  service:
+    token: ${INTERNAL_SERVICE_TOKEN}
+
 # Fixed service URLs (compose DNS locally, ECS Service Connect on AWS).
 clients:
   member-service:

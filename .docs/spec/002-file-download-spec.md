@@ -5,8 +5,8 @@
 ⚠️ 이 문서가 기준입니다. 코드가 이 문서와 다르면 코드를 고치고, 동작을 바꾸려면 이 문서를 먼저 고칩니다.
 
 > 기준 소스 (2026-09-23): API `dev` (851efb8), WEB `dev` (13ac387)
-> - API: storage-service `StorageController`, `ArchiveController`, `PrepareArchiveService`, `OpenArchiveService`, `RedisArchiveTokenStore`, `DownloadFileService`, `PublicDownloadFileService`, `BlockAssembler`, `RedisDownloadQuotaStore`, `RedisStreamTokenStore`, `ResolveViewIdentityService`, `S3StorageAdapter` / file-service `GetLatestFileVersionsService`, `GetPublicFileRevisionsService`, `ResolveArchiveEntriesService`, `ResolvePublicArchiveEntriesService`, `ArchiveEntryCollector`, `FileAccessGuard`, `PublicFileResolver` / gateway `SecurityConfig`, `UserContextFilter`
-> - WEB: `features/drive/api/download-file.ts`, `download-public-file.ts`, `download-archive.ts`, `view-file.ts`, `issue-stream-token.ts`, `components/file-preview.tsx`, `file-list.tsx`, `public-folder-view.tsx`, `types.ts`(`canPreviewFile`)
+> - API: storage-service `StorageController`, `ArchiveController`, `PrepareArchiveService`, `OpenArchiveService`, `RedisArchiveTokenStore`, `DownloadFileService`, `PublicDownloadFileService`, `BlockAssembler`, `RedisDownloadQuotaStore`, `S3StorageAdapter` / file-service `GetLatestFileVersionsService`, `GetPublicFileRevisionsService`, `ResolveArchiveEntriesService`, `ResolvePublicArchiveEntriesService`, `ArchiveEntryCollector`, `FileAccessGuard`, `PublicFileResolver` / gateway `SecurityConfig`, `UserContextFilter`
+> - WEB: `features/drive/api/download-file.ts`, `download-public-file.ts`, `download-archive.ts`, `view-file.ts`, `components/file-preview.tsx`, `file-list.tsx`, `public-folder-view.tsx`, `types.ts`(`canPreviewFile`)
 
 ---
 
@@ -90,7 +90,7 @@
 - **WEB**: axios로 `responseType: 'blob'` 요청 → 응답 전체를 **브라우저 메모리에 Blob으로** 받은 뒤, `<a download="{파일명}">`을 만들어 저장합니다.
   - 파일 이름은 WEB이 목록에서 알고 있는 이름을 씁니다.
   - 전부 받을 때까지 브라우저의 다운로드 진행 표시가 뜨지 않습니다.
-  - 인증은 `Authorization: Bearer` 헤더로 합니다.
+  - 인증은 세션 쿠키로 합니다 (`withCredentials: true`, [004 인증](004-auth-spec.md)).
 - 다운로드는 **최근 문서함에 기록하지 않습니다** (`markAccessed=false`).
 - 전송 도중 S3 오류나 연결 끊김이 생기면 응답이 중간에 끊기고, WEB의 Blob 요청이 실패합니다. 이어받기는 없습니다.
 
@@ -146,21 +146,14 @@ WEB ──<a href> 링크 이동: GET /api/v1/storage/public/archive/{token}─�
 
 ## 6. 미리보기 (인라인 보기)
 
-`GET /api/v1/storage/view/{fileId}?fileName=&streamToken=` (gateway permitAll — 신원은 아래 두 가지 중 하나로 확인)
+`GET /api/v1/storage/view/{fileId}?fileName=` (세션 쿠키로 인증 — 다른 로그인 API와 같음)
+
+> 2026-09-25 [004 인증](004-auth-spec.md) 세션 전환(API #430)으로 스트림 토큰(`POST /api/v1/storage/stream-token`, `streamToken` 파라미터)을 없앴습니다. `<video>`/`<audio>`의 직접 요청에도 세션 쿠키가 자동으로 실리므로 따로 자격 증명이 필요 없습니다.
 
 ### 신원 확인
 
-| 방식 | 쓰는 곳 | 설명 |
-|---|---|---|
-| `Authorization: Bearer` (gateway가 `X_USER_ID` 주입) | 텍스트·이미지 | WEB이 Blob으로 받아서 표시 |
-| `streamToken` 쿼리 | 오디오·비디오 | `<video>`/`<audio>`는 헤더를 붙일 수 없으므로, WEB이 먼저 `POST /api/v1/storage/stream-token?fileId=`로 토큰을 받아 URL에 넣음 |
-
-- 둘 다 있으면 헤더가 우선입니다. 둘 다 없거나 토큰이 틀리면 `401 UNAUTHENTICATED_VIEW_REQUEST`.
-- 스트림 토큰의 규칙:
-  - Redis `stream-token:{uuid}` → `{fileId}:{userId}`, **유효 30분**
-  - **여러 번 쓸 수 있음** (시킹마다 같은 토큰을 재사용)
-  - 발급한 파일에만 유효하고, 다른 fileId로 쓰면 401
-  - 발급 시점에는 권한을 확인하지 않고, **보기 요청 때마다** 3장 권한으로 확인합니다
+- 게이트웨이가 세션 쿠키를 확인하고 `X_USER_ID`를 넣어 줍니다. 세션이 없으면 게이트웨이에서 401입니다.
+- 텍스트·이미지는 WEB이 Blob으로 받아서 표시하고, 오디오·비디오는 `src`에 URL을 직접 넣습니다. 둘 다 쿠키로 인증되므로 WEB이 헤더나 토큰을 붙이지 않습니다.
 
 ### 동작
 
@@ -183,7 +176,7 @@ WEB ──<a href> 링크 이동: GET /api/v1/storage/public/archive/{token}─�
 |---|---|---|---|
 | text | `txt`, `md` (HTML로 렌더링하지 않고 `<pre>`로 표시) | 10MB | Blob |
 | image | IMAGE 분류 (**svg 제외** — 스크립트 실행 위험) | 10MB | Blob |
-| audio | `mp3`, `wav`, `flac`, `aac`, `m4a` | 없음 (서버 100MB 추정 상한만) | `src`에 직접 URL + streamToken |
+| audio | `mp3`, `wav`, `flac`, `aac`, `m4a` | 없음 (서버 100MB 추정 상한만) | `src`에 직접 URL (세션 쿠키) |
 | video | VIDEO 분류 | 없음 (서버 100MB 추정 상한만) | 같음 |
 | 그 외 | — | — | 미리보기 없음, 다운로드 버튼만 |
 
@@ -208,7 +201,7 @@ WEB ──<a href> 링크 이동: GET /api/v1/storage/public/archive/{token}─�
 | 메서드 · 경로 | 용도 |
 |---|---|
 | `GET /api/v1/storage/public/{fileId}/download?key=` | 다운로드 (스트리밍) |
-| `GET /api/v1/storage/public/{fileId}/view?key=&fileName=` | 미리보기 (`streamToken` 필요 없음 — URL 자체가 자격) |
+| `GET /api/v1/storage/public/{fileId}/view?key=&fileName=` | 미리보기 (URL 자체가 자격) |
 
 - 두 경로 모두 gateway permitAll이고, WEB은 **토큰을 보내지 않습니다.** 만료된 토큰으로 로그아웃되는 일을 막기 위함입니다.
 - 접근 판단은 file-service `PublicFileResolver`가 합니다 ([003-file-sharing-spec.md 4장](003-file-sharing-spec.md#4-링크-제공)).
@@ -228,7 +221,6 @@ WEB ──<a href> 링크 이동: GET /api/v1/storage/public/archive/{token}─�
 | 미리보기 서버 상한 | `blockCount × 4MB` ≤ 100MB (추정치) | `BlockAssembler.MAX_INLINE_PREVIEW_BYTES` |
 | 미리보기 WEB 상한 | 텍스트·이미지 10MB | WEB `PREVIEW_MAX_BYTES` |
 | 블록 수 상한 | 100,000 (넘으면 `TOO_MANY_BLOCKS`) | `S3StorageAdapter.MAX_BLOCK_COUNT` |
-| 스트림 토큰 유효 기간 | 30분, 재사용 가능 | `RedisStreamTokenStore.TTL` |
 | 파일별 다운로드 쿼터 | 24시간당 10GB | `STORAGE_DOWNLOAD_QUOTA_PER_FILE_BYTES`, `STORAGE_DOWNLOAD_QUOTA_WINDOW` |
 | zip 고른 항목 수 | 1,000개 | `PrepareArchiveCommand` |
 | zip 파일 수 / 합계 크기 | 10,000개 / 20GB | file-service `ArchiveEntryCollector.MAX_FILES`, `MAX_BYTES` |
@@ -238,12 +230,11 @@ WEB ──<a href> 링크 이동: GET /api/v1/storage/public/archive/{token}─�
 
 | 메서드 · 경로 | 서비스 | 인증 | 용도 |
 |---|---|---|---|
-| `GET /api/v1/storage/download/{fileId}` | storage | Bearer | 다운로드 (스트리밍, attachment) |
-| `POST /api/v1/storage/stream-token?fileId=` | storage | Bearer | 오디오·비디오용 스트림 토큰 발급 |
-| `GET /api/v1/storage/view/{fileId}?fileName=&streamToken=` | storage | Bearer 또는 streamToken | 미리보기 (inline, Range) |
+| `GET /api/v1/storage/download/{fileId}` | storage | 세션 | 다운로드 (스트리밍, attachment) |
+| `GET /api/v1/storage/view/{fileId}?fileName=` | storage | 세션 | 미리보기 (inline, Range) |
 | `GET /api/v1/storage/public/{fileId}/download?key=` | storage | 없음 | 공개 다운로드 |
 | `GET /api/v1/storage/public/{fileId}/view?key=&fileName=` | storage | 없음 | 공개 미리보기 |
-| `POST /api/v1/storage/archive` `{fileIds}` | storage | Bearer | zip 준비 → `{token}` |
+| `POST /api/v1/storage/archive` `{fileIds}` | storage | 세션 | zip 준비 → `{token}` |
 | `POST /api/v1/storage/public/archive?key=` `{fileIds}` | storage | 없음 | 공개 zip 준비 → `{token}` |
 | `GET /api/v1/storage/public/archive/{token}` | storage | 토큰 | zip 스트리밍 (attachment) |
 | `POST /internal/files/archive` `{userId, fileIds}` | file | 서비스 간 | 고른 항목 DOWNLOAD 확인 + zip 구성 |

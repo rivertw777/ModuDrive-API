@@ -21,7 +21,6 @@ public enum StorageExceptionCase implements ExceptionCase {
     TOO_MANY_BLOCKS(HttpStatus.BAD_REQUEST, "블록 수가 허용 범위를 초과했습니다."),
     /** Same message whether the credential is missing, expired, or was issued for a different
      * file — an anonymous caller must not be able to tell those apart. */
-    UNAUTHENTICATED_VIEW_REQUEST(HttpStatus.UNAUTHORIZED, "인증되지 않은 요청입니다."),
     /** Guards inline preview only — regular download has no such cap. Without it, previewing a
      * multi-GB file would fully materialize it in heap (twice: once assembled, once sliced for
      * Range) on a route the gateway now permits without auth. */

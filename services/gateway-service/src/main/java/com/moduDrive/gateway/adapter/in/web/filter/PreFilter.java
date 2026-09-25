@@ -14,8 +14,8 @@ class PreFilter implements GlobalFilter, Ordered {
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
-        // Path only, not getURI() — the query string can carry a credential (e.g. storage-service's
-        // streamToken), and logging every request at INFO would put every issued token in plaintext logs.
+        // Path only, not getURI() — the query string can carry a credential (e.g. a share link's
+        // key), and logging every request at INFO would put it in plaintext logs.
         String path = exchange.getRequest().getPath().value();
         String method = exchange.getRequest().getMethod().toString();
         log.info("Request URI: {}, Method: {}", path, method);

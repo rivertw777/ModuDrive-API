@@ -17,8 +17,7 @@ import java.security.MessageDigest;
 /**
  * Gate on {@code /internal/**} — service-to-service only. Left unauthenticated, it exposes a
  * rate-limit-free credential check ({@code AuthenticateMemberController}, reachable outside the
- * gateway) and account-status lookup ({@code GetMemberStatusController}) to anything on the
- * internal network (issue #332, file-service's counterpart is #314). Only the gateway not
+ * gateway) to anything on the internal network (issue #332, file-service's counterpart is #314). Only the gateway not
  * proxying this prefix kept an arbitrary caller out before; that is a deployment accident, not an
  * authorization check.
  *

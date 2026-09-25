@@ -4,21 +4,16 @@ import com.moduDrive.common.core.annotation.WebAdapter;
 import com.moduDrive.common.core.web.ApiResponse;
 import com.moduDrive.storage.adapter.in.web.dto.InitResumableUploadRequest;
 import com.moduDrive.storage.adapter.in.web.dto.ResumableUploadSessionResponse;
-import com.moduDrive.storage.adapter.in.web.dto.StreamTokenResponse;
 import com.moduDrive.storage.application.port.in.command.CompleteResumableUploadCommand;
 import com.moduDrive.storage.application.port.in.command.DownloadFileCommand;
 import com.moduDrive.storage.application.port.in.command.InitResumableUploadCommand;
-import com.moduDrive.storage.application.port.in.command.IssueStreamTokenCommand;
 import com.moduDrive.storage.application.port.in.command.PublicDownloadFileCommand;
-import com.moduDrive.storage.application.port.in.command.ResolveViewIdentityCommand;
 import com.moduDrive.storage.application.port.in.command.SimpleUploadCommand;
 import com.moduDrive.storage.application.port.in.command.UploadChunkCommand;
 import com.moduDrive.storage.application.port.in.usecase.CompleteResumableUploadUseCase;
 import com.moduDrive.storage.application.port.in.usecase.DownloadFileUseCase;
 import com.moduDrive.storage.application.port.in.usecase.InitResumableUploadUseCase;
-import com.moduDrive.storage.application.port.in.usecase.IssueStreamTokenUseCase;
 import com.moduDrive.storage.application.port.in.usecase.PublicDownloadFileUseCase;
-import com.moduDrive.storage.application.port.in.usecase.ResolveViewIdentityUseCase;
 import com.moduDrive.storage.application.port.in.usecase.SimpleUploadUseCase;
 import com.moduDrive.storage.application.port.in.usecase.UploadChunkUseCase;
 import jakarta.validation.Valid;
@@ -55,8 +50,6 @@ class StorageController {
     private final CompleteResumableUploadUseCase completeResumableUploadUseCase;
     private final DownloadFileUseCase downloadFileUseCase;
     private final PublicDownloadFileUseCase publicDownloadFileUseCase;
-    private final IssueStreamTokenUseCase issueStreamTokenUseCase;
-    private final ResolveViewIdentityUseCase resolveViewIdentityUseCase;
 
     @PostMapping("/api/v1/storage/upload")
     public ApiResponse<Void> simpleUpload(
@@ -125,44 +118,27 @@ class StorageController {
                 .body(body);
     }
 
-    /** Mints a short-lived, single-file identity token so a native &lt;video&gt;/&lt;audio&gt;
-     * element can hit {@link #viewFile} by URL alone — those elements can't attach an
-     * Authorization header, so this stands in for one on that request only. Ordinary Bearer auth
-     * (blob-fetch preview for text/image) still works on {@link #viewFile} unchanged; this is
-     * purely an alternate credential for the direct-{@code src} case. */
-    @PostMapping("/api/v1/storage/stream-token")
-    public ApiResponse<StreamTokenResponse> issueStreamToken(
-            @RequestHeader("X_USER_ID") UUID userId,
-            @RequestParam String fileId) {
-        String token = issueStreamTokenUseCase.issue(new IssueStreamTokenCommand(fileId, userId));
-        return ApiResponse.success(new StreamTokenResponse(token));
-    }
-
     /** Inline counterpart to {@link #downloadFile}: same permission check (reuses
-     * {@link DownloadFileUseCase} as-is) once the caller's identity is resolved — either the
-     * gateway-injected header (normal Bearer auth) or a {@code streamToken} from
-     * {@link #issueStreamToken} — but a real Content-Type and {@code inline} disposition.
+     * {@link DownloadFileUseCase} as-is), but a real Content-Type and {@code inline} disposition.
+     * A native &lt;video&gt;/&lt;audio&gt; {@code src} request carries the session cookie on its
+     * own, so the gateway resolves X_USER_ID for it like any other request.
      * {@code fileName} is caller-supplied display text, not trusted file identity — it only
      * ever feeds a response header via {@link FileMimeTypes}, never a storage lookup. Honors
      * {@code Range} so a &lt;video&gt;/&lt;audio&gt; element can seek without pulling the whole
      * (already fully in-memory) file over the wire again. */
     @GetMapping("/api/v1/storage/view/{fileId}")
     public ResponseEntity<byte[]> viewFile(
-            @RequestHeader(value = "X_USER_ID", required = false) UUID userId,
+            @RequestHeader("X_USER_ID") UUID userId,
             @PathVariable String fileId,
             @RequestParam String fileName,
-            @RequestParam(required = false) String streamToken,
             @RequestHeader(value = HttpHeaders.RANGE, required = false) String rangeHeader) {
-        UUID resolvedUserId = resolveViewIdentityUseCase.resolve(
-                new ResolveViewIdentityCommand(fileId, userId, streamToken));
-        byte[] data = downloadFileUseCase.download(new DownloadFileCommand(fileId, resolvedUserId, true));
+        byte[] data = downloadFileUseCase.download(new DownloadFileCommand(fileId, userId, true));
         return inline(data, fileName, rangeHeader);
     }
 
     /** Inline counterpart to {@link #publicDownloadFile}, same relationship as {@link #viewFile}
      * is to {@link #downloadFile}. {@code fileId}/{@code key} are already the whole credential
-     * between them, so no streamToken dance is needed here — it goes straight in the URL either
-     * way. */
+     * between them, so it goes straight in the URL. */
     @GetMapping("/api/v1/storage/public/{fileId}/view")
     public ResponseEntity<byte[]> viewPublicFile(
             @PathVariable String fileId,

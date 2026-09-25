@@ -22,12 +22,12 @@ class AuthErrorAttributeUtilsTest {
             MockServerWebExchange exchange = MockServerWebExchange.from(
                     MockServerHttpRequest.get("/test").build());
 
-            AuthErrorAttributeUtils.setAuthErrorAttribute(exchange, AuthExceptionCase.NO_AUTH_TOKEN);
+            AuthErrorAttributeUtils.setAuthErrorAttribute(exchange, AuthExceptionCase.NO_SESSION);
 
             assertThat(exchange.getAttributes().get(AuthErrorAttributeUtils.STATUS_ATTRIBUTE))
                     .isEqualTo(HttpStatus.UNAUTHORIZED.name());
             assertThat(exchange.getAttributes().get(AuthErrorAttributeUtils.MESSAGE_ATTRIBUTE))
-                    .isEqualTo(AuthExceptionCase.NO_AUTH_TOKEN.getMessage());
+                    .isEqualTo(AuthExceptionCase.NO_SESSION.getMessage());
         }
     }
 
@@ -57,12 +57,12 @@ class AuthErrorAttributeUtilsTest {
         void returnsSetAttributes() {
             MockServerWebExchange exchange = MockServerWebExchange.from(
                     MockServerHttpRequest.get("/test").build());
-            AuthErrorAttributeUtils.setAuthErrorAttribute(exchange, AuthExceptionCase.NO_AUTH_TOKEN);
+            AuthErrorAttributeUtils.setAuthErrorAttribute(exchange, AuthExceptionCase.NO_SESSION);
 
             Tuple2<String, String> result = AuthErrorAttributeUtils.getAuthErrorAttribute(exchange);
 
             assertThat(result.getT1()).isEqualTo(HttpStatus.UNAUTHORIZED.name());
-            assertThat(result.getT2()).isEqualTo(AuthExceptionCase.NO_AUTH_TOKEN.getMessage());
+            assertThat(result.getT2()).isEqualTo(AuthExceptionCase.NO_SESSION.getMessage());
         }
 
         @Test

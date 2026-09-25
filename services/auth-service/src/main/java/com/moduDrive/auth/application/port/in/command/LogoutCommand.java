@@ -1,6 +1,6 @@
 package com.moduDrive.auth.application.port.in.command;
 
-import com.moduDrive.auth.domain.model.TokenPair.RefreshToken;
+import com.moduDrive.auth.domain.vo.SessionId;
 import com.moduDrive.common.core.validation.SelfValidating;
 import jakarta.validation.constraints.NotNull;
 import lombok.EqualsAndHashCode;
@@ -11,10 +11,10 @@ import lombok.Getter;
 public class LogoutCommand extends SelfValidating<LogoutCommand> {
 
     @NotNull
-    private final RefreshToken refreshToken;
+    private final SessionId sessionId;
 
-    public LogoutCommand(RefreshToken refreshToken) {
-        this.refreshToken = refreshToken;
+    public LogoutCommand(SessionId sessionId) {
+        this.sessionId = sessionId;
         this.validateSelf();
     }
 }

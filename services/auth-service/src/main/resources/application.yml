@@ -7,15 +7,10 @@ spring:
       - "classpath:application-redis.yml"
       - "classpath:application-resilience4j.yml"
 
-jwt:
-  secret: ${JWT_SECRET_KEY}
-  accessToken:
-    expiration: ${JWT_ACCESS_TOKEN_EXPIRATION}
-  refreshToken:
-    expiration: ${JWT_REFRESH_TOKEN_EXPIRATION}
-    cookie:
-      # HTTPS 환경 기본값. 로컬(http)에서만 false로 내린다
-      secure: ${JWT_REFRESH_TOKEN_COOKIE_SECURE:true}
+session:
+  cookie:
+    # HTTPS 환경 기본값. 로컬(http)에서만 false로 내린다 — 그때는 __Host- 접두어 없는 이름을 쓴다
+    secure: ${SESSION_COOKIE_SECURE:true}
 
 resilience4j:
   retry:
@@ -27,8 +22,8 @@ resilience4j:
       memberServiceCircuitBreaker:
         baseConfig: default
 
-# Shared service-to-service secret for member-service's /internal/** routes (see
-# InternalTokenRequestInterceptorConfig).
+# Shared service-to-service secret: sent on calls to member-service's /internal/** routes
+# (InternalTokenRequestInterceptorConfig) and verified on this service's own (InternalTokenFilter).
 internal:
   service:
     token: ${INTERNAL_SERVICE_TOKEN}
