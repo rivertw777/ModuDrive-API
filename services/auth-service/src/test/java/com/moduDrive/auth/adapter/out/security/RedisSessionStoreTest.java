@@ -1,7 +1,6 @@
 package com.moduDrive.auth.adapter.out.security;
 
 import com.moduDrive.auth.domain.model.MemberAuthData;
-import com.moduDrive.auth.domain.model.SessionPolicy;
 import com.moduDrive.auth.domain.vo.SessionId;
 import com.moduDrive.auth.fixture.MemberAuthDataTestFixture;
 import com.moduDrive.common.infrastructure.redis.RedisRepository;
@@ -16,6 +15,7 @@ import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactor
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.testcontainers.containers.GenericContainer;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -24,6 +24,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /** Runs the Lua scripts against a real Redis — the expiry rules live there, not in Java. */
 class RedisSessionStoreTest {
+
+    private static final Duration IDLE_TIMEOUT = Duration.ofMinutes(30);
+    private static final Duration ABSOLUTE_TIMEOUT = Duration.ofHours(12);
 
     private static final GenericContainer<?> REDIS = new GenericContainer<>("redis:7-alpine").withExposedPorts(6379);
 
@@ -41,7 +44,7 @@ class RedisSessionStoreTest {
         connectionFactory.afterPropertiesSet();
         redisTemplate = new StringRedisTemplate(connectionFactory);
         redisTemplate.afterPropertiesSet();
-        store = new RedisSessionStore(new RedisRepository(redisTemplate));
+        store = new RedisSessionStore(new RedisRepository(redisTemplate), IDLE_TIMEOUT, ABSOLUTE_TIMEOUT);
     }
 
     @AfterAll
@@ -92,7 +95,7 @@ class RedisSessionStoreTest {
             store.createSession(member);
 
             long ttl = ttlMillis(onlySessionKey());
-            assertThat(ttl).isBetween(SessionPolicy.IDLE_TIMEOUT.toMillis() - 5_000, SessionPolicy.IDLE_TIMEOUT.toMillis());
+            assertThat(ttl).isBetween(IDLE_TIMEOUT.toMillis() - 5_000, IDLE_TIMEOUT.toMillis());
         }
     }
 
@@ -119,7 +122,7 @@ class RedisSessionStoreTest {
 
             store.findSession(sessionId, true);
 
-            assertThat(ttlMillis(key)).isGreaterThan(SessionPolicy.IDLE_TIMEOUT.toMillis() - 5_000);
+            assertThat(ttlMillis(key)).isGreaterThan(IDLE_TIMEOUT.toMillis() - 5_000);
         }
 
         @Test
@@ -140,7 +143,7 @@ class RedisSessionStoreTest {
             SessionId sessionId = store.createSession(member);
             String key = onlySessionKey();
             // 절대 만료까지 1분 남은 세션
-            ageSessionBy(key, SessionPolicy.ABSOLUTE_TIMEOUT.toMillis() - 60_000);
+            ageSessionBy(key, ABSOLUTE_TIMEOUT.toMillis() - 60_000);
 
             store.findSession(sessionId, true);
 
@@ -156,7 +159,7 @@ class RedisSessionStoreTest {
         void returnsEmptyAndDeletesTheSession() {
             SessionId sessionId = store.createSession(member);
             String key = onlySessionKey();
-            ageSessionBy(key, SessionPolicy.ABSOLUTE_TIMEOUT.toMillis() + 1);
+            ageSessionBy(key, ABSOLUTE_TIMEOUT.toMillis() + 1);
 
             assertThat(store.findSession(sessionId, false)).isEmpty();
             assertThat(redisTemplate.hasKey(key)).isFalse();
