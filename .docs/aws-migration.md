@@ -93,7 +93,7 @@
 ### 2-9. 시크릿 → Secrets Manager / SSM Parameter Store
 - 옮길 것(`.docker/.env.example` 기준):
   - DB: `MEMBER_DB_PASSWORD`, `FILE_DB_PASSWORD`, `NOTIFICATION_DB_PASSWORD` (+ RDS 마스터 비밀번호)
-  - `REDIS_PASSWORD`, `JWT_SECRET_KEY`, `INTERNAL_SERVICE_TOKEN`, `STORAGE_ENCRYPTION_KEY`
+  - `REDIS_PASSWORD`, `INTERNAL_SERVICE_TOKEN`, `STORAGE_ENCRYPTION_KEY`
   - `MAIL_PASSWORD` (SES SMTP 자격증명으로 교체)
   - `DISCORD_MESSAGING_WEBHOOK_URL`, `DISCORD_SERVICE_WEBHOOK_URL` (알림을 디스코드로 계속 보낼 경우)
 - **AWS에선 필요 없는 것**: `SQS_*`, `STORAGE_S3_ACCESS_KEY`/`SECRET_KEY`(task role로 대체), `LOCALSTACK_AUTH_TOKEN`(로컬 전용).
@@ -123,6 +123,7 @@ Promtail은 docker socket 기반이라 **Fargate에서 못 쓴다** — 로그 �
 - NAT Gateway는 비싸다 — S3/ECR/SQS/Secrets Manager/CloudWatch는 **VPC 엔드포인트**로 돌리면 NAT 트래픽 절감.
 - Route 53(도메인) + ACM(인증서). ModuDrive-WEB은 **S3 + CloudFront** 정적 호스팅,
   `CLIENT_URL`/CORS/쿠키 도메인 재설정 필요.
+- ⚠️ **WEB과 API는 같은 등록 도메인(사이트)에 있어야 한다** (예: `app.modudrive.com` / `api.modudrive.com`, 또는 CloudFront path behavior로 `/api/*`를 같은 origin에 붙임). 세션 쿠키가 `SameSite=Strict` + host-only라서 ([004 인증](spec/004-auth-spec.md) 1-1-2), 사이트가 다르면 로그인은 200인데 이후 요청에 쿠키가 안 실려 전부 401이 된다. `*.cloudfront.net`·`*.elb.amazonaws.com` 기본 도메인은 Public Suffix List에 있어 서로 다른 사이트로 취급되므로 **커스텀 도메인 필수**.
 
 ### 2-12. IaC / 배포
 - 아직 없음 — 레포에 Terraform 코드와 GitHub Actions 워크플로 모두 없다.

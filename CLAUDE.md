@@ -47,7 +47,7 @@ The active Spring profile (`dev`) is injected via `SPRING_PROFILES_ACTIVE` in `d
 |-----------------------|-------|------------------------------------------|
 | gateway-service       | 10001 | Spring Cloud Gateway (WebFlux/reactive)  |
 | member-service        | 10010 | User signup, lookup, password validation |
-| auth-service          | 10011 | JWT login + token validation             |
+| auth-service          | 10011 | Login + server-side sessions (Redis)     |
 | file-service          | 10012 | File metadata, versioning, sharing, directory management |
 | storage-service       | 10013 | Block-level file storage — split, compress, encrypt, upload/download via S3 (LocalStack locally) |
 | mail-service           | 10014 | Async mail sending (SQS consumer)        |
@@ -82,10 +82,12 @@ Root `build.gradle`'s `subprojects {}` block applies the Spring Boot plugin (and
 
 ## Auth Flow
 
+Server-side sessions — the browser holds only an `HttpOnly` session cookie, never a token. Full rules in `.docs/spec/004-auth-spec.md`.
+
 1. Client sends credentials to `POST /api/v1/auth/login` via the gateway.
-2. `auth-service` calls `member-service` via Feign (`POST /api/v1/member/authenticate`) to verify credentials.
-3. On success, `auth-service` returns a `TokenPair` (access + refresh JWT).
-4. For protected routes, the gateway's `CustomServerSecurityContextRepository` calls `auth-service` (`POST /api/v1/auth/validate-token`) via `WebClient` to validate the Bearer token and inject the `SecurityContext`.
+2. `auth-service` calls `member-service` via Feign (`POST /internal/v1/member/authenticate`) to verify credentials.
+3. On success, `auth-service` stores a session in Redis (`session:{sha256(id)}`, idle 30 min / absolute 12 h) and sets the `__Host-session` cookie (`session` when `SESSION_COOKIE_SECURE=false` for local http).
+4. For every request, the gateway's `CustomServerSecurityContextRepository` sends the cookie's session id to `auth-service` (`POST /internal/v1/auth/sessions/validate`, `X-Internal-Token`) via `WebClient` and injects the `SecurityContext`; `UserContextFilter` then sets `X_USER_ID`/`X_USER_ROLE`. `CsrfOriginGuardFilter` rejects any POST/PUT/PATCH/DELETE whose `Origin` isn't `CLIENT_URL`.
 
 ## Error Handling
 

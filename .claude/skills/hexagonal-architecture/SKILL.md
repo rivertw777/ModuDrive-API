@@ -55,7 +55,7 @@ they're actually relevant.
 config/
   <Concern>Config.java        Root-level, sibling to domain/application/adapter.
                                Composition-root bean wiring not owned by one
-                               adapter (security beans, encoders, JWT props).
+                               adapter (security beans, encoders, cookie props).
 domain/
   model/<Entity>.java        Pure business object, no framework deps
   vo/<Vo>.java                Standalone value object (only when shared across
@@ -255,7 +255,7 @@ reference implementation this convention is based on):
 
 - **`config/<Concern>Config.java`** (root, sibling to `domain/application/adapter`) —
   a bean is used across layers or isn't owned by any single adapter: password
-  encoders, JWT signing properties, security beans. Package-private
+  encoders, session cookie properties, security beans. Package-private
   `@Configuration` classes; Spring wires them via component scanning like any
   other stereotype.
 - **`adapter/in/web/config/<Concern>Config.java`** (or `adapter/out/.../config/`) —

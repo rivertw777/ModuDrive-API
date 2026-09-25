@@ -52,16 +52,14 @@ because the service only depends on out-port *interfaces*, you get full
 business-rule coverage with zero Spring context and millisecond-fast tests.
 Write these first.
 
-**Exception: static-API wrappers like JJWT.** "Mock the raw collaborator"
-only applies when the collaborator is an injected interface with a real
-substitution seam (`PasswordEncoder`, a Feign client). JJWT's `Jwts.builder()`/
-`Jwts.parserBuilder()` are static fluent factories with no such seam — mocking
-them would require `mockStatic` (not a project dependency) and would only
-assert that the adapter calls specific builder methods, not that encode/decode
-actually round-trips correctly, which is the entire behavior the adapter
-exists to provide. For these, test against the real library end-to-end
-(generate a token, then parse it back) as `TokenManagerTest` does — this is
-the one `adapter/out/security` case where an integration-style test is
+**Exception: logic that lives outside Java, like Redis Lua scripts.** "Mock
+the raw collaborator" only applies when the behavior is in the Java code under
+test. When the adapter's real rules run inside Redis (a Lua script doing a
+read-check-extend atomically), mocking `RedisRepository` would only assert
+that the adapter passes certain arguments, not that expiry actually works —
+which is the entire behavior the adapter exists to provide. For these, test
+against a real Redis via Testcontainers as `RedisSessionStoreTest` does — this
+is the one `adapter/out/security` case where an integration-style test is
 correct, not a gap to fix.
 
 ## Tools
