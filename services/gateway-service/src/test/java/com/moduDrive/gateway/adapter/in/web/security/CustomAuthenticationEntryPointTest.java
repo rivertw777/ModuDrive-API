@@ -26,7 +26,7 @@ class CustomAuthenticationEntryPointTest {
         void returns401WithSetMessage() {
             MockServerWebExchange exchange = MockServerWebExchange.from(
                     MockServerHttpRequest.get("/api/secured").build());
-            AuthErrorAttributeUtils.setAuthErrorAttribute(exchange, AuthExceptionCase.NO_AUTH_TOKEN);
+            AuthErrorAttributeUtils.setAuthErrorAttribute(exchange, AuthExceptionCase.NO_SESSION);
 
             StepVerifier.create(entryPoint.commence(exchange, new InsufficientAuthenticationException("test")))
                     .verifyComplete();
@@ -34,7 +34,7 @@ class CustomAuthenticationEntryPointTest {
             assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
             String body = exchange.getResponse().getBodyAsString().block();
             assertThat(body)
-                    .contains(AuthExceptionCase.NO_AUTH_TOKEN.getMessage())
+                    .contains(AuthExceptionCase.NO_SESSION.getMessage())
                     .contains(HttpStatus.UNAUTHORIZED.name());
         }
     }

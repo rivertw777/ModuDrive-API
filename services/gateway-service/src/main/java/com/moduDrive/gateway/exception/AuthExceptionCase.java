@@ -10,7 +10,7 @@ import org.springframework.http.HttpStatus;
 public enum AuthExceptionCase implements ExceptionCase {
 
     UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "허가받지 않은 사용자입니다."),
-    NO_AUTH_TOKEN(HttpStatus.UNAUTHORIZED, "인증 토큰이 없습니다.");
+    NO_SESSION(HttpStatus.UNAUTHORIZED, "로그인이 필요합니다.");
 
     private final HttpStatus httpStatus;
     private final String message;

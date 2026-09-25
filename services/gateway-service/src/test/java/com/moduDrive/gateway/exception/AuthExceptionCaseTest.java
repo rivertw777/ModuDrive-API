@@ -25,17 +25,17 @@ class AuthExceptionCaseTest {
     }
 
     @Nested
-    @DisplayName("NO_AUTH_TOKEN 예외")
-    class WhenNoAuthToken {
+    @DisplayName("NO_SESSION 예외")
+    class WhenNoSession {
 
         @Test
         void hasUnauthorizedHttpStatus() {
-            assertThat(AuthExceptionCase.NO_AUTH_TOKEN.getHttpStatus()).isEqualTo(HttpStatus.UNAUTHORIZED);
+            assertThat(AuthExceptionCase.NO_SESSION.getHttpStatus()).isEqualTo(HttpStatus.UNAUTHORIZED);
         }
 
         @Test
         void hasMessage() {
-            assertThat(AuthExceptionCase.NO_AUTH_TOKEN.getMessage()).isNotBlank();
+            assertThat(AuthExceptionCase.NO_SESSION.getMessage()).isNotBlank();
         }
     }
 }

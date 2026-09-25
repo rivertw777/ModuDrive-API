@@ -7,9 +7,7 @@ import com.moduDrive.storage.exception.StorageExceptionCase;
 import com.moduDrive.storage.application.port.in.usecase.CompleteResumableUploadUseCase;
 import com.moduDrive.storage.application.port.in.usecase.DownloadFileUseCase;
 import com.moduDrive.storage.application.port.in.usecase.InitResumableUploadUseCase;
-import com.moduDrive.storage.application.port.in.usecase.IssueStreamTokenUseCase;
 import com.moduDrive.storage.application.port.in.usecase.PublicDownloadFileUseCase;
-import com.moduDrive.storage.application.port.in.usecase.ResolveViewIdentityUseCase;
 import com.moduDrive.storage.application.port.in.usecase.SimpleUploadUseCase;
 import com.moduDrive.storage.application.port.in.usecase.UploadChunkUseCase;
 import org.junit.jupiter.api.BeforeEach;
@@ -60,8 +58,6 @@ class StorageControllerTest {
     @Mock private CompleteResumableUploadUseCase completeResumableUploadUseCase;
     @Mock private DownloadFileUseCase downloadFileUseCase;
     @Mock private PublicDownloadFileUseCase publicDownloadFileUseCase;
-    @Mock private IssueStreamTokenUseCase issueStreamTokenUseCase;
-    @Mock private ResolveViewIdentityUseCase resolveViewIdentityUseCase;
     @InjectMocks private StorageController storageController;
 
     @BeforeEach
@@ -271,7 +267,6 @@ class StorageControllerTest {
         @Test
         void returnsImageContentTypeAndInlineDisposition() throws Exception {
             byte[] data = "image bytes".getBytes();
-            given(resolveViewIdentityUseCase.resolve(any())).willReturn(UUID.fromString(USER_ID));
             given(downloadFileUseCase.download(any())).willReturn(data);
 
             mockMvc.perform(get("/api/v1/storage/view/" + UUID.randomUUID())
@@ -287,7 +282,6 @@ class StorageControllerTest {
         @Test
         void returnsVideoContentTypeAndInlineDisposition() throws Exception {
             byte[] data = "video bytes".getBytes();
-            given(resolveViewIdentityUseCase.resolve(any())).willReturn(UUID.fromString(USER_ID));
             given(downloadFileUseCase.download(any())).willReturn(data);
 
             mockMvc.perform(get("/api/v1/storage/view/" + UUID.randomUUID())
@@ -302,7 +296,6 @@ class StorageControllerTest {
 
         @Test
         void fallsBackToOctetStreamForAnUnknownExtension() throws Exception {
-            given(resolveViewIdentityUseCase.resolve(any())).willReturn(UUID.fromString(USER_ID));
             given(downloadFileUseCase.download(any())).willReturn("x".getBytes());
 
             mockMvc.perform(get("/api/v1/storage/view/" + UUID.randomUUID())
@@ -314,7 +307,6 @@ class StorageControllerTest {
 
         @Test
         void fallsBackToOctetStreamForSvgToPreventInlineScriptExecution() throws Exception {
-            given(resolveViewIdentityUseCase.resolve(any())).willReturn(UUID.fromString(USER_ID));
             given(downloadFileUseCase.download(any())).willReturn("<script>evil()</script>".getBytes());
 
             mockMvc.perform(get("/api/v1/storage/view/" + UUID.randomUUID())
@@ -326,7 +318,6 @@ class StorageControllerTest {
 
         @Test
         void setsNosniffToBlockMimeSniffingOfTheFallbackType() throws Exception {
-            given(resolveViewIdentityUseCase.resolve(any())).willReturn(UUID.fromString(USER_ID));
             given(downloadFileUseCase.download(any())).willReturn("x".getBytes());
 
             mockMvc.perform(get("/api/v1/storage/view/" + UUID.randomUUID())
@@ -338,7 +329,6 @@ class StorageControllerTest {
 
         @Test
         void encodesANonAsciiFileNameInTheDisposition() throws Exception {
-            given(resolveViewIdentityUseCase.resolve(any())).willReturn(UUID.fromString(USER_ID));
             given(downloadFileUseCase.download(any())).willReturn("x".getBytes());
 
             mockMvc.perform(get("/api/v1/storage/view/" + UUID.randomUUID())
@@ -357,33 +347,17 @@ class StorageControllerTest {
         }
 
         @Test
-        void returnsUnauthorizedWithNeitherAHeaderNorAStreamToken() throws Exception {
-            given(resolveViewIdentityUseCase.resolve(any()))
-                    .willThrow(new BusinessException(StorageExceptionCase.UNAUTHENTICATED_VIEW_REQUEST));
-
-            mockMvc.perform(get("/api/v1/storage/view/" + UUID.randomUUID())
-                            .param("fileName", "photo.png"))
-                    .andExpect(status().isUnauthorized());
-        }
-
-        @Test
-        void resolvesTheCallerFromAStreamTokenWhenNoHeaderIsPresent() throws Exception {
-            byte[] data = "video bytes".getBytes();
-            given(resolveViewIdentityUseCase.resolve(any())).willReturn(UUID.fromString(USER_ID));
-            given(downloadFileUseCase.download(any())).willReturn(data);
-
+        @DisplayName("스트림 토큰 파라미터는 더 이상 없다 — 신원은 게이트웨이가 넣은 X_USER_ID뿐")
+        void requiresTheGatewayResolvedUser() throws Exception {
             mockMvc.perform(get("/api/v1/storage/view/" + UUID.randomUUID())
                             .param("fileName", "clip.mp4")
                             .param("streamToken", "tok-1"))
-                    .andExpect(status().isOk())
-                    .andExpect(result -> assertThat(result.getResponse().getContentAsByteArray())
-                            .isEqualTo(data));
+                    .andExpect(status().isBadRequest());
         }
 
         @Test
         void returnsPartialContentForARangeRequest() throws Exception {
             byte[] data = "0123456789".getBytes();
-            given(resolveViewIdentityUseCase.resolve(any())).willReturn(UUID.fromString(USER_ID));
             given(downloadFileUseCase.download(any())).willReturn(data);
 
             mockMvc.perform(get("/api/v1/storage/view/" + UUID.randomUUID())
@@ -400,7 +374,6 @@ class StorageControllerTest {
         @Test
         void returnsTheFullBodyForAMultiRangeRequestInsteadOfSilentlyDroppingRanges() throws Exception {
             byte[] data = "0123456789".getBytes();
-            given(resolveViewIdentityUseCase.resolve(any())).willReturn(UUID.fromString(USER_ID));
             given(downloadFileUseCase.download(any())).willReturn(data);
 
             mockMvc.perform(get("/api/v1/storage/view/" + UUID.randomUUID())
@@ -410,22 +383,6 @@ class StorageControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(result -> assertThat(result.getResponse().getContentAsByteArray())
                             .isEqualTo(data));
-        }
-    }
-
-    @Nested
-    @DisplayName("POST /api/v1/storage/stream-token")
-    class IssueStreamToken {
-
-        @Test
-        void returnsTheIssuedToken() throws Exception {
-            given(issueStreamTokenUseCase.issue(any())).willReturn("tok-1");
-
-            mockMvc.perform(post("/api/v1/storage/stream-token")
-                            .header("X_USER_ID", USER_ID)
-                            .param("fileId", UUID.randomUUID().toString()))
-                    .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.data.streamToken").value("tok-1"));
         }
     }
 

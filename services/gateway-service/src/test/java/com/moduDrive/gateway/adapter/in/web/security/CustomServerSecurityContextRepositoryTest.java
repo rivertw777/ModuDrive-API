@@ -1,18 +1,19 @@
 package com.moduDrive.gateway.adapter.in.web.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.moduDrive.common.api.dto.auth.ValidateTokenRequest;
-import com.moduDrive.common.api.dto.auth.ValidateTokenResponse;
+import com.moduDrive.common.api.dto.auth.ValidateSessionRequest;
+import com.moduDrive.common.api.dto.auth.ValidateSessionResponse;
 import com.moduDrive.common.core.web.ApiResponse;
 import com.moduDrive.gateway.adapter.out.client.auth.AuthClient;
 import com.moduDrive.gateway.exception.AuthExceptionCase;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpCookie;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
@@ -28,23 +29,36 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
 
 @ExtendWith(MockitoExtension.class)
 class CustomServerSecurityContextRepositoryTest {
+
+    private static final String COOKIE_NAME = "__Host-session";
 
     @Mock
     private AuthClient authClient;
     @Mock
     private ObjectMapper objectMapper;
-    @InjectMocks
+
     private CustomServerSecurityContextRepository repository;
 
+    @BeforeEach
+    void setUp() {
+        repository = new CustomServerSecurityContextRepository(authClient, objectMapper, true);
+    }
+
+    private static MockServerWebExchange withSessionCookie(String value) {
+        return MockServerWebExchange.from(
+                MockServerHttpRequest.get("/api/secured").cookie(new HttpCookie(COOKIE_NAME, value)).build());
+    }
+
     @Nested
-    @DisplayName("Authorization 헤더가 없을 때")
-    class WhenAuthorizationHeaderIsMissing {
+    @DisplayName("세션 쿠키가 없을 때")
+    class WhenSessionCookieIsMissing {
 
         @Test
-        void returnsEmptyAndSetsNoAuthTokenAttribute() {
+        void returnsEmptyAndSetsNoSessionAttribute() {
             MockServerWebExchange exchange = MockServerWebExchange.from(
                     MockServerHttpRequest.get("/api/secured").build());
 
@@ -52,45 +66,37 @@ class CustomServerSecurityContextRepositoryTest {
                     .verifyComplete();
 
             assertThat(exchange.getAttributes().get(AuthErrorAttributeUtils.MESSAGE_ATTRIBUTE))
-                    .isEqualTo(AuthExceptionCase.NO_AUTH_TOKEN.getMessage());
+                    .isEqualTo(AuthExceptionCase.NO_SESSION.getMessage());
+            then(authClient).shouldHaveNoInteractions();
         }
-    }
-
-    @Nested
-    @DisplayName("Bearer 형식이 아닌 Authorization 헤더일 때")
-    class WhenAuthorizationHeaderIsNotBearerFormat {
 
         @Test
-        void returnsEmptyAndSetsNoAuthTokenAttribute() {
+        @DisplayName("Bearer 헤더나 접두어 없는 이름의 쿠키는 인증에 쓰지 않는다")
+        void ignoresBearerHeaderAndUnprefixedCookie() {
             MockServerWebExchange exchange = MockServerWebExchange.from(
                     MockServerHttpRequest.get("/api/secured")
-                            .header(HttpHeaders.AUTHORIZATION, "Basic dXNlcjpwYXNz")
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer some-jwt")
+                            .cookie(new HttpCookie("session", "planted"))
                             .build());
 
             StepVerifier.create(repository.load(exchange))
                     .verifyComplete();
 
-            assertThat(exchange.getAttributes().get(AuthErrorAttributeUtils.MESSAGE_ATTRIBUTE))
-                    .isEqualTo(AuthExceptionCase.NO_AUTH_TOKEN.getMessage());
+            then(authClient).shouldHaveNoInteractions();
         }
     }
 
     @Nested
-    @DisplayName("유효한 Bearer 토큰일 때")
-    class WhenTokenIsValid {
+    @DisplayName("살아 있는 세션 쿠키일 때")
+    class WhenSessionIsValid {
 
         @Test
         void returnsSecurityContextWithAllRolesAsIndividualAuthorities() {
-            ValidateTokenResponse tokenResponse = new ValidateTokenResponse("member-id", List.of("MEMBER", "ADMIN"));
-            given(authClient.validateToken(any(ValidateTokenRequest.class)))
-                    .willReturn(Mono.just(ApiResponse.success(tokenResponse)));
+            given(authClient.validateSession(new ValidateSessionRequest("session-id", true)))
+                    .willReturn(Mono.just(ApiResponse.success(
+                            new ValidateSessionResponse("member-id", List.of("MEMBER", "ADMIN")))));
 
-            MockServerWebExchange exchange = MockServerWebExchange.from(
-                    MockServerHttpRequest.get("/api/secured")
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer valid-token")
-                            .build());
-
-            StepVerifier.create(repository.load(exchange))
+            StepVerifier.create(repository.load(withSessionCookie("session-id")))
                     .assertNext(ctx -> {
                         assertThat(ctx).isInstanceOf(SecurityContext.class);
                         assertThat(ctx.getAuthentication().getPrincipal()).isEqualTo("member-id");
@@ -102,41 +108,45 @@ class CustomServerSecurityContextRepositoryTest {
         }
 
         @Test
-        void returnsEmptyWhenTokenResponseDataIsNull() {
-            given(authClient.validateToken(any(ValidateTokenRequest.class)))
-                    .willReturn(Mono.just(ApiResponse.success()));
-
+        @DisplayName("X-Background-Request 요청은 touch=false로 확인한다")
+        void backgroundRequestDoesNotTouchTheSession() {
+            given(authClient.validateSession(new ValidateSessionRequest("session-id", false)))
+                    .willReturn(Mono.just(ApiResponse.success(
+                            new ValidateSessionResponse("member-id", List.of("MEMBER")))));
             MockServerWebExchange exchange = MockServerWebExchange.from(
-                    MockServerHttpRequest.get("/api/secured")
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer token-with-null-data")
+                    MockServerHttpRequest.get("/api/v1/notifications/unread-count")
+                            .header(CustomServerSecurityContextRepository.BACKGROUND_REQUEST_HEADER, "true")
+                            .cookie(new HttpCookie(COOKIE_NAME, "session-id"))
                             .build());
 
             StepVerifier.create(repository.load(exchange))
+                    .expectNextCount(1)
+                    .verifyComplete();
+        }
+
+        @Test
+        void returnsEmptyWhenResponseDataIsNull() {
+            given(authClient.validateSession(any(ValidateSessionRequest.class)))
+                    .willReturn(Mono.just(ApiResponse.success()));
+
+            StepVerifier.create(repository.load(withSessionCookie("session-with-null-data")))
                     .verifyComplete();
         }
     }
 
     @Nested
-    @DisplayName("토큰 검증 서비스가 WebClientResponseException을 던질 때")
+    @DisplayName("세션 확인이 WebClientResponseException을 던질 때")
     class WhenWebClientResponseExceptionOccurs {
 
         @Test
         void returnsEmptyAndSetsErrorAttributeFromResponseBody() throws Exception {
-            String errorBody = "{\"status\":\"UNAUTHORIZED\",\"message\":\"유효하지 않은 토큰입니다.\"}";
+            String errorBody = "{\"status\":\"UNAUTHORIZED\",\"message\":\"로그인이 필요합니다.\"}";
             WebClientResponseException ex = WebClientResponseException.create(
                     HttpStatus.UNAUTHORIZED.value(), "Unauthorized", null,
                     errorBody.getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8);
-
-            given(authClient.validateToken(any(ValidateTokenRequest.class)))
-                    .willReturn(Mono.error(ex));
-
-            ObjectMapper realMapper = new ObjectMapper();
-            given(objectMapper.readTree(errorBody)).willReturn(realMapper.readTree(errorBody));
-
-            MockServerWebExchange exchange = MockServerWebExchange.from(
-                    MockServerHttpRequest.get("/api/secured")
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer expired-token")
-                            .build());
+            given(authClient.validateSession(any(ValidateSessionRequest.class))).willReturn(Mono.error(ex));
+            given(objectMapper.readTree(errorBody)).willReturn(new ObjectMapper().readTree(errorBody));
+            MockServerWebExchange exchange = withSessionCookie("expired-session");
 
             StepVerifier.create(repository.load(exchange))
                     .verifyComplete();
@@ -152,15 +162,10 @@ class CustomServerSecurityContextRepositoryTest {
 
         @Test
         void returnsEmpty() {
-            given(authClient.validateToken(any(ValidateTokenRequest.class)))
+            given(authClient.validateSession(any(ValidateSessionRequest.class)))
                     .willReturn(Mono.error(new RuntimeException("connection refused")));
 
-            MockServerWebExchange exchange = MockServerWebExchange.from(
-                    MockServerHttpRequest.get("/api/secured")
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer some-token")
-                            .build());
-
-            StepVerifier.create(repository.load(exchange))
+            StepVerifier.create(repository.load(withSessionCookie("some-session")))
                     .verifyComplete();
         }
     }

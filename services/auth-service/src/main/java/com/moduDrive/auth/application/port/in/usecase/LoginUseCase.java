@@ -1,8 +1,8 @@
 package com.moduDrive.auth.application.port.in.usecase;
 
 import com.moduDrive.auth.application.port.in.command.LoginCommand;
-import com.moduDrive.auth.domain.model.TokenPair;
+import com.moduDrive.auth.domain.vo.SessionId;
 
 public interface LoginUseCase {
-    TokenPair login(LoginCommand loginCommand);
+    SessionId login(LoginCommand loginCommand);
 }

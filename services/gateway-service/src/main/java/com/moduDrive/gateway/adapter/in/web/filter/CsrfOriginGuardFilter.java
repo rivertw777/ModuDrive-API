@@ -1,33 +1,36 @@
 package com.moduDrive.gateway.adapter.in.web.filter;
 
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.cloud.gateway.filter.GatewayFilterChain;
-import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
+import org.springframework.web.server.WebFilter;
+import org.springframework.web.server.WebFilterChain;
 import reactor.core.publisher.Mono;
 
 import java.util.Set;
 
 /**
- * /logout and /reissue are permitAll (see SecurityConfig) and authenticate purely off the
- * refresh_token cookie with CSRF disabled globally. The cookie is SameSite=Strict
- * (RefreshTokenCookieFactory), so browsers already keep it off cross-site requests; this filter is
- * the second line, so a cross-site auto-submitting form still can't POST to either if that
- * attribute is ever loosened or ignored. Requiring a custom header would need every
- * caller (including the SPA) to send one; checking Origin/Referer against the configured
- * clientUrl instead needs no client-side change — browsers attach Origin to state-changing
- * requests themselves, and don't let a page spoof it (#205).
+ * Every request is authenticated by the session cookie, which the browser attaches on its own —
+ * so every state-changing request is a CSRF target, login included (logging a victim into the
+ * attacker's account). SameSite=Strict is the first line; this is the second, in case that
+ * attribute is ever loosened or ignored. Browsers set Origin on state-changing requests themselves
+ * and don't let a page spoof it, so the SPA needs no CSRF token (#205, spec 004 3장).
+ *
+ * <p>A {@link WebFilter} ordered ahead of Spring Security, so a forged request is refused before
+ * its cookie is ever looked up — it can't even refresh the session's idle timeout.
  */
 @Component
-class CsrfOriginGuardFilter implements GlobalFilter, Ordered {
+@Order(Ordered.HIGHEST_PRECEDENCE)
+class CsrfOriginGuardFilter implements WebFilter {
 
-    private static final Set<String> PROTECTED_PATHS = Set.of("/api/v1/auth/logout", "/api/v1/auth/reissue");
+    private static final Set<HttpMethod> STATE_CHANGING_METHODS =
+            Set.of(HttpMethod.POST, HttpMethod.PUT, HttpMethod.PATCH, HttpMethod.DELETE);
 
     private final String clientUrl;
 
@@ -36,11 +39,9 @@ class CsrfOriginGuardFilter implements GlobalFilter, Ordered {
     }
 
     @Override
-    public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+    public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
         ServerHttpRequest request = exchange.getRequest();
-        boolean isProtected = request.getMethod() == HttpMethod.POST
-                && PROTECTED_PATHS.contains(request.getPath().value());
-        if (isProtected && !isFromAllowedOrigin(request)) {
+        if (STATE_CHANGING_METHODS.contains(request.getMethod()) && !isFromAllowedOrigin(request)) {
             exchange.getResponse().setStatusCode(HttpStatus.FORBIDDEN);
             return exchange.getResponse().setComplete();
         }
@@ -52,15 +53,10 @@ class CsrfOriginGuardFilter implements GlobalFilter, Ordered {
         if (origin != null) {
             return origin.equals(clientUrl);
         }
-        // Origin can be legitimately absent on some older/non-browser clients — Referer is a
-        // fallback the request itself can't fabricate either, not a weaker substitute chosen for
-        // convenience.
+        // Origin can be legitimately absent on some older clients — Referer is a fallback the
+        // request itself can't fabricate either. Match on a path boundary so
+        // https://app.example.com.attacker.example doesn't pass as https://app.example.com.
         String referer = request.getHeaders().getFirst(HttpHeaders.REFERER);
-        return referer != null && referer.startsWith(clientUrl);
-    }
-
-    @Override
-    public int getOrder() {
-        return Ordered.HIGHEST_PRECEDENCE + 1;
+        return referer != null && (referer.equals(clientUrl) || referer.startsWith(clientUrl + "/"));
     }
 }
