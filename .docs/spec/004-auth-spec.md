@@ -59,7 +59,7 @@
 | claim | access | refresh |
 |---|---|---|
 | `sub` | memberId | memberId |
-| `jti` | 무작위 UUID (블랙리스트 키) | 무작위 UUID (회전 CAS 키) |
+| `jti` | 무작위 UUID (서버에서 쓰지 않음) | 무작위 UUID (회전 CAS 키) |
 | `fid` | family id | family id |
 | `roles` | `MEMBER` 등, 쉼표 구분 | 같음 |
 | `type` | `access` | `refresh` |
@@ -67,7 +67,6 @@
 
 - **`type` 검사**: 검증 시 기대한 `type`이 아니면 `TOKEN_INVALID`. refresh 토큰을 Bearer로 보내거나 access 토큰으로 재발급을 시도하면 막힌다.
 - **family(`fid`)**: 로그인 1번 = family 1개. 재발급은 같은 family 안에서 토큰만 바꾼다. 로그아웃·재사용 감지는 family 단위로 끊는다.
-- access와 refresh의 `jti`는 **서로 다른 값**이다.
 
 #### 1-1-2. 전달·보관
 
@@ -92,7 +91,6 @@ refresh 쿠키 속성 (`RefreshTokenCookieFactory`):
 | `refresh:{fid}` | 현재 유효한 refresh `jti` | 로그인 시 7일, **회전해도 늘어나지 않음** | 회전 CAS |
 | `prev:{fid}` | 직전에 회전된 `jti` | 10초 | 동시 재발급 유예 (4장) |
 | `revoked:{fid}` | `1` | access 수명(1시간) | family 폐기 표시 — 그 family의 access 토큰도 거부 |
-| `blacklist:{access jti}` | `1` | 그 access 토큰의 남은 수명 | 로그아웃한 access 토큰 거부 |
 
 - 세션의 **절대 수명은 로그인 후 7일**이다. 회전할 때 남은 TTL을 그대로 옮기므로(`PTTL` → `SET PX`) 계속 쓰더라도 7일이 지나면 다시 로그인해야 한다.
 - `revoked:`의 TTL이 1시간인 이유: 폐기 직전에 발급된 access 토큰도 최대 1시간 뒤엔 스스로 만료되므로, 그보다 오래 둘 필요가 없다.
@@ -174,10 +172,10 @@ flowchart TD
 
 auth-service의 `POST /api/v1/auth/validate-token`(게이트웨이 전용)은:
 1. 서명·만료·`type=access` 확인 — 만료 `TOKEN_EXPIRED`, 형식/서명 오류 `TOKEN_INVALID`
-2. `blacklist:{jti}` 있음 **또는** `revoked:{fid}` 있음 → `ACCESS_TOKEN_REVOKED`
+2. `revoked:{fid}` 있음 → `ACCESS_TOKEN_REVOKED`
 3. `{memberId, memberRoles}` 반환
 
-- Redis 조회 2번(블랙리스트, 폐기)이 요청마다 일어난다. 게이트웨이에 캐시는 없다.
+- Redis 조회 1번(`revoked:{fid}`)이 요청마다 일어난다. 게이트웨이에 캐시는 없다.
 - **회원 상태(`isValid`)는 여기서 보지 않는다.** 재발급 때만 본다 (4장). 비활성 처리된 회원도 access 만료(최대 1시간)까지는 통과한다.
 - 에러는 모두 401: `NO_AUTH_TOKEN`(보호 경로에 Bearer 없음), `TOKEN_EXPIRED`, `TOKEN_INVALID`, `ACCESS_TOKEN_REVOKED`. body는 `{status, message}` (`CustomAuthenticationEntryPoint`).
 
@@ -205,7 +203,7 @@ permitAll 경로라도 Bearer가 있으면 검증하고 `X_USER_ID`를 붙인다
 |---|---|
 | auth-service 무응답 | 게이트웨이 WebClient connect/read/write 3초 + `Mono.timeout(3s)` → 인증 실패로 처리 → 보호 경로 **401** (#206). 이전에는 모든 요청이 무한 대기했다 |
 | auth-service 다운 | 위와 같이 401 → WEB이 재발급 시도 → 실패 → **WEB이 로그아웃** (4-1) |
-| Redis 다운 | 블랙리스트·폐기 조회 실패 → 보호 경로 401 |
+| Redis 다운 | 폐기 조회 실패 → 보호 경로 401 |
 
 > ⚠️ 알려진 문제
 > - auth-service·Redis 장애가 **401**로 보인다 — WEB이 세션 만료로 판단해 재발급 → 실패 → 전 사용자 로그아웃. 게이트웨이가 503으로 구분하고, WEB은 503에서 로그아웃하지 않아야 함.
@@ -267,14 +265,13 @@ permitAll 경로라도 Bearer가 있으면 검증하고 `X_USER_ID`를 붙인다
 
 ## 5. 로그아웃
 
-1. `POST /api/v1/auth/logout` (refresh 쿠키 + 있으면 Bearer). 게이트웨이 Origin 검사는 재발급과 같다 — 다른 사이트의 form이 POST해도 403.
+1. `POST /api/v1/auth/logout` (refresh 쿠키만. Bearer는 보내도 쓰지 않는다). 게이트웨이 Origin 검사는 재발급과 같다 — 다른 사이트의 form이 POST해도 403.
 2. refresh 쿠키가 없거나 유효하지 않으면 `TOKEN_INVALID`(401) — 로그아웃 자체가 실패한다.
 3. `refresh:{fid}` 삭제 + `revoked:{fid}` (1시간) → 같은 family의 모든 access 토큰 거부.
-4. Bearer가 있으면 그 access `jti`를 남은 수명만큼 블랙리스트. 이미 만료된 토큰이면 조용히 넘어간다.
-5. 쿠키를 `Max-Age=0`으로 지움.
+4. 쿠키를 `Max-Age=0`으로 지움.
 
 - 로그아웃은 **그 기기(family)만** 끊는다. 다른 기기의 세션은 그대로다.
-- 로그아웃 직후 그 access 토큰으로 호출하면 `ACCESS_TOKEN_REVOKED`. `revoked:{fid}`가 이미 family 전체 access를 막으므로, 블랙리스트는 이중 안전장치다.
+- 로그아웃 직후 그 기기의 access 토큰으로 호출하면 `ACCESS_TOKEN_REVOKED` — `revoked:{fid}`가 family 전체 access를 막는다. `revoked`의 TTL(1시간)이 access 수명 이상이라 토큰 한 장 단위 블랙리스트는 두지 않는다 (#428).
 
 ---
 
