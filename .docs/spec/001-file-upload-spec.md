@@ -59,7 +59,7 @@
 클라이언트                        file-service                 storage-service              S3
    │ ① POST /files/batch     ──▶ 폴더 UPLOADED, 파일 PENDING 생성, fileId 목록 반환
    │ ② 파일마다 바이트 전송 ─────────────────────────────────▶ 블록 분할·압축·암호화 ──▶ put
-   │                              ③ PUT /files/{id}/uploaded ◀── 완료 콜백
+   │                              ③ PUT /internal/files/{id}/uploaded ◀── 완료 콜백
    │                                 file_version 생성, UPLOADED
    │ ◀────────────────────────────────────────────────── ② 응답 (콜백까지 끝난 뒤)
 ```
@@ -236,7 +236,7 @@ data: { "conflicts": ["보고서.pdf", "a.txt"] }
 
 ## 7. 완료 콜백
 
-블록 저장이 끝나면 storage-service가 Feign으로 `PUT /api/v1/files/{fileId}/uploaded`를 호출합니다 (`X_USER_ID` = 업로드한 사용자).
+블록 저장이 끝나면 storage-service가 Feign으로 `PUT /internal/files/{fileId}/uploaded?userId=`를 호출합니다 (`userId` = 업로드한 사용자). 내부 경로라 내부 토큰이 있어야 하고, 게이트웨이는 이 경로를 라우팅하지 않으므로 사용자가 직접 부를 수 없습니다 (#440).
 
 ```json
 { "fileSize": 31457280, "blockCount": 6, "s3Path": "files/{fileId}/{uuid}" }
@@ -348,7 +348,7 @@ file-service는 한 트랜잭션에서 다음을 처리합니다.
 | `POST /api/v1/storage/upload/resumable` | storage | 클라이언트 | 이어 올리기 세션 생성 → `sessionId` |
 | `PUT /api/v1/storage/upload/resumable/{sessionId}?chunkIndex=` | storage | 클라이언트 | 청크 전송 (multipart `chunk`) |
 | `POST /api/v1/storage/upload/resumable/{sessionId}/complete` | storage | 클라이언트 | 청크 조립 → 블록 저장 → 완료 콜백 |
-| `PUT /api/v1/files/{fileId}/uploaded` | file | storage-service | 완료 콜백 — 버전 생성, `UPLOADED` |
+| `PUT /internal/files/{fileId}/uploaded?userId=` | file | storage-service | 완료 콜백 — 버전 생성, `UPLOADED` (내부 토큰) |
 
 ## 12. 시나리오 검증
 

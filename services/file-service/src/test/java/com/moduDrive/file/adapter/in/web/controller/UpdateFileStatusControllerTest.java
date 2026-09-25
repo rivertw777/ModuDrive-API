@@ -55,8 +55,8 @@ class UpdateFileStatusControllerTest {
             given(updateFileStatusUseCase.updateFileStatus(any(UpdateFileStatusCommand.class)))
                     .willReturn(uploadedFile);
 
-            mockMvc.perform(put("/api/v1/files/{fileId}/uploaded", FILE_ID)
-                            .header("X_USER_ID", USER_ID.toString())
+            mockMvc.perform(put("/internal/files/{fileId}/uploaded", FILE_ID)
+                            .param("userId", USER_ID.toString())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(REQUEST_JSON))
                     .andExpect(status().isOk())
@@ -73,8 +73,8 @@ class UpdateFileStatusControllerTest {
             willThrow(new BusinessException(FileExceptionCase.FILE_NOT_FOUND))
                     .given(updateFileStatusUseCase).updateFileStatus(any(UpdateFileStatusCommand.class));
 
-            mockMvc.perform(put("/api/v1/files/{fileId}/uploaded", FILE_ID)
-                            .header("X_USER_ID", USER_ID.toString())
+            mockMvc.perform(put("/internal/files/{fileId}/uploaded", FILE_ID)
+                            .param("userId", USER_ID.toString())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(REQUEST_JSON))
                     .andExpect(status().isNotFound())
@@ -88,8 +88,8 @@ class UpdateFileStatusControllerTest {
 
         @Test
         void returnsBadRequest() throws Exception {
-            mockMvc.perform(put("/api/v1/files/{fileId}/uploaded", FILE_ID)
-                            .header("X_USER_ID", USER_ID.toString())
+            mockMvc.perform(put("/internal/files/{fileId}/uploaded", FILE_ID)
+                            .param("userId", USER_ID.toString())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{}"))
                     .andExpect(status().isBadRequest());
@@ -106,8 +106,8 @@ class UpdateFileStatusControllerTest {
             given(updateFileStatusUseCase.updateFileStatus(any(UpdateFileStatusCommand.class)))
                     .willReturn(uploadedFile);
 
-            mockMvc.perform(put("/api/v1/files/{fileId}/uploaded", FILE_ID)
-                            .header("X_USER_ID", USER_ID.toString())
+            mockMvc.perform(put("/internal/files/{fileId}/uploaded", FILE_ID)
+                            .param("userId", USER_ID.toString())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"fileSize\":0,\"blockCount\":1,\"s3Path\":\"s3://bucket/key\"}"))
                     .andExpect(status().isOk());
@@ -115,8 +115,8 @@ class UpdateFileStatusControllerTest {
 
         @Test
         void rejectsNegativeFileSize() throws Exception {
-            mockMvc.perform(put("/api/v1/files/{fileId}/uploaded", FILE_ID)
-                            .header("X_USER_ID", USER_ID.toString())
+            mockMvc.perform(put("/internal/files/{fileId}/uploaded", FILE_ID)
+                            .param("userId", USER_ID.toString())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"fileSize\":-1,\"blockCount\":1,\"s3Path\":\"s3://bucket/key\"}"))
                     .andExpect(status().isBadRequest());
@@ -129,8 +129,8 @@ class UpdateFileStatusControllerTest {
 
         @Test
         void returnsBadRequest() throws Exception {
-            mockMvc.perform(put("/api/v1/files/{fileId}/uploaded", FILE_ID)
-                            .header("X_USER_ID", USER_ID.toString())
+            mockMvc.perform(put("/internal/files/{fileId}/uploaded", FILE_ID)
+                            .param("userId", USER_ID.toString())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"fileSize\":1024,\"blockCount\":100001,\"s3Path\":\"s3://bucket/key\"}"))
                     .andExpect(status().isBadRequest());

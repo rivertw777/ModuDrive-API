@@ -7,7 +7,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.List;
@@ -15,9 +14,11 @@ import java.util.List;
 @FeignClient(name = "file-service", url = "${clients.file-service.url}")
 interface FileServiceFeignClient {
 
-    @PutMapping("/api/v1/files/{fileId}/uploaded")
+    // Upload-complete callback — internal so only storage-service, not an end user, can report a
+    // file's size and block count (#440).
+    @PutMapping("/internal/files/{fileId}/uploaded")
     void updateFileStatus(@PathVariable String fileId,
-                          @RequestHeader("X_USER_ID") String userId,
+                          @RequestParam String userId,
                           @RequestBody FileUploadCallbackRequest request);
 
     // Internal, service-to-service route (see file-service's GetLatestFileVersionsController) —
