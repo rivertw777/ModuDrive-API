@@ -26,13 +26,13 @@ class RefreshTokenCookieFactoryTest {
                 new RefreshTokenCookieFactory(REFRESH_TOKEN_EXPIRATION, true);
 
         @Test
-        void issuesSecureCookieWithSameSiteNone() {
+        void issuesSecureCookieWithSameSiteStrict() {
             factory.setRefreshToken(response, "refresh-token");
 
             assertThat(setCookieHeader())
                     .contains("refresh_token=refresh-token")
                     .contains("Secure")
-                    .contains("SameSite=None")
+                    .contains("SameSite=Strict")
                     .contains("HttpOnly")
                     .contains("Path=/api/v1/auth")
                     .contains("Max-Age=604800");
@@ -47,12 +47,12 @@ class RefreshTokenCookieFactoryTest {
                 new RefreshTokenCookieFactory(REFRESH_TOKEN_EXPIRATION, false);
 
         @Test
-        void fallsBackToSameSiteLaxWithoutSecureFlag() {
+        void omitsSecureFlagButKeepsSameSiteStrict() {
             factory.setRefreshToken(response, "refresh-token");
 
             assertThat(setCookieHeader())
                     .doesNotContain("Secure")
-                    .contains("SameSite=Lax")
+                    .contains("SameSite=Strict")
                     .contains("HttpOnly");
         }
 
@@ -64,7 +64,7 @@ class RefreshTokenCookieFactoryTest {
                     .contains("refresh_token=")
                     .contains("Max-Age=0")
                     .doesNotContain("Secure")
-                    .contains("SameSite=Lax");
+                    .contains("SameSite=Strict");
         }
     }
 }
