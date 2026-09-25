@@ -7,13 +7,14 @@ import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
 @FeignClient(name = "member-service", url = "${clients.member-service.url}")
 interface MemberClient {
 
-    @GetMapping("/api/v1/member/find-by-email")
+    // Internal routes (#441): the internal-token interceptor attaches the secret on /internal/**.
+    @GetMapping("/internal/v1/member/by-email")
     @CircuitBreaker(name = "memberServiceCircuitBreaker", fallbackMethod = "findMemberByEmailFallback")
     @Retry(name = "memberServiceRetry")
     ApiResponse<MemberResponse> findMemberByEmail(@RequestParam("email") String email);
@@ -22,14 +23,10 @@ interface MemberClient {
         return FeignFallbackUtils.handleFallback(cause);
     }
 
-    // member-service's /find reads its target purely off X_USER_ID with no self/caller check
-    // (see FindMemberController) — reused here service-to-service for id-based lookup instead of
-    // adding a new member-service endpoint (see #156). MemberResponse ignores the extra
-    // isValid field the response body carries.
-    @GetMapping("/api/v1/member/find")
+    @GetMapping("/internal/v1/member/{memberId}")
     @CircuitBreaker(name = "memberServiceCircuitBreaker", fallbackMethod = "findMemberByIdFallback")
     @Retry(name = "memberServiceRetry")
-    ApiResponse<MemberResponse> findMemberById(@RequestHeader("X_USER_ID") String memberId);
+    ApiResponse<MemberResponse> findMemberById(@PathVariable("memberId") String memberId);
 
     default ApiResponse<MemberResponse> findMemberByIdFallback(String memberId, Throwable cause) {
         return FeignFallbackUtils.handleFallback(cause);
