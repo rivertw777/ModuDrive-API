@@ -25,7 +25,6 @@ class SwaggerAggregationConfig {
             "auth-service",
             "file-service",
             "storage-service",
-            "mail-service",
             "notification-service"
     );
 
