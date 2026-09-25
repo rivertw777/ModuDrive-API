@@ -2,11 +2,9 @@ package com.moduDrive.member.application.service;
 
 import com.moduDrive.common.core.annotation.UseCase;
 import com.moduDrive.common.core.exception.BusinessException;
-import com.moduDrive.common.core.transaction.AfterCommit;
 import com.moduDrive.member.application.port.in.command.SignUpMemberCommand;
 import com.moduDrive.member.application.port.in.usecase.SignUpMemberUseCase;
 import com.moduDrive.member.application.port.out.CheckEmailExistsPort;
-import com.moduDrive.member.application.port.out.CreateNamespacePort;
 import com.moduDrive.member.application.port.out.EmailVerificationTokenPort;
 import com.moduDrive.member.application.port.out.EncodePasswordPort;
 import com.moduDrive.member.application.port.out.PublishMemberEventPort;
@@ -32,7 +30,6 @@ class SignUpMemberService implements SignUpMemberUseCase {
     private final CheckEmailExistsPort checkEmailExistsPort;
     private final EmailVerificationTokenPort emailVerificationTokenPort;
     private final PublishMemberEventPort publishMemberEventPort;
-    private final CreateNamespacePort createNamespacePort;
 
     @Transactional
     @Override
@@ -50,12 +47,10 @@ class SignUpMemberService implements SignUpMemberUseCase {
                 new MemberIsValid(true)
         );
         Member savedMember = signUpMemberPort.createMember(member);
-        // Outbox write in this transaction: commits or rolls back with the member row (#350). Lets
-        // file-service claim pending guest shares invited to this email.
+        // Outbox write in this transaction: commits or rolls back with the member row (#350).
+        // file-service consumes it to create the member's namespace and claim pending guest shares
+        // invited to this email — a file-service outage delays both instead of losing them (#424).
         publishMemberEventPort.publishSignedUp(savedMember.getId(), savedMember.getEmail());
-        // The Feign call to file-service waits for the commit, so a signup that rolls back never gets
-        // a namespace and the transaction doesn't hold its connection across an HTTP round trip (#208).
-        AfterCommit.run(() -> createNamespacePort.createNamespace(savedMember.getId()));
     }
 
     private void validateEmailNotDuplicated(MemberEmail memberEmail) {

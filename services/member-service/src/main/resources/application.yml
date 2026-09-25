@@ -15,13 +15,7 @@ modudrive:
   member:
     email-verification-token-expiration: ${MEMBER_EMAIL_VERIFICATION_TOKEN_EXPIRATION:180000}
 
-# Shared service-to-service secret: presented on outbound /internal/** calls to file-service,
-# and verified on this service's own /internal/** (see InternalTokenFilter).
+# Shared service-to-service secret, verified on this service's own /internal/** (see InternalTokenFilter).
 internal:
   service:
     token: ${INTERNAL_SERVICE_TOKEN}
-
-# Fixed service URLs (compose DNS locally, ECS Service Connect on AWS).
-clients:
-  file-service:
-    url: http://file-service:10012

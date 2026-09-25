@@ -10,7 +10,6 @@ import org.springframework.http.HttpStatus;
 public enum FileExceptionCase implements ExceptionCase {
 
     NAMESPACE_NOT_FOUND(HttpStatus.NOT_FOUND, "네임스페이스를 찾을 수 없습니다."),
-    NAMESPACE_ALREADY_EXISTS(HttpStatus.BAD_REQUEST, "이미 존재하는 네임스페이스입니다."),
     ARCHIVE_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "한 번에 압축해 받을 수 있는 양은 파일 10,000개, 20GB까지입니다."),
     FILE_NOT_FOUND(HttpStatus.NOT_FOUND, "파일을 찾을 수 없습니다."),
     FILE_ALREADY_DELETED(HttpStatus.BAD_REQUEST, "이미 삭제된 파일입니다."),
