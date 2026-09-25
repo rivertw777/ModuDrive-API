@@ -11,9 +11,11 @@
 - [1. 구성 요소](#1-구성-요소)
   - [1-1. 세션](#1-1-세션)
 - [2. 로그인](#2-로그인)
-  - [2-1. 장애 시 동작](#2-1-장애-시-동작)
 - [3. 인가](#3-인가)
-  - [3-1. 장애 시 동작](#3-1-장애-시-동작)
+  - [3-1. 검증 과정](#3-1-검증-과정)
+  - [3-2. 세션 쿠키 전달 범위](#3-2-세션-쿠키-전달-범위)
+  - [3-3. CSRF](#3-3-csrf)
+  - [3-4. CORS](#3-4-cors)
 - [4. 로그아웃](#4-로그아웃)
 - [5. WEB 동작](#5-web-동작)
 - [6. 서비스 간 인증](#6-서비스-간-인증)
@@ -50,8 +52,8 @@ auth-service가 로그인 응답에서 `Set-Cookie`로 내려준다 (`SessionCoo
 | 속성 | 값 | 이유 |
 |---|---|---|
 | 이름 | `__Host-session` | `__Host-` 접두어: 브라우저가 `Secure` + `Path=/` + `Domain` 없음일 때만 받아 준다 → 형제 서브도메인이 이 쿠키를 덮어쓰거나 심을 수 없다 |
-| `HttpOnly` | 항상 | JS(XSS 포함)가 읽을 수 없다 |
-| `Secure` | 항상 | HTTPS에서만 전송 |
+| `HttpOnly` | 있음 | JS(XSS 포함)가 읽을 수 없다 |
+| `Secure` | 있음 | HTTPS에서만 전송 |
 | `SameSite` | `Strict` | 다른 사이트에서 시작된 요청에는 실리지 않는다 (CSRF 1차 방어). WEB과 API는 한 사이트(등록 도메인)에서만 서비스한다 |
 | `Path` | `/` | 모든 API에 실린다 |
 | `Domain` | 없음 | API 호스트에만 전송 (host-only) |
@@ -86,7 +88,7 @@ auth-service가 로그인 응답에서 `Set-Cookie`로 내려준다 (`SessionCoo
 
 ## 2. 로그인
 
-이메일·비밀번호를 받아 auth-service가 member-service에 확인을 맡기고, 맞으면 새 세션을 Redis에 만들고 세션 쿠키를 내려준다. 응답 본문에는 자격 증명이 없다.
+이메일·비밀번호를 받아 auth-service가 member-service에 확인을 맡기고, 맞으면 새 세션을 Redis에 만들고 세션 쿠키를 내려준다.
 
 ```mermaid
 sequenceDiagram
@@ -106,27 +108,10 @@ sequenceDiagram
     A->>R: 요청에 기존 세션 쿠키가 있으면 그 세션 삭제
     A->>A: 새 세션 ID 생성 (32바이트 SecureRandom)
     A->>R: HSET session:{해시} memberId·roles·createdAt<br/>+ TTL 30분
-    A-->>G: Set-Cookie __Host-session (본문엔 자격 증명 없음)
+    A-->>G: Set-Cookie __Host-session
     G-->>U: 응답
     U->>U: React Query 캐시 비움 → 로그인 상태로 전환
 ```
-
-1. `POST /api/v1/auth/login {email, password}` — 인증 없음. 게이트웨이 Origin 검사는 받는다 (3장 CSRF) — 다른 사이트가 공격자 계정으로 로그인시키는 것(로그인 CSRF)을 막는다.
-2. auth-service → member-service `POST /internal/v1/member/authenticate` (Feign, `X-Internal-Token`).
-   - member-service가 이메일로 찾고 `BCryptPasswordEncoder.matches`로 확인.
-   - 없는 이메일 → `MEMBER_NOT_FOUND`(400), 비밀번호 틀림 → `PASSWORD_NOT_MATCHED`(400). auth-service는 이 Feign 400을 **그대로 클라이언트에 전달**한다 (`GlobalExceptionHandler`의 FeignException 처리).
-   - `isValid = false`면 auth-service가 `MEMBER_NOT_VALID`(401).
-3. 요청에 세션 쿠키가 이미 있으면 **그 세션을 먼저 지운다.** 같은 브라우저에서 다시 로그인해도 이전 세션이 Redis에 남지 않는다.
-4. 새 세션 ID를 만들고 `session:{해시}`에 memberId·roles·createdAt 저장, TTL 30분.
-5. 응답: `200`, 본문 데이터 없음 + `Set-Cookie: __Host-session=…`.
-
-### 2-1. 장애 시 동작
-
-| 장애 | 결과 |
-|---|---|
-| auth-service 다운 | 게이트웨이 라우트 서킷브레이커 → fallback 503 |
-| member-service 다운 | Feign connect 3초 / read 5초, 연결 실패·503은 500ms 간격 최대 3번 재시도 → 서킷브레이커(10건 중 50% 실패 시 10초 open) → `SERVICE_UNAVAILABLE` / `SERVICE_IS_OPEN` 503 |
-| Redis 다운 | 세션 저장 실패 → 로그인 불가 (500) |
 
 > ⚠️ 알려진 문제
 > - 로그인 실패 메시지가 "회원 정보를 찾을 수 없습니다" / "비밀번호가 일치하지 않습니다"로 **구분됨** — 가입 여부를 확인할 수 있다 (계정 열거). 같은 메시지·코드로 통일해야 함.
@@ -136,81 +121,74 @@ sequenceDiagram
 
 ## 3. 인가
 
-### 검증 과정
+### 3-1. 검증 과정
 
-게이트웨이 `CustomServerSecurityContextRepository.load`가 **모든 요청**마다 돈다.
+게이트웨이가 요청마다 세션 쿠키를 auth-service에 물어 확인하고, 통과하면 회원 정보를 헤더로 붙여 내부 서비스로 넘긴다.
 
 ```mermaid
-flowchart TD
-    R["요청"] --> H{"세션 쿠키?"}
-    H -- 없음 --> AN["익명 (NO_SESSION 표시)"]
-    H -- 있음 --> V["auth-service 세션 확인<br/>POST /internal/v1/auth/sessions/validate<br/>(WebClient, X-Internal-Token, 3초 타임아웃)<br/>touch = X-Background-Request 없을 때만"]
-    V -- 성공 --> OK["SecurityContext 생성<br/>principal = memberId, 권한 = roles"]
-    V -- "4xx 응답" --> E1["auth-service의 status/message를 그대로 표시"]
-    V -- "타임아웃·연결 실패 등" --> E2["UNAUTHORIZED 표시"]
-    AN & E1 & E2 --> P{"permitAll 경로?"}
-    P -- 예 --> PASS["익명으로 통과"]
-    P -- 아니오 --> D["401 {status, message}"]
-    OK --> U["UserContextFilter: X_USER_ID, X_USER_ROLE 주입"]
+sequenceDiagram
+    actor U as 사용자 (WEB)
+    participant G as gateway-service
+    participant A as auth-service
+    participant S as 내부 서비스
+
+    U->>G: 요청 (세션 쿠키)
+    G->>G: 경로 확인 (permitAll?)
+    alt 보호 경로
+        G->>A: 세션 확인
+        alt 유효
+            A-->>G: memberId, roles
+            G->>S: X_USER_ID·X_USER_ROLE 붙여 전달
+        else 없음·만료
+            A-->>G: 401
+            G-->>U: 401
+        end
+    else permitAll 경로
+        opt 세션 쿠키가 있으면
+            G->>A: 세션 확인
+            A-->>G: 유효하면 memberId, roles
+        end
+        G->>S: 유효하면 X_USER_ID·X_USER_ROLE 붙여, 아니면 익명으로 전달
+    end
 ```
 
-auth-service의 세션 확인 `POST /internal/v1/auth/sessions/validate` `{sessionId, touch}` (게이트웨이 전용, 내부 토큰 필요):
-1. `SHA-256(sessionId)`로 `session:` 키를 찾는다.
-2. `touch-session.lua`:
-   - 키 없음 → 만료·로그아웃·위조 구분 없이 `SESSION_NOT_FOUND`(401)
-   - `createdAt + 12시간`이 지남 → 키 삭제 + `SESSION_NOT_FOUND`
-   - `touch=true`면 TTL을 `min(30분, 절대 만료까지 남은 시간)`으로 다시 건다
-3. `{memberId, memberRoles}` 반환.
+**게이트웨이** (`CustomServerSecurityContextRepository`, `UserContextFilter`)
+- 쿠키 없음 → auth-service에 묻지 않고 `NO_SESSION`.
+- 쿠키 있음 → `POST /internal/v1/auth/sessions/validate` `{sessionId, touch}` (3초 타임아웃). `X-Background-Request` 헤더가 있으면 `touch=false`.
+- 성공 → `X_USER_ID` / `X_USER_ROLE` 헤더를 붙인다.
+- 실패 → 보호 경로는 401 `{status, message}`, permitAll 경로는 익명으로 통과. 타임아웃·연결 실패도 401(`UNAUTHORIZED`).
 
-- 세션 ID는 URL이 아니라 **본문**으로 보낸다 — 접근 로그에 남지 않게.
-- 요청마다 게이트웨이 → auth-service HTTP 1번 + Redis 1번 (스크립트 1회). 게이트웨이에 캐시는 없다 — 로그아웃이 다음 요청부터 즉시 반영되게 하기 위함.
-- 에러는 모두 401: `NO_SESSION`(보호 경로에 세션 쿠키 없음), `SESSION_NOT_FOUND`. body는 `{status, message}` (`CustomAuthenticationEntryPoint`).
-- `Authorization` 헤더는 보지 않는다. 보내도 무시된다.
+**auth-service** (`touch-session.lua`)
+1. `session:{SHA-256(sessionId)}`를 찾는다. 없으면 `SESSION_NOT_FOUND`(401).
+2. 로그인 후 12시간이 지났으면 키를 지우고 `SESSION_NOT_FOUND`.
+3. `touch=true`면 TTL을 `min(30분, 절대 만료까지 남은 시간)`으로 다시 건다.
+4. `{memberId, memberRoles}`를 돌려준다.
 
-### 세션 쿠키 전달 범위
+**설계 메모**
+- 세션 ID는 URL이 아니라 본문으로 보낸다 — 접근 로그에 남지 않게.
+- 게이트웨이에 캐시가 없다 — 로그아웃이 다음 요청부터 바로 반영되게.
 
-- 게이트웨이는 `/api/v1/auth/**`(auth-service) 밖으로 라우팅하는 요청에서 **세션 쿠키를 지운다.** 내부 서비스는 신원을 `X_USER_ID`로만 받으므로 쿠키가 필요 없고, 받지 않으면 내부 서비스 로그·버그로 새어 나갈 일도 없다.
+### 3-2. 세션 쿠키 전달 범위
 
-### 인증 없이 통과하는 경로 (`SecurityConfig`)
+- 게이트웨이는 auth-service(`/api/v1/auth/**`) 밖으로 가는 요청에서 세션 쿠키를 지운다. 내부 서비스는 신원을 `X_USER_ID`로만 받는다.
 
-| 경로 | 이유 |
+### 3-3. CSRF
+
+두 겹으로 막는다.
+
+| 방어 | 동작 |
 |---|---|
-| `/api/v1/member/sign-up` (+ 가입 전 이메일 인증 API) | 가입 전 |
-| `POST /api/v1/auth/login`, `POST /api/v1/auth/logout` | 로그인 전 / 세션이 이미 끝났어도 쿠키를 지울 수 있게 |
-| `GET /api/v1/files/public/**`, `GET /api/v1/storage/public/**`, `POST /api/v1/storage/public/archive` | 링크 공유 익명 열람 ([003 공유](003-file-sharing-spec.md)) |
-| Swagger (`/webjars/swagger-ui/**`, `/v3/api-docs/**`) | 문서 |
-| `/actuator/**` | 관리 포트(9464)에만 있고 호스트에 안 열림 — 네트워크 격리가 방어선 |
+| `SameSite=Strict` ([1-1-2](#1-1-2-세션-쿠키)) | 다른 사이트에서 시작된 요청에는 세션 쿠키가 실리지 않는다 |
+| `CsrfOriginGuardFilter` | `POST` / `PUT` / `PATCH` / `DELETE`는 `Origin`(없으면 `Referer`)이 `CLIENT_URL`이어야 한다. 아니면 403. 세션 확인보다 먼저 돈다 |
 
-- permitAll 경로라도 세션 쿠키가 있으면 확인하고 `X_USER_ID`를 붙인다 (로그인한 사용자가 공개 링크를 열 때 등).
-- `GET /api/v1/storage/view/**`는 **더 이상 permitAll이 아니다.** `<video>`/`<audio>`의 직접 요청에도 세션 쿠키가 자동으로 실리므로 다른 경로와 똑같이 인증한다 ([002 다운로드 6장](002-file-download-spec.md#6-미리보기-인라인-보기)).
-- `/internal/**`은 라우팅하지 않는다 ([6장](#6-서비스-간-인증)).
+- 브라우저가 붙이는 `Origin`은 페이지가 바꿀 수 없어서 CSRF 토큰은 필요 없다.
+- GET으로 상태를 바꾸는 API를 만들지 않는다.
+- curl처럼 `Origin`·`Referer`가 없는 변경 요청도 403이다.
 
-### CSRF
+### 3-4. CORS
 
-모든 인증이 쿠키로 이뤄지므로, 쿠키가 자동으로 실리는 **모든 변경 요청**을 막아야 한다. 두 겹으로 막는다.
-
-1. **`SameSite=Strict`** ([1-1-2](#1-1-2-세션-쿠키)): 브라우저가 다른 사이트에서 시작된 요청에 세션 쿠키를 싣지 않는다.
-2. **게이트웨이 `CsrfOriginGuardFilter`**: 메서드가 `POST` / `PUT` / `PATCH` / `DELETE`이면 **경로와 상관없이**
-   - `Origin`이 `CLIENT_URL`과 정확히 같아야 한다.
-   - `Origin`이 없으면 `Referer`가 `CLIENT_URL + "/"`로 시작하거나 `CLIENT_URL`과 같아야 한다.
-   - 아니면 **403** (본문 없음). 세션 확인보다 먼저 돈다.
-
-- 브라우저는 변경 요청에 `Origin`을 스스로 붙이고, 페이지가 이를 바꿀 수 없다. 그래서 WEB은 따로 CSRF 토큰을 보낼 필요가 없다.
-- `GET` / `HEAD` / `OPTIONS`는 상태를 바꾸지 않는다는 전제다. **GET으로 상태를 바꾸는 API를 만들지 않는다.**
-- 결과적으로 `Origin`·`Referer`가 없는 도구(curl 등)에서 보내는 변경 요청도 403이다.
-
-### CORS
-
-- 허용 Origin은 `CLIENT_URL` 하나, `allowCredentials=true` (세션 쿠키 때문).
-- 메서드: GET, POST, PUT, PATCH, DELETE, OPTIONS. 헤더: 전부.
-
-### 3-1. 장애 시 동작
-
-| 장애 | 결과 |
-|---|---|
-| auth-service 무응답 | 게이트웨이 WebClient connect/read/write 3초 + `Mono.timeout(3s)` → 인증 실패로 처리 → 보호 경로 **401** (#206) |
-| auth-service 다운 | 위와 같이 401 → WEB이 로그인 화면으로 보냄 |
-| Redis 다운 | 세션 조회 실패 → 보호 경로 401 |
+- 허용 Origin: `CLIENT_URL` 하나, `allowCredentials=true`.
+- 메서드: `GET` / `POST` / `PUT` / `PATCH` / `DELETE` / `OPTIONS`, 헤더: 전부.
 
 > ⚠️ 알려진 문제
 > - auth-service·Redis 장애가 **401**로 보인다 — WEB이 세션 만료로 판단해 전 사용자를 로그인 화면으로 보낸다. 세션 자체는 Redis에 남아 있으므로 복구 후 다시 로그인할 필요는 없지만, 게이트웨이가 503으로 구분하고 WEB은 503에서 로그인 화면으로 보내지 않아야 함.
