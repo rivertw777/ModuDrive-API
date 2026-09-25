@@ -20,7 +20,7 @@ import java.util.Set;
  * so every state-changing request is a CSRF target, login included (logging a victim into the
  * attacker's account). SameSite=Strict is the first line; this is the second, in case that
  * attribute is ever loosened or ignored. Browsers set Origin on state-changing requests themselves
- * and don't let a page spoof it, so the SPA needs no CSRF token (#205, spec 004 3장).
+ * and don't let a page spoof it, so the SPA needs no CSRF token (#205).
  *
  * <p>A {@link WebFilter} ordered ahead of Spring Security, so a forged request is refused before
  * its cookie is ever looked up — it can't even refresh the session's idle timeout.

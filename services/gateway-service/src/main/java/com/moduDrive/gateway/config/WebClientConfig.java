@@ -19,7 +19,7 @@ class WebClientConfig {
     @Bean
     WebClient authWebClient(WebClient.Builder builder, @Value("${clients.auth-service.url}") String authServiceUrl) {
         // Only the routed circuitBreaker filter had a TimeLimiter (15s) — this WebClient backs
-        // CustomServerSecurityContextRepository, which sits in front of every authenticated
+        // SessionAuthenticationManager, which sits in front of every authenticated
         // request. With no client-level timeout, auth-service accepting a connection but never
         // responding (GC pause, Redis stall) hung every gateway request indefinitely; the circuit
         // breaker never saw a failure to open on (#206).

@@ -244,7 +244,7 @@ class MemberClientAdapter implements AuthenticateMemberPort {
 
 For calls made via `WebClient` (e.g. gateway → auth-service), the calling
 class plays the same translation role directly — see
-`gateway-service`'s `AuthClient` + `CustomServerSecurityContextRepository`.
+`gateway-service`'s `AuthClient` + `SessionAuthenticationManager`.
 
 ## Configuration classes
 

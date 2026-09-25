@@ -6,11 +6,16 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.security.authentication.ReactiveAuthenticationManager;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
+import org.springframework.security.config.web.server.SecurityWebFiltersOrder;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.web.server.SecurityWebFilterChain;
 import org.springframework.security.web.server.ServerAuthenticationEntryPoint;
-import org.springframework.security.web.server.context.ServerSecurityContextRepository;
+import org.springframework.security.web.server.authentication.AuthenticationWebFilter;
+import org.springframework.security.web.server.authentication.ServerAuthenticationConverter;
+import org.springframework.security.web.server.authentication.ServerAuthenticationFailureHandler;
+import org.springframework.security.web.server.context.NoOpServerSecurityContextRepository;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.reactive.CorsConfigurationSource;
 import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
@@ -20,7 +25,9 @@ import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
 @Configuration
 class SecurityConfig {
 
-    private final ServerSecurityContextRepository securityContextRepository;
+    private final ServerAuthenticationConverter sessionAuthenticationConverter;
+    private final ReactiveAuthenticationManager sessionAuthenticationManager;
+    private final ServerAuthenticationFailureHandler sessionAuthenticationFailureHandler;
     private final ServerAuthenticationEntryPoint authenticationEntryPoint;
 
     @Value("${client.url}")
@@ -46,11 +53,21 @@ class SecurityConfig {
                         .pathMatchers("/actuator/**").permitAll()
                         .anyExchange().authenticated()
                 )
-                .securityContextRepository(securityContextRepository)
+                // Nothing to store between requests: the session lives in auth-service, checked once per
+                // request by the filter below.
+                .securityContextRepository(NoOpServerSecurityContextRepository.getInstance())
+                .addFilterAt(sessionAuthenticationFilter(), SecurityWebFiltersOrder.AUTHENTICATION)
                 .exceptionHandling(exceptionHandling ->
                         exceptionHandling.authenticationEntryPoint(authenticationEntryPoint)
                 )
                 .build();
+    }
+
+    private AuthenticationWebFilter sessionAuthenticationFilter() {
+        AuthenticationWebFilter filter = new AuthenticationWebFilter(sessionAuthenticationManager);
+        filter.setServerAuthenticationConverter(sessionAuthenticationConverter);
+        filter.setAuthenticationFailureHandler(sessionAuthenticationFailureHandler);
+        return filter;
     }
 
     private CorsConfigurationSource corsConfigurationSource() {

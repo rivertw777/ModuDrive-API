@@ -11,14 +11,11 @@
 - [1. 구성 요소](#1-구성-요소)
   - [1-1. 세션](#1-1-세션)
 - [2. 로그인](#2-로그인)
-- [3. 인가](#3-인가)
+- [3. 요청 검증](#3-요청-검증)
   - [3-1. 검증 과정](#3-1-검증-과정)
-  - [3-2. 세션 쿠키 전달 범위](#3-2-세션-쿠키-전달-범위)
-  - [3-3. CSRF](#3-3-csrf)
-  - [3-4. CORS](#3-4-cors)
 - [4. 로그아웃](#4-로그아웃)
-- [5. WEB 동작](#5-web-동작)
-- [6. 서비스 간 인증](#6-서비스-간-인증)
+- [5. 서비스 간 인증](#5-서비스-간-인증)
+- [6. WEB 동작](#6-web-동작)
 - [7. 위협별 방어 요약](#7-위협별-방어-요약)
 
 ---
@@ -82,7 +79,7 @@ auth-service가 로그인 응답에서 `Set-Cookie`로 내려준다 (`SessionCoo
   - WEB이 이런 요청에 `X-Background-Request: true` 헤더를 붙인다.
   - 게이트웨이는 이 헤더가 있으면 세션 확인을 `touch=false`로 요청한다 → 확인만 하고 TTL은 그대로.
   - 클라이언트가 조작할 수 있는 헤더지만, 할 수 있는 일은 **자기 세션을 연장하지 않는 것**뿐이라 신뢰해도 안전하다.
-- 탭을 연 채 자리를 비우면 30분 뒤 다음 요청이 401이 되고 WEB은 로그인 화면으로 간다 ([5장](#5-web-동작)).
+- 탭을 연 채 자리를 비우면 30분 뒤 다음 요청이 401이 되고 WEB은 로그인 화면으로 간다 ([6장](#6-web-동작)).
 
 ---
 
@@ -100,8 +97,8 @@ sequenceDiagram
     participant R as Redis
 
     U->>G: POST /api/v1/auth/login {email, password}
-    Note over G: Origin 검사 (CSRF)<br/>인증 없이 통과하는 경로
-    G->>A: 전달 (세션 쿠키 포함)
+    Note over G: 로그인 경로는 인증 없이 통과
+    G->>A: 전달 (이전 세션 쿠키가 있으면 함께)
     A->>M: POST /internal/v1/member/authenticate<br/>(Feign, X-Internal-Token)
     M->>M: 이메일로 조회 + BCrypt matches
     M-->>A: 회원 정보 (memberId, roles, isValid)
@@ -113,13 +110,19 @@ sequenceDiagram
     U->>U: React Query 캐시 비움 → 로그인 상태로 전환
 ```
 
+1. **요청** — 사용자가 이메일·비밀번호를 보낸다. 로그인 경로라 세션이 없어도 게이트웨이가 auth-service로 넘긴다.
+2. **비밀번호 확인** — auth-service가 member-service에 이메일·비밀번호 확인을 맡긴다. 없는 이메일·틀린 비밀번호는 400, 비활성 회원은 401.
+3. **이전 세션 정리** — 같은 브라우저에 이전 세션 쿠키가 남아 있으면 그 세션을 먼저 지운다. 다시 로그인해도 옛 세션이 Redis에 쌓이지 않게.
+4. **새 세션 발급** — 무작위 세션 ID를 만들어 Redis에 회원 ID·권한·로그인 시각을 저장하고(30분), 세션 ID를 쿠키로 내려준다.
+5. **WEB** — 이전 사용자의 화면 데이터(캐시)를 비우고 로그인 상태로 바꾼다.
+
 > ⚠️ 알려진 문제
 > - 로그인 실패 메시지가 "회원 정보를 찾을 수 없습니다" / "비밀번호가 일치하지 않습니다"로 **구분됨** — 가입 여부를 확인할 수 있다 (계정 열거). 같은 메시지·코드로 통일해야 함.
 > - 로그인에 **속도 제한 없음** — 비밀번호 대입 가능.
 
 ---
 
-## 3. 인가
+## 3. 요청 검증
 
 ### 3-1. 검증 과정
 
@@ -130,65 +133,35 @@ sequenceDiagram
     actor U as 사용자 (WEB)
     participant G as gateway-service
     participant A as auth-service
+    participant R as Redis
     participant S as 내부 서비스
 
     U->>G: 요청 (세션 쿠키)
-    G->>G: 경로 확인 (permitAll?)
-    alt 보호 경로
-        G->>A: 세션 확인
-        alt 유효
-            A-->>G: memberId, roles
-            G->>S: X_USER_ID·X_USER_ROLE 붙여 전달
-        else 없음·만료
-            A-->>G: 401
-            G-->>U: 401
-        end
-    else permitAll 경로
-        opt 세션 쿠키가 있으면
-            G->>A: 세션 확인
-            A-->>G: 유효하면 memberId, roles
-        end
-        G->>S: 유효하면 X_USER_ID·X_USER_ROLE 붙여, 아니면 익명으로 전달
+    G->>A: 세션 확인 {sessionId, touch}
+    A->>R: session:{해시} 조회 + TTL 연장
+    alt 세션 유효
+        A-->>G: memberId, roles
+        G->>S: X_USER_ID·X_USER_ROLE 붙여 전달
+        S-->>G: 응답
+        G-->>U: 응답
+    else 세션 없음·만료
+        A-->>G: 401
+        G-->>U: 401
     end
 ```
 
-**게이트웨이** (`CustomServerSecurityContextRepository`, `UserContextFilter`)
-- 쿠키 없음 → auth-service에 묻지 않고 `NO_SESSION`.
-- 쿠키 있음 → `POST /internal/v1/auth/sessions/validate` `{sessionId, touch}` (3초 타임아웃). `X-Background-Request` 헤더가 있으면 `touch=false`.
-- 성공 → `X_USER_ID` / `X_USER_ROLE` 헤더를 붙인다.
-- 실패 → 보호 경로는 401 `{status, message}`, permitAll 경로는 익명으로 통과. 타임아웃·연결 실패도 401(`UNAUTHORIZED`).
-
-**auth-service** (`touch-session.lua`)
-1. `session:{SHA-256(sessionId)}`를 찾는다. 없으면 `SESSION_NOT_FOUND`(401).
-2. 로그인 후 12시간이 지났으면 키를 지우고 `SESSION_NOT_FOUND`.
-3. `touch=true`면 TTL을 `min(30분, 절대 만료까지 남은 시간)`으로 다시 건다.
-4. `{memberId, memberRoles}`를 돌려준다.
+1. **요청** — 게이트웨이가 쿠키에서 세션 ID를 꺼낸다. 알림 폴링 같은 백그라운드 요청이면 세션을 연장하지 않도록 표시한다.
+2. **세션 확인** — 게이트웨이가 auth-service에 세션 ID를 보내 확인을 요청한다. 요청당 1번, 3초 안에 답이 없으면 실패로 본다.
+3. **Redis 조회** — auth-service가 Redis에서 세션을 찾는다. 로그인 후 12시간이 지났으면 지우고, 아니면 유휴 만료를 30분 뒤로 미룬다 (백그라운드 요청은 미루지 않는다).
+4. **결과**
+   - 유효 → 게이트웨이가 회원 ID와 권한을 헤더에 붙여 내부 서비스로 넘긴다.
+   - 없음·만료·응답 없음 → 401.
 
 **설계 메모**
-- 세션 ID는 URL이 아니라 본문으로 보낸다 — 접근 로그에 남지 않게.
-- 게이트웨이에 캐시가 없다 — 로그아웃이 다음 요청부터 바로 반영되게.
 
-### 3-2. 세션 쿠키 전달 범위
-
-- 게이트웨이는 auth-service(`/api/v1/auth/**`) 밖으로 가는 요청에서 세션 쿠키를 지운다. 내부 서비스는 신원을 `X_USER_ID`로만 받는다.
-
-### 3-3. CSRF
-
-두 겹으로 막는다.
-
-| 방어 | 동작 |
-|---|---|
-| `SameSite=Strict` ([1-1-2](#1-1-2-세션-쿠키)) | 다른 사이트에서 시작된 요청에는 세션 쿠키가 실리지 않는다 |
-| `CsrfOriginGuardFilter` | `POST` / `PUT` / `PATCH` / `DELETE`는 `Origin`(없으면 `Referer`)이 `CLIENT_URL`이어야 한다. 아니면 403. 세션 확인보다 먼저 돈다 |
-
-- 브라우저가 붙이는 `Origin`은 페이지가 바꿀 수 없어서 CSRF 토큰은 필요 없다.
-- GET으로 상태를 바꾸는 API를 만들지 않는다.
-- curl처럼 `Origin`·`Referer`가 없는 변경 요청도 403이다.
-
-### 3-4. CORS
-
-- 허용 Origin: `CLIENT_URL` 하나, `allowCredentials=true`.
-- 메서드: `GET` / `POST` / `PUT` / `PATCH` / `DELETE` / `OPTIONS`, 헤더: 전부.
+- 세션 ID는 주소가 아니라 요청 본문에 담아 보낸다 — 접근 로그에 남지 않게.
+- 게이트웨이는 확인 결과를 저장해 두지 않는다 — 로그아웃이 다음 요청부터 바로 반영되게.
+- 세션 쿠키는 auth-service로 가는 요청에만 남기고, 다른 내부 서비스로 가는 요청에서는 뺀다 — 내부 서비스는 헤더의 회원 ID만 알면 되고, 쿠키를 받지 않으면 그 서비스의 로그나 버그로 세션이 새어 나갈 일도 없다.
 
 > ⚠️ 알려진 문제
 > - auth-service·Redis 장애가 **401**로 보인다 — WEB이 세션 만료로 판단해 전 사용자를 로그인 화면으로 보낸다. 세션 자체는 Redis에 남아 있으므로 복구 후 다시 로그인할 필요는 없지만, 게이트웨이가 503으로 구분하고 WEB은 503에서 로그인 화면으로 보내지 않아야 함.
@@ -199,37 +172,36 @@ sequenceDiagram
 
 ## 4. 로그아웃
 
-1. `POST /api/v1/auth/logout` (세션 쿠키만). 게이트웨이 Origin 검사를 받는다 — 다른 사이트의 form이 POST해도 403.
-2. 세션 쿠키가 있으면 `session:{해시}`를 지운다. 없거나 이미 만료됐어도 **실패하지 않는다.**
-3. 쿠키를 `Max-Age=0`으로 지우고 `200`.
+그 브라우저의 세션을 Redis에서 지우고 세션 쿠키를 없앤다.
 
-- 로그아웃은 **그 브라우저의 세션만** 끊는다. 다른 기기의 세션은 그대로다.
-- 키를 지우는 즉시 그 세션으로 오는 다음 요청은 401이다 (게이트웨이 캐시 없음).
+```mermaid
+sequenceDiagram
+    actor U as 사용자 (WEB)
+    participant G as gateway-service
+    participant A as auth-service
+    participant R as Redis
+
+    U->>G: POST /api/v1/auth/logout (세션 쿠키)
+    G->>A: 전달 (세션 쿠키 포함)
+    A->>R: session:{해시} 삭제
+    A-->>G: 200 + 쿠키 삭제 (Max-Age=0)
+    G-->>U: 응답
+    U->>U: 캐시 비움 → 로그아웃 상태로 전환
+```
+
+1. **요청** — 사용자가 로그아웃을 보낸다. 본문은 없고 세션 쿠키만 실린다.
+2. **세션 삭제** — auth-service가 쿠키의 세션을 Redis에서 지운다. 쿠키가 없거나 세션이 이미 만료됐어도 실패하지 않는다.
+3. **쿠키 삭제** — 응답에 같은 이름의 쿠키를 수명 0으로 다시 내려보내 브라우저가 지우게 한다. 세션 쿠키는 JS가 건드릴 수 없어서(HttpOnly) 이 방법으로만 지울 수 있다.
+4. **WEB** — 이전 사용자의 화면 데이터(캐시)를 비우고 로그아웃 상태로 바꾼다. 요청이 실패하면 로그아웃된 것처럼 보이지 않게 오류를 알린다 — 공용 PC에 살아 있는 세션이 남지 않게.
+
+**설계 메모**
+
+- 로그아웃은 그 브라우저의 세션만 끊는다. 다른 기기의 세션은 그대로다.
+- 세션을 지우면 그 세션으로 오는 다음 요청부터 바로 401이다 — 게이트웨이가 확인 결과를 저장해 두지 않기 때문.
 
 ---
 
-## 5. WEB 동작
-
-| 상황 | 동작 |
-|---|---|
-| 앱 시작 (새로고침·새 탭) | `GET /api/v1/auth/session` → `200 {memberId}`면 로그인 상태, **401일 때만** 비로그인. 네트워크 오류·503은 세션에 대해 아무것도 말해 주지 않으므로 `checking`을 유지하고 3초 뒤 다시 묻는다. 확인이 끝날 때까지 보호된 화면을 그리지 않는다 |
-| 로그인 성공 | React Query 캐시 비움 → 로그인 상태로 전환 (쿠키는 응답이 이미 심었다) |
-| API가 401 | 비로그인 상태로 바꾸고 로그인 화면으로. **재발급 같은 재시도는 없다** |
-| 로그아웃 | `POST /api/v1/auth/logout` **성공 후에만** 캐시 비움 → 첫 화면. 실패하면 로그인 상태를 유지하고 "로그아웃하지 못했습니다" 알림 — 쿠키가 HttpOnly라 JS가 지울 수 없으므로, 서버가 끝내지 못한 세션을 로그아웃된 것처럼 보여 주면 공용 PC에 살아 있는 세션이 남는다 |
-| 백그라운드 폴링 (알림 개수 등) | `X-Background-Request: true` 헤더를 붙인다 ([1-1-4](#1-1-4-세션-만료)) |
-| 다운로드·텍스트/이미지 미리보기 | axios `withCredentials: true`로 Blob 요청. 인증 헤더 없음 |
-| 오디오·비디오 미리보기 | `<video src="…/api/v1/storage/view/{fileId}?fileName=">` 직접 URL. 세션 쿠키가 자동으로 실린다 |
-
-- WEB은 토큰을 어디에도 저장하지 않는다. 로그인 여부와 memberId만 메모리(zustand)에 둔다.
-- 이전 버전이 남긴 `localStorage`의 `modudrive.accessToken`은 앱 시작 때 지운다.
-- `GET /api/v1/auth/session`은 auth-service가 게이트웨이가 넣어 준 `X_USER_ID`를 그대로 돌려주는 API다. 세션 ID나 만료 시각은 돌려주지 않는다.
-
-> ⚠️ 알려진 문제
-> - XSS가 생기면 페이지가 열려 있는 동안에는 그 페이지 안에서 사용자인 척 요청을 보낼 수 있다 (쿠키가 자동으로 실리므로). 자격 증명을 **들고 나가는 것**은 막았지만, XSS 자체는 CSP 등 별도 조치로 막아야 한다 — WEB 배포 쪽 응답 헤더에 CSP가 아직 없다.
-
----
-
-## 6. 서비스 간 인증
+## 5. 서비스 간 인증
 
 ### 공유 비밀 (`X-Internal-Token`)
 
@@ -256,6 +228,27 @@ sequenceDiagram
 > - `PUT /api/v1/files/{fileId}/uploaded`(업로드 완료 콜백)가 **공개 경로**라 게이트웨이를 통해 사용자가 직접 호출할 수 있다. 소유자 확인과 s3Path 접두어 확인은 있지만 `fileSize`·`blockCount`는 클라이언트 값을 그대로 씀 → 용량 사용량을 속이거나 블록 없는 파일을 UPLOADED로 만들 수 있다. `/internal/`로 옮겨야 함.
 > - file → member 조회(`find-by-email`, `find`)가 공개 경로 — 로그인한 사용자라면 누구나 게이트웨이로 이메일 → 회원 조회 가능 (공유 대상 입력 UX용). 내부 호출은 `/internal/`로 분리하는 게 맞다.
 > - 내부 인증이 **모든 서비스 공용 비밀 하나**이고 게이트웨이도 갖고 있다 — 한 서비스가 뚫리면 모든 내부 경로가 열린다. 서비스별 권한 구분 없음. AWS 이관 때 **서비스별 보안 그룹**으로 호출 관계를 네트워크에서 강제한다 ([aws-migration 2-13](../aws-migration.md#2-13--서비스-간-접근-제어-서비스별-보안-그룹-필수)).
+
+---
+
+## 6. WEB 동작
+
+| 상황 | 동작 |
+|---|---|
+| 앱 시작 (새로고침·새 탭) | `GET /api/v1/auth/session` → `200 {memberId}`면 로그인 상태, **401일 때만** 비로그인. 네트워크 오류·503은 세션에 대해 아무것도 말해 주지 않으므로 `checking`을 유지하고 3초 뒤 다시 묻는다. 확인이 끝날 때까지 보호된 화면을 그리지 않는다 |
+| 로그인 성공 | React Query 캐시 비움 → 로그인 상태로 전환 (쿠키는 응답이 이미 심었다) |
+| API가 401 | 비로그인 상태로 바꾸고 로그인 화면으로. **재발급 같은 재시도는 없다** |
+| 로그아웃 | `POST /api/v1/auth/logout` **성공 후에만** 캐시 비움 → 첫 화면. 실패하면 로그인 상태를 유지하고 "로그아웃하지 못했습니다" 알림 — 쿠키가 HttpOnly라 JS가 지울 수 없으므로, 서버가 끝내지 못한 세션을 로그아웃된 것처럼 보여 주면 공용 PC에 살아 있는 세션이 남는다 |
+| 백그라운드 폴링 (알림 개수 등) | `X-Background-Request: true` 헤더를 붙인다 ([1-1-4](#1-1-4-세션-만료)) |
+| 다운로드·텍스트/이미지 미리보기 | axios `withCredentials: true`로 Blob 요청. 인증 헤더 없음 |
+| 오디오·비디오 미리보기 | `<video src="…/api/v1/storage/view/{fileId}?fileName=">` 직접 URL. 세션 쿠키가 자동으로 실린다 |
+
+- WEB은 토큰을 어디에도 저장하지 않는다. 로그인 여부와 memberId만 메모리(zustand)에 둔다.
+- 이전 버전이 남긴 `localStorage`의 `modudrive.accessToken`은 앱 시작 때 지운다.
+- `GET /api/v1/auth/session`은 auth-service가 게이트웨이가 넣어 준 `X_USER_ID`를 그대로 돌려주는 API다. 세션 ID나 만료 시각은 돌려주지 않는다.
+
+> ⚠️ 알려진 문제
+> - XSS가 생기면 페이지가 열려 있는 동안에는 그 페이지 안에서 사용자인 척 요청을 보낼 수 있다 (쿠키가 자동으로 실리므로). 자격 증명을 **들고 나가는 것**은 막았지만, XSS 자체는 CSP 등 별도 조치로 막아야 한다 — WEB 배포 쪽 응답 헤더에 CSP가 아직 없다.
 
 ---
 
