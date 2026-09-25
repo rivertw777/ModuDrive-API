@@ -11,11 +11,14 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
 
+/** Upload-complete callback from storage-service, on an internal route so only a caller holding
+ * the internal token can report a file's size and block count — never an end user through the
+ * gateway (#440). userId is the uploader storage-service is acting for. */
 @WebAdapter
 @RestController
 @RequiredArgsConstructor
@@ -23,13 +26,13 @@ class UpdateFileStatusController {
 
     private final UpdateFileStatusUseCase updateFileStatusUseCase;
 
-    @PutMapping("/api/v1/files/{fileId}/uploaded")
+    @PutMapping("/internal/files/{fileId}/uploaded")
     public ApiResponse<FileResponse> markUploaded(
-            @RequestHeader("X_USER_ID") UUID callerId,
+            @RequestParam UUID userId,
             @PathVariable UUID fileId,
             @Valid @RequestBody UpdateFileStatusRequest request) {
         var file = updateFileStatusUseCase.updateFileStatus(
-                new UpdateFileStatusCommand(fileId, callerId, request.fileSize(), request.blockCount(), request.s3Path())
+                new UpdateFileStatusCommand(fileId, userId, request.fileSize(), request.blockCount(), request.s3Path())
         );
         return ApiResponse.success(FileResponse.from(file));
     }
