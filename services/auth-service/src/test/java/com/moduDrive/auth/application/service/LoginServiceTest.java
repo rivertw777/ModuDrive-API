@@ -123,7 +123,7 @@ class LoginServiceTest {
             ArgumentCaptor<String> stored = ArgumentCaptor.forClass(String.class);
             then(loginChallengePort).should().createChallenge(eq(memberAuthData), eq(EMAIL), stored.capture());
             assertThat(stored.getValue()).matches("\\d{6}");
-            then(sendLoginVerificationMailPort).should().sendLoginVerificationMail("member-id", stored.getValue());
+            then(sendLoginVerificationMailPort).should().sendLoginVerificationMail(EMAIL, stored.getValue());
             then(createSessionPort).shouldHaveNoInteractions();
             then(deleteSessionPort).shouldHaveNoInteractions();
         }

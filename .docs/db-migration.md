@@ -1,6 +1,6 @@
 # DB 마이그레이션 (Flyway)
 
-JPA 서비스(member / file / notification)의 테이블 구조를 Flyway로 관리하는 방식을 정리한 문서입니다.
+JPA 서비스(member / file / notification / auth)의 테이블 구조를 Flyway로 관리하는 방식을 정리한 문서입니다.
 
 ---
 

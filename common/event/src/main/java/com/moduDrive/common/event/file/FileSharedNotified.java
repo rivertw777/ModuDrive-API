@@ -1,8 +1,8 @@
-package com.moduDrive.common.event.notification;
+package com.moduDrive.common.event.file;
 
 import java.util.UUID;
 
-/** Published by file-service (queue {@link NotificationQueues#FILE_SHARED}) after a share to a
+/** Published by file-service (queue {@link FileQueues#FILE_SHARED}) after a share to a
  * registered member commits — a guest-by-email invite has no ModuDrive account to notify in-app.
  * {@code eventId} is minted by the producer and identifies the share event. Redeliveries are dropped
  * first by the listener's check on the {@code DeduplicationId} message attribute; notification-service

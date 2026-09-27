@@ -1,12 +1,12 @@
 package com.moduDrive.notification.adapter.in.messaging;
 
 import com.moduDrive.common.core.annotation.EventListener;
-import com.moduDrive.common.event.notification.FileSharedNotified;
-import com.moduDrive.common.event.notification.NotificationQueues;
+import com.moduDrive.common.event.file.FileQueues;
+import com.moduDrive.common.event.file.FileSharedNotified;
 import com.moduDrive.common.infrastructure.messaging.idempotency.ProcessedEvents;
+import com.moduDrive.common.infrastructure.sqs.SqsAttributes;
 import com.moduDrive.notification.application.port.in.command.RecordFileSharedNotificationCommand;
 import com.moduDrive.notification.application.port.in.usecase.RecordFileSharedNotificationUseCase;
-import com.moduDrive.common.infrastructure.sqs.SqsAttributes;
 import io.awspring.cloud.sqs.annotation.SqsListener;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.handler.annotation.Header;
@@ -22,16 +22,16 @@ class NotificationEventListener {
     /** @Transactional so the "already handled" record commits with the notification row: if recording
      * fails, both are rolled back and the retry starts over. */
     @Transactional
-    @SqsListener(NotificationQueues.FILE_SHARED)
+    @SqsListener(FileQueues.FILE_SHARED)
     void onFileShared(FileSharedNotified event,
                       @Header(SqsAttributes.DEDUPLICATION_ID) String deduplicationId) {
-        if (!processedEvents.claim(NotificationQueues.FILE_SHARED, deduplicationId)) {
+        if (!processedEvents.claim(FileQueues.FILE_SHARED, deduplicationId)) {
             return;
         }
         recordFileSharedNotificationUseCase.recordFileSharedNotification(
                 new RecordFileSharedNotificationCommand(
                         event.eventId(), event.recipientId(), event.fileId(), event.fileName(), event.role(),
                         event.directory(), event.sharerName(), event.sharerEmail()));
-        processedEvents.markProcessed(NotificationQueues.FILE_SHARED, deduplicationId);
+        processedEvents.markProcessed(FileQueues.FILE_SHARED, deduplicationId);
     }
 }

@@ -5,7 +5,7 @@ import com.moduDrive.auth.domain.model.MemberAuthData;
 import com.moduDrive.auth.domain.vo.LoginChallengeId;
 import com.moduDrive.auth.domain.vo.MemberEmail;
 
-/** Logins waiting for their emailed code (spec 004 2-1), kept for 10 minutes. */
+/** Logins waiting for their emailed code (spec 004 2-2), kept for 5 minutes. */
 public interface LoginChallengePort {
 
     LoginChallengeId createChallenge(MemberAuthData memberAuthData, MemberEmail memberEmail, String code);

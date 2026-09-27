@@ -3,9 +3,16 @@ spring:
     name: auth-service
   config:
     import:
+      - "classpath:application-jpa.yml"
       - "classpath:application-observability.yml"
+      - "classpath:application-sqs.yml"
       - "classpath:application-redis.yml"
       - "classpath:application-resilience4j.yml"
+
+modudrive:
+  messaging:
+    outbox:
+      enabled: true
 
 session:
   # spec 004 1-1-4 — 유휴 만료(마지막 사용자 요청 기준) / 절대 만료(로그인 기준)

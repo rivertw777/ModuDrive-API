@@ -220,7 +220,7 @@ it costs one file and catches an entire class of review mistakes for free.
 
 ## Persistence adapter tests: real Postgres via Testcontainers
 
-There is no H2. Every JPA service (member, file, notification) has
+There is no H2. Every JPA service (member, file, notification, auth) has
 `src/test/resources/config/application.yml` pointing the datasource at a
 Testcontainers JDBC URL (`jdbc:tc:postgresql:18-alpine:///test`) with
 `spring.test.database.replace: none`. So a plain `@DataJpaTest` already runs on

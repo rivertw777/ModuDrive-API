@@ -13,7 +13,7 @@ public enum AuthExceptionCase implements ExceptionCase {
     // Same wording as member-service's answer, whichever of email or password was wrong (#445).
     INVALID_CREDENTIALS(HttpStatus.BAD_REQUEST, "이메일 또는 비밀번호가 일치하지 않습니다."),
     TOO_MANY_LOGIN_ATTEMPTS(HttpStatus.TOO_MANY_REQUESTS, "로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요."),
-    // New-device login (spec 004 2-1): no waiting login (never started, 10 min passed, or 5 wrong codes).
+    // New-device login (spec 004 2-2): no waiting login (never started, 5 min passed, or 5 wrong codes).
     LOGIN_VERIFICATION_EXPIRED(HttpStatus.BAD_REQUEST, "인증 시간이 지났습니다. 다시 로그인해 주세요."),
     INVALID_LOGIN_VERIFICATION_CODE(HttpStatus.BAD_REQUEST, "인증 코드가 일치하지 않습니다."),
     // One answer for missing, expired, logged-out and forged ids alike — no oracle to probe.

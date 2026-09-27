@@ -107,7 +107,7 @@ class LoginControllerTest {
     class WhenVerificationIsRequired {
 
         @Test
-        @DisplayName("세션 쿠키 없이 10분짜리 확인 쿠키만 내려준다")
+        @DisplayName("세션 쿠키 없이 5분짜리 확인 쿠키만 내려준다")
         void setsOnlyTheChallengeCookie() throws Exception {
             given(loginUseCase.login(any(LoginCommand.class)))
                     .willReturn(new LoginResult.VerificationRequired(new LoginChallengeId("challenge-id")));
@@ -119,7 +119,7 @@ class LoginControllerTest {
                     .andExpect(jsonPath("$.data.verificationRequired").value(true))
                     .andExpect(cookie().doesNotExist(COOKIE_NAME))
                     .andExpect(cookie().value(SessionCookie.LOGIN_CHALLENGE_NAME, "challenge-id"))
-                    .andExpect(cookie().maxAge(SessionCookie.LOGIN_CHALLENGE_NAME, 600))
+                    .andExpect(cookie().maxAge(SessionCookie.LOGIN_CHALLENGE_NAME, 300))
                     .andExpect(cookie().httpOnly(SessionCookie.LOGIN_CHALLENGE_NAME, true));
         }
     }

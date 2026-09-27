@@ -1,16 +1,19 @@
 package com.moduDrive.mail.adapter.in.messaging;
 
 import com.moduDrive.common.core.annotation.EventListener;
-import com.moduDrive.common.event.mail.MailQueues;
-import com.moduDrive.common.event.mail.ShareInviteMailRequested;
-import com.moduDrive.common.event.mail.VerificationMailRequested;
+import com.moduDrive.common.event.auth.AuthQueues;
+import com.moduDrive.common.event.auth.LoginVerificationMailRequested;
+import com.moduDrive.common.event.file.FileQueues;
+import com.moduDrive.common.event.file.ShareInviteMailRequested;
+import com.moduDrive.common.event.member.MemberQueues;
+import com.moduDrive.common.event.member.SignUpVerificationMailRequested;
 import com.moduDrive.common.infrastructure.messaging.idempotency.ProcessedEvents;
+import com.moduDrive.common.infrastructure.sqs.SqsAttributes;
 import com.moduDrive.mail.application.port.in.command.SendShareInviteMailCommand;
-import com.moduDrive.mail.application.port.in.command.SendVerificationMailCommand;
 import com.moduDrive.mail.application.port.in.command.SendVerificationMailCommand.Purpose;
+import com.moduDrive.mail.application.port.in.command.SendVerificationMailCommand;
 import com.moduDrive.mail.application.port.in.usecase.SendShareInviteMailUseCase;
 import com.moduDrive.mail.application.port.in.usecase.SendVerificationMailUseCase;
-import com.moduDrive.common.infrastructure.sqs.SqsAttributes;
 import io.awspring.cloud.sqs.annotation.SqsListener;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.handler.annotation.Header;
@@ -23,42 +26,46 @@ class MailEventListener {
     private final SendShareInviteMailUseCase sendShareInviteMailUseCase;
     private final ProcessedEvents processedEvents;
 
+    @SqsListener(MemberQueues.SIGN_UP_VERIFICATION_MAIL_REQUESTED)
+    void onSignUpVerificationRequested(SignUpVerificationMailRequested event,
+                                       @Header(SqsAttributes.DEDUPLICATION_ID) String deduplicationId) {
+        sendOnce(MemberQueues.SIGN_UP_VERIFICATION_MAIL_REQUESTED, deduplicationId, () ->
+                sendVerificationMailUseCase.sendVerificationMail(
+                        new SendVerificationMailCommand(event.email(), event.verificationCode(), Purpose.SIGN_UP)));
+    }
+
+    @SqsListener(AuthQueues.LOGIN_VERIFICATION_MAIL_REQUESTED)
+    void onLoginVerificationRequested(LoginVerificationMailRequested event,
+                                      @Header(SqsAttributes.DEDUPLICATION_ID) String deduplicationId) {
+        sendOnce(AuthQueues.LOGIN_VERIFICATION_MAIL_REQUESTED, deduplicationId, () ->
+                sendVerificationMailUseCase.sendVerificationMail(
+                        new SendVerificationMailCommand(event.email(), event.verificationCode(), Purpose.LOGIN)));
+    }
+
+    @SqsListener(FileQueues.SHARE_INVITE_MAIL_REQUESTED)
+    void onShareInviteRequested(ShareInviteMailRequested event,
+                                @Header(SqsAttributes.DEDUPLICATION_ID) String deduplicationId) {
+        sendOnce(FileQueues.SHARE_INVITE_MAIL_REQUESTED, deduplicationId, () ->
+                sendShareInviteMailUseCase.sendShareInviteMail(
+                        new SendShareInviteMailCommand(event.granteeEmail(), event.fileName(), event.directory(),
+                                event.category(), event.role(), event.fileId(), event.granterName(), event.granterEmail(),
+                                event.message(), event.inviteToken())));
+    }
+
     // Claim, send, then confirm. A mail can't be rolled back, so the claim goes first — two copies of
     // one message can be in flight at once and a read-then-write would let both send. It only holds a
     // short lease, so a process dying mid-send leaves the retry free to take it: a second mail is
     // better than none. A send that fails hands the claim straight back.
-    @SqsListener(MailQueues.VERIFICATION_REQUESTED)
-    void onVerificationRequested(VerificationMailRequested event,
-                                 @Header(SqsAttributes.DEDUPLICATION_ID) String deduplicationId) {
-        if (!processedEvents.claim(MailQueues.VERIFICATION_REQUESTED, deduplicationId)) {
+    private void sendOnce(String queue, String deduplicationId, Runnable send) {
+        if (!processedEvents.claim(queue, deduplicationId)) {
             return;
         }
         try {
-            sendVerificationMailUseCase.sendVerificationMail(
-                    new SendVerificationMailCommand(event.email(), event.verificationCode(),
-                            event.purpose() == VerificationMailRequested.Purpose.LOGIN ? Purpose.LOGIN : Purpose.SIGN_UP));
+            send.run();
         } catch (RuntimeException e) {
-            processedEvents.release(MailQueues.VERIFICATION_REQUESTED, deduplicationId);
+            processedEvents.release(queue, deduplicationId);
             throw e;
         }
-        processedEvents.markProcessed(MailQueues.VERIFICATION_REQUESTED, deduplicationId);
-    }
-
-    @SqsListener(MailQueues.SHARE_INVITE_REQUESTED)
-    void onShareInviteRequested(ShareInviteMailRequested event,
-                                @Header(SqsAttributes.DEDUPLICATION_ID) String deduplicationId) {
-        if (!processedEvents.claim(MailQueues.SHARE_INVITE_REQUESTED, deduplicationId)) {
-            return;
-        }
-        try {
-            sendShareInviteMailUseCase.sendShareInviteMail(
-                    new SendShareInviteMailCommand(event.granteeEmail(), event.fileName(), event.directory(),
-                            event.category(), event.role(), event.fileId(), event.granterName(), event.granterEmail(),
-                            event.message(), event.inviteToken()));
-        } catch (RuntimeException e) {
-            processedEvents.release(MailQueues.SHARE_INVITE_REQUESTED, deduplicationId);
-            throw e;
-        }
-        processedEvents.markProcessed(MailQueues.SHARE_INVITE_REQUESTED, deduplicationId);
+        processedEvents.markProcessed(queue, deduplicationId);
     }
 }

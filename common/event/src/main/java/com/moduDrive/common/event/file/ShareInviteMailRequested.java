@@ -1,8 +1,8 @@
-package com.moduDrive.common.event.mail;
+package com.moduDrive.common.event.file;
 
 import java.util.UUID;
 
-/** Published by file-service (queue {@link MailQueues#SHARE_INVITE_REQUESTED}) after a share invite commits.
+/** Published by file-service (queue {@link FileQueues#SHARE_INVITE_MAIL_REQUESTED}) after a share invite commits.
  * {@code inviteToken} is only set when the invite went to an email with no ModuDrive member (a "guest"
  * invite) — it is that pending share's own capability token, and mail-service turns it into a no-login
  * link; a registered member gets null and signs in instead. {@code message} is the optional note the

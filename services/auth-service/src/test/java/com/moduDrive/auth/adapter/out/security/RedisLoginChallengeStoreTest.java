@@ -72,14 +72,14 @@ class RedisLoginChallengeStoreTest {
     class WhenCreating {
 
         @Test
-        @DisplayName("무작위 ID의 해시로 10분 동안 저장한다")
+        @DisplayName("무작위 ID의 해시로 5분 동안 저장한다")
         void storesUnderTheHashForTenMinutes() {
             LoginChallengeId challengeId = store.createChallenge(member, email, "042917");
 
             Set<String> keys = redisTemplate.keys("login-challenge:*");
             assertThat(keys).singleElement().satisfies(key -> {
                 assertThat(key).matches("login-challenge:[0-9a-f]{64}").doesNotContain(challengeId.value());
-                assertThat(redisTemplate.getExpire(key, TimeUnit.MILLISECONDS)).isBetween(595_000L, 600_000L);
+                assertThat(redisTemplate.getExpire(key, TimeUnit.MILLISECONDS)).isBetween(295_000L, 300_000L);
             });
         }
     }
