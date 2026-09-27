@@ -14,7 +14,12 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import feign.FeignException;
+import feign.Request;
+
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
@@ -64,6 +69,27 @@ class MemberClientAdapterTest {
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
                     .isEqualTo(AuthExceptionCase.MEMBER_NOT_VALID);
+        }
+    }
+
+    @Nested
+    @DisplayName("member-service가 이메일·비밀번호를 거절했을 때")
+    class WhenCredentialsAreRejected {
+
+        @Test
+        void throwsInvalidCredentials() {
+            given(memberClient.authenticateMember(request)).willThrow(new FeignException.BadRequest(
+                    "bad request",
+                    Request.create(Request.HttpMethod.POST, "/internal/v1/member/authenticate",
+                            Map.of(), null, StandardCharsets.UTF_8, null),
+                    null, Map.of()));
+
+            Throwable thrown = catchThrowable(() -> memberClientAdapter.authenticateMember(request));
+
+            assertThat(thrown)
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(AuthExceptionCase.INVALID_CREDENTIALS);
         }
     }
 }

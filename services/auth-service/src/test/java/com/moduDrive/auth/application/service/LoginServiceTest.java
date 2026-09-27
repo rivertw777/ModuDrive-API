@@ -4,6 +4,7 @@ import com.moduDrive.auth.application.port.in.command.LoginCommand;
 import com.moduDrive.auth.application.port.out.AuthenticateMemberPort;
 import com.moduDrive.auth.application.port.out.CreateSessionPort;
 import com.moduDrive.auth.application.port.out.DeleteSessionPort;
+import com.moduDrive.auth.application.port.out.LoginAttemptPort;
 import com.moduDrive.auth.domain.model.MemberAuthData;
 import com.moduDrive.auth.domain.vo.MemberEmail;
 import com.moduDrive.auth.domain.vo.MemberPassword;
@@ -25,6 +26,7 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.never;
 
 @ExtendWith(MockitoExtension.class)
 class LoginServiceTest {
@@ -35,6 +37,8 @@ class LoginServiceTest {
     private CreateSessionPort createSessionPort;
     @Mock
     private DeleteSessionPort deleteSessionPort;
+    @Mock
+    private LoginAttemptPort loginAttemptPort;
     @InjectMocks
     private LoginService loginService;
 
@@ -53,6 +57,7 @@ class LoginServiceTest {
 
         @Test
         void createsSessionForMember() {
+            given(loginAttemptPort.tryAttempt(EMAIL)).willReturn(true);
             given(authenticateMemberPort.authenticateMember(AUTHENTICATE_REQUEST)).willReturn(memberAuthData);
             given(createSessionPort.createSession(memberAuthData)).willReturn(NEW_SESSION_ID);
 
@@ -60,6 +65,7 @@ class LoginServiceTest {
 
             assertThat(result).isEqualTo(NEW_SESSION_ID);
             then(deleteSessionPort).shouldHaveNoInteractions();
+            then(loginAttemptPort).should().clearAttempts(EMAIL);
         }
     }
 
@@ -70,6 +76,7 @@ class LoginServiceTest {
         @Test
         @DisplayName("이전 세션을 지우고 새 세션을 만든다 (세션 고정 방지)")
         void replacesPreviousSession() {
+            given(loginAttemptPort.tryAttempt(EMAIL)).willReturn(true);
             given(authenticateMemberPort.authenticateMember(AUTHENTICATE_REQUEST)).willReturn(memberAuthData);
             given(createSessionPort.createSession(memberAuthData)).willReturn(NEW_SESSION_ID);
 
@@ -87,7 +94,8 @@ class LoginServiceTest {
         @Test
         @DisplayName("세션을 만들지도, 기존 세션을 지우지도 않는다")
         void leavesSessionsUntouched() {
-            willThrow(new BusinessException(AuthExceptionCase.MEMBER_NOT_VALID))
+            given(loginAttemptPort.tryAttempt(EMAIL)).willReturn(true);
+            willThrow(new BusinessException(AuthExceptionCase.INVALID_CREDENTIALS))
                     .given(authenticateMemberPort).authenticateMember(AUTHENTICATE_REQUEST);
 
             Throwable thrown = catchThrowable(() ->
@@ -96,6 +104,27 @@ class LoginServiceTest {
             assertThat(thrown).isInstanceOf(BusinessException.class);
             then(createSessionPort).shouldHaveNoInteractions();
             then(deleteSessionPort).shouldHaveNoInteractions();
+            then(loginAttemptPort).should(never()).clearAttempts(EMAIL);
+        }
+    }
+
+    @Nested
+    @DisplayName("시도 횟수를 다 썼을 때")
+    class WhenAttemptsAreUsedUp {
+
+        @Test
+        @DisplayName("비밀번호를 확인하지 않고 거절한다")
+        void rejectsWithoutCheckingPassword() {
+            given(loginAttemptPort.tryAttempt(EMAIL)).willReturn(false);
+
+            Throwable thrown = catchThrowable(() -> loginService.login(new LoginCommand(EMAIL, PASSWORD, null)));
+
+            assertThat(thrown)
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(AuthExceptionCase.TOO_MANY_LOGIN_ATTEMPTS);
+            then(authenticateMemberPort).shouldHaveNoInteractions();
+            then(createSessionPort).shouldHaveNoInteractions();
         }
     }
 }
