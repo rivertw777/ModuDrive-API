@@ -3,9 +3,11 @@ package com.moduDrive.member.adapter.out.security;
 import com.moduDrive.common.infrastructure.redis.RedisRepository;
 import com.moduDrive.member.application.port.out.EmailVerificationTokenPort;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
+import java.util.List;
 
 @Component
 class RedisEmailVerificationTokenStore implements EmailVerificationTokenPort {
@@ -17,6 +19,8 @@ class RedisEmailVerificationTokenStore implements EmailVerificationTokenPort {
     private static final int MAX_ATTEMPTS = 5;
     /** Grace window to submit the sign-up form after verifying — independent of the (shorter) code TTL. */
     private static final Duration VERIFIED_WINDOW = Duration.ofMinutes(30);
+    private static final RedisScript<Long> CONFIRM_SCRIPT =
+            RedisRepository.loadScript("scripts/confirm-email-code.lua", Long.class);
 
     private final RedisRepository redisRepository;
     private final long tokenExpiration;
@@ -35,30 +39,9 @@ class RedisEmailVerificationTokenStore implements EmailVerificationTokenPort {
 
     @Override
     public boolean confirmCode(String email, String code) {
-        String stored = redisRepository.get(codeKey(email));
-        if (stored == null || !stored.equals(code)) {
-            registerFailedAttempt(email);
-            return false;
-        }
-        redisRepository.delete(codeKey(email));
-        redisRepository.delete(attemptsKey(email));
-        return true;
-    }
-
-    // ponytail: read-increment-write, not atomic under concurrent guesses — a few requests in the
-    // same instant could slip past MAX_ATTEMPTS by one or two; upgrade to a Lua INCR script if
-    // brute-force volume ever makes that race worth closing.
-    private void registerFailedAttempt(String email) {
-        String key = attemptsKey(email);
-        int attempts = parseAttempts(redisRepository.get(key)) + 1;
-        if (attempts >= MAX_ATTEMPTS) {
-            redisRepository.delete(codeKey(email));
-        }
-        redisRepository.set(key, String.valueOf(attempts), Duration.ofMillis(tokenExpiration));
-    }
-
-    private int parseAttempts(String value) {
-        return value == null ? 0 : Integer.parseInt(value);
+        Long confirmed = redisRepository.executeScript(CONFIRM_SCRIPT, List.of(codeKey(email), attemptsKey(email)),
+                code, String.valueOf(MAX_ATTEMPTS), String.valueOf(tokenExpiration));
+        return confirmed != null && confirmed == 1L;
     }
 
     @Override
