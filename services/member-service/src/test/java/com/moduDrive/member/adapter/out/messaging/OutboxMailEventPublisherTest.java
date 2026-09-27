@@ -2,6 +2,7 @@ package com.moduDrive.member.adapter.out.messaging;
 
 import com.moduDrive.common.event.mail.MailQueues;
 import com.moduDrive.common.event.mail.VerificationMailRequested;
+import com.moduDrive.common.event.mail.VerificationMailRequested.Purpose;
 import com.moduDrive.common.infrastructure.messaging.outbox.OutboxEventRecorder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -31,7 +32,21 @@ class OutboxMailEventPublisherTest {
 
             then(outboxEventRecorder).should().record(
                     MailQueues.VERIFICATION_REQUESTED, "river@modudrive.com",
-                    new VerificationMailRequested("river@modudrive.com", "042917"));
+                    new VerificationMailRequested("river@modudrive.com", "042917", Purpose.SIGN_UP));
+        }
+    }
+
+    @Nested
+    @DisplayName("새 기기 로그인 인증 메일 이벤트를 발행할 때")
+    class WhenPublishingLoginVerificationRequested {
+
+        @Test
+        void sendsLoginPurposeToVerificationQueueKeyedByEmail() {
+            publisher.publishLoginVerificationRequested("river@modudrive.com", "042917");
+
+            then(outboxEventRecorder).should().record(
+                    MailQueues.VERIFICATION_REQUESTED, "river@modudrive.com",
+                    new VerificationMailRequested("river@modudrive.com", "042917", Purpose.LOGIN));
         }
     }
 }

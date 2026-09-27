@@ -17,7 +17,8 @@ import java.util.stream.Collectors;
 /**
  * Downstream services learn who the caller is from X_USER_ID alone, so the session cookie — a
  * live credential — has no business leaving the gateway except to auth-service, which needs it to
- * log in and out. Dropping it everywhere else keeps it out of other services' logs and bugs.
+ * log in and out. Dropping it everywhere else keeps it out of other services' logs and bugs. The
+ * device and login-challenge cookies (spec 004 2-1) are auth-only too, and go the same way.
  */
 @Component
 class SessionCookieStripFilter implements GlobalFilter, Ordered {
@@ -27,14 +28,14 @@ class SessionCookieStripFilter implements GlobalFilter, Ordered {
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         ServerHttpRequest request = exchange.getRequest();
-        boolean carriesSessionCookie = request.getCookies().containsKey(SessionCookie.NAME);
-        if (!carriesSessionCookie || request.getPath().value().startsWith(AUTH_PATH_PREFIX)) {
+        boolean carriesAuthCookie = request.getCookies().keySet().stream().anyMatch(SessionCookie.AUTH_ONLY_NAMES::contains);
+        if (!carriesAuthCookie || request.getPath().value().startsWith(AUTH_PATH_PREFIX)) {
             return chain.filter(exchange);
         }
 
         String remainingCookies = request.getCookies().values().stream()
                 .flatMap(List::stream)
-                .filter(cookie -> !SessionCookie.NAME.equals(cookie.getName()))
+                .filter(cookie -> !SessionCookie.AUTH_ONLY_NAMES.contains(cookie.getName()))
                 .map(HttpCookie::toString)
                 .collect(Collectors.joining("; "));
         ServerWebExchange stripped = exchange.mutate()

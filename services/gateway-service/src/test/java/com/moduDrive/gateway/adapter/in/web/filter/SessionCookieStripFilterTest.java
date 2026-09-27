@@ -12,6 +12,7 @@ import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -29,7 +30,8 @@ class SessionCookieStripFilterTest {
 
         StepVerifier.create(filter.filter(MockServerWebExchange.from(request), chain)).verifyComplete();
 
-        return forwarded.get().getRequest().getHeaders().getFirst(HttpHeaders.COOKIE);
+        List<String> cookieHeaders = forwarded.get().getRequest().getHeaders().get(HttpHeaders.COOKIE);
+        return cookieHeaders == null ? null : String.join("; ", cookieHeaders);
     }
 
     @Nested
@@ -41,6 +43,17 @@ class SessionCookieStripFilterTest {
         void stripsOnlyTheSessionCookie() {
             String cookieHeader = forwardedCookieHeader(MockServerHttpRequest.get("/api/v1/files")
                     .cookie(new HttpCookie("__Host-session", "secret"), new HttpCookie("theme", "dark"))
+                    .build());
+
+            assertThat(cookieHeader).isEqualTo("theme=dark");
+        }
+
+        @Test
+        @DisplayName("기기·로그인 확인 쿠키도 뺀다")
+        void stripsDeviceAndLoginChallengeCookies() {
+            String cookieHeader = forwardedCookieHeader(MockServerHttpRequest.get("/api/v1/files")
+                    .cookie(new HttpCookie("__Host-device", "device"), new HttpCookie("__Host-login-challenge", "challenge"),
+                            new HttpCookie("theme", "dark"))
                     .build());
 
             assertThat(cookieHeader).isEqualTo("theme=dark");
@@ -68,6 +81,16 @@ class SessionCookieStripFilterTest {
                     .build());
 
             assertThat(cookieHeader).isEqualTo("__Host-session=secret");
+        }
+
+        @Test
+        @DisplayName("새 기기 코드 확인에 필요한 기기·확인 쿠키도 그대로 넘긴다")
+        void keepsDeviceAndLoginChallengeCookies() {
+            String cookieHeader = forwardedCookieHeader(MockServerHttpRequest.post("/api/v1/auth/login/verify")
+                    .cookie(new HttpCookie("__Host-device", "device"), new HttpCookie("__Host-login-challenge", "challenge"))
+                    .build());
+
+            assertThat(cookieHeader).contains("__Host-device=device", "__Host-login-challenge=challenge");
         }
     }
 }

@@ -14,14 +14,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.Arrays;
-import java.util.Base64;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -37,7 +31,6 @@ class RedisSessionStore implements CreateSessionPort, FindSessionPort, DeleteSes
     private static final String KEY_PREFIX = "session:";
     private static final String MEMBER_KEY_PREFIX = "member-session:";
     private static final String REPLACED = "replaced";
-    private static final int ID_BYTES = 32;
 
     private static final RedisScript<Long> CREATE_SCRIPT =
             RedisRepository.loadScript("scripts/create-session.lua", Long.class);
@@ -45,7 +38,6 @@ class RedisSessionStore implements CreateSessionPort, FindSessionPort, DeleteSes
     private static final RedisScript<List> TOUCH_SCRIPT =
             RedisRepository.loadScript("scripts/touch-session.lua", List.class);
 
-    private final SecureRandom secureRandom = new SecureRandom();
     private final RedisRepository redisRepository;
     private final String idleTimeoutMillis;
     private final String absoluteTimeoutMillis;
@@ -62,8 +54,8 @@ class RedisSessionStore implements CreateSessionPort, FindSessionPort, DeleteSes
 
     @Override
     public SessionId createSession(MemberAuthData memberAuthData) {
-        SessionId sessionId = generateId();
-        String hash = sha256Hex(sessionId.value());
+        SessionId sessionId = new SessionId(SecureTokens.newToken());
+        String hash = SecureTokens.sha256Hex(sessionId.value());
         redisRepository.executeScript(
                 CREATE_SCRIPT,
                 List.of(KEY_PREFIX + hash, MEMBER_KEY_PREFIX + memberAuthData.getMemberId()),
@@ -103,23 +95,8 @@ class RedisSessionStore implements CreateSessionPort, FindSessionPort, DeleteSes
         redisRepository.delete(key(sessionId));
     }
 
-    private SessionId generateId() {
-        byte[] bytes = new byte[ID_BYTES];
-        secureRandom.nextBytes(bytes);
-        return new SessionId(Base64.getUrlEncoder().withoutPadding().encodeToString(bytes));
-    }
-
     private static String key(SessionId sessionId) {
-        return KEY_PREFIX + sha256Hex(sessionId.value());
-    }
-
-    private static String sha256Hex(String value) {
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(digest);
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 is required by every Java runtime", e);
-        }
+        return KEY_PREFIX + SecureTokens.sha256Hex(sessionId.value());
     }
 
     private static List<String> parseRoles(String roles) {

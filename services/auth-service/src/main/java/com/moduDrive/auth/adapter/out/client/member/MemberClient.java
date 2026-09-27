@@ -2,6 +2,7 @@ package com.moduDrive.auth.adapter.out.client.member;
 
 import com.moduDrive.common.api.dto.member.AuthenticateMemberRequest;
 import com.moduDrive.common.api.dto.member.AuthenticateMemberResponse;
+import com.moduDrive.common.api.dto.member.SendLoginVerificationMailRequest;
 import com.moduDrive.common.core.web.ApiResponse;
 import com.moduDrive.common.infrastructure.resilience4j.FeignFallbackUtils;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
@@ -18,6 +19,15 @@ interface MemberClient {
     ApiResponse<AuthenticateMemberResponse> authenticateMember(AuthenticateMemberRequest authenticateMemberRequest);
 
     default ApiResponse<AuthenticateMemberResponse> authenticateMemberFallback(AuthenticateMemberRequest authenticateMemberRequest, Throwable cause) {
+        return FeignFallbackUtils.handleFallback(cause);
+    }
+
+    // No @Retry: a retried send whose first answer was lost would mail the code twice.
+    @PostMapping("/internal/v1/member/login-verification-mail")
+    @CircuitBreaker(name = "memberServiceCircuitBreaker", fallbackMethod = "sendLoginVerificationMailFallback")
+    ApiResponse<Void> sendLoginVerificationMail(SendLoginVerificationMailRequest sendLoginVerificationMailRequest);
+
+    default ApiResponse<Void> sendLoginVerificationMailFallback(SendLoginVerificationMailRequest sendLoginVerificationMailRequest, Throwable cause) {
         return FeignFallbackUtils.handleFallback(cause);
     }
 

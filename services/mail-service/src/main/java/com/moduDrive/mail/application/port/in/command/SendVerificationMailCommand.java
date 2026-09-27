@@ -9,9 +9,14 @@ public class SendVerificationMailCommand {
 
     private final String email;
     private final String verificationCode;
+    private final Purpose purpose;
 
-    public SendVerificationMailCommand(String email, String verificationCode) {
+    public SendVerificationMailCommand(String email, String verificationCode, Purpose purpose) {
         this.email = email;
         this.verificationCode = verificationCode;
+        this.purpose = purpose;
     }
+
+    /** Signup, or a login from a new device (auth spec 004 2-1) — same code, different wording. */
+    public enum Purpose { SIGN_UP, LOGIN }
 }

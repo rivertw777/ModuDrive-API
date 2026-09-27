@@ -1,6 +1,7 @@
 package com.moduDrive.mail.application.service;
 
 import com.moduDrive.mail.application.port.in.command.SendVerificationMailCommand;
+import com.moduDrive.mail.application.port.in.command.SendVerificationMailCommand.Purpose;
 import com.moduDrive.mail.application.port.out.SendMailPort;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -30,7 +31,7 @@ class SendVerificationMailServiceTest {
         @Test
         void sendsMailContainingVerificationCode() {
             SendVerificationMailCommand command =
-                    new SendVerificationMailCommand("river@modudrive.com", "042917");
+                    new SendVerificationMailCommand("river@modudrive.com", "042917", Purpose.SIGN_UP);
 
             sendVerificationMailService.sendVerificationMail(command);
 
@@ -38,6 +39,25 @@ class SendVerificationMailServiceTest {
                     eq("river@modudrive.com"),
                     contains("인증"),
                     argThat(html -> html.contains("042917") && html.contains("cid:logo") && !html.contains("{{")),
+                    eq("ModuDrive"),
+                    argThat(images -> images.containsKey("logo") && images.containsKey("warning")));
+        }
+    }
+
+    @Nested
+    @DisplayName("새 기기 로그인 인증 메일 발송을 요청받았을 때")
+    class WhenRequestedForLogin {
+
+        @Test
+        void sendsLoginWordedMailContainingVerificationCode() {
+            sendVerificationMailService.sendVerificationMail(
+                    new SendVerificationMailCommand("river@modudrive.com", "042917", Purpose.LOGIN));
+
+            then(sendMailPort).should().sendHtml(
+                    eq("river@modudrive.com"),
+                    contains("로그인"),
+                    argThat(html -> html.contains("042917") && html.contains("로그인") && !html.contains("회원가입")
+                            && !html.contains("{{")),
                     eq("ModuDrive"),
                     argThat(images -> images.containsKey("logo") && images.containsKey("warning")));
         }
