@@ -121,17 +121,35 @@ class SessionAuthenticationManagerTest {
     }
 
     @Nested
+    @DisplayName("auth-service가 5xx로 답할 때")
+    class WhenAuthServiceFails {
+
+        @Test
+        @DisplayName("세션 만료가 아니라 확인 불가(503)로 실패한다")
+        void failsWithServiceUnavailable() {
+            String errorBody = "{\"status\":\"INTERNAL_SERVER_ERROR\",\"message\":\"Redis down\"}";
+            given(authClient.validateSession(any(ValidateSessionRequest.class))).willReturn(Mono.error(
+                    WebClientResponseException.create(HttpStatus.INTERNAL_SERVER_ERROR.value(), "Internal Server Error",
+                            null, errorBody.getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8)));
+
+            StepVerifier.create(manager.authenticate(token))
+                    .verifyErrorSatisfies(e -> assertSessionFailure(e,
+                            "SERVICE_UNAVAILABLE", AuthExceptionCase.AUTH_UNAVAILABLE.getMessage()));
+        }
+    }
+
+    @Nested
     @DisplayName("타임아웃·연결 실패 등 예상치 못한 예외일 때")
     class WhenUnexpectedExceptionOccurs {
 
         @Test
-        void failsWithUnauthorizedAuthenticationException() {
+        void failsWithServiceUnavailable() {
             given(authClient.validateSession(any(ValidateSessionRequest.class)))
                     .willReturn(Mono.error(new RuntimeException("connection refused")));
 
             StepVerifier.create(manager.authenticate(token))
                     .verifyErrorSatisfies(e -> assertSessionFailure(e,
-                            "UNAUTHORIZED", AuthExceptionCase.UNAUTHORIZED.getMessage()));
+                            "SERVICE_UNAVAILABLE", AuthExceptionCase.AUTH_UNAVAILABLE.getMessage()));
         }
     }
 }

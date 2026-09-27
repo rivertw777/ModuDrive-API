@@ -30,7 +30,8 @@ class CustomAuthenticationEntryPoint implements ServerAuthenticationEntryPoint {
 
     private Mono<Void> setErrorResponse(ServerWebExchange exchange) {
         ServerHttpResponse response = exchange.getResponse();
-        response.setStatusCode(HttpStatus.UNAUTHORIZED);
+        // 401, or 503 when auth-service couldn't be asked (SessionAuthenticationManager).
+        response.setStatusCode(HttpStatus.valueOf(AuthErrorAttributeUtils.getAuthErrorAttribute(exchange).getT1()));
         response.getHeaders().setContentType(MediaType.APPLICATION_JSON);
 
         DataBuffer buffer = setErrorResponseBody(exchange, response);

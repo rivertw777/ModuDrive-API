@@ -1,6 +1,5 @@
 package com.moduDrive.gateway.adapter.in.web.security;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.moduDrive.common.api.dto.auth.ValidateSessionRequest;
 import com.moduDrive.common.api.dto.auth.ValidateSessionResponse;
@@ -8,7 +7,6 @@ import com.moduDrive.gateway.adapter.out.client.auth.AuthClient;
 import com.moduDrive.gateway.exception.AuthExceptionCase;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.ReactiveAuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -23,7 +21,8 @@ import java.util.List;
 
 /**
  * Asks auth-service whether the session is alive. Every failure becomes a
- * {@link SessionAuthenticationException} — anything else would escape AuthenticationWebFilter as a 500.
+ * {@link SessionAuthenticationException} — anything else would escape AuthenticationWebFilter as a 500:
+ * 401 when auth-service rejected the session, 503 when it couldn't be asked.
  */
 @Slf4j
 @Component
@@ -45,9 +44,10 @@ class SessionAuthenticationManager implements ReactiveAuthenticationManager {
                     return Mono.just(authenticated(authData.memberId(), authData.memberRoles()));
                 })
                 .onErrorMap(WebClientResponseException.class, this::fromAuthServiceResponse)
+                // Connect failure, timeout, anything else: auth-service didn't answer.
                 .onErrorMap(e -> !(e instanceof AuthenticationException), e -> {
                     log.error("세션 확인 중 예상치 못한 오류 발생", e);
-                    return new SessionAuthenticationException(AuthExceptionCase.UNAUTHORIZED);
+                    return new SessionAuthenticationException(AuthExceptionCase.AUTH_UNAVAILABLE);
                 });
     }
 
@@ -59,30 +59,19 @@ class SessionAuthenticationManager implements ReactiveAuthenticationManager {
         return UsernamePasswordAuthenticationToken.authenticated(memberId, null, authorities);
     }
 
+    /** Only a 4xx is auth-service saying "no such session"; a 5xx means it couldn't check. */
     private SessionAuthenticationException fromAuthServiceResponse(WebClientResponseException e) {
+        if (!e.getStatusCode().is4xxClientError()) {
+            log.error("세션 확인 실패 — auth-service HTTP {}", e.getStatusCode());
+            return new SessionAuthenticationException(AuthExceptionCase.AUTH_UNAVAILABLE);
+        }
         try {
-            JsonNode jsonNode = objectMapper.readTree(e.getResponseBodyAsString());
-            String rawStatus = jsonNode.path("status").asText(null);
-            String status = isKnownHttpStatus(rawStatus)
-                    ? rawStatus
-                    : AuthExceptionCase.UNAUTHORIZED.getHttpStatus().name();
-            String message = jsonNode.path("message").asText(AuthExceptionCase.UNAUTHORIZED.getMessage());
-            return new SessionAuthenticationException(status, message);
+            String message = objectMapper.readTree(e.getResponseBodyAsString())
+                    .path("message").asText(AuthExceptionCase.UNAUTHORIZED.getMessage());
+            return new SessionAuthenticationException(AuthExceptionCase.UNAUTHORIZED.getHttpStatus().name(), message);
         } catch (Exception jsonProcessingException) {
             log.error("Content 파싱 실패 — HTTP {}", e.getStatusCode(), jsonProcessingException);
             return new SessionAuthenticationException(AuthExceptionCase.UNAUTHORIZED);
-        }
-    }
-
-    private static boolean isKnownHttpStatus(String status) {
-        if (status == null) {
-            return false;
-        }
-        try {
-            HttpStatus.valueOf(status);
-            return true;
-        } catch (IllegalArgumentException e) {
-            return false;
         }
     }
 }
