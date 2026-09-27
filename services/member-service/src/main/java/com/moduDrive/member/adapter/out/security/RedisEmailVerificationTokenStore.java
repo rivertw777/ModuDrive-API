@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Locale;
 
 @Component
 class RedisEmailVerificationTokenStore implements EmailVerificationTokenPort {
@@ -15,12 +16,18 @@ class RedisEmailVerificationTokenStore implements EmailVerificationTokenPort {
     private static final String CODE_PREFIX = "email-verify-code:";
     private static final String ATTEMPTS_PREFIX = "email-verify-attempts:";
     private static final String VERIFIED_PREFIX = "email-verified:";
+    private static final String REQUESTS_PREFIX = "email-verify-requests:";
+    /** Codes one address can be sent per window — without it, anyone can flood a mailbox with codes. */
+    static final int MAX_REQUESTS = 5;
+    static final Duration REQUEST_WINDOW = Duration.ofHours(1);
     /** A 6-digit code only has 10^6 values; without a guess cap it's brute-forceable inside its TTL. */
     private static final int MAX_ATTEMPTS = 5;
     /** Grace window to submit the sign-up form after verifying — independent of the (shorter) code TTL. */
     private static final Duration VERIFIED_WINDOW = Duration.ofMinutes(30);
     private static final RedisScript<Long> CONFIRM_SCRIPT =
             RedisRepository.loadScript("scripts/confirm-email-code.lua", Long.class);
+    private static final RedisScript<Long> COUNT_REQUEST_SCRIPT =
+            RedisRepository.loadScript("scripts/count-verification-request.lua", Long.class);
 
     private final RedisRepository redisRepository;
     private final long tokenExpiration;
@@ -29,6 +36,14 @@ class RedisEmailVerificationTokenStore implements EmailVerificationTokenPort {
                                      @Value("${modudrive.member.email-verification-token-expiration}") long tokenExpiration) {
         this.redisRepository = redisRepository;
         this.tokenExpiration = tokenExpiration;
+    }
+
+    @Override
+    public boolean tryRequestCode(String email) {
+        Long requests = redisRepository.executeScript(COUNT_REQUEST_SCRIPT,
+                List.of(REQUESTS_PREFIX + email.trim().toLowerCase(Locale.ROOT)),
+                String.valueOf(REQUEST_WINDOW.toMillis()));
+        return requests != null && requests <= MAX_REQUESTS;
     }
 
     @Override
