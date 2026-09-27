@@ -71,13 +71,16 @@ class RequestEmailVerificationServiceTest {
     class WhenEmailIsDuplicate {
 
         @Test
-        void answersLikeANewAddressButSendsNoCode() {
+        void throwsBusinessExceptionAndSkipsPublishing() {
             given(emailVerificationTokenPort.tryRequestCode("river@modudrive.com")).willReturn(true);
             given(checkEmailExistsPort.existsByEmail(command.getMemberEmail())).willReturn(true);
 
             Throwable thrown = catchThrowable(() -> requestEmailVerificationService.requestEmailVerification(command));
 
-            assertThat(thrown).isNull();
+            assertThat(thrown)
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(MemberExceptionCase.DUPLICATE_EMAIL);
             then(emailVerificationTokenPort).should(never()).saveCode(anyString(), anyString());
             then(publishMailEventPort).shouldHaveNoInteractions();
         }
