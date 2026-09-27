@@ -22,7 +22,10 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
 
 @ExtendWith(MockitoExtension.class)
 class AuthenticateMemberServiceTest {
@@ -70,7 +73,35 @@ class AuthenticateMemberServiceTest {
             assertThat(thrown)
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
-                    .isEqualTo(MemberExceptionCase.PASSWORD_NOT_MATCHED);
+                    .isEqualTo(MemberExceptionCase.INVALID_CREDENTIALS);
+        }
+    }
+
+    @Nested
+    @DisplayName("가입되지 않은 이메일일 때")
+    class WhenEmailIsUnknown {
+
+        @Test
+        void failsTheSameWayAsAWrongPassword() {
+            given(findMemberPort.findMemberByEmail(memberEmail))
+                    .willThrow(new BusinessException(MemberExceptionCase.MEMBER_NOT_FOUND));
+
+            Throwable thrown = catchThrowable(() -> authenticateMemberService.authenticateMember(command));
+
+            assertThat(thrown)
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(MemberExceptionCase.INVALID_CREDENTIALS);
+        }
+
+        @Test
+        void stillChecksThePasswordAgainstADummyHash() {
+            given(findMemberPort.findMemberByEmail(memberEmail))
+                    .willThrow(new BusinessException(MemberExceptionCase.MEMBER_NOT_FOUND));
+
+            catchThrowable(() -> authenticateMemberService.authenticateMember(command));
+
+            then(matchesPasswordPort).should().matchesPassword(eq(rawPassword), any(MemberPassword.class));
         }
     }
 }
