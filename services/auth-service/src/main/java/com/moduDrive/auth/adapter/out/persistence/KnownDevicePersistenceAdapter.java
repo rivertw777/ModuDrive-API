@@ -3,6 +3,7 @@ package com.moduDrive.auth.adapter.out.persistence;
 import com.moduDrive.auth.adapter.out.security.SecureTokens;
 import com.moduDrive.auth.application.port.out.KnownDevicePort;
 import com.moduDrive.auth.domain.vo.DeviceId;
+import com.moduDrive.auth.domain.vo.MemberEmail;
 import com.moduDrive.common.core.annotation.PersistenceAdapter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,25 +25,27 @@ class KnownDevicePersistenceAdapter implements KnownDevicePort {
 
     private final SpringDataKnownDeviceRepository repository;
 
-    @Transactional
+    @Transactional(readOnly = true)
     @Override
-    public boolean refreshIfKnown(String memberId, DeviceId deviceId) {
-        Instant now = Instant.now();
-        return repository.touchIfFresh(UUID.fromString(memberId), SecureTokens.sha256Hex(deviceId.value()),
-                now, now.minus(TTL)) == 1;
+    public boolean isKnown(MemberEmail memberEmail, DeviceId deviceId) {
+        return repository.existsFresh(memberEmail.normalized(), SecureTokens.sha256Hex(deviceId.value()),
+                Instant.now().minus(TTL));
     }
 
     @Transactional
     @Override
-    public DeviceId remember(String memberId, DeviceId deviceId) {
-        DeviceId device = deviceId != null ? deviceId : new DeviceId(SecureTokens.newToken());
-        UUID member = UUID.fromString(memberId);
+    public boolean refreshIfKnown(String memberId, MemberEmail memberEmail, DeviceId deviceId) {
         Instant now = Instant.now();
-        repository.upsert(member, SecureTokens.sha256Hex(device.value()), now);
-        // ponytail: expired rows are only swept here, per member, when they verify another device —
-        // a member who never comes back keeps theirs. Harmless (refreshIfKnown ignores them); add a
-        // scheduled global purge if the table's size ever matters.
-        repository.deleteExpired(member, now.minus(TTL));
+        return repository.touchIfFresh(UUID.fromString(memberId), SecureTokens.sha256Hex(deviceId.value()),
+                memberEmail.normalized(), now, now.minus(TTL)) == 1;
+    }
+
+    @Transactional
+    @Override
+    public DeviceId remember(String memberId, MemberEmail memberEmail, DeviceId deviceId) {
+        DeviceId device = deviceId != null ? deviceId : new DeviceId(SecureTokens.newToken());
+        repository.upsert(UUID.fromString(memberId), SecureTokens.sha256Hex(device.value()),
+                memberEmail.normalized(), Instant.now());
         return device;
     }
 }

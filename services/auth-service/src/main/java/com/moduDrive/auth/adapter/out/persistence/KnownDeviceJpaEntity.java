@@ -23,14 +23,18 @@ class KnownDeviceJpaEntity {
     @EmbeddedId
     private Key id;
 
+    // Lowercased; null on rows from before V2 until that device signs in again.
+    private String email;
+
     @Column(nullable = false)
     private Instant createdAt;
 
     @Column(nullable = false)
     private Instant lastUsedAt;
 
-    KnownDeviceJpaEntity(UUID memberId, String deviceHash, Instant createdAt, Instant lastUsedAt) {
+    KnownDeviceJpaEntity(UUID memberId, String deviceHash, String email, Instant createdAt, Instant lastUsedAt) {
         this.id = new Key(memberId, deviceHash);
+        this.email = email;
         this.createdAt = createdAt;
         this.lastUsedAt = lastUsedAt;
     }

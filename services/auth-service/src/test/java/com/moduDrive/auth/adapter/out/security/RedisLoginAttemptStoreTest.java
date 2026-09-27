@@ -1,5 +1,6 @@
 package com.moduDrive.auth.adapter.out.security;
 
+import com.moduDrive.auth.domain.vo.DeviceId;
 import com.moduDrive.auth.domain.vo.MemberEmail;
 import com.moduDrive.common.infrastructure.redis.RedisRepository;
 import org.junit.jupiter.api.AfterAll;
@@ -27,6 +28,7 @@ class RedisLoginAttemptStoreTest {
     private static RedisLoginAttemptStore store;
 
     private final MemberEmail email = new MemberEmail("River@ModuDrive.com");
+    private final DeviceId knownDevice = new DeviceId("known-device");
 
     @BeforeAll
     static void startRedis() {
@@ -52,7 +54,7 @@ class RedisLoginAttemptStoreTest {
 
     private void useUpAttempts() {
         for (int i = 0; i < RedisLoginAttemptStore.MAX_ATTEMPTS; i++) {
-            assertThat(store.tryAttempt(email)).isTrue();
+            assertThat(store.tryAttempt(email, null)).isTrue();
         }
     }
 
@@ -77,7 +79,7 @@ class RedisLoginAttemptStoreTest {
         void rejects() {
             useUpAttempts();
 
-            assertThat(store.tryAttempt(email)).isFalse();
+            assertThat(store.tryAttempt(email, null)).isFalse();
         }
 
         @Test
@@ -85,7 +87,7 @@ class RedisLoginAttemptStoreTest {
         void sharesTheLimitAcrossLetterCase() {
             useUpAttempts();
 
-            assertThat(store.tryAttempt(new MemberEmail("river@modudrive.com"))).isFalse();
+            assertThat(store.tryAttempt(new MemberEmail("river@modudrive.com"), null)).isFalse();
         }
     }
 
@@ -97,9 +99,39 @@ class RedisLoginAttemptStoreTest {
         void allowsAgain() {
             useUpAttempts();
 
-            store.clearAttempts(email);
+            store.clearAttempts(email, null);
 
-            assertThat(store.tryAttempt(email)).isTrue();
+            assertThat(store.tryAttempt(email, null)).isTrue();
+        }
+    }
+
+    @Nested
+    @DisplayName("아는 기기에서 시도할 때")
+    class WhenFromKnownDevice {
+
+        @Test
+        @DisplayName("공용 한도를 남이 다 써도 아는 기기는 따로 센다")
+        void isNotLockedByTheSharedCount() {
+            useUpAttempts();
+
+            assertThat(store.tryAttempt(email, knownDevice)).isTrue();
+            assertThat(redisTemplate.keys("login-attempts:river@modudrive.com:*"))
+                    .singleElement().asString().matches("login-attempts:river@modudrive.com:[0-9a-f]{64}");
+        }
+
+        @Test
+        @DisplayName("아는 기기의 한도도 5번이고, 지우면 그 기기 것만 지운다")
+        void hasItsOwnLimitAndClearsOnlyItself() {
+            for (int i = 0; i < RedisLoginAttemptStore.MAX_ATTEMPTS; i++) {
+                assertThat(store.tryAttempt(email, knownDevice)).isTrue();
+            }
+            assertThat(store.tryAttempt(email, knownDevice)).isFalse();
+            useUpAttempts();
+
+            store.clearAttempts(email, knownDevice);
+
+            assertThat(store.tryAttempt(email, knownDevice)).isTrue();
+            assertThat(store.tryAttempt(email, null)).isFalse();
         }
     }
 }

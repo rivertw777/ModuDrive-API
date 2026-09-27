@@ -1,6 +1,7 @@
 package com.moduDrive.auth.adapter.out.security;
 
 import com.moduDrive.auth.application.port.out.LoginAttemptPort;
+import com.moduDrive.auth.domain.vo.DeviceId;
 import com.moduDrive.auth.domain.vo.MemberEmail;
 import com.moduDrive.common.infrastructure.redis.RedisRepository;
 import lombok.RequiredArgsConstructor;
@@ -9,12 +10,12 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.util.List;
-import java.util.Locale;
 
 /**
  * Login attempts per email, counted before the password is checked (spec 004 2-1). Counting first
  * — rather than checking a failure count and bumping it afterwards — means a burst of parallel
- * guesses can't all slip past the check before the first failure lands.
+ * guesses can't all slip past the check before the first failure lands. A known device gets its own
+ * {@code login-attempts:{email}:{sha256(device)}}; everything else shares {@code login-attempts:{email}}.
  */
 @Component
 @RequiredArgsConstructor
@@ -30,18 +31,19 @@ class RedisLoginAttemptStore implements LoginAttemptPort {
     private final RedisRepository redisRepository;
 
     @Override
-    public boolean tryAttempt(MemberEmail memberEmail) {
+    public boolean tryAttempt(MemberEmail memberEmail, DeviceId knownDevice) {
         Long attempts = redisRepository.executeScript(
-                COUNT_SCRIPT, List.of(key(memberEmail)), String.valueOf(WINDOW.toMillis()));
+                COUNT_SCRIPT, List.of(key(memberEmail, knownDevice)), String.valueOf(WINDOW.toMillis()));
         return attempts != null && attempts <= MAX_ATTEMPTS;
     }
 
     @Override
-    public void clearAttempts(MemberEmail memberEmail) {
-        redisRepository.delete(key(memberEmail));
+    public void clearAttempts(MemberEmail memberEmail, DeviceId knownDevice) {
+        redisRepository.delete(key(memberEmail, knownDevice));
     }
 
-    private static String key(MemberEmail memberEmail) {
-        return KEY_PREFIX + memberEmail.value().trim().toLowerCase(Locale.ROOT);
+    private static String key(MemberEmail memberEmail, DeviceId knownDevice) {
+        String key = KEY_PREFIX + memberEmail.normalized();
+        return knownDevice == null ? key : key + ":" + SecureTokens.sha256Hex(knownDevice.value());
     }
 }
