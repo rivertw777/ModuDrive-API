@@ -62,19 +62,19 @@ class AuthenticateMemberControllerTest {
     }
 
     @Nested
-    @DisplayName("비밀번호가 일치하지 않을 때")
+    @DisplayName("이메일이나 비밀번호가 틀렸을 때")
     class WhenPasswordDoesNotMatch {
 
         @Test
         void returnsBadRequestWithExceptionMessage() throws Exception {
-            willThrow(new BusinessException(MemberExceptionCase.PASSWORD_NOT_MATCHED))
+            willThrow(new BusinessException(MemberExceptionCase.INVALID_CREDENTIALS))
                     .given(authenticateMemberUseCase).authenticateMember(any(AuthenticateMemberCommand.class));
 
             mockMvc.perform(post("/internal/v1/member/authenticate")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(REQUEST_JSON))
                     .andExpect(status().isBadRequest())
-                    .andExpect(jsonPath("$.message").value(MemberExceptionCase.PASSWORD_NOT_MATCHED.getMessage()));
+                    .andExpect(jsonPath("$.message").value(MemberExceptionCase.INVALID_CREDENTIALS.getMessage()));
         }
     }
 }
