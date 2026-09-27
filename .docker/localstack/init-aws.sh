@@ -8,6 +8,7 @@ set -euo pipefail
 
 QUEUES=(
   member-signed-up
+  member-password-changed
   mail-verification-requested
   mail-login-verification-requested
   mail-share-invite-requested

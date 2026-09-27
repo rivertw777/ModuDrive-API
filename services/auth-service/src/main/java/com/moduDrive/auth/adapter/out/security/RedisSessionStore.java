@@ -19,15 +19,19 @@ import java.util.Optional;
 
 /**
  * Sessions live in Redis as {@code session:{sha256(id)}} hashes. Only the hash is stored, so a
- * leaked dump or backup can't be turned back into a working cookie.
+ * leaked dump or backup can't be turned back into a working cookie. {@code member-sessions:{memberId}}
+ * lists each member's session keys, so all of them can be ended at once.
  */
 @Component
 class RedisSessionStore implements CreateSessionPort, FindSessionPort, DeleteSessionPort {
 
     private static final String KEY_PREFIX = "session:";
+    private static final String MEMBER_INDEX_PREFIX = "member-sessions:";
 
     private static final RedisScript<Long> CREATE_SCRIPT =
             RedisRepository.loadScript("scripts/create-session.lua", Long.class);
+    private static final RedisScript<Long> DELETE_MEMBER_SESSIONS_SCRIPT =
+            RedisRepository.loadScript("scripts/delete-member-sessions.lua", Long.class);
     @SuppressWarnings("rawtypes")
     private static final RedisScript<List> TOUCH_SCRIPT =
             RedisRepository.loadScript("scripts/touch-session.lua", List.class);
@@ -51,10 +55,11 @@ class RedisSessionStore implements CreateSessionPort, FindSessionPort, DeleteSes
         SessionId sessionId = new SessionId(SecureTokens.newToken());
         redisRepository.executeScript(
                 CREATE_SCRIPT,
-                List.of(key(sessionId)),
+                List.of(key(sessionId), MEMBER_INDEX_PREFIX + memberAuthData.getMemberId()),
                 memberAuthData.getMemberId(),
                 String.join(",", memberAuthData.getMemberRoles()),
-                idleTimeoutMillis
+                idleTimeoutMillis,
+                absoluteTimeoutMillis
         );
         return sessionId;
     }
@@ -77,9 +82,16 @@ class RedisSessionStore implements CreateSessionPort, FindSessionPort, DeleteSes
         ));
     }
 
+    // ponytail: the member's index keeps a logged-out or expired session's key until the index
+    // itself expires; deleting it again later is a no-op, so it isn't worth an SREM here.
     @Override
     public void deleteSession(SessionId sessionId) {
         redisRepository.delete(key(sessionId));
+    }
+
+    @Override
+    public void deleteAllSessions(String memberId) {
+        redisRepository.executeScript(DELETE_MEMBER_SESSIONS_SCRIPT, List.of(MEMBER_INDEX_PREFIX + memberId));
     }
 
     private static String key(SessionId sessionId) {

@@ -120,4 +120,25 @@ class KnownDevicePersistenceAdapterTest {
             assertThat(adapter.refreshIfKnown(MEMBER_ID, new DeviceId("never-seen"))).isFalse();
         }
     }
+
+    @Nested
+    @DisplayName("회원의 기기를 모두 잊을 때")
+    class WhenForgettingAll {
+
+        @Test
+        @DisplayName("그 회원의 기기만 모두 모르는 기기가 된다")
+        void forgetsEveryDeviceOfThatMemberOnly() {
+            DeviceId first = new DeviceId("first-device");
+            DeviceId second = new DeviceId("second-device");
+            givenDeviceUsed(MEMBER_ID, first, Duration.ofDays(1));
+            givenDeviceUsed(MEMBER_ID, second, Duration.ofDays(1));
+            givenDeviceUsed(OTHER_MEMBER_ID, first, Duration.ofDays(1));
+
+            adapter.forgetAll(MEMBER_ID);
+
+            assertThat(adapter.refreshIfKnown(MEMBER_ID, first)).isFalse();
+            assertThat(adapter.refreshIfKnown(MEMBER_ID, second)).isFalse();
+            assertThat(adapter.refreshIfKnown(OTHER_MEMBER_ID, first)).isTrue();
+        }
+    }
 }

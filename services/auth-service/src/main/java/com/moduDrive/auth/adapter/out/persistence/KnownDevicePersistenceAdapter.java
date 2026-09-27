@@ -45,4 +45,10 @@ class KnownDevicePersistenceAdapter implements KnownDevicePort {
         repository.deleteExpired(member, now.minus(TTL));
         return device;
     }
+
+    @Transactional
+    @Override
+    public void forgetAll(String memberId) {
+        repository.deleteByMember(UUID.fromString(memberId));
+    }
 }

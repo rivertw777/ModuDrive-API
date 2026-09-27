@@ -30,4 +30,8 @@ interface SpringDataKnownDeviceRepository extends JpaRepository<KnownDeviceJpaEn
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("delete from KnownDeviceJpaEntity d where d.id.memberId = :memberId and d.lastUsedAt <= :cutoff")
     void deleteExpired(UUID memberId, Instant cutoff);
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("delete from KnownDeviceJpaEntity d where d.id.memberId = :memberId")
+    void deleteByMember(UUID memberId);
 }

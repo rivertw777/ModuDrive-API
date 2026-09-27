@@ -13,6 +13,8 @@ modudrive:
   messaging:
     outbox:
       enabled: true
+    idempotency:
+      enabled: true
 
 session:
   # spec 004 1-1-4 — 유휴 만료(마지막 사용자 요청 기준) / 절대 만료(로그인 기준)

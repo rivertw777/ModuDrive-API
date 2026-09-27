@@ -193,4 +193,34 @@ class RedisSessionStoreTest {
             assertThat(redisTemplate.keys("session:*")).isEmpty();
         }
     }
+
+    @Nested
+    @DisplayName("회원의 세션을 전부 지울 때")
+    class WhenDeletingAllOfAMember {
+
+        @Test
+        @DisplayName("그 회원의 세션만 모두 사라진다")
+        void endsEverySessionOfThatMemberOnly() {
+            SessionId first = store.createSession(member);
+            SessionId second = store.createSession(member);
+            SessionId others = store.createSession(MemberAuthData.create(
+                    new MemberAuthData.MemberId("other-member-id"), new MemberAuthData.MemberRoles(List.of("MEMBER"))));
+
+            store.deleteAllSessions("member-id");
+
+            assertThat(store.findSession(first, false)).isEmpty();
+            assertThat(store.findSession(second, false)).isEmpty();
+            assertThat(store.findSession(others, false)).isPresent();
+            assertThat(redisTemplate.hasKey("member-sessions:member-id")).isFalse();
+        }
+
+        @Test
+        @DisplayName("회원별 세션 목록은 절대 만료(12시간)까지만 남는다")
+        void indexLivesAsLongAsTheAbsoluteTimeout() {
+            store.createSession(member);
+
+            assertThat(ttlMillis("member-sessions:member-id"))
+                    .isBetween(ABSOLUTE_TIMEOUT.toMillis() - 5_000, ABSOLUTE_TIMEOUT.toMillis());
+        }
+    }
 }

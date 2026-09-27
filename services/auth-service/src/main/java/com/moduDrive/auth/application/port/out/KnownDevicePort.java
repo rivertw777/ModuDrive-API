@@ -10,4 +10,7 @@ public interface KnownDevicePort {
 
     /** Records the device as verified for the member — minting a new id when there's none — and returns it. */
     DeviceId remember(String memberId, DeviceId deviceId);
+
+    /** Forgets every device the member verified, so each needs the emailed code again. */
+    void forgetAll(String memberId);
 }
