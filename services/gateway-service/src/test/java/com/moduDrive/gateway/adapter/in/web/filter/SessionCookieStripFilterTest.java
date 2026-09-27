@@ -49,7 +49,7 @@ class SessionCookieStripFilterTest {
         @Test
         void dropsCookieHeaderWhenNothingElseRemains() {
             String cookieHeader = forwardedCookieHeader(MockServerHttpRequest.get("/api/v1/storage/view/id")
-                    .cookie(new HttpCookie("session", "secret"))
+                    .cookie(new HttpCookie("__Host-session", "secret"))
                     .build());
 
             assertThat(cookieHeader).isNull();

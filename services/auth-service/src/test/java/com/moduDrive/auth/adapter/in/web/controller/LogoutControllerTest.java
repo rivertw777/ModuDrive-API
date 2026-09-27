@@ -3,7 +3,7 @@ package com.moduDrive.auth.adapter.in.web.controller;
 import com.moduDrive.auth.application.port.in.command.LogoutCommand;
 import com.moduDrive.auth.application.port.in.usecase.LogoutUseCase;
 import com.moduDrive.auth.domain.vo.SessionId;
-import com.moduDrive.common.api.dto.auth.SessionCookie;
+import com.moduDrive.common.api.auth.SessionCookie;
 import com.moduDrive.common.core.web.GlobalExceptionHandler;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.DisplayName;
@@ -29,7 +29,7 @@ class LogoutControllerTest {
     @MockitoBean
     private LogoutUseCase logoutUseCase;
 
-    private static final String COOKIE_NAME = SessionCookie.SECURE_NAME;
+    private static final String COOKIE_NAME = SessionCookie.NAME;
 
     @Nested
     @DisplayName("세션 쿠키로 로그아웃을 요청할 때")

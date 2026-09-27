@@ -1,6 +1,6 @@
 package com.moduDrive.gateway.adapter.in.web.filter;
 
-import com.moduDrive.common.api.dto.auth.SessionCookie;
+import com.moduDrive.common.api.auth.SessionCookie;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
@@ -12,7 +12,6 @@ import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -24,19 +23,18 @@ import java.util.stream.Collectors;
 class SessionCookieStripFilter implements GlobalFilter, Ordered {
 
     private static final String AUTH_PATH_PREFIX = "/api/v1/auth/";
-    private static final Set<String> SESSION_COOKIE_NAMES = Set.of(SessionCookie.SECURE_NAME, SessionCookie.INSECURE_NAME);
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         ServerHttpRequest request = exchange.getRequest();
-        boolean carriesSessionCookie = SESSION_COOKIE_NAMES.stream().anyMatch(request.getCookies()::containsKey);
+        boolean carriesSessionCookie = request.getCookies().containsKey(SessionCookie.NAME);
         if (!carriesSessionCookie || request.getPath().value().startsWith(AUTH_PATH_PREFIX)) {
             return chain.filter(exchange);
         }
 
         String remainingCookies = request.getCookies().values().stream()
                 .flatMap(List::stream)
-                .filter(cookie -> !SESSION_COOKIE_NAMES.contains(cookie.getName()))
+                .filter(cookie -> !SessionCookie.NAME.equals(cookie.getName()))
                 .map(HttpCookie::toString)
                 .collect(Collectors.joining("; "));
         ServerWebExchange stripped = exchange.mutate()
