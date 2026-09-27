@@ -18,6 +18,9 @@ class SessionAuthenticationFailureHandler implements ServerAuthenticationFailure
     public Mono<Void> onAuthenticationFailure(WebFilterExchange webFilterExchange, AuthenticationException exception) {
         if (exception instanceof SessionAuthenticationException e) {
             AuthErrorAttributeUtils.setAuthErrorAttribute(webFilterExchange.getExchange(), e.getStatus(), e.getMessage());
+            if (e.getData() != null) {
+                AuthErrorAttributeUtils.setAuthErrorData(webFilterExchange.getExchange(), e.getData());
+            }
         } else {
             AuthErrorAttributeUtils.setAuthErrorAttribute(webFilterExchange.getExchange(), AuthExceptionCase.UNAUTHORIZED);
         }

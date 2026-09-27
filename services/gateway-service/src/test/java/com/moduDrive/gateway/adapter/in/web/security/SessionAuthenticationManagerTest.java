@@ -109,6 +109,35 @@ class SessionAuthenticationManagerTest {
         }
 
         @Test
+        @DisplayName("응답 data(밀려난 이유 등)를 그대로 넘긴다")
+        void passesAuthServiceDataThrough() {
+            String errorBody = "{\"status\":\"UNAUTHORIZED\",\"message\":\"다른 곳에서 로그인되어 로그아웃되었습니다.\","
+                    + "\"data\":{\"reason\":\"SESSION_REPLACED\"}}";
+            given(authClient.validateSession(any(ValidateSessionRequest.class))).willReturn(Mono.error(
+                    WebClientResponseException.create(HttpStatus.UNAUTHORIZED.value(), "Unauthorized", null,
+                            errorBody.getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8)));
+
+            StepVerifier.create(manager.authenticate(token))
+                    .verifyErrorSatisfies(e -> {
+                        assertSessionFailure(e, "UNAUTHORIZED", "다른 곳에서 로그인되어 로그아웃되었습니다.");
+                        assertThat(((SessionAuthenticationException) e).getData())
+                                .hasToString("{\"reason\":\"SESSION_REPLACED\"}");
+                    });
+        }
+
+        @Test
+        @DisplayName("응답에 data가 없으면 비워 둔다")
+        void leavesDataEmptyWhenAbsent() {
+            String errorBody = "{\"status\":\"UNAUTHORIZED\",\"message\":\"로그인이 필요합니다.\"}";
+            given(authClient.validateSession(any(ValidateSessionRequest.class))).willReturn(Mono.error(
+                    WebClientResponseException.create(HttpStatus.UNAUTHORIZED.value(), "Unauthorized", null,
+                            errorBody.getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8)));
+
+            StepVerifier.create(manager.authenticate(token))
+                    .verifyErrorSatisfies(e -> assertThat(((SessionAuthenticationException) e).getData()).isNull());
+        }
+
+        @Test
         void fallsBackToUnauthorizedWhenBodyIsNotJson() {
             given(authClient.validateSession(any(ValidateSessionRequest.class))).willReturn(Mono.error(
                     WebClientResponseException.create(HttpStatus.UNAUTHORIZED.value(), "Unauthorized", null,
