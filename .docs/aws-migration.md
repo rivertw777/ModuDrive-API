@@ -124,6 +124,7 @@ Promtail은 docker socket 기반이라 **Fargate에서 못 쓴다** — 로그 �
 - NAT Gateway는 비싸다 — S3/ECR/SQS/Secrets Manager/CloudWatch는 **VPC 엔드포인트**로 돌리면 NAT 트래픽 절감.
 - Route 53(도메인) + ACM(인증서). ModuDrive-WEB은 **S3 + CloudFront** 정적 호스팅,
   `CLIENT_URL`/CORS/쿠키 도메인 재설정 필요.
+- WEB의 **CSP**는 CloudFront **응답 헤더 정책**으로 붙인다. 정책 문자열은 ModuDrive-WEB `vite.config.ts`의 `contentSecurityPolicy()`가 원본(`vite preview`가 같은 헤더를 보냄) — `connect-src`에 API 도메인을 넣고, 둘을 같이 고친다.
 - ⚠️ **WEB과 API는 같은 등록 도메인(사이트)에 있어야 한다** (예: `app.modudrive.com` / `api.modudrive.com`, 또는 CloudFront path behavior로 `/api/*`를 같은 origin에 붙임). 세션 쿠키가 `SameSite=Strict` + host-only라서 ([004 인증](spec/004-auth-spec.md) 1-1-2), 사이트가 다르면 로그인은 200인데 이후 요청에 쿠키가 안 실려 전부 401이 된다. `*.cloudfront.net`·`*.elb.amazonaws.com` 기본 도메인은 Public Suffix List에 있어 서로 다른 사이트로 취급되므로 **커스텀 도메인 필수**.
 
 ### 2-12. IaC / 배포
