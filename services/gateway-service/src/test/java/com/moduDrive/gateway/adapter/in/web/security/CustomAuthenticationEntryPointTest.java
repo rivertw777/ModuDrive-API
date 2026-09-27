@@ -11,8 +11,6 @@ import org.springframework.mock.web.server.MockServerWebExchange;
 import org.springframework.security.authentication.InsufficientAuthenticationException;
 import reactor.test.StepVerifier;
 
-import java.util.Map;
-
 import static org.assertj.core.api.Assertions.assertThat;
 
 class CustomAuthenticationEntryPointTest {
@@ -37,27 +35,6 @@ class CustomAuthenticationEntryPointTest {
             String body = exchange.getResponse().getBodyAsString().block();
             assertThat(body).isEqualTo(
                     "{\"status\":\"UNAUTHORIZED\",\"message\":\"" + AuthExceptionCase.NO_SESSION.getMessage() + "\"}");
-        }
-    }
-
-    @Nested
-    @DisplayName("에러 data가 설정된 상태일 때")
-    class WhenErrorDataIsSet {
-
-        @Test
-        void returns401WithData() {
-            MockServerWebExchange exchange = MockServerWebExchange.from(
-                    MockServerHttpRequest.get("/api/secured").build());
-            AuthErrorAttributeUtils.setAuthErrorAttribute(exchange, "UNAUTHORIZED", "다른 곳에서 로그인되어 로그아웃되었습니다.");
-            AuthErrorAttributeUtils.setAuthErrorData(exchange, Map.of("reason", "SESSION_REPLACED"));
-
-            StepVerifier.create(entryPoint.commence(exchange, new InsufficientAuthenticationException("test")))
-                    .verifyComplete();
-
-            assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
-            assertThat(exchange.getResponse().getBodyAsString().block()).isEqualTo(
-                    "{\"status\":\"UNAUTHORIZED\",\"message\":\"다른 곳에서 로그인되어 로그아웃되었습니다.\","
-                            + "\"data\":{\"reason\":\"SESSION_REPLACED\"}}");
         }
     }
 

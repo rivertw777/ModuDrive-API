@@ -7,8 +7,6 @@ import com.moduDrive.auth.domain.model.MemberAuthData;
 import com.moduDrive.auth.domain.model.MemberAuthData.MemberId;
 import com.moduDrive.auth.domain.model.MemberAuthData.MemberRoles;
 import com.moduDrive.auth.domain.vo.SessionId;
-import com.moduDrive.auth.exception.AuthExceptionCase;
-import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.common.infrastructure.redis.RedisRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.script.RedisScript;
@@ -17,20 +15,16 @@ import org.springframework.stereotype.Component;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 /**
  * Sessions live in Redis as {@code session:{sha256(id)}} hashes. Only the hash is stored, so a
- * leaked dump or backup can't be turned back into a working cookie. {@code member-session:{memberId}}
- * names each member's current session, so a new login can take over the old one (spec 004 1-2).
+ * leaked dump or backup can't be turned back into a working cookie.
  */
 @Component
 class RedisSessionStore implements CreateSessionPort, FindSessionPort, DeleteSessionPort {
 
     private static final String KEY_PREFIX = "session:";
-    private static final String MEMBER_KEY_PREFIX = "member-session:";
-    private static final String REPLACED = "replaced";
 
     private static final RedisScript<Long> CREATE_SCRIPT =
             RedisRepository.loadScript("scripts/create-session.lua", Long.class);
@@ -55,15 +49,12 @@ class RedisSessionStore implements CreateSessionPort, FindSessionPort, DeleteSes
     @Override
     public SessionId createSession(MemberAuthData memberAuthData) {
         SessionId sessionId = new SessionId(SecureTokens.newToken());
-        String hash = SecureTokens.sha256Hex(sessionId.value());
         redisRepository.executeScript(
                 CREATE_SCRIPT,
-                List.of(KEY_PREFIX + hash, MEMBER_KEY_PREFIX + memberAuthData.getMemberId()),
+                List.of(key(sessionId)),
                 memberAuthData.getMemberId(),
                 String.join(",", memberAuthData.getMemberRoles()),
-                idleTimeoutMillis,
-                absoluteTimeoutMillis,
-                hash
+                idleTimeoutMillis
         );
         return sessionId;
     }
@@ -77,10 +68,6 @@ class RedisSessionStore implements CreateSessionPort, FindSessionPort, DeleteSes
                 absoluteTimeoutMillis,
                 touch ? "1" : "0"
         );
-        if (result != null && result.size() == 1 && REPLACED.equals(result.get(0))) {
-            throw new BusinessException(AuthExceptionCase.SESSION_REPLACED,
-                    Map.of("reason", AuthExceptionCase.SESSION_REPLACED.name()));
-        }
         if (result == null || result.size() < 2) {
             return Optional.empty();
         }

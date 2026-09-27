@@ -17,9 +17,7 @@ public enum AuthExceptionCase implements ExceptionCase {
     LOGIN_VERIFICATION_EXPIRED(HttpStatus.BAD_REQUEST, "인증 시간이 지났습니다. 다시 로그인해 주세요."),
     INVALID_LOGIN_VERIFICATION_CODE(HttpStatus.BAD_REQUEST, "인증 코드가 일치하지 않습니다."),
     // One answer for missing, expired, logged-out and forged ids alike — no oracle to probe.
-    SESSION_NOT_FOUND(HttpStatus.UNAUTHORIZED, "로그인이 필요합니다."),
-    // Only a browser holding a once-real session id can get this, so it tells an outsider nothing.
-    SESSION_REPLACED(HttpStatus.UNAUTHORIZED, "다른 곳에서 로그인되어 로그아웃되었습니다.");
+    SESSION_NOT_FOUND(HttpStatus.UNAUTHORIZED, "로그인이 필요합니다.");
 
     private final HttpStatus httpStatus;
     private final String message;

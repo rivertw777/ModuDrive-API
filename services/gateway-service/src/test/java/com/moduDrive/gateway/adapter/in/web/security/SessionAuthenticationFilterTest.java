@@ -22,10 +22,6 @@ import org.springframework.web.server.WebFilterChain;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
-import org.springframework.http.HttpStatus;
-import org.springframework.web.reactive.function.client.WebClientResponseException;
-
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -101,21 +97,6 @@ class SessionAuthenticationFilterTest {
             assertThat(reachedChain[0]).isTrue();
             assertThat(contexts).isEmpty();
             assertThat(exchange.getAttributes().get(AuthErrorAttributeUtils.STATUS_ATTRIBUTE)).isEqualTo("UNAUTHORIZED");
-        }
-
-        @Test
-        @DisplayName("auth-service가 준 data(밀려난 이유)도 에러와 함께 기록한다")
-        void recordsAuthServiceData() {
-            String errorBody = "{\"status\":\"UNAUTHORIZED\",\"message\":\"다른 곳에서 로그인되어 로그아웃되었습니다.\","
-                    + "\"data\":{\"reason\":\"SESSION_REPLACED\"}}";
-            given(authClient.validateSession(any(ValidateSessionRequest.class))).willReturn(Mono.error(
-                    WebClientResponseException.create(HttpStatus.UNAUTHORIZED.value(), "Unauthorized", null,
-                            errorBody.getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8)));
-            MockServerWebExchange exchange = withSessionCookie();
-
-            StepVerifier.create(filter.filter(exchange, ex -> Mono.empty())).verifyComplete();
-
-            assertThat(AuthErrorAttributeUtils.getAuthErrorData(exchange)).hasToString("{\"reason\":\"SESSION_REPLACED\"}");
         }
     }
 }
