@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Login attempts per email, counted before the password is checked (spec 004 2장). Counting first
+ * Login attempts per email, counted before the password is checked (spec 004 2-1). Counting first
  * — rather than checking a failure count and bumping it afterwards — means a burst of parallel
  * guesses can't all slip past the check before the first failure lands.
  */

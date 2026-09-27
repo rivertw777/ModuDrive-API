@@ -1,24 +1,20 @@
 package com.moduDrive.auth.adapter.out.client.member;
 
 import com.moduDrive.auth.application.port.out.AuthenticateMemberPort;
-import com.moduDrive.auth.application.port.out.SendLoginVerificationMailPort;
 import com.moduDrive.auth.exception.AuthExceptionCase;
 import com.moduDrive.auth.domain.model.MemberAuthData;
 import com.moduDrive.auth.domain.model.MemberAuthData.MemberId;
 import com.moduDrive.auth.domain.model.MemberAuthData.MemberRoles;
 import com.moduDrive.common.api.dto.member.AuthenticateMemberRequest;
 import com.moduDrive.common.api.dto.member.AuthenticateMemberResponse;
-import com.moduDrive.common.api.dto.member.SendLoginVerificationMailRequest;
 import com.moduDrive.common.core.exception.BusinessException;
 import feign.FeignException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-import java.util.UUID;
-
 @Component
 @RequiredArgsConstructor
-class MemberClientAdapter implements AuthenticateMemberPort, SendLoginVerificationMailPort {
+class MemberClientAdapter implements AuthenticateMemberPort {
 
     private final MemberClient memberClient;
 
@@ -41,10 +37,4 @@ class MemberClientAdapter implements AuthenticateMemberPort, SendLoginVerificati
                 new MemberRoles(response.roles())
         );
     }
-
-    @Override
-    public void sendLoginVerificationMail(String memberId, String code) {
-        memberClient.sendLoginVerificationMail(new SendLoginVerificationMailRequest(UUID.fromString(memberId), code));
-    }
-
 }

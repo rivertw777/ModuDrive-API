@@ -90,14 +90,14 @@ class SessionCookieFactoryTest {
         }
 
         @Test
-        @DisplayName("확인 쿠키는 10분 수명으로 내려주고, 지울 때는 수명 0으로 내려준다")
+        @DisplayName("확인 쿠키는 5분 수명으로 내려주고, 지울 때는 수명 0으로 내려준다")
         void issuesAndClearsATenMinuteChallengeCookie() {
             factory.setLoginChallengeId(response, new LoginChallengeId("challenge-id"));
             factory.clearLoginChallengeId(response);
 
             assertThat(response.getHeaders(HttpHeaders.SET_COOKIE)).satisfiesExactly(
                     issued -> assertThat(issued).startsWith("__Host-login-challenge=challenge-id")
-                            .contains("Max-Age=600", "HttpOnly", "Secure", "SameSite=Strict"),
+                            .contains("Max-Age=300", "HttpOnly", "Secure", "SameSite=Strict"),
                     cleared -> assertThat(cleared).startsWith("__Host-login-challenge=;").contains("Max-Age=0"));
         }
 

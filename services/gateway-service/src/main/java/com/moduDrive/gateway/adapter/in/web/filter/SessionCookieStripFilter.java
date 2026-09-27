@@ -18,7 +18,7 @@ import java.util.stream.Collectors;
  * Downstream services learn who the caller is from X_USER_ID alone, so the session cookie — a
  * live credential — has no business leaving the gateway except to auth-service, which needs it to
  * log in and out. Dropping it everywhere else keeps it out of other services' logs and bugs. The
- * device and login-challenge cookies (spec 004 2-1) are auth-only too, and go the same way.
+ * device and login-challenge cookies (spec 004 2-2) are auth-only too, and go the same way.
  */
 @Component
 class SessionCookieStripFilter implements GlobalFilter, Ordered {

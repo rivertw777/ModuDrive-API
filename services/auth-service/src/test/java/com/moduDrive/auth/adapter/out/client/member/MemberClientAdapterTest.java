@@ -4,7 +4,6 @@ import com.moduDrive.auth.domain.model.MemberAuthData;
 import com.moduDrive.auth.exception.AuthExceptionCase;
 import com.moduDrive.common.api.dto.member.AuthenticateMemberRequest;
 import com.moduDrive.common.api.dto.member.AuthenticateMemberResponse;
-import com.moduDrive.common.api.dto.member.SendLoginVerificationMailRequest;
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.common.core.web.ApiResponse;
 import org.junit.jupiter.api.DisplayName;
@@ -21,12 +20,10 @@ import feign.Request;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.BDDMockito.then;
 
 @ExtendWith(MockitoExtension.class)
 class MemberClientAdapterTest {
@@ -93,20 +90,6 @@ class MemberClientAdapterTest {
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
                     .isEqualTo(AuthExceptionCase.INVALID_CREDENTIALS);
-        }
-    }
-
-    @Nested
-    @DisplayName("로그인 인증 메일을 요청할 때")
-    class WhenSendingLoginVerificationMail {
-
-        @Test
-        void sendsMemberIdAndCode() {
-            UUID memberId = UUID.randomUUID();
-
-            memberClientAdapter.sendLoginVerificationMail(memberId.toString(), "042917");
-
-            then(memberClient).should().sendLoginVerificationMail(new SendLoginVerificationMailRequest(memberId, "042917"));
         }
     }
 }

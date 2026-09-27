@@ -18,13 +18,13 @@ import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
 
-/** Logins waiting for their emailed code as {@code login-challenge:{sha256(id)}} hashes (spec 004 2-1). */
+/** Logins waiting for their emailed code as {@code login-challenge:{sha256(id)}} hashes (spec 004 2-2). */
 @Component
 @RequiredArgsConstructor
 class RedisLoginChallengeStore implements LoginChallengePort {
 
     private static final String KEY_PREFIX = "login-challenge:";
-    private static final Duration TTL = Duration.ofMinutes(10);
+    private static final Duration TTL = Duration.ofMinutes(5);
     private static final int MAX_WRONG_CODES = 5;
     private static final String MISMATCH = "mismatch";
 

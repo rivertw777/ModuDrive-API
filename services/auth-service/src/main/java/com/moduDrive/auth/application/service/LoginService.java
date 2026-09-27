@@ -59,11 +59,12 @@ class LoginService implements LoginUseCase {
             return new LoginResult.SignedIn(createSessionPort.createSession(memberAuthData), loginCommand.getDeviceId());
         }
 
-        // A device this member hasn't verified: no session until the emailed code comes back (spec 004 2-1).
+        // A device this member hasn't verified: no session until the emailed code comes back (spec 004 2-2).
         String code = String.format("%06d", secureRandom.nextInt(1_000_000));
         LoginChallengeId challengeId =
                 loginChallengePort.createChallenge(memberAuthData, loginCommand.getMemberEmail(), code);
-        sendLoginVerificationMailPort.sendLoginVerificationMail(memberAuthData.getMemberId(), code);
+        // The typed email is the member's own: member-service found them by it, exactly.
+        sendLoginVerificationMailPort.sendLoginVerificationMail(loginCommand.getMemberEmail(), code);
         return new LoginResult.VerificationRequired(challengeId);
     }
 

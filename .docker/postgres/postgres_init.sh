@@ -14,5 +14,6 @@ SQL
 create_db member_db member_service "$MEMBER_DB_PASSWORD"
 create_db file_db file_service "$FILE_DB_PASSWORD"
 create_db notification_db notification_service "$NOTIFICATION_DB_PASSWORD"
+create_db auth_db auth_service "$AUTH_DB_PASSWORD"
 
 # Tables and the dev test users come from each service's Flyway migrations (db/migration, db/seed).

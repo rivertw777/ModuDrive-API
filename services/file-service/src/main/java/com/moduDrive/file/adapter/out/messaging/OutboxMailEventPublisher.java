@@ -1,8 +1,8 @@
 package com.moduDrive.file.adapter.out.messaging;
 
 import com.moduDrive.common.core.annotation.EventPublisher;
-import com.moduDrive.common.event.mail.MailQueues;
-import com.moduDrive.common.event.mail.ShareInviteMailRequested;
+import com.moduDrive.common.event.file.FileQueues;
+import com.moduDrive.common.event.file.ShareInviteMailRequested;
 import com.moduDrive.common.infrastructure.messaging.outbox.OutboxEventRecorder;
 import com.moduDrive.file.application.port.out.PublishMailEventPort;
 import lombok.RequiredArgsConstructor;
@@ -21,7 +21,7 @@ class OutboxMailEventPublisher implements PublishMailEventPort {
             String granterName, String granterEmail, String message, UUID inviteToken) {
         // Keyed by the recipient, not the file: the key says who the mail is for, which is how one
         // person's pending mails are found in outbox_event.
-        outboxEventRecorder.record(MailQueues.SHARE_INVITE_REQUESTED, granteeEmail,
+        outboxEventRecorder.record(FileQueues.SHARE_INVITE_MAIL_REQUESTED, granteeEmail,
                 new ShareInviteMailRequested(fileId, granteeEmail, fileName, directory, category, role,
                         granterName, granterEmail, message, inviteToken));
     }

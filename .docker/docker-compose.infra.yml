@@ -16,6 +16,7 @@ services:
       - MEMBER_DB_PASSWORD=${MEMBER_DB_PASSWORD:?}
       - FILE_DB_PASSWORD=${FILE_DB_PASSWORD:?}
       - NOTIFICATION_DB_PASSWORD=${NOTIFICATION_DB_PASSWORD:?}
+      - AUTH_DB_PASSWORD=${AUTH_DB_PASSWORD:?}
     volumes:
       - postgres_data:/var/lib/postgresql
       - ./postgres:/docker-entrypoint-initdb.d

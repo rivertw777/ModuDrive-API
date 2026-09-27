@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
-/** The emailed-code step of a login from a new device (spec 004 2-1). */
+/** The emailed-code step of a login from a new device (spec 004 2-2). */
 @RequiredArgsConstructor
 @WebAdapter
 @RestController
@@ -29,7 +29,7 @@ class VerifyLoginController {
     public ApiResponse<Void> verifyLogin(@Valid @RequestBody VerifyLoginRequest request,
                                          HttpServletRequest httpServletRequest,
                                          HttpServletResponse httpServletResponse) {
-        // No challenge cookie: it was never issued or its 10 minutes are up — same answer either way.
+        // No challenge cookie: it was never issued or its 5 minutes are up — same answer either way.
         val challengeId = sessionCookieFactory.readLoginChallengeId(httpServletRequest)
                 .orElseThrow(() -> new BusinessException(AuthExceptionCase.LOGIN_VERIFICATION_EXPIRED));
         val command = new VerifyLoginCommand(

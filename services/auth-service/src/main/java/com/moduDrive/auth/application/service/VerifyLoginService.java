@@ -14,7 +14,7 @@ import com.moduDrive.auth.domain.vo.DeviceId;
 import com.moduDrive.common.core.annotation.UseCase;
 import lombok.RequiredArgsConstructor;
 
-/** The second step of a login from a new device: the emailed code (spec 004 2-1). */
+/** The second step of a login from a new device: the emailed code (spec 004 2-2). */
 @UseCase
 @RequiredArgsConstructor
 class VerifyLoginService implements VerifyLoginUseCase {

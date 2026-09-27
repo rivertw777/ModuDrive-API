@@ -2,7 +2,7 @@ package com.moduDrive.auth.application.port.out;
 
 import com.moduDrive.auth.domain.vo.DeviceId;
 
-/** Devices each member has verified by email (spec 004 2-1), forgotten after 90 days unused. */
+/** Devices each member has verified by email (spec 004 2-2), forgotten after 90 days unused. */
 public interface KnownDevicePort {
 
     /** True when the member verified this device before; also restarts its 90 days. */

@@ -66,8 +66,8 @@
 - 퍼블릭 ALB(HTTPS, ACM 인증서) → gateway 태스크만 퍼블릭 타깃. 나머지 서비스는 프라이빗 서브넷.
 
 ### 2-4. DB: RDS for PostgreSQL
-- 현재 서비스별 DB 3개 + 서비스별 로그인(#355 / PR #358): `member_db`/`member_service`, `file_db`/`file_service`,
-  `notification_db`/`notification_service`. 로컬은 `.docker/postgres/postgres_init.sh`가 만든다 — **RDS에선 이 DB·로그인을 따로 만들어야 한다**.
+- 현재 서비스별 DB 4개 + 서비스별 로그인(#355 / PR #358): `member_db`/`member_service`, `file_db`/`file_service`,
+  `notification_db`/`notification_service`, `auth_db`/`auth_service`. 로컬은 `.docker/postgres/postgres_init.sh`가 만든다 — **RDS에선 이 DB·로그인을 따로 만들어야 한다**.
 - 테이블은 각 서비스가 기동할 때 Flyway가 만든다(#359 / PR #360, `.docs/db-migration.md`) — 별도 작업 없음.
 - 처음엔 단일 인스턴스(db.t4g 계열) + 자동 백업. 트래픽 늘면 Multi-AZ → Aurora 검토.
 
@@ -93,7 +93,7 @@
 
 ### 2-9. 시크릿 → Secrets Manager / SSM Parameter Store
 - 옮길 것(`.docker/.env.example` 기준):
-  - DB: `MEMBER_DB_PASSWORD`, `FILE_DB_PASSWORD`, `NOTIFICATION_DB_PASSWORD` (+ RDS 마스터 비밀번호)
+  - DB: `MEMBER_DB_PASSWORD`, `FILE_DB_PASSWORD`, `NOTIFICATION_DB_PASSWORD`, `AUTH_DB_PASSWORD` (+ RDS 마스터 비밀번호)
   - `REDIS_PASSWORD`, `STORAGE_ENCRYPTION_KEY`
   - `MAIL_PASSWORD` (SES SMTP 자격증명으로 교체)
   - `DISCORD_MESSAGING_WEBHOOK_URL`, `DISCORD_SERVICE_WEBHOOK_URL` (알림을 디스코드로 계속 보낼 경우)
