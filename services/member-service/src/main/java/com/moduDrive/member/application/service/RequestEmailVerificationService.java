@@ -25,6 +25,9 @@ class RequestEmailVerificationService implements RequestEmailVerificationUseCase
     @Override
     public void requestEmailVerification(RequestEmailVerificationCommand command) {
         String email = command.getMemberEmail().emailValue();
+        if (!emailVerificationTokenPort.tryRequestCode(email)) {
+            throw new BusinessException(MemberExceptionCase.TOO_MANY_VERIFICATION_REQUESTS);
+        }
         if (checkEmailExistsPort.existsByEmail(command.getMemberEmail())) {
             throw new BusinessException(MemberExceptionCase.DUPLICATE_EMAIL);
         }

@@ -19,9 +19,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.never;
 
 @ExtendWith(MockitoExtension.class)
 class RequestEmailVerificationServiceTest {
@@ -49,6 +51,7 @@ class RequestEmailVerificationServiceTest {
 
         @Test
         void savesSixDigitCodeAndPublishesTheSameCode() {
+            given(emailVerificationTokenPort.tryRequestCode("river@modudrive.com")).willReturn(true);
             given(checkEmailExistsPort.existsByEmail(command.getMemberEmail())).willReturn(false);
 
             requestEmailVerificationService.requestEmailVerification(command);
@@ -69,6 +72,7 @@ class RequestEmailVerificationServiceTest {
 
         @Test
         void throwsBusinessExceptionAndSkipsPublishing() {
+            given(emailVerificationTokenPort.tryRequestCode("river@modudrive.com")).willReturn(true);
             given(checkEmailExistsPort.existsByEmail(command.getMemberEmail())).willReturn(true);
 
             Throwable thrown = catchThrowable(() -> requestEmailVerificationService.requestEmailVerification(command));
@@ -77,7 +81,26 @@ class RequestEmailVerificationServiceTest {
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
                     .isEqualTo(MemberExceptionCase.DUPLICATE_EMAIL);
-            then(emailVerificationTokenPort).shouldHaveNoInteractions();
+            then(emailVerificationTokenPort).should(never()).saveCode(anyString(), anyString());
+            then(publishMailEventPort).shouldHaveNoInteractions();
+        }
+    }
+
+    @Nested
+    @DisplayName("한 주소로 너무 자주 요청했을 때")
+    class WhenRequestedTooOften {
+
+        @Test
+        void throwsTooManyRequestsAndSkipsPublishing() {
+            given(emailVerificationTokenPort.tryRequestCode("river@modudrive.com")).willReturn(false);
+
+            Throwable thrown = catchThrowable(() -> requestEmailVerificationService.requestEmailVerification(command));
+
+            assertThat(thrown)
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(MemberExceptionCase.TOO_MANY_VERIFICATION_REQUESTS);
+            then(emailVerificationTokenPort).should(never()).saveCode(anyString(), anyString());
             then(publishMailEventPort).shouldHaveNoInteractions();
         }
     }
