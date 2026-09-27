@@ -30,8 +30,9 @@ class VerifyLoginService implements VerifyLoginUseCase {
         LoginChallenge challenge = loginChallengePort.confirmChallenge(command.getChallengeId(), command.getCode());
         MemberAuthData memberAuthData = challenge.memberAuthData();
 
-        DeviceId deviceId = knownDevicePort.remember(memberAuthData.getMemberId(), command.getDeviceId());
-        loginAttemptPort.clearAttempts(challenge.memberEmail());
+        DeviceId deviceId = knownDevicePort.remember(memberAuthData.getMemberId(), challenge.memberEmail(), command.getDeviceId());
+        // The login was counted on the shared count: this device wasn't known yet.
+        loginAttemptPort.clearAttempts(challenge.memberEmail(), null);
         if (command.getPreviousSessionId() != null) {
             deleteSessionPort.deleteSession(command.getPreviousSessionId());
         }

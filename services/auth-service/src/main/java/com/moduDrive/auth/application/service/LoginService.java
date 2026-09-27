@@ -11,6 +11,7 @@ import com.moduDrive.auth.application.port.out.LoginChallengePort;
 import com.moduDrive.auth.application.port.out.SendLoginVerificationMailPort;
 import com.moduDrive.auth.domain.model.LoginResult;
 import com.moduDrive.auth.domain.model.MemberAuthData;
+import com.moduDrive.auth.domain.vo.DeviceId;
 import com.moduDrive.auth.domain.vo.LoginChallengeId;
 import com.moduDrive.auth.exception.AuthExceptionCase;
 import com.moduDrive.common.api.dto.member.AuthenticateMemberRequest;
@@ -38,8 +39,13 @@ class LoginService implements LoginUseCase {
     @Override
     public LoginResult login(LoginCommand loginCommand) {
         // Counted before the password is even checked, and cleared only once a session is issued —
-        // so someone who knows the password still gets few guesses at a new device's code.
-        if (!loginAttemptPort.tryAttempt(loginCommand.getMemberEmail())) {
+        // so someone who knows the password still gets few guesses at a new device's code. A device
+        // this email verified counts on its own, so failures from elsewhere can't lock it out; a
+        // made-up cookie isn't known and lands on the shared count (spec 004 2-1).
+        DeviceId knownDevice = loginCommand.getDeviceId() != null
+                && knownDevicePort.isKnown(loginCommand.getMemberEmail(), loginCommand.getDeviceId())
+                ? loginCommand.getDeviceId() : null;
+        if (!loginAttemptPort.tryAttempt(loginCommand.getMemberEmail(), knownDevice)) {
             throw new BusinessException(AuthExceptionCase.TOO_MANY_LOGIN_ATTEMPTS);
         }
         val request = new AuthenticateMemberRequest(
@@ -49,8 +55,9 @@ class LoginService implements LoginUseCase {
         MemberAuthData memberAuthData = authenticateMemberPort.authenticateMember(request);
 
         if (loginCommand.getDeviceId() != null
-                && knownDevicePort.refreshIfKnown(memberAuthData.getMemberId(), loginCommand.getDeviceId())) {
-            loginAttemptPort.clearAttempts(loginCommand.getMemberEmail());
+                && knownDevicePort.refreshIfKnown(
+                        memberAuthData.getMemberId(), loginCommand.getMemberEmail(), loginCommand.getDeviceId())) {
+            loginAttemptPort.clearAttempts(loginCommand.getMemberEmail(), knownDevice);
             // Always a brand-new id (no session fixation), and the one this browser held before is
             // dropped rather than left alive in Redis.
             if (loginCommand.getPreviousSessionId() != null) {

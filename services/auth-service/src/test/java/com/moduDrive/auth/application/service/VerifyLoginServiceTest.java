@@ -63,14 +63,14 @@ class VerifyLoginServiceTest {
         void signsInAndRemembersTheDevice() {
             given(loginChallengePort.confirmChallenge(CHALLENGE_ID, "042917"))
                     .willReturn(new LoginChallenge(memberAuthData, EMAIL));
-            given(knownDevicePort.remember("member-id", null)).willReturn(DEVICE_ID);
+            given(knownDevicePort.remember("member-id", EMAIL, null)).willReturn(DEVICE_ID);
             given(createSessionPort.createSession(memberAuthData)).willReturn(NEW_SESSION_ID);
 
             LoginResult.SignedIn result = verifyLoginService.verifyLogin(
                     new VerifyLoginCommand(CHALLENGE_ID, "042917", null, PREVIOUS_SESSION_ID));
 
             assertThat(result).isEqualTo(new LoginResult.SignedIn(NEW_SESSION_ID, DEVICE_ID));
-            then(loginAttemptPort).should().clearAttempts(EMAIL);
+            then(loginAttemptPort).should().clearAttempts(EMAIL, null);
             then(deleteSessionPort).should().deleteSession(PREVIOUS_SESSION_ID);
         }
 
@@ -79,12 +79,12 @@ class VerifyLoginServiceTest {
         void keepsTheBrowsersDeviceId() {
             given(loginChallengePort.confirmChallenge(CHALLENGE_ID, "042917"))
                     .willReturn(new LoginChallenge(memberAuthData, EMAIL));
-            given(knownDevicePort.remember("member-id", DEVICE_ID)).willReturn(DEVICE_ID);
+            given(knownDevicePort.remember("member-id", EMAIL, DEVICE_ID)).willReturn(DEVICE_ID);
             given(createSessionPort.createSession(memberAuthData)).willReturn(NEW_SESSION_ID);
 
             verifyLoginService.verifyLogin(new VerifyLoginCommand(CHALLENGE_ID, "042917", DEVICE_ID, null));
 
-            then(knownDevicePort).should().remember("member-id", DEVICE_ID);
+            then(knownDevicePort).should().remember("member-id", EMAIL, DEVICE_ID);
             then(deleteSessionPort).shouldHaveNoInteractions();
         }
     }
