@@ -56,4 +56,23 @@ class CustomAuthenticationEntryPointTest {
             assertThat(body).contains(AuthExceptionCase.UNAUTHORIZED.getMessage());
         }
     }
+
+    @Nested
+    @DisplayName("auth-service에 세션을 확인하지 못했을 때")
+    class WhenAuthServiceIsUnavailable {
+
+        @Test
+        void returns503() {
+            MockServerWebExchange exchange = MockServerWebExchange.from(
+                    MockServerHttpRequest.get("/api/secured").build());
+            AuthErrorAttributeUtils.setAuthErrorAttribute(exchange, AuthExceptionCase.AUTH_UNAVAILABLE);
+
+            StepVerifier.create(entryPoint.commence(exchange, new InsufficientAuthenticationException("test")))
+                    .verifyComplete();
+
+            assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+            assertThat(exchange.getResponse().getBodyAsString().block())
+                    .contains(AuthExceptionCase.AUTH_UNAVAILABLE.getMessage());
+        }
+    }
 }
