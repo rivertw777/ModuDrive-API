@@ -126,4 +126,32 @@ class MemberPersistenceAdapterTest {
                     .isEqualTo(MemberExceptionCase.MEMBER_NOT_FOUND);
         }
     }
+
+    @Nested
+    @DisplayName("비밀번호를 바꿀 때")
+    class WhenChangingPassword {
+
+        @Test
+        void storesTheNewPassword() {
+            MemberJpaEntity saved = springDataMemberRepository.save(
+                    new MemberJpaEntity(memberName.nameValue(), memberEmail.emailValue(),
+                            memberPassword.passwordValue(), memberRoles.roleValues(), memberIsValid.isValidValue()));
+
+            memberPersistenceAdapter.changePassword(new MemberId(saved.getId()), new MemberPassword("encoded-new"));
+
+            assertThat(memberPersistenceAdapter.findMemberById(new MemberId(saved.getId())).getPassword())
+                    .isEqualTo("encoded-new");
+        }
+
+        @Test
+        void throwsBusinessExceptionWhenNotFound() {
+            Throwable thrown = catchThrowable(() -> memberPersistenceAdapter.changePassword(
+                    new MemberId(UUID.randomUUID()), new MemberPassword("encoded-new")));
+
+            assertThat(thrown)
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(MemberExceptionCase.MEMBER_NOT_FOUND);
+        }
+    }
 }

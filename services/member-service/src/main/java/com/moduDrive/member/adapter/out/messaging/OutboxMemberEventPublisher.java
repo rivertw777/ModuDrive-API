@@ -1,6 +1,7 @@
 package com.moduDrive.member.adapter.out.messaging;
 
 import com.moduDrive.common.core.annotation.EventPublisher;
+import com.moduDrive.common.event.member.MemberPasswordChanged;
 import com.moduDrive.common.event.member.MemberQueues;
 import com.moduDrive.common.event.member.MemberSignedUp;
 import com.moduDrive.common.infrastructure.messaging.outbox.OutboxEventRecorder;
@@ -18,5 +19,10 @@ class OutboxMemberEventPublisher implements PublishMemberEventPort {
     @Override
     public void publishSignedUp(UUID memberId, String email) {
         outboxEventRecorder.record(MemberQueues.SIGNED_UP, email, new MemberSignedUp(memberId, email));
+    }
+
+    @Override
+    public void publishPasswordChanged(UUID memberId) {
+        outboxEventRecorder.record(MemberQueues.PASSWORD_CHANGED, memberId.toString(), new MemberPasswordChanged(memberId));
     }
 }

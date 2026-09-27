@@ -53,4 +53,8 @@ class MemberJpaEntity extends BaseTimeEntity {
         this.isValid = isValid;
     }
 
+    void changePassword(String password) {
+        this.password = password;
+    }
+
 }

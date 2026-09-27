@@ -2,6 +2,7 @@ package com.moduDrive.member.adapter.out.persistence;
 
 import com.moduDrive.common.core.annotation.PersistenceAdapter;
 import com.moduDrive.common.core.exception.BusinessException;
+import com.moduDrive.member.application.port.out.ChangePasswordPort;
 import com.moduDrive.member.application.port.out.CheckEmailExistsPort;
 import com.moduDrive.member.application.port.out.FindMemberPort;
 import com.moduDrive.member.application.port.out.SignUpMemberPort;
@@ -9,13 +10,14 @@ import com.moduDrive.member.exception.MemberExceptionCase;
 import com.moduDrive.member.domain.model.Member;
 import com.moduDrive.member.domain.model.Member.MemberEmail;
 import com.moduDrive.member.domain.model.Member.MemberId;
+import com.moduDrive.member.domain.model.Member.MemberPassword;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 
 @RequiredArgsConstructor
 @PersistenceAdapter
 class MemberPersistenceAdapter implements
-        SignUpMemberPort, FindMemberPort, CheckEmailExistsPort {
+        SignUpMemberPort, FindMemberPort, CheckEmailExistsPort, ChangePasswordPort {
 
     private final SpringDataMemberRepository springDataMemberRepository;
     private final MemberMapper memberMapper;
@@ -75,6 +77,13 @@ class MemberPersistenceAdapter implements
                 .orElseThrow(() -> new BusinessException(MemberExceptionCase.MEMBER_NOT_FOUND));
 
         return memberMapper.mapToDomainEntity(entity);
+    }
+
+    @Override
+    public void changePassword(MemberId memberId, MemberPassword encodedPassword) {
+        springDataMemberRepository.findById(memberId.idValue())
+                .orElseThrow(() -> new BusinessException(MemberExceptionCase.MEMBER_NOT_FOUND))
+                .changePassword(encodedPassword.passwordValue());
     }
 
 }
