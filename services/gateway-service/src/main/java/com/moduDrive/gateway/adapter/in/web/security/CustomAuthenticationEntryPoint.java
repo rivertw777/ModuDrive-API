@@ -1,10 +1,9 @@
 package com.moduDrive.gateway.adapter.in.web.security;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.moduDrive.common.core.web.ApiResponse;
 import lombok.RequiredArgsConstructor;
-import org.springframework.core.io.buffer.DataBuffer;
-import org.springframework.core.io.buffer.DataBufferFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.server.reactive.ServerHttpResponse;
@@ -15,8 +14,7 @@ import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
 
-import java.nio.charset.StandardCharsets;
-
+/** Answers with the same {@link ApiResponse} error body every other service returns. */
 @Component
 @RequiredArgsConstructor
 class CustomAuthenticationEntryPoint implements ServerAuthenticationEntryPoint {
@@ -25,28 +23,18 @@ class CustomAuthenticationEntryPoint implements ServerAuthenticationEntryPoint {
 
     @Override
     public Mono<Void> commence(ServerWebExchange exchange, AuthenticationException ex) {
-        return setErrorResponse(exchange);
-    }
-
-    private Mono<Void> setErrorResponse(ServerWebExchange exchange) {
-        ServerHttpResponse response = exchange.getResponse();
+        Tuple2<String, String> authError = AuthErrorAttributeUtils.getAuthErrorAttribute(exchange);
         // 401, or 503 when auth-service couldn't be asked (SessionAuthenticationManager).
-        response.setStatusCode(HttpStatus.valueOf(AuthErrorAttributeUtils.getAuthErrorAttribute(exchange).getT1()));
+        HttpStatus status = HttpStatus.valueOf(authError.getT1());
+
+        ServerHttpResponse response = exchange.getResponse();
+        response.setStatusCode(status);
         response.getHeaders().setContentType(MediaType.APPLICATION_JSON);
-
-        DataBuffer buffer = setErrorResponseBody(exchange, response);
-        return response.writeWith(Mono.just(buffer));
-    }
-
-    private DataBuffer setErrorResponseBody(ServerWebExchange exchange, ServerHttpResponse response) {
-        Tuple2<String, String> authErrorAttribute = AuthErrorAttributeUtils.getAuthErrorAttribute(exchange);
-
-        ObjectNode jsonNode = objectMapper.createObjectNode();
-        jsonNode.put("status", authErrorAttribute.getT1());
-        jsonNode.put("message", authErrorAttribute.getT2());
-        String responseBody = jsonNode.toString();
-
-        DataBufferFactory bufferFactory = response.bufferFactory();
-        return bufferFactory.wrap(responseBody.getBytes(StandardCharsets.UTF_8));
+        try {
+            byte[] body = objectMapper.writeValueAsBytes(ApiResponse.error(status, authError.getT2()));
+            return response.writeWith(Mono.just(response.bufferFactory().wrap(body)));
+        } catch (JsonProcessingException e) {
+            return Mono.error(e);
+        }
     }
 }
