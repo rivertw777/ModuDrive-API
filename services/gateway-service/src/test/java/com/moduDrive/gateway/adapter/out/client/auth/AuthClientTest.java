@@ -18,7 +18,6 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class AuthClientTest {
 
@@ -34,7 +33,7 @@ class AuthClientTest {
             WebClient stallingClient = WebClient.builder()
                     .exchangeFunction(request -> Mono.never())
                     .build();
-            AuthClient authClient = new AuthClient(stallingClient, "internal-token");
+            AuthClient authClient = new AuthClient(stallingClient);
 
             StepVerifier.withVirtualTime(() -> authClient.validateSession(new ValidateSessionRequest("session-id", true)))
                     .thenAwait(Duration.ofSeconds(4))
@@ -48,8 +47,8 @@ class AuthClientTest {
     class WhenValidatingSession {
 
         @Test
-        @DisplayName("내부 경로로, 내부 토큰을 붙이고, 세션 ID는 URL이 아닌 본문으로 보낸다")
-        void callsInternalRouteWithSharedSecret() {
+        @DisplayName("내부 경로로, 세션 ID는 URL이 아닌 본문으로 보낸다")
+        void callsInternalRouteWithSessionIdInBody() {
             AtomicReference<ClientRequest> captured = new AtomicReference<>();
             WebClient recordingClient = WebClient.builder()
                     .exchangeFunction(request -> {
@@ -60,7 +59,7 @@ class AuthClientTest {
                                 .build());
                     })
                     .build();
-            AuthClient authClient = new AuthClient(recordingClient, "internal-token");
+            AuthClient authClient = new AuthClient(recordingClient);
 
             StepVerifier.create(authClient.validateSession(new ValidateSessionRequest("session-id", true)))
                     .expectNextCount(1)
@@ -68,21 +67,6 @@ class AuthClientTest {
 
             assertThat(captured.get().url().getPath()).isEqualTo("/internal/v1/auth/sessions/validate");
             assertThat(captured.get().url().toString()).doesNotContain("session-id");
-            assertThat(captured.get().headers().getFirst(AuthClient.INTERNAL_TOKEN_HEADER)).isEqualTo("internal-token");
-        }
-    }
-
-    @Nested
-    @DisplayName("내부 토큰이 설정되지 않았을 때")
-    class WhenInternalTokenIsNotConfigured {
-
-        @Test
-        @DisplayName("빈 값으로는 기동조차 하지 않는다")
-        void refusesToStart() {
-            for (String unset : new String[]{null, "", "   "}) {
-                assertThatThrownBy(() -> new AuthClient(WebClient.create(), unset))
-                        .isInstanceOf(IllegalStateException.class);
-            }
         }
     }
 }

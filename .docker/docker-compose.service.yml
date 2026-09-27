@@ -12,7 +12,6 @@ services:
       - SERVER_PORT=${GATEWAY_SERVER_PORT}
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE}
       - CLIENT_URL=${CLIENT_URL}
-      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN}
     depends_on:
       member-service:
         condition: service_started
@@ -35,7 +34,6 @@ services:
       - SPRING_CLOUD_AWS_CREDENTIALS_ACCESS_KEY=${SQS_ACCESS_KEY}
       - SPRING_CLOUD_AWS_CREDENTIALS_SECRET_KEY=${SQS_SECRET_KEY}
       - MEMBER_EMAIL_VERIFICATION_TOKEN_EXPIRATION=${MEMBER_EMAIL_VERIFICATION_TOKEN_EXPIRATION}
-      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN}
 
   auth-service:
     image: modu-drive-auth-service:0.0.1-SNAPSHOT
@@ -47,7 +45,6 @@ services:
       - REDIS_HOST=${REDIS_HOST}
       - REDIS_PORT=${REDIS_PORT}
       - REDIS_PASSWORD=${REDIS_PASSWORD}
-      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN}
 
   file-service:
     image: modu-drive-file-service:0.0.1-SNAPSHOT
@@ -64,7 +61,6 @@ services:
       - SPRING_CLOUD_AWS_REGION_STATIC=${SQS_REGION}
       - SPRING_CLOUD_AWS_CREDENTIALS_ACCESS_KEY=${SQS_ACCESS_KEY}
       - SPRING_CLOUD_AWS_CREDENTIALS_SECRET_KEY=${SQS_SECRET_KEY}
-      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN}
 
   storage-service:
     image: modu-drive-storage-service:0.0.1-SNAPSHOT
@@ -88,7 +84,6 @@ services:
       - REDIS_HOST=${REDIS_HOST}
       - REDIS_PORT=${REDIS_PORT}
       - REDIS_PASSWORD=${REDIS_PASSWORD}
-      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN}
 
   mail-service:
     image: modu-drive-mail-service:0.0.1-SNAPSHOT

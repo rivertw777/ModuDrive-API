@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 @FeignClient(name = "member-service", url = "${clients.member-service.url}")
 interface MemberClient {
 
-    // Internal routes (#441): the internal-token interceptor attaches the secret on /internal/**.
+    // Internal routes (#441), not exposed by the gateway.
     @GetMapping("/internal/v1/member/by-email")
     @CircuitBreaker(name = "memberServiceCircuitBreaker", fallbackMethod = "findMemberByEmailFallback")
     @Retry(name = "memberServiceRetry")

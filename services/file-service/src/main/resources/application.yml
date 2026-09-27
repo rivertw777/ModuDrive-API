@@ -39,11 +39,6 @@ resilience4j:
       storageServiceCircuitBreaker:
         baseConfig: default
 
-# Shared service-to-service secret for the /internal/** routes (see InternalTokenFilter).
-internal:
-  service:
-    token: ${INTERNAL_SERVICE_TOKEN}
-
 # Fixed service URLs (compose DNS locally, ECS Service Connect on AWS).
 clients:
   member-service:
