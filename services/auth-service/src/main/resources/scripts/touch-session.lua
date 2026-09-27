@@ -1,8 +1,12 @@
 -- KEYS[1] = session:{sha256(id)}
 -- ARGV[1] = idle timeout in ms, ARGV[2] = absolute timeout in ms, ARGV[3] = '1' to restart idle
--- Returns {memberId, roles} for a live session, nil otherwise. Read, absolute-expiry check and
+-- Returns {memberId, roles} for a live session, {'replaced'} for one a later login of the same
+-- member took over (spec 004 1-2 — never extended), nil otherwise. Read, absolute-expiry check and
 -- idle extension happen in one step so a logout or expiry can't land between them.
-local fields = redis.call('HMGET', KEYS[1], 'memberId', 'roles', 'createdAt')
+local fields = redis.call('HMGET', KEYS[1], 'memberId', 'roles', 'createdAt', 'replaced')
+if fields[4] then
+  return {'replaced'}
+end
 if not fields[1] or not fields[3] then
   return nil
 end

@@ -10,6 +10,7 @@ class AuthErrorAttributeUtils {
 
     static final String STATUS_ATTRIBUTE = "AUTH_ERROR_RESPONSE_STATUS";
     static final String MESSAGE_ATTRIBUTE = "AUTH_ERROR_RESPONSE_MESSAGE";
+    static final String DATA_ATTRIBUTE = "AUTH_ERROR_RESPONSE_DATA";
 
     private AuthErrorAttributeUtils() {
     }
@@ -22,6 +23,14 @@ class AuthErrorAttributeUtils {
     static void setAuthErrorAttribute(ServerWebExchange exchange, String status, String message) {
         exchange.getAttributes().put(STATUS_ATTRIBUTE, status);
         exchange.getAttributes().put(MESSAGE_ATTRIBUTE, message);
+    }
+
+    static void setAuthErrorData(ServerWebExchange exchange, Object data) {
+        exchange.getAttributes().put(DATA_ATTRIBUTE, data);
+    }
+
+    static Object getAuthErrorData(ServerWebExchange exchange) {
+        return exchange.getAttribute(DATA_ATTRIBUTE);
     }
 
     static Tuple2<String, String> getAuthErrorAttribute(ServerWebExchange exchange) {

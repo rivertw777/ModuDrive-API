@@ -31,7 +31,8 @@ class CustomAuthenticationEntryPoint implements ServerAuthenticationEntryPoint {
         response.setStatusCode(status);
         response.getHeaders().setContentType(MediaType.APPLICATION_JSON);
         try {
-            byte[] body = objectMapper.writeValueAsBytes(ApiResponse.error(status, authError.getT2()));
+            byte[] body = objectMapper.writeValueAsBytes(
+                    ApiResponse.error(status, authError.getT2(), AuthErrorAttributeUtils.getAuthErrorData(exchange)));
             return response.writeWith(Mono.just(response.bufferFactory().wrap(body)));
         } catch (JsonProcessingException e) {
             return Mono.error(e);
