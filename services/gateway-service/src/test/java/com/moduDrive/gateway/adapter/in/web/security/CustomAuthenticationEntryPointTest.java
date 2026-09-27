@@ -33,9 +33,8 @@ class CustomAuthenticationEntryPointTest {
 
             assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
             String body = exchange.getResponse().getBodyAsString().block();
-            assertThat(body)
-                    .contains(AuthExceptionCase.NO_SESSION.getMessage())
-                    .contains(HttpStatus.UNAUTHORIZED.name());
+            assertThat(body).isEqualTo(
+                    "{\"status\":\"UNAUTHORIZED\",\"message\":\"" + AuthExceptionCase.NO_SESSION.getMessage() + "\"}");
         }
     }
 
