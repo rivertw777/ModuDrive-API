@@ -87,7 +87,6 @@ class SignUpMemberServiceTest {
 
         @Test
         void throwsBusinessExceptionAndSkipsCreation() {
-            given(emailVerificationTokenPort.consumeVerified(command.getMemberEmail().emailValue())).willReturn(true);
             given(checkEmailExistsPort.existsByEmail(command.getMemberEmail())).willReturn(true);
 
             Throwable thrown = catchThrowable(() -> signUpMemberService.signUpMember(command));
@@ -98,6 +97,7 @@ class SignUpMemberServiceTest {
                     .isEqualTo(MemberExceptionCase.DUPLICATE_EMAIL);
             then(encodePasswordPort).shouldHaveNoInteractions();
             then(signUpMemberPort).shouldHaveNoInteractions();
+            then(emailVerificationTokenPort).shouldHaveNoInteractions();
         }
     }
 
@@ -107,6 +107,7 @@ class SignUpMemberServiceTest {
 
         @Test
         void throwsBusinessExceptionAndSkipsCreation() {
+            given(checkEmailExistsPort.existsByEmail(command.getMemberEmail())).willReturn(false);
             given(emailVerificationTokenPort.consumeVerified(command.getMemberEmail().emailValue())).willReturn(false);
 
             Throwable thrown = catchThrowable(() -> signUpMemberService.signUpMember(command));
@@ -115,7 +116,6 @@ class SignUpMemberServiceTest {
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
                     .isEqualTo(MemberExceptionCase.EMAIL_NOT_VERIFIED);
-            then(checkEmailExistsPort).shouldHaveNoInteractions();
             then(encodePasswordPort).shouldHaveNoInteractions();
             then(signUpMemberPort).shouldHaveNoInteractions();
         }
