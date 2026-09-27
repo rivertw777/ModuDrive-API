@@ -37,6 +37,11 @@ public class RedisRepository {
         return Boolean.TRUE.equals(redisTemplate.hasKey(key));
     }
 
+    /** Restarts the key's TTL; false when the key doesn't exist (so nothing was extended). */
+    public boolean expire(String key, Duration ttl) {
+        return Boolean.TRUE.equals(redisTemplate.expire(key, ttl));
+    }
+
     public <T> T executeScript(RedisScript<T> script, List<String> keys, Object... args) {
         return redisTemplate.execute(script, keys, args);
     }

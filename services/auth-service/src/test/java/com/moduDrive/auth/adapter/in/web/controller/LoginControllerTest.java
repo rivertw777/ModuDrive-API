@@ -2,6 +2,9 @@ package com.moduDrive.auth.adapter.in.web.controller;
 
 import com.moduDrive.auth.application.port.in.command.LoginCommand;
 import com.moduDrive.auth.application.port.in.usecase.LoginUseCase;
+import com.moduDrive.auth.domain.model.LoginResult;
+import com.moduDrive.auth.domain.vo.DeviceId;
+import com.moduDrive.auth.domain.vo.LoginChallengeId;
 import com.moduDrive.auth.domain.vo.SessionId;
 import com.moduDrive.auth.exception.AuthExceptionCase;
 import com.moduDrive.common.core.exception.BusinessException;
@@ -39,6 +42,8 @@ class LoginControllerTest {
     private LoginUseCase loginUseCase;
 
     private static final String COOKIE_NAME = SessionCookie.NAME;
+    private static final LoginResult SIGNED_IN =
+            new LoginResult.SignedIn(new SessionId("new-session-id"), new DeviceId("device-id"));
     private static final String REQUEST_JSON = """
             {"email":"river@modudrive.com","password":"raw-password"}
             """;
@@ -50,13 +55,14 @@ class LoginControllerTest {
         @Test
         @DisplayName("세션 ID는 쿠키로만 내려주고 본문에는 싣지 않는다")
         void setsSessionCookieWithoutCredentialInBody() throws Exception {
-            given(loginUseCase.login(any(LoginCommand.class))).willReturn(new SessionId("new-session-id"));
+            given(loginUseCase.login(any(LoginCommand.class))).willReturn(SIGNED_IN);
 
             mockMvc.perform(post("/api/v1/auth/login")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(REQUEST_JSON))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.data").doesNotExist())
+                    .andExpect(jsonPath("$.data.verificationRequired").value(false))
+                    .andExpect(jsonPath("$.data.sessionId").doesNotExist())
                     .andExpect(cookie().value(COOKIE_NAME, "new-session-id"))
                     .andExpect(cookie().httpOnly(COOKIE_NAME, true))
                     .andExpect(cookie().secure(COOKIE_NAME, true))
@@ -65,11 +71,25 @@ class LoginControllerTest {
         }
 
         @Test
-        void passesExistingSessionCookieAsPreviousSession() throws Exception {
-            given(loginUseCase.login(any(LoginCommand.class))).willReturn(new SessionId("new-session-id"));
+        @DisplayName("기기 쿠키를 1년짜리로 다시 내려준다")
+        void refreshesTheDeviceCookie() throws Exception {
+            given(loginUseCase.login(any(LoginCommand.class))).willReturn(SIGNED_IN);
 
             mockMvc.perform(post("/api/v1/auth/login")
-                            .cookie(new Cookie(COOKIE_NAME, "old-session-id"))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(REQUEST_JSON))
+                    .andExpect(cookie().value(SessionCookie.DEVICE_NAME, "device-id"))
+                    .andExpect(cookie().maxAge(SessionCookie.DEVICE_NAME, 365 * 24 * 60 * 60))
+                    .andExpect(cookie().httpOnly(SessionCookie.DEVICE_NAME, true))
+                    .andExpect(cookie().sameSite(SessionCookie.DEVICE_NAME, "Strict"));
+        }
+
+        @Test
+        void passesExistingSessionAndDeviceCookies() throws Exception {
+            given(loginUseCase.login(any(LoginCommand.class))).willReturn(SIGNED_IN);
+
+            mockMvc.perform(post("/api/v1/auth/login")
+                            .cookie(new Cookie(COOKIE_NAME, "old-session-id"), new Cookie(SessionCookie.DEVICE_NAME, "device-id"))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(REQUEST_JSON))
                     .andExpect(status().isOk());
@@ -77,7 +97,30 @@ class LoginControllerTest {
             ArgumentCaptor<LoginCommand> captor = ArgumentCaptor.forClass(LoginCommand.class);
             then(loginUseCase).should().login(captor.capture());
             assertThat(captor.getValue().getPreviousSessionId()).isEqualTo(new SessionId("old-session-id"));
+            assertThat(captor.getValue().getDeviceId()).isEqualTo(new DeviceId("device-id"));
             assertThat(captor.getValue().getMemberEmail().value()).isEqualTo("river@modudrive.com");
+        }
+    }
+
+    @Nested
+    @DisplayName("처음 보는 기기라 메일 인증이 필요할 때")
+    class WhenVerificationIsRequired {
+
+        @Test
+        @DisplayName("세션 쿠키 없이 10분짜리 확인 쿠키만 내려준다")
+        void setsOnlyTheChallengeCookie() throws Exception {
+            given(loginUseCase.login(any(LoginCommand.class)))
+                    .willReturn(new LoginResult.VerificationRequired(new LoginChallengeId("challenge-id")));
+
+            mockMvc.perform(post("/api/v1/auth/login")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(REQUEST_JSON))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.verificationRequired").value(true))
+                    .andExpect(cookie().doesNotExist(COOKIE_NAME))
+                    .andExpect(cookie().value(SessionCookie.LOGIN_CHALLENGE_NAME, "challenge-id"))
+                    .andExpect(cookie().maxAge(SessionCookie.LOGIN_CHALLENGE_NAME, 600))
+                    .andExpect(cookie().httpOnly(SessionCookie.LOGIN_CHALLENGE_NAME, true));
         }
     }
 

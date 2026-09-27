@@ -1,5 +1,6 @@
 package com.moduDrive.auth.application.port.in.command;
 
+import com.moduDrive.auth.domain.vo.DeviceId;
 import com.moduDrive.auth.domain.vo.MemberEmail;
 import com.moduDrive.auth.domain.vo.MemberPassword;
 import com.moduDrive.auth.domain.vo.SessionId;
@@ -21,10 +22,15 @@ public class LoginCommand extends SelfValidating<LoginCommand> {
     // Session cookie the browser already carried, if any — dropped once the new session exists.
     private final SessionId previousSessionId;
 
-    public LoginCommand(MemberEmail memberEmail, MemberPassword memberPassword, SessionId previousSessionId) {
+    // Device cookie, if any — a device the member already verified skips the emailed code.
+    private final DeviceId deviceId;
+
+    public LoginCommand(MemberEmail memberEmail, MemberPassword memberPassword, SessionId previousSessionId,
+                        DeviceId deviceId) {
         this.memberEmail = memberEmail;
         this.memberPassword = memberPassword;
         this.previousSessionId = previousSessionId;
+        this.deviceId = deviceId;
         this.validateSelf();
     }
 }

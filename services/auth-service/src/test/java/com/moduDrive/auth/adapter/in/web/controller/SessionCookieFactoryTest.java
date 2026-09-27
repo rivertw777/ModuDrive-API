@@ -1,5 +1,7 @@
 package com.moduDrive.auth.adapter.in.web.controller;
 
+import com.moduDrive.auth.domain.vo.DeviceId;
+import com.moduDrive.auth.domain.vo.LoginChallengeId;
 import com.moduDrive.auth.domain.vo.SessionId;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.DisplayName;
@@ -69,6 +71,44 @@ class SessionCookieFactoryTest {
 
             assertThat(factory.readSessionId(noCookies)).isEmpty();
             assertThat(factory.readSessionId(blankCookie)).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("새 기기 확인 쿠키들을 내리고 읽을 때")
+    class WhenHandlingTheDeviceAndChallengeCookies {
+
+        @Test
+        @DisplayName("기기 쿠키는 세션 쿠키와 같은 속성에 1년 수명으로 내려준다")
+        void issuesAYearLongDeviceCookie() {
+            factory.setDeviceId(response, new DeviceId("device-id"));
+
+            assertThat(setCookieHeader())
+                    .startsWith("__Host-device=device-id")
+                    .contains("Max-Age=31536000", "HttpOnly", "Secure", "SameSite=Strict", "Path=/")
+                    .doesNotContain("Domain");
+        }
+
+        @Test
+        @DisplayName("확인 쿠키는 10분 수명으로 내려주고, 지울 때는 수명 0으로 내려준다")
+        void issuesAndClearsATenMinuteChallengeCookie() {
+            factory.setLoginChallengeId(response, new LoginChallengeId("challenge-id"));
+            factory.clearLoginChallengeId(response);
+
+            assertThat(response.getHeaders(HttpHeaders.SET_COOKIE)).satisfiesExactly(
+                    issued -> assertThat(issued).startsWith("__Host-login-challenge=challenge-id")
+                            .contains("Max-Age=600", "HttpOnly", "Secure", "SameSite=Strict"),
+                    cleared -> assertThat(cleared).startsWith("__Host-login-challenge=;").contains("Max-Age=0"));
+        }
+
+        @Test
+        void readsEachCookieByItsOwnName() {
+            MockHttpServletRequest request = new MockHttpServletRequest();
+            request.setCookies(new Cookie("__Host-device", "device-id"), new Cookie("__Host-login-challenge", "challenge-id"));
+
+            assertThat(factory.readDeviceId(request)).contains(new DeviceId("device-id"));
+            assertThat(factory.readLoginChallengeId(request)).contains(new LoginChallengeId("challenge-id"));
+            assertThat(factory.readSessionId(request)).isEmpty();
         }
     }
 }

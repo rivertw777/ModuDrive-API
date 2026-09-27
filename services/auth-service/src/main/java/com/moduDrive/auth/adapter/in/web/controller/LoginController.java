@@ -1,8 +1,10 @@
 package com.moduDrive.auth.adapter.in.web.controller;
 
 import com.moduDrive.auth.adapter.in.web.dto.LoginRequest;
+import com.moduDrive.auth.adapter.in.web.dto.LoginResponse;
 import com.moduDrive.auth.application.port.in.command.LoginCommand;
 import com.moduDrive.auth.application.port.in.usecase.LoginUseCase;
+import com.moduDrive.auth.domain.model.LoginResult;
 import com.moduDrive.auth.domain.vo.MemberEmail;
 import com.moduDrive.auth.domain.vo.MemberPassword;
 import com.moduDrive.common.core.annotation.WebAdapter;
@@ -26,18 +28,28 @@ class LoginController {
 
     // The response body carries no credential — the session id only ever travels in the cookie.
     @PostMapping("/api/v1/auth/login")
-    public ApiResponse<Void> login(@Valid @RequestBody LoginRequest request,
-                                   HttpServletRequest httpServletRequest,
-                                   HttpServletResponse httpServletResponse) {
+    public ApiResponse<LoginResponse> login(@Valid @RequestBody LoginRequest request,
+                                            HttpServletRequest httpServletRequest,
+                                            HttpServletResponse httpServletResponse) {
         val command = new LoginCommand(
                 new MemberEmail(request.email()),
                 new MemberPassword(request.password()),
-                sessionCookieFactory.readSessionId(httpServletRequest).orElse(null)
+                sessionCookieFactory.readSessionId(httpServletRequest).orElse(null),
+                sessionCookieFactory.readDeviceId(httpServletRequest).orElse(null)
         );
-        val sessionId = loginUseCase.login(command);
-        sessionCookieFactory.setSessionId(httpServletResponse, sessionId);
+        LoginResult result = loginUseCase.login(command);
 
-        return ApiResponse.success();
+        return switch (result) {
+            case LoginResult.SignedIn signedIn -> {
+                sessionCookieFactory.setSessionId(httpServletResponse, signedIn.sessionId());
+                sessionCookieFactory.setDeviceId(httpServletResponse, signedIn.deviceId());
+                yield ApiResponse.success(new LoginResponse(false));
+            }
+            case LoginResult.VerificationRequired verificationRequired -> {
+                sessionCookieFactory.setLoginChallengeId(httpServletResponse, verificationRequired.challengeId());
+                yield ApiResponse.success(new LoginResponse(true));
+            }
+        };
     }
 
 }

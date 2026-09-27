@@ -7,6 +7,7 @@ import com.moduDrive.common.event.mail.VerificationMailRequested;
 import com.moduDrive.common.infrastructure.messaging.idempotency.ProcessedEvents;
 import com.moduDrive.mail.application.port.in.command.SendShareInviteMailCommand;
 import com.moduDrive.mail.application.port.in.command.SendVerificationMailCommand;
+import com.moduDrive.mail.application.port.in.command.SendVerificationMailCommand.Purpose;
 import com.moduDrive.mail.application.port.in.usecase.SendShareInviteMailUseCase;
 import com.moduDrive.mail.application.port.in.usecase.SendVerificationMailUseCase;
 import com.moduDrive.common.infrastructure.sqs.SqsAttributes;
@@ -34,7 +35,8 @@ class MailEventListener {
         }
         try {
             sendVerificationMailUseCase.sendVerificationMail(
-                    new SendVerificationMailCommand(event.email(), event.verificationCode()));
+                    new SendVerificationMailCommand(event.email(), event.verificationCode(),
+                            event.purpose() == VerificationMailRequested.Purpose.LOGIN ? Purpose.LOGIN : Purpose.SIGN_UP));
         } catch (RuntimeException e) {
             processedEvents.release(MailQueues.VERIFICATION_REQUESTED, deduplicationId);
             throw e;
