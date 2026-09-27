@@ -420,7 +420,7 @@ sequenceDiagram
 
 ## 7. 사용 큐 목록
 
-큐는 5개, 전부 **표준(standard) 큐**. 큐마다 실패 메시지가 옮겨지는 DLQ(`<이름>-dlq`)가 하나씩 짝으로 있다.
+큐는 6개, 전부 **표준(standard) 큐**. 큐마다 실패 메시지가 옮겨지는 DLQ(`<이름>-dlq`)가 하나씩 짝으로 있다.
 
 | 큐 | Publisher | Consumer | 무슨 일 |
 |---|---|---|---|
@@ -428,6 +428,7 @@ sequenceDiagram
 | `mail-login-verification-requested` | auth-service — 새 기기 로그인 챌린지를 Redis에 넣고 기록 | mail-service — 로그인 인증 코드 메일 발송 | 처음 보는 기기에서 로그인 |
 | `mail-share-invite-requested` | file-service — 공유 행 저장과 같은 트랜잭션 | mail-service — 초대 메일 발송 | 파일/폴더를 이메일로 공유 (비회원이면 로그인 없이 여는 링크) |
 | `notification-file-shared` | file-service — 초대 메일 이벤트와 같이 기록 | notification-service — 알림 행 저장 | 공유 대상이 **회원**일 때 벨 아이콘 알림 |
+| `member-password-changed` | member-service — 비밀번호 변경 트랜잭션 안에서 기록 | auth-service — 그 회원의 인증 기기·세션 전부 삭제 | 비밀번호 변경 → 모든 기기에서 로그아웃 |
 | `member-signed-up` | member-service — 가입 트랜잭션 안에서 기록 | file-service — 네임스페이스 생성(자기 트랜잭션으로 먼저 커밋) → 대기 공유를 새 회원에게 연결 | 새 회원의 드라이브가 생기고, 가입 전에 받은 초대가 "공유 문서함"에 나타남 |
 
 ---
