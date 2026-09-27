@@ -62,7 +62,7 @@ class RedisEmailVerificationTokenStoreTest {
     class WhenRequestingCode {
 
         @Test
-        @DisplayName("한 주소에 한 시간에 5번까지만 허용하고, 대소문자·공백이 달라도 같이 센다")
+        @DisplayName("한 주소에 15분에 5번까지만 허용하고, 대소문자·공백이 달라도 같이 센다")
         void allowsFiveRequestsPerAddressPerWindow() {
             for (int i = 0; i < 5; i++) {
                 assertThat(store.tryRequestCode(i % 2 == 0 ? EMAIL : " River@ModuDrive.com")).isTrue();

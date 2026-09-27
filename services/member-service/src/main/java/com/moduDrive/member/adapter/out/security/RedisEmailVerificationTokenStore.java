@@ -19,7 +19,7 @@ class RedisEmailVerificationTokenStore implements EmailVerificationTokenPort {
     private static final String REQUESTS_PREFIX = "email-verify-requests:";
     /** Codes one address can be sent per window — without it, anyone can flood a mailbox with codes. */
     static final int MAX_REQUESTS = 5;
-    static final Duration REQUEST_WINDOW = Duration.ofHours(1);
+    static final Duration REQUEST_WINDOW = Duration.ofMinutes(15);
     /** A 6-digit code only has 10^6 values; without a guess cap it's brute-forceable inside its TTL. */
     private static final int MAX_ATTEMPTS = 5;
     /** Grace window to submit the sign-up form after verifying — independent of the (shorter) code TTL. */
