@@ -1,6 +1,5 @@
 package com.moduDrive.gateway.adapter.in.web.security;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.moduDrive.common.api.dto.auth.ValidateSessionRequest;
 import com.moduDrive.common.api.dto.auth.ValidateSessionResponse;
@@ -67,12 +66,9 @@ class SessionAuthenticationManager implements ReactiveAuthenticationManager {
             return new SessionAuthenticationException(AuthExceptionCase.AUTH_UNAVAILABLE);
         }
         try {
-            JsonNode body = objectMapper.readTree(e.getResponseBodyAsString());
-            String message = body.path("message").asText(AuthExceptionCase.UNAUTHORIZED.getMessage());
-            // Passed on as-is so the WEB can tell why (e.g. reason SESSION_REPLACED, spec 004 1-2).
-            JsonNode data = body.get("data");
-            return new SessionAuthenticationException(AuthExceptionCase.UNAUTHORIZED.getHttpStatus().name(), message,
-                    data == null || data.isNull() ? null : data);
+            String message = objectMapper.readTree(e.getResponseBodyAsString())
+                    .path("message").asText(AuthExceptionCase.UNAUTHORIZED.getMessage());
+            return new SessionAuthenticationException(AuthExceptionCase.UNAUTHORIZED.getHttpStatus().name(), message);
         } catch (Exception jsonProcessingException) {
             log.error("Content 파싱 실패 — HTTP {}", e.getStatusCode(), jsonProcessingException);
             return new SessionAuthenticationException(AuthExceptionCase.UNAUTHORIZED);

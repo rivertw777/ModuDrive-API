@@ -18,8 +18,6 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.util.Map;
-
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -70,27 +68,6 @@ class ValidateSessionControllerTest {
                                     """))
                     .andExpect(status().isUnauthorized())
                     .andExpect(jsonPath("$.message").value(AuthExceptionCase.SESSION_NOT_FOUND.getMessage()));
-        }
-    }
-
-    @Nested
-    @DisplayName("다른 곳의 로그인으로 밀려난 세션일 때")
-    class WhenSessionWasReplaced {
-
-        @Test
-        void returnsUnauthorizedWithReason() throws Exception {
-            given(validateSessionUseCase.validateSession(new ValidateSessionCommand(new SessionId("session-id"), true)))
-                    .willThrow(new BusinessException(AuthExceptionCase.SESSION_REPLACED,
-                            Map.of("reason", "SESSION_REPLACED")));
-
-            mockMvc.perform(post("/internal/v1/auth/sessions/validate")
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content("""
-                                    {"sessionId":"session-id","touch":true}
-                                    """))
-                    .andExpect(status().isUnauthorized())
-                    .andExpect(jsonPath("$.message").value(AuthExceptionCase.SESSION_REPLACED.getMessage()))
-                    .andExpect(jsonPath("$.data.reason").value("SESSION_REPLACED"));
         }
     }
 

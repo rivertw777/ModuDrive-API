@@ -86,7 +86,7 @@ Server-side sessions — the browser holds only an `HttpOnly` session cookie, ne
 
 1. Client sends credentials to `POST /api/v1/auth/login` via the gateway.
 2. `auth-service` calls `member-service` via Feign (`POST /internal/v1/member/authenticate`) to verify credentials.
-3. On success from a device the member already verified (`__Host-device` cookie, `known-device:*` in Redis), `auth-service` stores a session in Redis (`session:{sha256(id)}`, idle 30 min / absolute 12 h) and sets the `__Host-session` cookie; a new login ends the member's other session (`member-session:{memberId}`). From an unknown device it instead mails a 6-digit code (member-service → outbox → mail-service) and answers `verificationRequired`; `POST /api/v1/auth/login/verify` checks the code and then issues the session.
+3. On success from a device the member already verified (`__Host-device` cookie, `known-device:*` in Redis), `auth-service` stores a session in Redis (`session:{sha256(id)}`, idle 30 min / absolute 12 h) and sets the `__Host-session` cookie; other devices' sessions stay (concurrent logins are allowed). From an unknown device it instead mails a 6-digit code (member-service → outbox → mail-service) and answers `verificationRequired`; `POST /api/v1/auth/login/verify` checks the code and then issues the session.
 4. For every request, the gateway's `AuthenticationWebFilter` (`SessionAuthenticationConverter` → `SessionAuthenticationManager`) sends the cookie's session id to `auth-service` (`POST /internal/v1/auth/sessions/validate`) via `WebClient` and injects the `SecurityContext`; `UserContextFilter` then sets `X_USER_ID`/`X_USER_ROLE`. `CsrfOriginGuardFilter` rejects any POST/PUT/PATCH/DELETE whose `Origin` isn't `CLIENT_URL`.
 
 ## Error Handling
