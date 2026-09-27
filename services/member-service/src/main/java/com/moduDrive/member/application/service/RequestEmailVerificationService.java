@@ -28,8 +28,10 @@ class RequestEmailVerificationService implements RequestEmailVerificationUseCase
         if (!emailVerificationTokenPort.tryRequestCode(email)) {
             throw new BusinessException(MemberExceptionCase.TOO_MANY_VERIFICATION_REQUESTS);
         }
+        // Same answer as a new address, so the response can't tell whether an email is registered.
+        // A registered address just never gets a code, and sign-up can't pass without one.
         if (checkEmailExistsPort.existsByEmail(command.getMemberEmail())) {
-            throw new BusinessException(MemberExceptionCase.DUPLICATE_EMAIL);
+            return;
         }
 
         String code = String.format("%06d", secureRandom.nextInt(1_000_000));
