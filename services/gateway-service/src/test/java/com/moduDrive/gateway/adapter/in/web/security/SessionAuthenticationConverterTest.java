@@ -15,7 +15,7 @@ class SessionAuthenticationConverterTest {
 
     private static final String COOKIE_NAME = "__Host-session";
 
-    private final SessionAuthenticationConverter converter = new SessionAuthenticationConverter(true);
+    private final SessionAuthenticationConverter converter = new SessionAuthenticationConverter();
 
     @Nested
     @DisplayName("세션 쿠키가 없을 때")

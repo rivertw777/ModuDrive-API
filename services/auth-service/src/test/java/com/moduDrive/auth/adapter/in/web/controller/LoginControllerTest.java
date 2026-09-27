@@ -5,7 +5,7 @@ import com.moduDrive.auth.application.port.in.usecase.LoginUseCase;
 import com.moduDrive.auth.domain.vo.SessionId;
 import com.moduDrive.auth.exception.AuthExceptionCase;
 import com.moduDrive.common.core.exception.BusinessException;
-import com.moduDrive.common.api.dto.auth.SessionCookie;
+import com.moduDrive.common.api.auth.SessionCookie;
 import com.moduDrive.common.core.web.GlobalExceptionHandler;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.DisplayName;
@@ -38,7 +38,7 @@ class LoginControllerTest {
     @MockitoBean
     private LoginUseCase loginUseCase;
 
-    private static final String COOKIE_NAME = SessionCookie.SECURE_NAME;
+    private static final String COOKIE_NAME = SessionCookie.NAME;
     private static final String REQUEST_JSON = """
             {"email":"river@modudrive.com","password":"raw-password"}
             """;

@@ -19,11 +19,11 @@ class SessionCookieFactoryTest {
         return response.getHeader(HttpHeaders.SET_COOKIE);
     }
 
-    @Nested
-    @DisplayName("secure 프로퍼티가 true일 때 (운영 기본값)")
-    class WhenSecureIsEnabled {
+    private final SessionCookieFactory factory = new SessionCookieFactory();
 
-        private final SessionCookieFactory factory = new SessionCookieFactory(true);
+    @Nested
+    @DisplayName("세션 쿠키를 내리고 읽을 때")
+    class WhenHandlingTheSessionCookie {
 
         @Test
         @DisplayName("__Host- 접두어와 HttpOnly·Secure·SameSite=Strict·Path=/ 로, 만료 없이 내려준다")
@@ -69,25 +69,6 @@ class SessionCookieFactoryTest {
 
             assertThat(factory.readSessionId(noCookies)).isEmpty();
             assertThat(factory.readSessionId(blankCookie)).isEmpty();
-        }
-    }
-
-    @Nested
-    @DisplayName("secure 프로퍼티가 false일 때 (로컬 http)")
-    class WhenSecureIsDisabled {
-
-        private final SessionCookieFactory factory = new SessionCookieFactory(false);
-
-        @Test
-        @DisplayName("__Host- 접두어는 Secure를 요구하므로 접두어 없는 이름으로 내린다")
-        void issuesUnprefixedCookieWithoutSecure() {
-            factory.setSessionId(response, new SessionId("session-id"));
-
-            assertThat(setCookieHeader())
-                    .startsWith("session=session-id")
-                    .doesNotContain("Secure")
-                    .contains("HttpOnly")
-                    .contains("SameSite=Strict");
         }
     }
 }

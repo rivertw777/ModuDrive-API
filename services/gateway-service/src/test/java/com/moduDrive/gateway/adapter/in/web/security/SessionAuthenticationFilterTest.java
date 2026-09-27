@@ -43,7 +43,7 @@ class SessionAuthenticationFilterTest {
     @BeforeEach
     void setUp() {
         filter = new AuthenticationWebFilter(new SessionAuthenticationManager(authClient, new ObjectMapper()));
-        filter.setServerAuthenticationConverter(new SessionAuthenticationConverter(true));
+        filter.setServerAuthenticationConverter(new SessionAuthenticationConverter());
         filter.setAuthenticationFailureHandler(new SessionAuthenticationFailureHandler());
     }
 

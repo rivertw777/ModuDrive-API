@@ -1,8 +1,7 @@
 package com.moduDrive.gateway.adapter.in.web.security;
 
-import com.moduDrive.common.api.dto.auth.SessionCookie;
+import com.moduDrive.common.api.auth.SessionCookie;
 import com.moduDrive.gateway.exception.AuthExceptionCase;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpCookie;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.web.server.authentication.ServerAuthenticationConverter;
@@ -17,15 +16,9 @@ class SessionAuthenticationConverter implements ServerAuthenticationConverter {
     /** Sent by the WEB on polling requests: check the session without restarting its idle timeout. */
     static final String BACKGROUND_REQUEST_HEADER = "X-Background-Request";
 
-    private final String sessionCookieName;
-
-    SessionAuthenticationConverter(@Value("${session.cookie.secure}") boolean secureSessionCookie) {
-        this.sessionCookieName = SessionCookie.name(secureSessionCookie);
-    }
-
     @Override
     public Mono<Authentication> convert(ServerWebExchange exchange) {
-        HttpCookie sessionCookie = exchange.getRequest().getCookies().getFirst(sessionCookieName);
+        HttpCookie sessionCookie = exchange.getRequest().getCookies().getFirst(SessionCookie.NAME);
         if (sessionCookie == null || sessionCookie.getValue().isBlank()) {
             AuthErrorAttributeUtils.setAuthErrorAttribute(exchange, AuthExceptionCase.NO_SESSION);
             return Mono.empty();
