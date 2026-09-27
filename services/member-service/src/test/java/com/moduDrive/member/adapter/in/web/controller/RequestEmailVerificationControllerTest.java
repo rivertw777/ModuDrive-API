@@ -72,20 +72,20 @@ class RequestEmailVerificationControllerTest {
     }
 
     @Nested
-    @DisplayName("이미 존재하는 이메일일 때")
-    class WhenEmailIsDuplicate {
+    @DisplayName("한 주소로 너무 자주 요청했을 때")
+    class WhenRequestedTooOften {
 
         @Test
-        void returnsBadRequestWithExceptionMessage() throws Exception {
-            willThrow(new BusinessException(MemberExceptionCase.DUPLICATE_EMAIL))
+        void returnsTooManyRequestsWithExceptionMessage() throws Exception {
+            willThrow(new BusinessException(MemberExceptionCase.TOO_MANY_VERIFICATION_REQUESTS))
                     .given(requestEmailVerificationUseCase)
                     .requestEmailVerification(any(RequestEmailVerificationCommand.class));
 
             mockMvc.perform(post("/api/v1/member/verify-email/request")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(REQUEST_JSON))
-                    .andExpect(status().isBadRequest())
-                    .andExpect(jsonPath("$.message").value(MemberExceptionCase.DUPLICATE_EMAIL.getMessage()));
+                    .andExpect(status().isTooManyRequests())
+                    .andExpect(jsonPath("$.message").value(MemberExceptionCase.TOO_MANY_VERIFICATION_REQUESTS.getMessage()));
         }
     }
 }

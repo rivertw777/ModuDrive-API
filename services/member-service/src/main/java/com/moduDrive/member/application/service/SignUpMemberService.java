@@ -34,8 +34,10 @@ class SignUpMemberService implements SignUpMemberUseCase {
     @Transactional
     @Override
     public void signUpMember(SignUpMemberCommand signUpMemberCommand) {
-        validateEmailNotDuplicated(signUpMemberCommand.getMemberEmail());
+        // Verified first: only an address that got a code — never a registered one — can reach the
+        // duplicate check, so an unverified caller can't use it to learn who is registered.
         validateEmailVerified(signUpMemberCommand.getMemberEmail());
+        validateEmailNotDuplicated(signUpMemberCommand.getMemberEmail());
         MemberPassword encodedPassword = encodePasswordPort.encodePassword(signUpMemberCommand.getMemberPassword());
 
         // Email is already confirmed via the pre-signup verify-email flow, so the member starts valid.
