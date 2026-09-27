@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Gateway-only (X-Internal-Token, see InternalTokenFilter): runs in front of every request. */
+/** Gateway-only: runs in front of every request. */
 @RequiredArgsConstructor
 @WebAdapter
 @RestController

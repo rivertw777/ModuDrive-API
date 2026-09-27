@@ -1,6 +1,6 @@
 # 인증 스펙
 
-이 문서는 로그인, 요청 검증, 로그아웃, 서비스 간 인증이 어떻게 동작하는지 정의합니다.
+이 문서는 로그인, 요청 검증, 로그아웃이 어떻게 동작하는지 정의합니다.
 
 ⚠️ 이 문서가 기준입니다. 코드가 이 문서와 다르면 코드를 고치고, 동작을 바꾸려면 이 문서를 먼저 고칩니다.
 
@@ -14,9 +14,8 @@
 - [3. 요청 검증](#3-요청-검증)
   - [3-1. 검증 과정](#3-1-검증-과정)
 - [4. 로그아웃](#4-로그아웃)
-- [5. 서비스 간 인증](#5-서비스-간-인증)
-- [6. 위협별 방어 요약](#6-위협별-방어-요약)
-- [7. TODO](#7-todo)
+- [5. 위협별 방어 요약](#5-위협별-방어-요약)
+- [6. TODO](#6-todo)
 
 ---
 
@@ -98,7 +97,7 @@ sequenceDiagram
     Note over G: 로그인 경로는 인증 없이 통과
     G->>A: 전달 (이전 세션 쿠키가 있으면 함께)
     A->>R: 이메일별 시도 횟수 +1 (15분에 5번 넘으면 429)
-    A->>M: POST /internal/v1/member/authenticate<br/>(Feign, X-Internal-Token)
+    A->>M: POST /internal/v1/member/authenticate (Feign)
     M->>M: 이메일로 조회 + BCrypt matches
     M-->>A: 회원 정보 (memberId, roles, isValid)
     A->>R: 요청에 기존 세션 쿠키가 있으면 그 세션 삭제
@@ -190,31 +189,7 @@ sequenceDiagram
 
 ---
 
-## 5. 서비스 간 인증
-
-### 공유 비밀 (`X-Internal-Token`)
-
-- 모든 서비스가 같은 `INTERNAL_SERVICE_TOKEN`을 가진다. **게이트웨이도 가진다** (세션 확인 호출용).
-- **받는 쪽**: member / file / storage / **auth**-service의 `InternalTokenFilter`가 `/internal/*`에만 걸림.
-  - 상수 시간 비교(`MessageDigest.isEqual`).
-  - 틀리면 그 서비스의 "없음" 응답을 그대로 흉내 낸다 (member `MEMBER_NOT_FOUND`, file `FILE_NOT_FOUND`, storage `FILE_NOT_FOUND_IN_STORAGE`, auth `SESSION_NOT_FOUND`) — 내부 경로가 있다는 사실도 드러내지 않는다.
-  - 토큰이 비어 있으면 **서비스가 뜨지 않는다** (빈 헤더가 비밀번호가 되는 것 방지).
-- **보내는 쪽**: Feign `RequestInterceptor`가 경로가 `/internal/`로 시작할 때만 헤더를 붙인다 — 비밀이 다른 경로로 새지 않게. 게이트웨이는 세션 확인 WebClient에만 붙인다.
-- 게이트웨이는 `/internal/**`을 라우팅하지 않는다. 필터는 그 위의 두 번째 방어선이다 (#314, #332).
-
-### 호출 목록
-
-| 호출하는 쪽 → 받는 쪽 | 경로 | 인증 |
-|---|---|---|
-| gateway → auth | `POST /internal/v1/auth/sessions/validate` | 내부 토큰 |
-| auth → member | `POST /internal/v1/member/authenticate` | 내부 토큰 |
-| file → storage | `DELETE /internal/storage/{fileId}` | 내부 토큰 |
-| storage → file | `/internal/files/...` (버전·zip 항목 조회, 업로드 완료 콜백) | 내부 토큰 + 원래 사용자 ID (`userId` 파라미터) |
-| file → member | `GET /internal/v1/member/{memberId}`, `/by-email` (공유 대상·공유한 사람 조회) | 내부 토큰 |
-
----
-
-## 6. 위협별 방어 요약
+## 5. 위협별 방어 요약
 
 | 위협 | 방어 |
 |---|---|
@@ -232,8 +207,8 @@ sequenceDiagram
 
 ---
 
-## 7. TODO
+## 6. TODO
 
-- [ ] 서비스 간 인증을 **VPC Lattice + IAM**으로 전환 — 각 서비스가 자기 역할로 요청에 서명하고, 정책으로 "누가 어떤 경로를 부를 수 있나"를 정한다. 공용 토큰은 AWS에서 제거한다. AWS 이관이 안정된 뒤 진행 ([aws-migration 2-13](../aws-migration.md#2-13--서비스-간-접근-제어-서비스별-보안-그룹-필수)).
+- [ ] **서비스 간 인증** 도입 — 지금은 내부 API(`/internal/**`)에 인증이 없고, 게이트웨이가 이 경로를 외부에 열지 않는 것에만 기댄다. 내부 네트워크 안에서는 누구나 부를 수 있다. AWS 이관 때 서비스별 보안 그룹으로 호출 관계를 네트워크에서 먼저 막고, 이관이 안정된 뒤 **VPC Lattice + IAM**(각 서비스가 자기 역할로 서명, 정책으로 "누가 어떤 경로를 부를 수 있나")으로 경로 단위까지 막는다 ([aws-migration 2-13](../aws-migration.md#2-13--서비스-간-접근-제어-서비스별-보안-그룹-필수)).
 - [ ] WEB 응답 헤더에 **CSP** 추가 — 우리 도메인의 스크립트만 실행되게 해서 XSS 자체를 막는다. HttpOnly 쿠키는 세션을 훔쳐 가는 것만 막고, 페이지 안에서 사용자인 척 보내는 요청은 못 막는다. 사용자가 올린 HTML·SVG 미리보기도 함께 점검한다.
 - [ ] 요청마다 게이트웨이 → auth-service 세션 확인 HTTP 1번을 줄일지 판단 — 인증된 요청의 지연·부하가 auth-service에 몰린다. 게이트웨이가 Redis를 직접 보면 한 단계 줄지만 세션 규칙이 두 서비스에 나뉜다. 지금은 로그아웃 즉시 반영과 규칙 한 곳 유지를 우선해 그대로 두고, AWS 이관 뒤 실제 지연·부하를 재서 결정한다 (#448).

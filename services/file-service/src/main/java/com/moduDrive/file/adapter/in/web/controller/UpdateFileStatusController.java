@@ -16,9 +16,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
 
-/** Upload-complete callback from storage-service, on an internal route so only a caller holding
- * the internal token can report a file's size and block count — never an end user through the
- * gateway (#440). userId is the uploader storage-service is acting for. */
+/** Upload-complete callback from storage-service, on an internal route the gateway doesn't expose —
+ * never an end user reporting a file's size and block count (#440). userId is the uploader
+ * storage-service is acting for. */
 @WebAdapter
 @RestController
 @RequiredArgsConstructor
