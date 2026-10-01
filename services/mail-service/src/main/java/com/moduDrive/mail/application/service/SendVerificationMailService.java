@@ -23,7 +23,7 @@ class SendVerificationMailService implements SendVerificationMailUseCase {
         boolean login = command.getPurpose() == Purpose.LOGIN;
         String html = (login ? loginTemplate : signUpTemplate)
                 .replace("{{CODE}}", HtmlUtils.htmlEscape(command.getVerificationCode()));
-        String subject = login ? "[ModuDrive] 새 기기 로그인 인증 코드" : "[ModuDrive] 이메일 인증을 완료해주세요";
+        String subject = login ? "[ModuDrive] 새 기기 로그인 인증을 완료해 주세요" : "[ModuDrive] 이메일 인증을 완료해 주세요";
 
         // A display name, so the inbox shows "ModuDrive" rather than the bare sending address.
         sendMailPort.sendHtml(command.getEmail(), subject, html, "ModuDrive",

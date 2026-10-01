@@ -84,7 +84,7 @@ auth-service가 로그인 응답에서 `Set-Cookie`로 내려준다 (`SessionCoo
 
 ## 2. 로그인
 
-이메일·비밀번호를 받아 auth-service가 member-service에 확인을 맡기고, 맞으면 새 세션을 Redis에 만들고 세션 쿠키를 내려준다. 처음 보는 기기면 세션 대신 메일 인증 코드를 보내고, 코드를 확인한 뒤에 세션을 만든다. 아래 그림은 이미 인증된 기기의 경우다.
+이메일·비밀번호를 받아 auth-service가 member-service에 확인을 맡기고, 맞으면 새 세션을 Redis에 만들고 세션 쿠키를 내려준다.
 
 ```mermaid
 sequenceDiagram
@@ -94,18 +94,15 @@ sequenceDiagram
     participant A as auth-service
     participant M as member-service
     participant R as Redis
-    participant D as auth_db
 
     U->>G: POST /api/v1/auth/login {email, password}
     Note over G: 로그인 경로는 인증 없이 통과
     G->>A: 전달 (이전 세션·기기 쿠키가 있으면 함께)
-    A->>R: 로그인 시도 횟수 +1
+    A->>R: 로그인 시도 제한 확인 · 로그인 시도 횟수 +1
     A->>M: POST /internal/v1/member/authenticate (Feign)
     M->>M: 이메일로 조회 + BCrypt matches
     M-->>A: 회원 정보 (memberId, roles, isValid)
-    A->>D: 새 기기 로그인 확인
-    A->>R: 로그인 시도 횟수 삭제
-    A->>R: 요청에 기존 세션 쿠키가 있으면 그 세션 삭제
+    A->>R: 로그인 시도 횟수 삭제 · 이전 세션 삭제
     A->>A: 새 세션 ID 생성 (32바이트 SecureRandom)
     A->>R: HSET session:{해시} memberId·roles·createdAt<br/>+ TTL 30분
     A-->>G: Set-Cookie __Host-session, __Host-device<br/>{verificationRequired: false}
@@ -142,7 +139,7 @@ sequenceDiagram
 
 ### 2-2. 새 기기 로그인 확인
 
-처음 보는 기기에서의 로그인은 비밀번호가 맞아도 바로 세션을 주지 않는다. 계정 이메일로 보낸 6자리 코드를 확인한 뒤에야 세션을 만든다. 비밀번호가 새어도 가입 이메일까지 가진 사람만 새 기기에서 로그인할 수 있다.
+처음 보는 기기에서의 로그인은 비밀번호가 맞아도 바로 세션을 주지 않는다. 계정 이메일로 보낸 6자리 코드를 확인한 뒤에야 세션을 만든다.
 
 ```mermaid
 sequenceDiagram
@@ -156,18 +153,23 @@ sequenceDiagram
 
     U->>G: POST /api/v1/auth/login {email, password}
     G->>A: 전달
-    A->>A: 시도 제한 · 비밀번호 확인 완료
-    A->>D: known_device 없음
-    A->>R: HSET login-challenge:{해시} memberId·roles·email·code + TTL 5분
+    A->>A: 로그인 시도 제한 확인 · 로그인 시도 횟수 +1 · 비밀번호 확인 완료
+    A->>D: known_device 없음 (또는 마지막 로그인 90일 지남)
+    A->>R: HSET login-challenge:{해시} memberId·roles·email + TTL 5분
+    A-->>U: Set-Cookie __Host-login-challenge (Max-Age 5분)<br/>{verificationRequired: true}
+    U->>G: POST /api/v1/auth/login/code (발송·재전송 버튼)
+    G->>A: 전달 (챌린지 쿠키)
+    A->>R: 발송 제한 확인 · 발송 횟수 +1
+    A->>R: HSET login-challenge:{해시} code·attempts + TTL 5분 갱신
     A->>D: outbox 기록 (mail-login-verification-requested)
     D--)Mail: relay → SQS
     Mail--)U: 인증 코드 메일
-    A-->>U: Set-Cookie __Host-login-challenge<br/>{verificationRequired: true}
+    A-->>U: Set-Cookie __Host-login-challenge (Max-Age 5분 갱신)
     U->>G: POST /api/v1/auth/login/verify {code}
     G->>A: 전달 (챌린지 쿠키, 이전 세션·기기 쿠키가 있으면 함께)
     A->>R: 인증 코드 확인
     A->>D: known_device 등록 (있으면 90일 다시 갱신)
-    A->>R: 시도 횟수 삭제 · 이전 세션 삭제 · 새 세션 발급
+    A->>R: 로그인 시도 횟수 삭제 · 이전 세션 삭제 · 새 세션 발급
     A-->>U: Set-Cookie __Host-session, __Host-device<br/>+ 챌린지 쿠키(__Host-login-challenge) 삭제
 ```
 
@@ -203,20 +205,28 @@ sequenceDiagram
 
 | 쿠키 | 들어 있는 것 | 언제까지 | 역할 |
 |---|---|---|---|
-| `__Host-login-challenge` | 확인 ID (무작위 32바이트) | 5분. 코드 확인이 끝나면 삭제 | 메일 코드를 로그인을 시작한 이 브라우저에 묶는다. 이것만 훔쳐서는 로그인 못 한다 (메일 코드가 필요) |
+| `__Host-login-challenge` | 확인 ID (무작위 32바이트) | 5분. 코드를 보낼 때마다 다시 5분, 코드 확인이 끝나면 삭제 | 메일 코드를 로그인을 시작한 이 브라우저에 묶는다. 이것만 훔쳐서는 로그인 못 한다 (메일 코드가 필요) |
 
 챌린지 내용은 Redis에 둔다.
 
 | 키 | 타입 | 값 | TTL | 용도 |
 |---|---|---|---|---|
-| `login-challenge:{SHA-256(확인 ID) hex}` | hash | `memberId`, `roles`, `email`, `code`, `attempts` | 5분 | 새 기기 로그인에서 메일 코드 확인을 기다리는 로그인 |
+| `login-challenge:{SHA-256(확인 ID) hex}` | hash | `memberId`, `roles`, `email`, `code`(보내기 전에는 없음), `attempts` | 5분 (코드를 보낼 때마다 다시) | 새 기기 로그인에서 메일 코드 확인을 기다리는 로그인 |
+| `login-code-requests:{이메일(소문자)}` | string | 코드 발송 횟수 | 15분 (첫 발송부터, 연장 없음) | 이메일별 발송 한도 — 5번을 넘으면 429 |
+| `login-code-cooldown:{이메일(소문자)}` | string | `1` | 30초. 코드를 맞히거나 5번 틀리면 삭제 | 연속 발송 방지 — 있으면 429 (발송 횟수에 세지 않음) |
 
-1. **챌린지 만들기** — 비밀번호는 맞았는데 모르는 기기면, 세션을 주지 않고 6자리 코드를 만들어 챌린지에 5분 동안 저장한다.
-   - 확인 ID를 쿠키로 내려주고, 응답 본문에 `verificationRequired: true`를 담는다 → WEB은 코드 입력 화면을 띄운다.
+코드는 챌린지와 함께 5분 산다 — 마지막 발송부터 5분이 지나면 챌린지째 끝나 다시 로그인한다. 5번 틀리면 코드만 끝나(410, 인증 코드 입력 횟수 제한) 재전송하면 된다. 이메일별 발송 15분에 5번 + 30초 간격과 에러 문구는 회원가입 이메일 인증(member-service)과 같다.
+
+1. **챌린지 만들기** — 비밀번호는 맞았는데 모르는 기기면, 세션을 주지 않고 챌린지를 5분 동안 저장한다. 이때는 코드를 만들지도 메일을 보내지도 않는다.
+   - 확인 ID를 쿠키로 내려주고, 응답 본문에 `verificationRequired: true`를 담는다 → WEB은 인증 화면을 띄우고, 사용자가 "인증"을 누른다 (회원가입 인증과 같은 모양).
    - 챌린지 저장과 5분 타이머를 거는 일은 스크립트 하나(`create-login-challenge.lua`)로 한 번에 한다 — 타이머 없는 챌린지가 남지 않게.
-2. **챌린지 만료** — 코드를 확인할 때 챌린지가 없거나 5분이 지났으면 400("인증 시간이 지났습니다. 다시 로그인해 주세요.") 에러를 준다.
-3. **5번 틀리면 챌린지 삭제** — 코드가 틀리면 400("인증 코드가 일치하지 않습니다.") 에러를 주고 틀린 횟수를 1 올린다. 5번 틀리면 챌린지를 지워, 그 뒤로는 시간이 지난 것과 같은 답을 준다.
+2. **코드 보내기** — `POST /api/v1/auth/login/code`(챌린지 쿠키)가 오면 6자리 코드를 새로 만들어 챌린지에 저장하고 메일로 보낸다. 처음 보내기와 재전송이 같은 요청이다.
+   - 발송 한도: 이메일마다 30초에 한 번, 15분에 5번. 30초 안이면 "요청이 너무 빈번합니다. 잠시 후 다시 시도해 주세요.", 15분 한도면 "요청 횟수를 초과했습니다. 잠시 후 다시 시도해 주세요." (30초 안의 요청은 15분 횟수에 세지 않는다).
+   - 새 코드는 이전 코드를 덮어쓰고, 틀린 횟수와 챌린지의 5분을 새로 시작한다 (`issue-login-challenge-code.lua`). 챌린지 쿠키도 다시 5분으로 내려준다.
+3. **틀린 코드 입력** — 400("인증 코드가 일치하지 않습니다.")을 주고 틀린 횟수를 1 올린다.
    - 코드 비교와 틀린 횟수 올리기는 스크립트 하나(`confirm-login-challenge.lua`)로 한 번에 한다 — 동시에 여러 번 보내도 5번 제한을 넘지 못하게.
+4. **인증 코드 입력 횟수 제한** — 5번째로 틀리면 410("인증 코드 입력 횟수를 초과했습니다. 코드를 다시 받아 주세요.")을 주고, 그 뒤로는 맞는 코드를 넣어도 같은 410을 준다. 챌린지는 남으므로 재전송만 하면 되고(새 코드로 횟수 초기화), 30초 간격도 바로 풀린다.
+5. **인증 코드·챌린지 만료** — 챌린지가 없거나 로그인(또는 마지막 발송)부터 5분이 지났으면 400("인증 시간이 지났습니다. 다시 로그인해 주세요.")을 준다. 코드는 챌린지와 함께 만료되므로 코드 만료도 같은 답이고, 재전송이 아니라 다시 로그인해야 한다.
 
 #### 2-2-3. 한계
 
@@ -309,7 +319,7 @@ sequenceDiagram
 | 방치된 탭이 폴링으로 세션 유지 | 백그라운드 요청은 유휴 시간을 연장하지 않음 | [1-1-4](#1-1-4-세션-만료) |
 | 비밀번호 대입 | 이메일별 15분에 5번까지만 시도 허용 | [2-1](#2-1-로그인-시도-횟수-제한) |
 | 남이 일부러 틀려 계정을 잠금 | 인증된 기기는 시도 횟수를 따로 센다 — 잠기는 건 모르는 기기의 공용 시도 횟수뿐 | [2-1](#2-1-로그인-시도-횟수-제한) |
-| 훔친 비밀번호로 로그인 | 새 기기는 가입 이메일로 보낸 코드를 확인해야 세션을 받는다. 코드 추측은 15분에 25번까지 | [2-2](#2-2-새-기기-로그인-확인) |
+| 훔친 비밀번호로 로그인 | 새 기기는 가입 이메일로 보낸 코드를 확인해야 세션을 받는다. 코드 발송이 이메일별 15분에 5번이라 추측은 15분에 25번까지 | [2-2](#2-2-새-기기-로그인-확인) |
 | DB 유출로 기기 쿠키 재사용 | `known_device`엔 기기 ID의 SHA-256 해시만 저장 | [2-2-1](#2-2-1-기기를-식별하는-방법) |
 | `X_USER_ID` 위조 | 게이트웨이가 항상 지우고 세션 확인 후에만 채움, 내부 서비스는 외부에 포트를 열지 않음 | [3](#3-요청-검증) |
 

@@ -7,7 +7,6 @@ import com.moduDrive.auth.application.port.out.DeleteSessionPort;
 import com.moduDrive.auth.application.port.out.KnownDevicePort;
 import com.moduDrive.auth.application.port.out.LoginAttemptPort;
 import com.moduDrive.auth.application.port.out.LoginChallengePort;
-import com.moduDrive.auth.application.port.out.SendLoginVerificationMailPort;
 import com.moduDrive.auth.domain.model.LoginResult;
 import com.moduDrive.auth.domain.model.MemberAuthData;
 import com.moduDrive.auth.domain.vo.DeviceId;
@@ -23,7 +22,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -31,7 +29,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
@@ -53,8 +50,6 @@ class LoginServiceTest {
     private KnownDevicePort knownDevicePort;
     @Mock
     private LoginChallengePort loginChallengePort;
-    @Mock
-    private SendLoginVerificationMailPort sendLoginVerificationMailPort;
     @InjectMocks
     private LoginService loginService;
 
@@ -93,7 +88,6 @@ class LoginServiceTest {
             then(deleteSessionPort).shouldHaveNoInteractions();
             then(loginAttemptPort).should().clearAttempts(EMAIL, DEVICE_ID);
             then(loginChallengePort).shouldHaveNoInteractions();
-            then(sendLoginVerificationMailPort).shouldHaveNoInteractions();
         }
 
         @Test
@@ -128,20 +122,16 @@ class LoginServiceTest {
     class WhenDeviceIsUnknown {
 
         @Test
-        @DisplayName("공용 횟수로 세고, 세션 없이 6자리 코드를 저장·메일로 보내고 확인을 기다린다")
+        @DisplayName("공용 횟수로 세고, 세션도 메일도 없이 확인을 만들어 코드 요청을 기다린다")
         void waitsForTheEmailedCode() {
             given(knownDevicePort.isKnown(EMAIL, DEVICE_ID)).willReturn(false);
             givenPasswordMatches(null);
             given(knownDevicePort.refreshIfKnown("member-id", EMAIL, DEVICE_ID)).willReturn(false);
-            given(loginChallengePort.createChallenge(eq(memberAuthData), eq(EMAIL), anyString())).willReturn(CHALLENGE_ID);
+            given(loginChallengePort.createChallenge(memberAuthData, EMAIL)).willReturn(CHALLENGE_ID);
 
             LoginResult result = loginService.login(new LoginCommand(EMAIL, PASSWORD, PREVIOUS_SESSION_ID, DEVICE_ID));
 
             assertThat(result).isEqualTo(new LoginResult.VerificationRequired(CHALLENGE_ID));
-            ArgumentCaptor<String> stored = ArgumentCaptor.forClass(String.class);
-            then(loginChallengePort).should().createChallenge(eq(memberAuthData), eq(EMAIL), stored.capture());
-            assertThat(stored.getValue()).matches("\\d{6}");
-            then(sendLoginVerificationMailPort).should().sendLoginVerificationMail(EMAIL, stored.getValue());
             then(createSessionPort).shouldHaveNoInteractions();
             then(deleteSessionPort).shouldHaveNoInteractions();
         }
@@ -150,7 +140,7 @@ class LoginServiceTest {
         @DisplayName("시도 횟수는 지우지 않는다 — 코드까지 맞혀야 지워진다")
         void keepsTheAttemptCount() {
             givenPasswordMatches(null);
-            given(loginChallengePort.createChallenge(eq(memberAuthData), eq(EMAIL), anyString())).willReturn(CHALLENGE_ID);
+            given(loginChallengePort.createChallenge(memberAuthData, EMAIL)).willReturn(CHALLENGE_ID);
 
             loginService.login(new LoginCommand(EMAIL, PASSWORD, null, null));
 

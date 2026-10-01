@@ -20,7 +20,8 @@ class ConfirmEmailVerificationService implements ConfirmEmailVerificationUseCase
         switch (emailVerificationTokenPort.confirmCode(email, command.getCode())) {
             case MATCHED -> emailVerificationTokenPort.markVerified(email);
             case MISMATCHED -> throw new BusinessException(MemberExceptionCase.INVALID_VERIFICATION_CODE);
-            case ENDED -> throw new BusinessException(MemberExceptionCase.VERIFICATION_CODE_ENDED);
+            case EXPIRED -> throw new BusinessException(MemberExceptionCase.VERIFICATION_CODE_EXPIRED);
+            case EXHAUSTED -> throw new BusinessException(MemberExceptionCase.VERIFICATION_ATTEMPTS_EXCEEDED);
         }
     }
 }

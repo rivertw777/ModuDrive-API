@@ -8,7 +8,6 @@ import com.moduDrive.auth.application.port.out.DeleteSessionPort;
 import com.moduDrive.auth.application.port.out.KnownDevicePort;
 import com.moduDrive.auth.application.port.out.LoginAttemptPort;
 import com.moduDrive.auth.application.port.out.LoginChallengePort;
-import com.moduDrive.auth.application.port.out.SendLoginVerificationMailPort;
 import com.moduDrive.auth.domain.model.LoginResult;
 import com.moduDrive.auth.domain.model.MemberAuthData;
 import com.moduDrive.auth.domain.vo.DeviceId;
@@ -20,13 +19,9 @@ import com.moduDrive.common.core.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.val;
 
-import java.security.SecureRandom;
-
 @UseCase
 @RequiredArgsConstructor
 class LoginService implements LoginUseCase {
-
-    private final SecureRandom secureRandom = new SecureRandom();
 
     private final AuthenticateMemberPort authenticateMemberPort;
     private final CreateSessionPort createSessionPort;
@@ -34,7 +29,6 @@ class LoginService implements LoginUseCase {
     private final LoginAttemptPort loginAttemptPort;
     private final KnownDevicePort knownDevicePort;
     private final LoginChallengePort loginChallengePort;
-    private final SendLoginVerificationMailPort sendLoginVerificationMailPort;
 
     @Override
     public LoginResult login(LoginCommand loginCommand) {
@@ -66,12 +60,10 @@ class LoginService implements LoginUseCase {
             return new LoginResult.SignedIn(createSessionPort.createSession(memberAuthData), loginCommand.getDeviceId());
         }
 
-        // A device this member hasn't verified: no session until the emailed code comes back (spec 004 2-2).
-        String code = String.format("%06d", secureRandom.nextInt(1_000_000));
+        // A device this member hasn't verified: no session until the emailed code comes back, and no
+        // mail until the member asks for the code (spec 004 2-2).
         LoginChallengeId challengeId =
-                loginChallengePort.createChallenge(memberAuthData, loginCommand.getMemberEmail(), code);
-        // The typed email is the member's own: member-service found them by it, exactly.
-        sendLoginVerificationMailPort.sendLoginVerificationMail(loginCommand.getMemberEmail(), code);
+                loginChallengePort.createChallenge(memberAuthData, loginCommand.getMemberEmail());
         return new LoginResult.VerificationRequired(challengeId);
     }
 

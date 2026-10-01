@@ -42,7 +42,7 @@ class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .authorizeExchange(exchange -> exchange
                         .pathMatchers("/api/v1/member/verify-email/request", "/api/v1/member/verify-email/confirm", "/api/v1/member/sign-up").permitAll()
-                        .pathMatchers(HttpMethod.POST, "/api/v1/auth/login", "/api/v1/auth/login/verify", "/api/v1/auth/logout").permitAll()
+                        .pathMatchers(HttpMethod.POST, "/api/v1/auth/login", "/api/v1/auth/login/code", "/api/v1/auth/login/verify", "/api/v1/auth/logout").permitAll()
                         .pathMatchers(HttpMethod.GET, "/api/v1/files/public/**").permitAll()
                         .pathMatchers(HttpMethod.GET, "/api/v1/storage/public/**").permitAll()
                         .pathMatchers(HttpMethod.POST, "/api/v1/storage/public/archive").permitAll()

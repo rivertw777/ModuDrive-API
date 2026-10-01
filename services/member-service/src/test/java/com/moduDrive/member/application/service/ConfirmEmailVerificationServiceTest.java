@@ -9,6 +9,8 @@ import com.moduDrive.member.exception.MemberExceptionCase;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -71,16 +73,18 @@ class ConfirmEmailVerificationServiceTest {
     @DisplayName("인증 코드가 만료됐거나 입력 횟수를 다 썼을 때")
     class WhenCodeHasEnded {
 
-        @Test
-        void throwsCodeEndedAndSkipsMarking() {
-            given(emailVerificationTokenPort.confirmCode(EMAIL, CODE)).willReturn(CodeConfirmation.ENDED);
+        @ParameterizedTest
+        @CsvSource({"EXPIRED, VERIFICATION_CODE_EXPIRED", "EXHAUSTED, VERIFICATION_ATTEMPTS_EXCEEDED"})
+        @DisplayName("만료와 입력 횟수 초과를 다른 예외로 알리고, 인증 완료로 표시하지 않는다")
+        void throwsCodeEndedAndSkipsMarking(CodeConfirmation confirmation, MemberExceptionCase expected) {
+            given(emailVerificationTokenPort.confirmCode(EMAIL, CODE)).willReturn(confirmation);
 
             Throwable thrown = catchThrowable(() -> confirmEmailVerificationService.confirmEmailVerification(command));
 
             assertThat(thrown)
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
-                    .isEqualTo(MemberExceptionCase.VERIFICATION_CODE_ENDED);
+                    .isEqualTo(expected);
             then(emailVerificationTokenPort).should(never()).markVerified(anyString());
         }
     }
