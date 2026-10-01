@@ -25,7 +25,7 @@ class VerifyLoginController {
     private final VerifyLoginUseCase verifyLoginUseCase;
     private final SessionCookieFactory sessionCookieFactory;
 
-    @PostMapping("/api/v1/auth/login/verify")
+    @PostMapping("/api/v1/auth/verify-email/confirm")
     public ApiResponse<Void> verifyLogin(@Valid @RequestBody VerifyLoginRequest request,
                                          HttpServletRequest httpServletRequest,
                                          HttpServletResponse httpServletResponse) {

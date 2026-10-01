@@ -21,7 +21,7 @@ class SendLoginCodeController {
     private final SendLoginCodeUseCase sendLoginCodeUseCase;
     private final SessionCookieFactory sessionCookieFactory;
 
-    @PostMapping("/api/v1/auth/login/code")
+    @PostMapping("/api/v1/auth/verify-email/request")
     public ApiResponse<Void> sendLoginCode(HttpServletRequest httpServletRequest,
                                            HttpServletResponse httpServletResponse) {
         val challengeId = sessionCookieFactory.readLoginChallengeId(httpServletRequest)
