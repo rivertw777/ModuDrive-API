@@ -9,6 +9,7 @@ import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.S3ClientBuilder;
+import software.amazon.awssdk.services.s3.model.BucketAlreadyOwnedByYouException;
 import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
 
 import java.net.URI;
@@ -46,12 +47,16 @@ public class S3Config {
             client.headBucket(b -> b.bucket(bucket));
         } catch (NoSuchBucketException e) {
             // S3 wants the region spelled out for every region but us-east-1, its default.
-            client.createBucket(b -> {
-                b.bucket(bucket);
-                if (!Region.US_EAST_1.id().equals(region)) {
-                    b.createBucketConfiguration(c -> c.locationConstraint(region));
-                }
-            });
+            try {
+                client.createBucket(b -> {
+                    b.bucket(bucket);
+                    if (!Region.US_EAST_1.id().equals(region)) {
+                        b.createBucketConfiguration(c -> c.locationConstraint(region));
+                    }
+                });
+            } catch (BucketAlreadyOwnedByYouException ignored) {
+                // LocalStack's init script (init-aws.sh) created it between our head and create.
+            }
         }
     }
 }
