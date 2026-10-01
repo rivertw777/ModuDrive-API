@@ -17,10 +17,10 @@ class ConfirmEmailVerificationService implements ConfirmEmailVerificationUseCase
     @Override
     public void confirmEmailVerification(ConfirmEmailVerificationCommand command) {
         String email = command.getMemberEmail().emailValue();
-        if (!emailVerificationTokenPort.confirmCode(email, command.getCode())) {
-            throw new BusinessException(MemberExceptionCase.INVALID_VERIFICATION_CODE);
+        switch (emailVerificationTokenPort.confirmCode(email, command.getCode())) {
+            case MATCHED -> emailVerificationTokenPort.markVerified(email);
+            case MISMATCHED -> throw new BusinessException(MemberExceptionCase.INVALID_VERIFICATION_CODE);
+            case ENDED -> throw new BusinessException(MemberExceptionCase.VERIFICATION_CODE_ENDED);
         }
-
-        emailVerificationTokenPort.markVerified(email);
     }
 }

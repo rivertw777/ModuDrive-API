@@ -90,4 +90,22 @@ class ConfirmEmailVerificationControllerTest {
                     .andExpect(jsonPath("$.message").value(MemberExceptionCase.INVALID_VERIFICATION_CODE.getMessage()));
         }
     }
+
+    @Nested
+    @DisplayName("만료됐거나 입력 횟수를 다 쓴 인증 코드로 요청했을 때")
+    class WhenCodeHasEnded {
+
+        @Test
+        void returnsGoneWithExceptionMessage() throws Exception {
+            willThrow(new BusinessException(MemberExceptionCase.VERIFICATION_CODE_ENDED))
+                    .given(confirmEmailVerificationUseCase)
+                    .confirmEmailVerification(COMMAND);
+
+            mockMvc.perform(post("/api/v1/member/verify-email/confirm")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(REQUEST_JSON))
+                    .andExpect(status().isGone())
+                    .andExpect(jsonPath("$.message").value(MemberExceptionCase.VERIFICATION_CODE_ENDED.getMessage()));
+        }
+    }
 }

@@ -17,9 +17,12 @@ class RedisEmailVerificationTokenStore implements EmailVerificationTokenPort {
     private static final String ATTEMPTS_PREFIX = "email-verify-attempts:";
     private static final String VERIFIED_PREFIX = "email-verified:";
     private static final String REQUESTS_PREFIX = "email-verify-requests:";
+    private static final String COOLDOWN_PREFIX = "email-verify-cooldown:";
     /** Codes one address can be sent per window — without it, anyone can flood a mailbox with codes. */
     static final int MAX_REQUESTS = 5;
     static final Duration REQUEST_WINDOW = Duration.ofMinutes(15);
+    /** Gap between two codes for one address, so a double click or rapid resends don't each send a mail. */
+    static final Duration RESEND_COOLDOWN = Duration.ofSeconds(30);
     /** A 6-digit code only has 10^6 values; without a guess cap it's brute-forceable inside its TTL. */
     private static final int MAX_ATTEMPTS = 5;
     /** Grace window to submit the sign-up form after verifying — independent of the (shorter) code TTL. */
@@ -40,10 +43,11 @@ class RedisEmailVerificationTokenStore implements EmailVerificationTokenPort {
 
     @Override
     public boolean tryRequestCode(String email) {
+        // confirmCode lifts the cooldown early once the code is matched or out of attempts.
         Long requests = redisRepository.executeScript(COUNT_REQUEST_SCRIPT,
-                List.of(REQUESTS_PREFIX + email.trim().toLowerCase(Locale.ROOT)),
-                String.valueOf(REQUEST_WINDOW.toMillis()));
-        return requests != null && requests <= MAX_REQUESTS;
+                List.of(REQUESTS_PREFIX + normalize(email), cooldownKey(email)),
+                String.valueOf(REQUEST_WINDOW.toMillis()), String.valueOf(RESEND_COOLDOWN.toMillis()));
+        return requests != null && requests > 0 && requests <= MAX_REQUESTS;
     }
 
     @Override
@@ -53,10 +57,18 @@ class RedisEmailVerificationTokenStore implements EmailVerificationTokenPort {
     }
 
     @Override
-    public boolean confirmCode(String email, String code) {
-        Long confirmed = redisRepository.executeScript(CONFIRM_SCRIPT, List.of(codeKey(email), attemptsKey(email)),
+    public CodeConfirmation confirmCode(String email, String code) {
+        Long confirmed = redisRepository.executeScript(CONFIRM_SCRIPT,
+                List.of(codeKey(email), attemptsKey(email), cooldownKey(email)),
                 code, String.valueOf(MAX_ATTEMPTS), String.valueOf(tokenExpiration));
-        return confirmed != null && confirmed == 1L;
+        if (confirmed == null) {
+            return CodeConfirmation.ENDED;
+        }
+        return switch (confirmed.intValue()) {
+            case 1 -> CodeConfirmation.MATCHED;
+            case 0 -> CodeConfirmation.MISMATCHED;
+            default -> CodeConfirmation.ENDED;
+        };
     }
 
     @Override
@@ -83,5 +95,14 @@ class RedisEmailVerificationTokenStore implements EmailVerificationTokenPort {
 
     private String verifiedKey(String email) {
         return VERIFIED_PREFIX + email;
+    }
+
+    /** Keyed like the request count, so a differently-cased address can't dodge the cooldown. */
+    private String cooldownKey(String email) {
+        return COOLDOWN_PREFIX + normalize(email);
+    }
+
+    private static String normalize(String email) {
+        return email.trim().toLowerCase(Locale.ROOT);
     }
 }

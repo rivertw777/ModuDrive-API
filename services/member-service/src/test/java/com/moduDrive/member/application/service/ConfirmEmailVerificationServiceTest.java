@@ -3,6 +3,7 @@ package com.moduDrive.member.application.service;
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.member.application.port.in.command.ConfirmEmailVerificationCommand;
 import com.moduDrive.member.application.port.out.EmailVerificationTokenPort;
+import com.moduDrive.member.application.port.out.EmailVerificationTokenPort.CodeConfirmation;
 import com.moduDrive.member.domain.model.Member.MemberEmail;
 import com.moduDrive.member.exception.MemberExceptionCase;
 import org.junit.jupiter.api.DisplayName;
@@ -40,7 +41,7 @@ class ConfirmEmailVerificationServiceTest {
 
         @Test
         void marksEmailAsVerified() {
-            given(emailVerificationTokenPort.confirmCode(EMAIL, CODE)).willReturn(true);
+            given(emailVerificationTokenPort.confirmCode(EMAIL, CODE)).willReturn(CodeConfirmation.MATCHED);
 
             confirmEmailVerificationService.confirmEmailVerification(command);
 
@@ -54,7 +55,7 @@ class ConfirmEmailVerificationServiceTest {
 
         @Test
         void throwsBusinessExceptionAndSkipsMarking() {
-            given(emailVerificationTokenPort.confirmCode(EMAIL, CODE)).willReturn(false);
+            given(emailVerificationTokenPort.confirmCode(EMAIL, CODE)).willReturn(CodeConfirmation.MISMATCHED);
 
             Throwable thrown = catchThrowable(() -> confirmEmailVerificationService.confirmEmailVerification(command));
 
@@ -62,6 +63,24 @@ class ConfirmEmailVerificationServiceTest {
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
                     .isEqualTo(MemberExceptionCase.INVALID_VERIFICATION_CODE);
+            then(emailVerificationTokenPort).should(never()).markVerified(anyString());
+        }
+    }
+
+    @Nested
+    @DisplayName("인증 코드가 만료됐거나 입력 횟수를 다 썼을 때")
+    class WhenCodeHasEnded {
+
+        @Test
+        void throwsCodeEndedAndSkipsMarking() {
+            given(emailVerificationTokenPort.confirmCode(EMAIL, CODE)).willReturn(CodeConfirmation.ENDED);
+
+            Throwable thrown = catchThrowable(() -> confirmEmailVerificationService.confirmEmailVerification(command));
+
+            assertThat(thrown)
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(MemberExceptionCase.VERIFICATION_CODE_ENDED);
             then(emailVerificationTokenPort).should(never()).markVerified(anyString());
         }
     }
