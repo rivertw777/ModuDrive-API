@@ -4,12 +4,15 @@ import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.member.application.port.in.command.RequestEmailVerificationCommand;
 import com.moduDrive.member.application.port.out.CheckEmailExistsPort;
 import com.moduDrive.member.application.port.out.EmailVerificationTokenPort;
+import com.moduDrive.member.application.port.out.EmailVerificationTokenPort.CodeRequest;
 import com.moduDrive.member.application.port.out.PublishMailEventPort;
 import com.moduDrive.member.domain.model.Member.MemberEmail;
 import com.moduDrive.member.exception.MemberExceptionCase;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
@@ -51,7 +54,7 @@ class RequestEmailVerificationServiceTest {
 
         @Test
         void savesSixDigitCodeAndPublishesTheSameCode() {
-            given(emailVerificationTokenPort.tryRequestCode("river@modudrive.com")).willReturn(true);
+            given(emailVerificationTokenPort.requestCode("river@modudrive.com")).willReturn(CodeRequest.ALLOWED);
             given(checkEmailExistsPort.existsByEmail(command.getMemberEmail())).willReturn(false);
 
             requestEmailVerificationService.requestEmailVerification(command);
@@ -72,7 +75,7 @@ class RequestEmailVerificationServiceTest {
 
         @Test
         void throwsBusinessExceptionAndSkipsPublishing() {
-            given(emailVerificationTokenPort.tryRequestCode("river@modudrive.com")).willReturn(true);
+            given(emailVerificationTokenPort.requestCode("river@modudrive.com")).willReturn(CodeRequest.ALLOWED);
             given(checkEmailExistsPort.existsByEmail(command.getMemberEmail())).willReturn(true);
 
             Throwable thrown = catchThrowable(() -> requestEmailVerificationService.requestEmailVerification(command));
@@ -90,16 +93,18 @@ class RequestEmailVerificationServiceTest {
     @DisplayName("한 주소로 너무 자주 요청했을 때")
     class WhenRequestedTooOften {
 
-        @Test
-        void throwsTooManyRequestsAndSkipsPublishing() {
-            given(emailVerificationTokenPort.tryRequestCode("river@modudrive.com")).willReturn(false);
+        @ParameterizedTest
+        @CsvSource({"TOO_SOON, VERIFICATION_REQUEST_TOO_SOON", "TOO_MANY, TOO_MANY_VERIFICATION_REQUESTS"})
+        @DisplayName("30초 안의 재요청과 15분 한도 초과를 다른 예외로 알리고, 코드를 보내지 않는다")
+        void throwsTooManyRequestsAndSkipsPublishing(CodeRequest refused, MemberExceptionCase expected) {
+            given(emailVerificationTokenPort.requestCode("river@modudrive.com")).willReturn(refused);
 
             Throwable thrown = catchThrowable(() -> requestEmailVerificationService.requestEmailVerification(command));
 
             assertThat(thrown)
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
-                    .isEqualTo(MemberExceptionCase.TOO_MANY_VERIFICATION_REQUESTS);
+                    .isEqualTo(expected);
             then(emailVerificationTokenPort).should(never()).saveCode(anyString(), anyString());
             then(publishMailEventPort).shouldHaveNoInteractions();
         }

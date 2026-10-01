@@ -2,7 +2,7 @@ package com.moduDrive.member.adapter.out.security;
 
 import com.moduDrive.common.infrastructure.redis.RedisRepository;
 import com.moduDrive.member.application.port.out.EmailVerificationTokenPort;
-import org.springframework.beans.factory.annotation.Value;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 
@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Locale;
 
 @Component
+@RequiredArgsConstructor
 class RedisEmailVerificationTokenStore implements EmailVerificationTokenPort {
 
     private static final String CODE_PREFIX = "email-verify-code:";
@@ -18,6 +19,8 @@ class RedisEmailVerificationTokenStore implements EmailVerificationTokenPort {
     private static final String VERIFIED_PREFIX = "email-verified:";
     private static final String REQUESTS_PREFIX = "email-verify-requests:";
     private static final String COOLDOWN_PREFIX = "email-verify-cooldown:";
+    /** How long a code can be used — the same 5 minutes as a new-device login code (auth-service). */
+    static final Duration CODE_TTL = Duration.ofMinutes(5);
     /** Codes one address can be sent per window — without it, anyone can flood a mailbox with codes. */
     static final int MAX_REQUESTS = 5;
     static final Duration REQUEST_WINDOW = Duration.ofMinutes(15);
@@ -33,26 +36,22 @@ class RedisEmailVerificationTokenStore implements EmailVerificationTokenPort {
             RedisRepository.loadScript("scripts/count-verification-request.lua", Long.class);
 
     private final RedisRepository redisRepository;
-    private final long tokenExpiration;
-
-    RedisEmailVerificationTokenStore(RedisRepository redisRepository,
-                                     @Value("${modudrive.member.email-verification-token-expiration}") long tokenExpiration) {
-        this.redisRepository = redisRepository;
-        this.tokenExpiration = tokenExpiration;
-    }
 
     @Override
-    public boolean tryRequestCode(String email) {
+    public CodeRequest requestCode(String email) {
         // confirmCode lifts the cooldown early once the code is matched or out of attempts.
         Long requests = redisRepository.executeScript(COUNT_REQUEST_SCRIPT,
                 List.of(REQUESTS_PREFIX + normalize(email), cooldownKey(email)),
                 String.valueOf(REQUEST_WINDOW.toMillis()), String.valueOf(RESEND_COOLDOWN.toMillis()));
-        return requests != null && requests > 0 && requests <= MAX_REQUESTS;
+        if (requests == null || requests == 0) {
+            return CodeRequest.TOO_SOON;
+        }
+        return requests <= MAX_REQUESTS ? CodeRequest.ALLOWED : CodeRequest.TOO_MANY;
     }
 
     @Override
     public void saveCode(String email, String code) {
-        redisRepository.set(codeKey(email), code, Duration.ofMillis(tokenExpiration));
+        redisRepository.set(codeKey(email), code, CODE_TTL);
         redisRepository.delete(attemptsKey(email));
     }
 
@@ -60,14 +59,15 @@ class RedisEmailVerificationTokenStore implements EmailVerificationTokenPort {
     public CodeConfirmation confirmCode(String email, String code) {
         Long confirmed = redisRepository.executeScript(CONFIRM_SCRIPT,
                 List.of(codeKey(email), attemptsKey(email), cooldownKey(email)),
-                code, String.valueOf(MAX_ATTEMPTS), String.valueOf(tokenExpiration));
+                code, String.valueOf(MAX_ATTEMPTS), String.valueOf(CODE_TTL.toMillis()));
         if (confirmed == null) {
-            return CodeConfirmation.ENDED;
+            return CodeConfirmation.EXPIRED;
         }
         return switch (confirmed.intValue()) {
             case 1 -> CodeConfirmation.MATCHED;
             case 0 -> CodeConfirmation.MISMATCHED;
-            default -> CodeConfirmation.ENDED;
+            case -2 -> CodeConfirmation.EXHAUSTED;
+            default -> CodeConfirmation.EXPIRED;
         };
     }
 

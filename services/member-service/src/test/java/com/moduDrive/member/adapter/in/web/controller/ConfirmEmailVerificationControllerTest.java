@@ -97,7 +97,7 @@ class ConfirmEmailVerificationControllerTest {
 
         @Test
         void returnsGoneWithExceptionMessage() throws Exception {
-            willThrow(new BusinessException(MemberExceptionCase.VERIFICATION_CODE_ENDED))
+            willThrow(new BusinessException(MemberExceptionCase.VERIFICATION_ATTEMPTS_EXCEEDED))
                     .given(confirmEmailVerificationUseCase)
                     .confirmEmailVerification(COMMAND);
 
@@ -105,7 +105,7 @@ class ConfirmEmailVerificationControllerTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(REQUEST_JSON))
                     .andExpect(status().isGone())
-                    .andExpect(jsonPath("$.message").value(MemberExceptionCase.VERIFICATION_CODE_ENDED.getMessage()));
+                    .andExpect(jsonPath("$.message").value(MemberExceptionCase.VERIFICATION_ATTEMPTS_EXCEEDED.getMessage()));
         }
     }
 }
