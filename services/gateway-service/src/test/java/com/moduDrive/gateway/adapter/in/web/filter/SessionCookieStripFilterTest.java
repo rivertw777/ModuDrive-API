@@ -86,7 +86,7 @@ class SessionCookieStripFilterTest {
         @Test
         @DisplayName("새 기기 코드 확인에 필요한 기기·확인 쿠키도 그대로 넘긴다")
         void keepsDeviceAndLoginChallengeCookies() {
-            String cookieHeader = forwardedCookieHeader(MockServerHttpRequest.post("/api/v1/auth/login/verify")
+            String cookieHeader = forwardedCookieHeader(MockServerHttpRequest.post("/api/v1/auth/verify-email/confirm")
                     .cookie(new HttpCookie("__Host-device", "device"), new HttpCookie("__Host-login-challenge", "challenge"))
                     .build());
 

@@ -42,7 +42,7 @@ class SendLoginCodeControllerTest {
         @Test
         @DisplayName("코드를 보내고 확인 쿠키의 5분을 새로 시작한다")
         void sendsTheCodeAndRestartsTheCookie() throws Exception {
-            mockMvc.perform(post("/api/v1/auth/login/code").cookie(CHALLENGE_COOKIE))
+            mockMvc.perform(post("/api/v1/auth/verify-email/request").cookie(CHALLENGE_COOKIE))
                     .andExpect(status().isOk())
                     .andExpect(cookie().value(SessionCookie.LOGIN_CHALLENGE_NAME, CHALLENGE_ID.value()))
                     .andExpect(cookie().maxAge(SessionCookie.LOGIN_CHALLENGE_NAME, 300));
@@ -56,7 +56,7 @@ class SendLoginCodeControllerTest {
             willThrow(new BusinessException(AuthExceptionCase.TOO_MANY_LOGIN_CODE_REQUESTS))
                     .given(sendLoginCodeUseCase).sendLoginCode(CHALLENGE_ID);
 
-            mockMvc.perform(post("/api/v1/auth/login/code").cookie(CHALLENGE_COOKIE))
+            mockMvc.perform(post("/api/v1/auth/verify-email/request").cookie(CHALLENGE_COOKIE))
                     .andExpect(status().isTooManyRequests())
                     .andExpect(jsonPath("$.message").value(AuthExceptionCase.TOO_MANY_LOGIN_CODE_REQUESTS.getMessage()));
         }
@@ -69,7 +69,7 @@ class SendLoginCodeControllerTest {
         @Test
         @DisplayName("시간이 지난 것과 같은 400으로 답한다")
         void returnsExpired() throws Exception {
-            mockMvc.perform(post("/api/v1/auth/login/code"))
+            mockMvc.perform(post("/api/v1/auth/verify-email/request"))
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.message").value(AuthExceptionCase.LOGIN_VERIFICATION_EXPIRED.getMessage()));
 

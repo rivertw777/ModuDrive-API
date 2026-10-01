@@ -157,7 +157,7 @@ sequenceDiagram
     A->>D: known_device 없음 (또는 마지막 로그인 90일 지남)
     A->>R: HSET login-challenge:{해시} memberId·roles·email + TTL 5분
     A-->>U: Set-Cookie __Host-login-challenge (Max-Age 5분)<br/>{verificationRequired: true}
-    U->>G: POST /api/v1/auth/login/code (발송·재전송 버튼)
+    U->>G: POST /api/v1/auth/verify-email/request (발송·재전송 버튼)
     G->>A: 전달 (챌린지 쿠키)
     A->>R: 발송 제한 확인 · 발송 횟수 +1
     A->>R: HSET login-challenge:{해시} code·attempts + TTL 5분 갱신
@@ -165,7 +165,7 @@ sequenceDiagram
     D--)Mail: relay → SQS
     Mail--)U: 인증 코드 메일
     A-->>U: Set-Cookie __Host-login-challenge (Max-Age 5분 갱신)
-    U->>G: POST /api/v1/auth/login/verify {code}
+    U->>G: POST /api/v1/auth/verify-email/confirm {code}
     G->>A: 전달 (챌린지 쿠키, 이전 세션·기기 쿠키가 있으면 함께)
     A->>R: 인증 코드 확인
     A->>D: known_device 등록 (있으면 90일 다시 갱신)
@@ -220,7 +220,7 @@ sequenceDiagram
 1. **챌린지 만들기** — 비밀번호는 맞았는데 모르는 기기면, 세션을 주지 않고 챌린지를 5분 동안 저장한다. 이때는 코드를 만들지도 메일을 보내지도 않는다.
    - 확인 ID를 쿠키로 내려주고, 응답 본문에 `verificationRequired: true`를 담는다 → WEB은 인증 화면을 띄우고, 사용자가 "인증"을 누른다 (회원가입 인증과 같은 모양).
    - 챌린지 저장과 5분 타이머를 거는 일은 스크립트 하나(`create-login-challenge.lua`)로 한 번에 한다 — 타이머 없는 챌린지가 남지 않게.
-2. **코드 보내기** — `POST /api/v1/auth/login/code`(챌린지 쿠키)가 오면 6자리 코드를 새로 만들어 챌린지에 저장하고 메일로 보낸다. 처음 보내기와 재전송이 같은 요청이다.
+2. **코드 보내기** — `POST /api/v1/auth/verify-email/request`(챌린지 쿠키)가 오면 6자리 코드를 새로 만들어 챌린지에 저장하고 메일로 보낸다. 처음 보내기와 재전송이 같은 요청이다.
    - 발송 한도: 이메일마다 30초에 한 번, 15분에 5번. 30초 안이면 "요청이 너무 빈번합니다. 잠시 후 다시 시도해 주세요.", 15분 한도면 "요청 횟수를 초과했습니다. 잠시 후 다시 시도해 주세요." (30초 안의 요청은 15분 횟수에 세지 않는다).
    - 새 코드는 이전 코드를 덮어쓰고, 틀린 횟수와 챌린지의 5분을 새로 시작한다 (`issue-login-challenge-code.lua`). 챌린지 쿠키도 다시 5분으로 내려준다.
 3. **틀린 코드 입력** — 400("인증 코드가 일치하지 않습니다.")을 주고 틀린 횟수를 1 올린다.

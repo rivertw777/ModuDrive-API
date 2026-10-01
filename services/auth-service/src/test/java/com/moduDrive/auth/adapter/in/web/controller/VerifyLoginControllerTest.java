@@ -54,7 +54,7 @@ class VerifyLoginControllerTest {
             given(verifyLoginUseCase.verifyLogin(any(VerifyLoginCommand.class)))
                     .willReturn(new LoginResult.SignedIn(new SessionId("new-session-id"), new DeviceId("device-id")));
 
-            mockMvc.perform(post("/api/v1/auth/login/verify")
+            mockMvc.perform(post("/api/v1/auth/verify-email/confirm")
                             .cookie(CHALLENGE_COOKIE, new Cookie(SessionCookie.NAME, "old-session-id"))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(REQUEST_JSON))
@@ -75,7 +75,7 @@ class VerifyLoginControllerTest {
         @Test
         @DisplayName("시간이 지난 것과 같은 400으로 답한다")
         void returnsExpired() throws Exception {
-            mockMvc.perform(post("/api/v1/auth/login/verify")
+            mockMvc.perform(post("/api/v1/auth/verify-email/confirm")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(REQUEST_JSON))
                     .andExpect(status().isBadRequest())
@@ -95,7 +95,7 @@ class VerifyLoginControllerTest {
             willThrow(new BusinessException(AuthExceptionCase.INVALID_LOGIN_VERIFICATION_CODE))
                     .given(verifyLoginUseCase).verifyLogin(any(VerifyLoginCommand.class));
 
-            mockMvc.perform(post("/api/v1/auth/login/verify")
+            mockMvc.perform(post("/api/v1/auth/verify-email/confirm")
                             .cookie(CHALLENGE_COOKIE)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(REQUEST_JSON))
@@ -111,7 +111,7 @@ class VerifyLoginControllerTest {
 
         @Test
         void returnsBadRequest() throws Exception {
-            mockMvc.perform(post("/api/v1/auth/login/verify")
+            mockMvc.perform(post("/api/v1/auth/verify-email/confirm")
                             .cookie(CHALLENGE_COOKIE)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"code\":\"\"}"))
