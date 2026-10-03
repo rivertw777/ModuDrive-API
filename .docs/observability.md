@@ -46,7 +46,7 @@
 | `.docker/docker-compose.observability.yml` | 스택 전체 (compose 프로젝트명 `modudrive-observability`) |
 | `.docker/observability/*.yaml` | 각 컴포넌트 설정 — 디렉터리째 `/etc/modudrive`로 마운트 |
 | `.docker/observability/grafana/datasources/datasources.yaml` | Grafana 데이터소스 프로비저닝 (Prometheus/Tempo/Loki + 상호 링크) |
-| `.docker/observability/grafana/alerting/alerts.yaml` | 알림 규칙 4개(outbox 2 + DLQ + 서비스 다운) + Discord 수신처 ([006-discord-alert-spec.md](spec/006-discord-alert-spec.md)) |
+| `.docker/observability/grafana/alerting/alerts.yaml` | 알림 규칙 4개(outbox 2 + DLQ + 서비스 다운) + Discord 수신처 ([007-discord-alert-spec.md](spec/007-discord-alert-spec.md)) |
 | `common/infrastructure/observability` | 앱 쪽 공통 모듈 (Java 코드 없음, 의존성 + `application-observability.yml`만) |
 
 앱 쪽 공통 모듈은 모든 서비스가 의존하고, 각 서비스 `application.yml`의
@@ -103,7 +103,7 @@
 - 대시보드는 프로비저닝 안 함 — Explore에서 직접 조회.
 - 알림은 Grafana 내장 기능으로 처리 — Alertmanager 컨테이너 없음. 규칙·수신처·정책 모두
   `provisioning/alerting`의 파일이라 UI에서 고칠 수 없고 `make reset`에도 살아남는다.
-  규칙·문구·수신처는 [006-discord-alert-spec.md](spec/006-discord-alert-spec.md)가 기준.
+  규칙·문구·수신처는 [007-discord-alert-spec.md](spec/007-discord-alert-spec.md)가 기준.
 
 ---
 
