@@ -24,7 +24,7 @@ class CustomAuthenticationEntryPoint implements ServerAuthenticationEntryPoint {
     @Override
     public Mono<Void> commence(ServerWebExchange exchange, AuthenticationException ex) {
         Tuple2<String, String> authError = AuthErrorAttributeUtils.getAuthErrorAttribute(exchange);
-        // 401, or 503 when auth-service couldn't be asked (SessionAuthenticationManager).
+        // 401, or 503/504 when auth-service couldn't be asked (SessionAuthenticationManager).
         HttpStatus status = HttpStatus.valueOf(authError.getT1());
 
         ServerHttpResponse response = exchange.getResponse();

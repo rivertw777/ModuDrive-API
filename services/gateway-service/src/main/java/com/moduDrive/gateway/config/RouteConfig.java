@@ -8,6 +8,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 
+import java.util.Set;
+
 @RequiredArgsConstructor
 @Configuration
 class RouteConfig {
@@ -39,8 +41,11 @@ class RouteConfig {
         return env.getRequiredProperty("clients." + service + ".url");
     }
 
+    // 502/503/504 from the service count as failures too (the service is down or says it can't serve,
+    // e.g. its DB is unreachable) — same rule as the Feign calls between services.
     private GatewayFilterSpec addCircuitBreaker(GatewayFilterSpec filterSpec, String circuitBreakerName) {
         return filterSpec.circuitBreaker(c -> c.setName(circuitBreakerName)
+                .setStatusCodes(Set.of("502", "503", "504"))
                 .setFallbackUri("forward:/fallback/default"));
     }
 

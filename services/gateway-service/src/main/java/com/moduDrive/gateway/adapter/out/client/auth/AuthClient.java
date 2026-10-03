@@ -41,9 +41,9 @@ public class AuthClient {
                 .bodyValue(request)
                 .retrieve()
                 .bodyToMono(new ParameterizedTypeReference<ApiResponse<ValidateSessionResponse>>() {})
-                // Backstop above the WebClient's own connect/read timeouts (WebClientConfig) — a
-                // response that starts but stalls partway through (slow body write) is still
-                // bounded here, so a caller waiting on this Mono can never hang indefinitely (#206).
+                // The only timeout on this call: it bounds connect + response together, so an
+                // auth-service that accepts the connection but never answers (GC pause, Redis
+                // stall) can't hang every gateway request (#206).
                 .transformDeferred(TimeLimiterOperator.of(timeLimiter))
                 .transformDeferred(CircuitBreakerOperator.of(circuitBreaker));
     }
