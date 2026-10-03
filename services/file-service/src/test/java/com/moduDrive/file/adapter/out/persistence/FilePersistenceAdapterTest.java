@@ -443,6 +443,34 @@ class FilePersistenceAdapterTest {
     }
 
     @Nested
+    @DisplayName("버전을 s3Path로 찾을 때")
+    class WhenFindingVersionByS3Path {
+
+        @Test
+        @DisplayName("그 s3Path의 버전을 돌려준다")
+        void returnsTheVersion() {
+            springDataFileVersionRepository.save(new FileVersionJpaEntity(UUID.randomUUID(), 10L, 1, "s3://b/v1"));
+
+            assertThat(filePersistenceAdapter.findByS3Path("s3://b/v1"))
+                    .get().extracting(com.moduDrive.file.domain.model.FileVersion::getBlockCount).isEqualTo(1);
+            assertThat(filePersistenceAdapter.findByS3Path("s3://b/none")).isEmpty();
+        }
+
+        @Test
+        @DisplayName("같은 s3Path로 두 번째 버전은 저장되지 않는다")
+        void rejectsASecondVersionWithTheSameS3Path() {
+            UUID fileIdValue = UUID.randomUUID();
+            springDataFileVersionRepository.saveAndFlush(new FileVersionJpaEntity(fileIdValue, 10L, 1, "s3://b/v1"));
+
+            // Two concurrent callbacks both miss findByS3Path; uk_file_version_s3_path rejects the second.
+            Throwable thrown = catchThrowable(() -> springDataFileVersionRepository.saveAndFlush(
+                    new FileVersionJpaEntity(fileIdValue, 10L, 1, "s3://b/v1")));
+
+            assertThat(thrown).isInstanceOf(DataIntegrityViolationException.class);
+        }
+    }
+
+    @Nested
     @DisplayName("파일을 영구 삭제할 때")
     class WhenDeletingAFile {
 

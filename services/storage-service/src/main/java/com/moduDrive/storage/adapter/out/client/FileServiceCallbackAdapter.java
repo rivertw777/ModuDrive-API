@@ -10,11 +10,11 @@ import java.util.UUID;
 @RequiredArgsConstructor
 class FileServiceCallbackAdapter implements FileUploadCallbackPort {
 
-    private final FileServiceFeignClient fileServiceFeignClient;
+    private final FileClient fileClient;
 
     @Override
     public void notifyUploadComplete(UUID fileId, UUID userId, long fileSize, int blockCount, String s3Path) {
-        fileServiceFeignClient.updateFileStatus(
+        fileClient.updateFileStatus(
                 fileId.toString(),
                 userId.toString(),
                 new FileUploadCallbackRequest(fileSize, blockCount, s3Path)

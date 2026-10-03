@@ -247,10 +247,12 @@ file-service는 한 트랜잭션에서 다음을 처리합니다.
 1. 파일 조회 (`FILE_NOT_FOUND`)
 2. **호출자가 소유자인지 확인** — 남의 `fileId`로 올린 경우 여기서 거절
 3. `s3Path`가 `files/{fileId}/`로 시작하는지 확인 (`FILE_ACCESS_DENIED`) — 다른 파일의 저장 위치를 가리키지 못하게
-4. `file_version` 행 생성 (크기, 블록 수, 경로)
-5. 파일을 `UPLOADED`로 바꾸고 `currentVersionId`·`fileSize`를 새 버전으로 갱신
+4. 같은 `s3Path`의 버전이 이미 있으면 재시도된 콜백이므로 아무것도 바꾸지 않고 파일을 그대로 돌려줌
+5. `file_version` 행 생성 (크기, 블록 수, 경로)
+6. 파일을 `UPLOADED`로 바꾸고 `currentVersionId`·`fileSize`를 새 버전으로 갱신
 
 - 요청 검증: `fileSize ≥ 0`(빈 파일도 정상 파일 — 폴더의 `.gitkeep` 등), `1 ≤ blockCount ≤ 100,000`, `s3Path` 필수.
+- `s3Path`는 업로드마다 새 UUID라 업로드 하나를 가리키는 멱등키입니다. `file_version.s3_path`에 unique 제약(`uk_file_version_s3_path`)이 있어, 동시에 두 번 와도 버전은 하나만 생깁니다. 그래서 storage-service는 이 콜백을 재시도합니다 ([006 2-3-2](006-resilience-spec.md#2-3-2-재시도)).
 - 콜백이 실패하면 storage-service 요청도 실패로 응답합니다. 이미 저장한 블록은 **지우지 않습니다** (13장).
 - 업로드 완료 알림(notification)이나 이벤트는 발행하지 않습니다.
 

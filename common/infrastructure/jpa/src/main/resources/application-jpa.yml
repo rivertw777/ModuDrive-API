@@ -1,4 +1,9 @@
 spring:
+  datasource:
+    hikari:
+      # Hikari's 30s default outlasts a caller's Feign read timeout (10s): with the DB down, the 503
+      # (GlobalExceptionHandler) would only be sent after the caller gave up on a read timeout.
+      connection-timeout: 3000
   jpa:
     hibernate:
       # Flyway owns the schema (db/migration in each service); Hibernate only checks it matches.

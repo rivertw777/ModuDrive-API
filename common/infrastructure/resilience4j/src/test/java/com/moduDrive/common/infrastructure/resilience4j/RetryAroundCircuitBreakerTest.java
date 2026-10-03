@@ -3,7 +3,9 @@ package com.moduDrive.common.infrastructure.resilience4j;
 import com.moduDrive.common.core.exception.BusinessException;
 import feign.FeignException;
 import feign.Request;
+import feign.RetryableException;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
+import org.apache.hc.client5.http.ConnectTimeoutException;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,6 +17,9 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.io.IOException;
+import java.net.ConnectException;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -53,6 +58,38 @@ class RetryAroundCircuitBreakerTest {
         assertThat(client.calls()).isEqualTo(3);
         assertThat(circuitBreakerRegistry.circuitBreaker("testCircuitBreaker").getMetrics().getNumberOfFailedCalls())
                 .isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("읽기 시간 초과는 재시도하지 않지만, 서킷 브레이커는 실패로 기록하고 fallback은 시간 초과로 답한다")
+    void doesNotRetryAReadTimeout() {
+        assertThatThrownBy(client::callTimingOut)
+                .isInstanceOfSatisfying(BusinessException.class, e ->
+                        assertThat(e.getExceptionCase()).isEqualTo(CircuitBreakerExceptionCase.CONNECTION_TIMEOUT));
+
+        assertThat(client.calls()).isEqualTo(1);
+        assertThat(circuitBreakerRegistry.circuitBreaker("testCircuitBreaker").getMetrics().getNumberOfFailedCalls())
+                .isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("연결 실패는 3번 시도한다")
+    void retriesAConnectFailure() {
+        assertThatThrownBy(client::callRefused)
+                .isInstanceOfSatisfying(BusinessException.class, e ->
+                        assertThat(e.getExceptionCase()).isEqualTo(CircuitBreakerExceptionCase.SERVICE_UNAVAILABLE));
+
+        assertThat(client.calls()).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("연결 시간 초과는 3번 시도한다")
+    void retriesAConnectTimeout() {
+        assertThatThrownBy(client::callConnectTimingOut)
+                .isInstanceOfSatisfying(BusinessException.class, e ->
+                        assertThat(e.getExceptionCase()).isEqualTo(CircuitBreakerExceptionCase.CONNECTION_TIMEOUT));
+
+        assertThat(client.calls()).isEqualTo(3);
     }
 
     @Test
@@ -96,6 +133,33 @@ class RetryAroundCircuitBreakerTest {
             calls.incrementAndGet();
             Request request = Request.create(Request.HttpMethod.GET, "/test", Map.of(), null, StandardCharsets.UTF_8, null);
             throw new FeignException.ServiceUnavailable("unavailable", request, null, Map.of());
+        }
+
+        @CircuitBreaker(name = "testCircuitBreaker")
+        @Retry(name = "testRetry", fallbackMethod = "fallback")
+        public String callTimingOut() {
+            calls.incrementAndGet();
+            throw ioFailure(new SocketTimeoutException("Read timed out"));
+        }
+
+        @CircuitBreaker(name = "testCircuitBreaker")
+        @Retry(name = "testRetry", fallbackMethod = "fallback")
+        public String callRefused() {
+            calls.incrementAndGet();
+            throw ioFailure(new ConnectException("Connection refused"));
+        }
+
+        @CircuitBreaker(name = "testCircuitBreaker")
+        @Retry(name = "testRetry", fallbackMethod = "fallback")
+        public String callConnectTimingOut() {
+            calls.incrementAndGet();
+            throw ioFailure(new ConnectTimeoutException("Connect timed out"));
+        }
+
+        // What Feign throws when the HTTP client fails with an IOException.
+        private static RetryableException ioFailure(IOException cause) {
+            Request request = Request.create(Request.HttpMethod.GET, "/test", Map.of(), null, StandardCharsets.UTF_8, null);
+            return new RetryableException(-1, cause.getMessage(), Request.HttpMethod.GET, cause, (Long) null, request);
         }
 
         public String fallback(Throwable cause) {

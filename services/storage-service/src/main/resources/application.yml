@@ -6,6 +6,7 @@ spring:
       - "classpath:application-observability.yml"
       - "classpath:application-redis.yml"
       - "classpath:application-sqs.yml"
+      - "classpath:application-resilience4j.yml"
   servlet:
     multipart:
       # frontend switches to chunked/resumable upload above 20MB (see RESUMABLE_THRESHOLD
@@ -31,6 +32,16 @@ storage:
   # 0 or negative disables the quota.
   download-quota-per-file-bytes: ${STORAGE_DOWNLOAD_QUOTA_PER_FILE_BYTES:10737418240}
   download-quota-window: ${STORAGE_DOWNLOAD_QUOTA_WINDOW:PT24H}
+
+resilience4j:
+  retry:
+    instances:
+      fileServiceRetry:
+        baseConfig: default
+  circuitbreaker:
+    instances:
+      fileServiceCircuitBreaker:
+        baseConfig: default
 
 # Fixed service URLs (compose DNS locally, ECS Service Connect on AWS).
 clients:

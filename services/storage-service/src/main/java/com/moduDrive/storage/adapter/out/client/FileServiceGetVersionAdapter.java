@@ -15,27 +15,27 @@ import java.util.UUID;
 @RequiredArgsConstructor
 class FileServiceGetVersionAdapter implements GetFileVersionPort, GetArchiveEntriesPort {
 
-    private final FileServiceFeignClient feignClient;
+    private final FileClient fileClient;
 
     @Override
     public VersionLocation getLatestVersion(UUID fileId, UUID userId, boolean markAccessed) {
         FileVersionDto v = firstOrThrow(
-                feignClient.getFileRevisions(fileId.toString(), userId.toString(), 1, markAccessed).getData());
+                fileClient.getFileRevisions(fileId.toString(), userId.toString(), 1, markAccessed).getData());
         return new VersionLocation(v.s3Path(), v.blockCount());
     }
 
     @Override
     public VersionLocation getPublicVersion(String fileId, String key) {
-        FileVersionDto v = firstOrThrow(feignClient.getPublicFileRevisions(fileId, key, 1).getData());
+        FileVersionDto v = firstOrThrow(fileClient.getPublicFileRevisions(fileId, key, 1).getData());
         return new VersionLocation(v.s3Path(), v.blockCount());
     }
 
     @Override
     public List<ArchiveEntry> getArchiveEntries(ArchiveRequest request) {
         List<ArchiveEntryDto> entries = request.isPublic()
-                ? feignClient.resolvePublicArchiveEntries(
+                ? fileClient.resolvePublicArchiveEntries(
                         new ResolvePublicArchiveEntriesRequest(request.key(), request.fileIds())).getData()
-                : feignClient.resolveArchiveEntries(
+                : fileClient.resolveArchiveEntries(
                         new ResolveArchiveEntriesRequest(request.userId(), request.fileIds())).getData();
         if (entries == null) {
             return List.of();

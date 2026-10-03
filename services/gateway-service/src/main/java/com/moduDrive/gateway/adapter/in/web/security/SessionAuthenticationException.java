@@ -1,6 +1,6 @@
 package com.moduDrive.gateway.adapter.in.web.security;
 
-import com.moduDrive.gateway.exception.AuthExceptionCase;
+import com.moduDrive.common.core.exception.ExceptionCase;
 import lombok.Getter;
 import org.springframework.security.core.AuthenticationException;
 
@@ -15,7 +15,7 @@ class SessionAuthenticationException extends AuthenticationException {
         this.status = status;
     }
 
-    SessionAuthenticationException(AuthExceptionCase exceptionCase) {
+    SessionAuthenticationException(ExceptionCase exceptionCase) {
         this(exceptionCase.getHttpStatus().name(), exceptionCase.getMessage());
     }
 }

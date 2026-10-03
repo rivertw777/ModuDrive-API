@@ -14,7 +14,6 @@ resilience4j:
       authSessionTimeLimiter:
         timeout-duration: 3s
   circuitbreaker:
-    circuit-breaker-aspect-order: 1
     configs:
       default:
         registerHealthIndicator: true
@@ -28,10 +27,16 @@ resilience4j:
         permittedNumberOfCallsInHalfOpenState: 3
         record-exceptions:
           - java.util.concurrent.TimeoutException
-          - org.springframework.cloud.gateway.support.NotFoundException
           - io.netty.channel.AbstractChannel$AnnotatedConnectException
-          # The session check's connect failure / read timeout (AuthClient); routes never throw it.
+          - java.net.UnknownHostException
+          # The session check's connect failure (AuthClient); routes never throw it.
           - org.springframework.web.reactive.function.client.WebClientRequestException
+          # A route's 502/503/504 (RouteConfig's statusCodes turns the response into this exception).
+          - org.springframework.cloud.gateway.filter.factory.SpringCloudCircuitBreakerFilterFactory$CircuitBreakerStatusCodeException
+          # The session check's 502/503/504 from auth-service.
+          - org.springframework.web.reactive.function.client.WebClientResponseException$BadGateway
+          - org.springframework.web.reactive.function.client.WebClientResponseException$ServiceUnavailable
+          - org.springframework.web.reactive.function.client.WebClientResponseException$GatewayTimeout
     instances:
       memberServiceCircuitBreaker:
         baseConfig: default

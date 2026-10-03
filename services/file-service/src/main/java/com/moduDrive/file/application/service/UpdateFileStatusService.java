@@ -5,6 +5,7 @@ import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.file.application.port.in.command.UpdateFileStatusCommand;
 import com.moduDrive.file.application.port.in.usecase.UpdateFileStatusUseCase;
 import com.moduDrive.file.application.port.out.FindFilePort;
+import com.moduDrive.file.application.port.out.FindFileVersionsPort;
 import com.moduDrive.file.application.port.out.SaveFilePort;
 import com.moduDrive.file.application.port.out.SaveFileVersionPort;
 import com.moduDrive.file.domain.model.File;
@@ -21,6 +22,7 @@ class UpdateFileStatusService implements UpdateFileStatusUseCase {
     private final FindFilePort findFilePort;
     private final SaveFilePort saveFilePort;
     private final SaveFileVersionPort saveFileVersionPort;
+    private final FindFileVersionsPort findFileVersionsPort;
     private final FileAccessGuard fileAccessGuard;
 
     @Transactional
@@ -38,6 +40,12 @@ class UpdateFileStatusService implements UpdateFileStatusUseCase {
         // the owner above).
         if (!command.getS3Path().value().startsWith("files/" + file.getId() + "/")) {
             throw new BusinessException(FileExceptionCase.FILE_ACCESS_DENIED);
+        }
+
+        // storage-service retries this callback after a timeout, when the first try may already
+        // have committed: the same s3Path means the same upload, so answer with what it did.
+        if (findFileVersionsPort.findByS3Path(command.getS3Path().value()).isPresent()) {
+            return file;
         }
 
         FileVersion version = FileVersion.create(

@@ -148,7 +148,7 @@ Promtail은 docker socket 기반이라 **Fargate에서 못 쓴다** — 로그 �
 | `gateway-sg` | `alb-sg` | 10001 | ALB → gateway |
 | `auth-sg` | `gateway-sg` | 10011 | 라우팅(`/api/v1/auth/**`) + 세션 확인(`AuthClient`) |
 | `member-sg` | `gateway-sg`, `auth-sg`, `file-sg` | 10010 | 라우팅 / 로그인 확인(auth `MemberClient`) / 공유 대상 조회(file `MemberClient`) |
-| `file-sg` | `gateway-sg`, `storage-sg` | 10012 | 라우팅 / 버전·zip 항목 조회·업로드 완료(storage `FileServiceFeignClient`) |
+| `file-sg` | `gateway-sg`, `storage-sg` | 10012 | 라우팅 / 버전·zip 항목 조회·업로드 완료(storage `FileClient`) |
 | `storage-sg` | `gateway-sg`, `file-sg` | 10013 | 라우팅 / 파일 삭제(file `StorageServiceClient`) |
 | `notification-sg` | `gateway-sg` | 10015 | 라우팅(`/api/v1/notifications/**`) |
 | `mail-sg` | **없음** | — | HTTP API가 없다 (SQS 소비만). 게이트웨이도 라우팅하지 않는다 |

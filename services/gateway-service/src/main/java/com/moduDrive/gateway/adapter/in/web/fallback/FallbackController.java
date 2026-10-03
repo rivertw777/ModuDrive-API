@@ -9,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
@@ -28,7 +29,10 @@ class FallbackController {
     }
 
     private ResponseEntity<ApiResponse<Object>> handleCircuitBreakerException(Throwable ex) {
-        if (ex instanceof TimeoutException) {
+        // A 504 the service returned (RouteConfig's statusCodes) is a timeout behind it — answer it
+        // the same as the gateway's own.
+        if (ex instanceof TimeoutException
+                || ex instanceof HttpStatusCodeException e && e.getStatusCode().value() == 504) {
             return createErrorResponse(CircuitBreakerExceptionCase.CONNECTION_TIMEOUT);
         } else if (ex instanceof CallNotPermittedException) {
             return createErrorResponse(CircuitBreakerExceptionCase.SERVICE_IS_OPEN);

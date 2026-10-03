@@ -4,8 +4,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.moduDrive.common.api.dto.auth.ValidateSessionRequest;
 import com.moduDrive.common.api.dto.auth.ValidateSessionResponse;
 import com.moduDrive.common.core.web.ApiResponse;
+import com.moduDrive.common.infrastructure.resilience4j.CircuitBreakerExceptionCase;
 import com.moduDrive.gateway.adapter.out.client.auth.AuthClient;
 import com.moduDrive.gateway.exception.AuthExceptionCase;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -20,6 +23,7 @@ import reactor.test.StepVerifier;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.concurrent.TimeoutException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -127,29 +131,64 @@ class SessionAuthenticationManagerTest {
         @Test
         @DisplayName("세션 만료가 아니라 확인 불가(503)로 실패한다")
         void failsWithServiceUnavailable() {
-            String errorBody = "{\"status\":\"INTERNAL_SERVER_ERROR\",\"message\":\"Redis down\"}";
+            String errorBody = "{\"status\":\"SERVICE_UNAVAILABLE\",\"message\":\"Redis down\"}";
             given(authClient.validateSession(any(ValidateSessionRequest.class))).willReturn(Mono.error(
-                    WebClientResponseException.create(HttpStatus.INTERNAL_SERVER_ERROR.value(), "Internal Server Error",
+                    WebClientResponseException.create(HttpStatus.SERVICE_UNAVAILABLE.value(), "Service Unavailable",
                             null, errorBody.getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8)));
 
             StepVerifier.create(manager.authenticate(token))
                     .verifyErrorSatisfies(e -> assertSessionFailure(e,
-                            "SERVICE_UNAVAILABLE", AuthExceptionCase.AUTH_UNAVAILABLE.getMessage()));
+                            "SERVICE_UNAVAILABLE", CircuitBreakerExceptionCase.SERVICE_UNAVAILABLE.getMessage()));
+        }
+
+        @Test
+        @DisplayName("504면 시간 초과로 실패한다")
+        void failsWithGatewayTimeoutOn504() {
+            given(authClient.validateSession(any(ValidateSessionRequest.class))).willReturn(Mono.error(
+                    WebClientResponseException.create(HttpStatus.GATEWAY_TIMEOUT.value(), "Gateway Timeout",
+                            null, new byte[0], StandardCharsets.UTF_8)));
+
+            StepVerifier.create(manager.authenticate(token))
+                    .verifyErrorSatisfies(e -> assertSessionFailure(e,
+                            "GATEWAY_TIMEOUT", CircuitBreakerExceptionCase.CONNECTION_TIMEOUT.getMessage()));
         }
     }
 
     @Nested
-    @DisplayName("타임아웃·연결 실패 등 예상치 못한 예외일 때")
-    class WhenUnexpectedExceptionOccurs {
+    @DisplayName("auth-service가 답하지 못했을 때")
+    class WhenAuthServiceDoesNotAnswer {
 
         @Test
+        @DisplayName("서킷이 열려 있으면 차단(503)으로 실패한다")
+        void failsWithOpenCircuit() {
+            given(authClient.validateSession(any(ValidateSessionRequest.class))).willReturn(Mono.error(
+                    CallNotPermittedException.createCallNotPermittedException(CircuitBreaker.ofDefaults("test"))));
+
+            StepVerifier.create(manager.authenticate(token))
+                    .verifyErrorSatisfies(e -> assertSessionFailure(e,
+                            "SERVICE_UNAVAILABLE", CircuitBreakerExceptionCase.SERVICE_IS_OPEN.getMessage()));
+        }
+
+        @Test
+        @DisplayName("시간 초과면 504로 실패한다")
+        void failsWithGatewayTimeout() {
+            given(authClient.validateSession(any(ValidateSessionRequest.class)))
+                    .willReturn(Mono.error(new TimeoutException("3s")));
+
+            StepVerifier.create(manager.authenticate(token))
+                    .verifyErrorSatisfies(e -> assertSessionFailure(e,
+                            "GATEWAY_TIMEOUT", CircuitBreakerExceptionCase.CONNECTION_TIMEOUT.getMessage()));
+        }
+
+        @Test
+        @DisplayName("연결 실패 등은 연결 불가(503)로 실패한다")
         void failsWithServiceUnavailable() {
             given(authClient.validateSession(any(ValidateSessionRequest.class)))
                     .willReturn(Mono.error(new RuntimeException("connection refused")));
 
             StepVerifier.create(manager.authenticate(token))
                     .verifyErrorSatisfies(e -> assertSessionFailure(e,
-                            "SERVICE_UNAVAILABLE", AuthExceptionCase.AUTH_UNAVAILABLE.getMessage()));
+                            "SERVICE_UNAVAILABLE", CircuitBreakerExceptionCase.SERVICE_UNAVAILABLE.getMessage()));
         }
     }
 }

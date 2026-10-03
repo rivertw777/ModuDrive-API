@@ -1,4 +1,4 @@
-# 서킷 브레이커 스펙
+# 장애 대응 (Resilience) 스펙
 
 이 문서는 다른 서비스 장애에 대비한 **서킷 브레이커·재시도·시간 제한** 규칙을 정한 문서입니다.
 
@@ -97,6 +97,7 @@ sequenceDiagram
 | `enableExponentialBackoff` | `false` | `true`면 대기 시간을 재시도마다 늘린다 (500ms → 1초 → 2초…) |
 | `enableRandomizedWait` | `false` | `true`면 대기 시간에 무작위 값을 섞는다 — 여러 인스턴스가 같은 박자로 몰려 재시도하는 것을 막는다 |
 | `retryExceptions` | 비어 있음 (**모든 예외** 재시도) | 이 예외일 때만 재시도한다 |
+| `retryExceptionPredicate` | 없음 | 예외를 받아 재시도할지 정하는 클래스 — 예외 종류만으로 못 가를 때 쓴다 |
 | `ignoreExceptions` | 비어 있음 | 이 예외는 재시도하지 않는다 |
 
 #### 1-2-2. 서킷 브레이커와 조합
@@ -129,9 +130,9 @@ Resilience4j 기본 순서대로 재시도가 바깥, 서킷 브레이커가 안
 
 | 호출 | 방식 | 서킷 브레이커 | 설명 |
 |---|---|---|---|
-| 게이트웨이 → 각 서비스 | Spring Cloud Gateway 라우트 필터 (리액티브) | 서비스마다 하나 | [2-1](#2-1-게이트웨이-라우트) |
-| 게이트웨이 → auth 세션 확인 | `WebClient` + Resilience4j Reactor 연산자 | auth 라우트와 같은 것을 같이 씀 | [2-2](#2-2-게이트웨이-세션-확인) |
-| auth / file → member | OpenFeign + `@CircuitBreaker` · `@Retry` | 호출 대상마다 하나 | [2-3](#2-3-서비스-간-호출-feign) |
+| 게이트웨이 라우트 | 게이트웨이 `circuitBreaker` 필터 | 서비스마다 하나 | [2-1](#2-1-게이트웨이-라우트) |
+| 게이트웨이 세션 확인 | `WebClient` + Resilience4j Reactor 연산자 | auth 라우트와 같은 것을 같이 씀 | [2-2](#2-2-게이트웨이-세션-확인) |
+| 서비스 간 호출 | OpenFeign + `@CircuitBreaker` · `@Retry` | 호출 대상마다 하나 | [2-3](#2-3-서비스-간-호출-feign) |
 
 서비스 간 비동기 메시지(SQS — 파일 영구 삭제 시 블록 삭제 요청 등)는 서킷 브레이커 대신 재시도·DLQ로 버틴다 ([005-messaging-spec.md 4-2](005-messaging-spec.md#4-2-처리-실패)).
 
@@ -155,9 +156,6 @@ flowchart LR
     G -- "notificationServiceCircuitBreaker" --> N
 ```
 
-`RouteConfig`가 라우트마다 `circuitBreaker` 필터를 건다. 필터는 **시간 제한 15초**(TimeLimiter)와 서킷 브레이커를 함께 적용하고,
-실패하면 `forward:/fallback/default`로 넘긴다.
-
 | 라우트 | 경로 | 서킷 브레이커 |
 |---|---|---|
 | member-service | `/api/v1/member/**` | `memberServiceCircuitBreaker` |
@@ -166,53 +164,85 @@ flowchart LR
 | storage-service | `/api/v1/storage/**` | `storageServiceCircuitBreaker` |
 | notification-service | `/api/v1/notifications/**` | `notificationServiceCircuitBreaker` |
 
-#### 2-1-1. 실패로 세는 것
+- `RouteConfig`가 라우트마다 `circuitBreaker` 필터를 건다.
+- 필터는 시간 제한(TimeLimiter)과 서킷 브레이커를 함께 적용한다.
+- 재시도는 없다. 게이트웨이는 업로드·삭제 같은 모든 요청을 넘기므로, 시간 초과 뒤 다시 보내면 이미 처리된 요청이
+  두 번 처리될 수 있다. 일시적인 실패는 클라이언트가 다시 요청한다.
 
-| 결과 | 실패로 세나 |
-|---|---|
-| 15초 안에 응답 없음 (`TimeoutException`) | 센다 |
-| 연결 거부 — 서비스가 떠 있지 않음 (`AnnotatedConnectException`) | 센다 |
-| `NotFoundException` | 센다 (설정엔 있지만 지금은 나지 않는다 — [4](#4-todo)) |
-| 서비스가 돌려준 HTTP 응답 (**4xx·5xx 모두**) | 세지 않음 — 그대로 클라이언트에 전달 |
-
-서비스가 500을 돌려줘도 게이트웨이 입장에선 "응답이 왔다"이므로 성공이다. 게이트웨이 서킷 브레이커는
-**서비스가 죽었거나 멈췄을 때**만 연다.
-
-#### 2-1-2. 응답
-
-`FallbackController`가 원인을 보고 답한다.
-
-| 원인 | HTTP | 메시지 |
-|---|---|---|
-| `TimeoutException` | 504 `CONNECTION_TIMEOUT` | 서비스 요청 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요. |
-| `CallNotPermittedException` (열려 있음) | 503 `SERVICE_IS_OPEN` | 서비스가 일시적으로 차단되었습니다. 잠시 후 다시 시도해 주세요. |
-| 그 밖 (연결 거부 등) | 503 `SERVICE_UNAVAILABLE` | 서비스가 연결 불가능합니다. 잠시 후 다시 시도해 주세요. |
-
-### 2-2. 게이트웨이 세션 확인
-
-게이트웨이가 요청마다 auth-service에 세션을 확인하는 호출(`POST /internal/v1/auth/sessions/validate`, [004-auth-spec.md 3](004-auth-spec.md#3-요청-검증))은
-`AuthClient`가 시간 제한(TimeLimiter)과 서킷 브레이커를 Resilience4j Reactor 연산자로 직접 건다. 라우트 필터를 거치지 않는 호출이라서다.
-
-- 서킷 브레이커는 auth-service 라우트와 **같은 인스턴스**(`authServiceCircuitBreaker`)를 쓴다 — 호출 대상이 같으므로.
-  어느 쪽이든 auth-service가 죽은 걸 보면 둘 다 바로 실패한다.
-- 시간 제한은 전용 인스턴스 `authSessionTimeLimiter`(3초)를 쓴다 — 라우트의 15초는 요청마다 거치는 확인에 너무 길다.
-- 재시도는 없다.
+#### 2-1-1. 시간 제한
 
 | 제한 | 값 | 위치 |
 |---|---|---|
-| 연결 / 읽기 / 쓰기 | 3초씩 | `WebClientConfig` |
-| 전체 응답 | 3초 | `authSessionTimeLimiter` (`gateway-service/application.yml`) |
+| 라우트 호출 | 15초 | TimeLimiter `default` (`gateway-service/application.yml`) |
 
-| 결과 | 실패로 세나 |
-|---|---|
-| 3초 안에 응답 없음 (`TimeoutException`) | 센다 |
-| 연결 실패·읽기 시간 초과 (`WebClientRequestException`) | 센다 |
-| auth-service가 돌려준 HTTP 응답 (4xx·5xx) | 세지 않음 ([2-1-1](#2-1-1-실패로-세는-것)과 같은 기준) |
+#### 2-1-2. 서킷에 실패로 기록되는 경우
 
-| 원인 | 응답 |
+| 결과 | 기록하나 |
 |---|---|
-| 서킷이 열려 있음 (`CallNotPermittedException`)·연결 실패·시간 초과·5xx | 503 `AUTH_UNAVAILABLE` ("일시적으로 로그인 상태를 확인할 수 없습니다.") |
-| 4xx | 세션 없음으로 보고 401 |
+| 15초 안에 응답 없음 (`TimeoutException`) | 기록 |
+| 연결 거부 (`AnnotatedConnectException`) | 기록 |
+| 호스트를 못 찾음 (`UnknownHostException`) | 기록 |
+| 서비스가 돌려준 HTTP 응답 502 · 503 · 504 (`CircuitBreakerStatusCodeException`) | 기록 |
+| 서비스가 돌려준 그 밖의 HTTP 응답 (4xx · 500) | 기록 안 함 |
+
+#### 2-1-3. 응답
+
+실패하면 `FallbackController`가 답한다(`forward:/fallback/default`).
+
+| 원인 | HTTP | 메시지 |
+|---|---|---|
+| 서킷이 열려 있음 (`CallNotPermittedException`) | 503 `SERVICE_IS_OPEN` | 서비스가 일시적으로 차단되었습니다. 잠시 후 다시 시도해 주세요. |
+| 15초 안에 응답 없음 (`TimeoutException`) | 504 `CONNECTION_TIMEOUT` | 서비스 요청 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요. |
+| 연결 거부 (`AnnotatedConnectException`) | 503 `SERVICE_UNAVAILABLE` | 서비스가 연결 불가능합니다. 잠시 후 다시 시도해 주세요. |
+| 호스트를 못 찾음 (`UnknownHostException`) | 503 `SERVICE_UNAVAILABLE` | 서비스가 연결 불가능합니다. 잠시 후 다시 시도해 주세요. |
+| 서비스가 돌려준 HTTP 응답 504 (`CircuitBreakerStatusCodeException`) | 504 `CONNECTION_TIMEOUT` | 서비스 요청 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요. |
+| 서비스가 돌려준 HTTP 응답 502 · 503 (`CircuitBreakerStatusCodeException`) | 503 `SERVICE_UNAVAILABLE` | 서비스가 연결 불가능합니다. 잠시 후 다시 시도해 주세요. |
+
+### 2-2. 게이트웨이 세션 확인
+
+게이트웨이는 요청마다 auth-service에 세션을 확인한다([004-auth-spec.md 3](004-auth-spec.md#3-요청-검증)).
+라우트를 거치지 않는 호출이라 `AuthClient`가 시간 제한과 서킷 브레이커를 직접 건다.
+
+```mermaid
+flowchart LR
+    C(["클라이언트"])
+    G["gateway-service"]
+    A["auth-service"]
+
+    C --> G
+    G -- "authServiceCircuitBreaker" --> A
+```
+
+- 서킷 브레이커는 auth-service 라우트와 **같은 인스턴스**(`authServiceCircuitBreaker`)를 쓴다 — 호출 대상이 같으므로.
+  어느 쪽이든 auth-service가 죽은 걸 보면 둘 다 바로 실패한다.
+- 재시도는 없다.
+
+#### 2-2-1. 시간 제한
+
+| 제한 | 값 | 위치 |
+|---|---|---|
+| 세션 확인 호출 | 3초 | TimeLimiter `authSessionTimeLimiter` (`gateway-service/application.yml`) |
+
+#### 2-2-2. 서킷에 실패로 기록되는 경우
+
+| 결과 | 기록하나 |
+|---|---|
+| 3초 안에 응답 없음 (`TimeoutException`) | 기록 |
+| 연결 거부 (`WebClientRequestException`) | 기록 |
+| 서비스가 돌려준 HTTP 응답 502 · 503 · 504 (`WebClientResponseException.BadGateway` · `ServiceUnavailable` · `GatewayTimeout`) | 기록 |
+| 서비스가 돌려준 그 밖의 HTTP 응답 (4xx · 500) | 기록 안 함 |
+
+#### 2-2-3. 응답
+
+실패하면 `SessionAuthenticationFailureHandler`가 답한다.
+
+| 원인 | HTTP | 메시지 |
+|---|---|---|
+| 서킷이 열려 있음 (`CallNotPermittedException`) | 503 `SERVICE_IS_OPEN` | 서비스가 일시적으로 차단되었습니다. 잠시 후 다시 시도해 주세요. |
+| 3초 안에 응답 없음 (`TimeoutException`) | 504 `CONNECTION_TIMEOUT` | 서비스 요청 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요. |
+| 연결 거부 (`WebClientRequestException`) | 503 `SERVICE_UNAVAILABLE` | 서비스가 연결 불가능합니다. 잠시 후 다시 시도해 주세요. |
+| 서비스가 돌려준 HTTP 응답 504 (`WebClientResponseException.GatewayTimeout`) | 504 `CONNECTION_TIMEOUT` | 서비스 요청 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요. |
+| 서비스가 돌려준 HTTP 응답 502 · 503 (`WebClientResponseException.BadGateway` · `ServiceUnavailable`) | 503 `SERVICE_UNAVAILABLE` | 서비스가 연결 불가능합니다. 잠시 후 다시 시도해 주세요. |
 
 ### 2-3. 서비스 간 호출 (Feign)
 
@@ -221,9 +251,11 @@ flowchart LR
     A["auth-service"]
     F["file-service"]
     M["member-service"]
+    S["storage-service"]
 
-    A -- "로그인 비밀번호 확인<br/>memberServiceCircuitBreaker + Retry" --> M
-    F -- "공유 대상 회원 조회<br/>memberServiceCircuitBreaker + Retry" --> M
+    A -- "memberServiceCircuitBreaker + Retry" --> M
+    F -- "memberServiceCircuitBreaker + Retry" --> M
+    S -- "fileServiceCircuitBreaker + Retry" --> F
 ```
 
 Feign 클라이언트 메서드에 `@CircuitBreaker`와 `@Retry`를 같이 단다.
@@ -235,55 +267,58 @@ Feign 클라이언트 메서드에 `@CircuitBreaker`와 `@Retry`를 같이 단�
 ApiResponse<AuthenticateMemberResponse> authenticateMember(AuthenticateMemberRequest request);
 ```
 
-감싸는 순서는 Resilience4j 기본값인 **재시도(바깥) → 서킷 브레이커(안쪽)**다 (aspect order를 따로 설정하지 않는다, [1-2-2](#1-2-2-서킷-브레이커와-조합)).
+감싸는 순서는 Resilience4j 기본값인 **재시도(바깥) → 서킷 브레이커(안쪽)**다.
 시도마다 서킷 브레이커에 기록되고, 열려 있으면 재시도 없이 바로 fallback으로 간다.
 
-#### 2-3-1. 재시도
+#### 2-3-1. 시간 제한
+
+| 제한 | 값 | 위치 |
+|---|---|---|
+| 연결 | 3초 | `spring.cloud.openfeign.client.config.default.connect-timeout` (`application-resilience4j.yml`) |
+| 읽기 | 10초 | `spring.cloud.openfeign.client.config.default.read-timeout` (`application-resilience4j.yml`) |
+
+#### 2-3-2. 재시도
 
 | 항목 | 값 |
 |---|---|
 | 최대 시도 | 3번 (처음 1 + 재시도 2) |
-| 간격 | 500ms |
-| 재시도하는 예외 | `RetryableException` (연결·읽기 시간 초과 등 I/O 오류), 503 |
-| Feign 시간 제한 | 연결 3초 · 읽기 5초 |
+| 첫 재시도 전 대기 | 250~750ms 중 무작위 |
+| 두 번째 재시도 전 대기 | 500~1,500ms 중 무작위 |
+| 재시도하는 경우 | 연결 실패(연결 거부·연결 시간 초과·호스트를 못 찾음), 503 — `RetryOnConnectFailure` |
 
-그 밖의 응답(4xx, 500 등)은 다시 보내도 같은 답일 것이므로 재시도하지 않는다.
-최악의 경우 한 호출이 `(3 + 5)초 × 3 + 0.5초 × 2 ≈ 25초` 걸린다.
+- 요청이 상대에 닿지 않은 실패만 재시도한다. 요청이 나가지 않았으니 다시 보내도 안전하다.
+- 간격을 점점 늘리고 무작위로 흔드는 건, 회복 중인 서비스에 여러 인스턴스가 같은 박자로 한꺼번에 다시 몰리지 않게 하려는 것이다.
+- 읽기 시간 초과는 재시도하지 않는다. 상대가 요청을 받아 처리하는 중이라, 다시 보내면 느린 서버에 일만 더 쌓인다.
+  Feign은 연결 실패와 읽기 시간 초과를 둘 다 `RetryableException`으로 감싸므로, 원인 예외(cause)를 보고 가른다.
+- 그 밖의 응답(4xx, 500 등)은 다시 보내도 같은 답일 것이므로 재시도하지 않는다.
 
-#### 2-3-2. 실패로 세는 것
+#### 2-3-3. 서킷에 실패로 기록되는 경우
 
-| 결과 | 실패로 세나 |
+| 결과 | 기록하나 |
 |---|---|
-| `RetryableException` (연결 실패·시간 초과) | 센다 |
-| 502 · 503 · 504 · 429 | 센다 |
-| 4xx (위 429 제외) | 세지 않음 — 요청이 잘못된 것이지 상대가 아픈 게 아니다 |
-| 500 | **세지 않음** ([4](#4-todo)) |
+| 연결 거부·호스트를 못 찾음·시간 초과 (`RetryableException`) | 기록 |
+| 서비스가 돌려준 HTTP 응답 502 · 503 · 504 (`FeignException.BadGateway` · `ServiceUnavailable` · `GatewayTimeout`) | 기록 |
+| 서비스가 돌려준 그 밖의 HTTP 응답 (4xx · 500) | 기록 안 함 |
 
-목록에 없는 예외는 성공으로 센다(Resilience4j 기본 동작).
+#### 2-3-4. 응답
 
-#### 2-3-3. 응답
+재시도까지 실패하면 `FeignFallbackUtils.handleFallback`이 답한다.
 
-재시도까지 실패하면 fallback 메서드가 `FeignFallbackUtils.handleFallback`을 부른다.
-
-| 원인 | 결과 |
-|---|---|
-| `CallNotPermittedException` (열려 있음) | 503 `SERVICE_IS_OPEN` |
-| 502 · 503 · 504 · 429 · `RetryableException` | 503 `SERVICE_UNAVAILABLE` |
-| 그 밖의 `FeignException` (4xx, 500) | 예외를 그대로 다시 던진다 — 호출한 어댑터가 판단 |
-| 그 밖 | 503 `SERVICE_UNAVAILABLE` |
-
-4xx를 그대로 던지는 건 어댑터가 업무상 의미로 바꾸게 하기 위해서다. 예: file-service의 `MemberClientAdapter`는
-member-service의 400·404를 "회원이 아님"(게스트 초대 대상)으로 읽는다.
+| 원인 | HTTP | 메시지 |
+|---|---|---|
+| 서킷이 열려 있음 (`CallNotPermittedException`) | 503 `SERVICE_IS_OPEN` | 서비스가 일시적으로 차단되었습니다. 잠시 후 다시 시도해 주세요. |
+| 3초 안에 연결 안 됨·10초 안에 응답 없음 (`RetryableException`) | 504 `CONNECTION_TIMEOUT` | 서비스 요청 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요. |
+| 연결 거부·호스트를 못 찾음 (`RetryableException`) | 503 `SERVICE_UNAVAILABLE` | 서비스가 연결 불가능합니다. 잠시 후 다시 시도해 주세요. |
+| 서비스가 돌려준 HTTP 응답 504 (`FeignException.GatewayTimeout`) | 504 `CONNECTION_TIMEOUT` | 서비스 요청 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요. |
+| 서비스가 돌려준 HTTP 응답 502 · 503 (`FeignException.BadGateway` · `ServiceUnavailable`) | 503 `SERVICE_UNAVAILABLE` | 서비스가 연결 불가능합니다. 잠시 후 다시 시도해 주세요. |
 
 ---
 
 ## 3. 로그
 
-공통 모듈의 `CircuitBreakerEventConfig`·`RetryEventConfig`가 인스턴스마다 로그를 건다. 시작할 때 있는 인스턴스와,
-그 뒤에 새로 생기는 인스턴스(`onEntryAdded`) 모두에 건다.
+공통 모듈의 `CircuitBreakerEventConfig`·`RetryEventConfig`가 인스턴스마다 로그를 건다.
 
 사람이 봐야 할 일(서킷이 열림, 재시도를 다 씀)만 WARN으로 남기고, 호출마다 생기는 일은 DEBUG로 내린다.
-실패가 몇 번인지는 로그가 아니라 지표(`resilience4j-micrometer` → Prometheus)로 본다.
 
 | 이벤트 | 레벨 | 예 |
 |---|---|---|
@@ -298,11 +333,5 @@ member-service의 400·404를 "회원이 아님"(게스트 초대 대상)으로 
 
 ## 4. TODO
 
-- [ ] **500을 실패로 셀지 결정** — 지금은 게이트웨이·Feign 모두 500을 성공으로 센다. 서비스가 계속 500만 내도 서킷이 열리지 않는다.
-  500이 버그(요청마다 다름)인지 장애(DB 끊김 등)인지 구분이 안 돼서 그대로 뒀다. 게이트웨이는 `statusCodes`, Feign은
-  `record-exceptions`에 `FeignException.InternalServerError`를 넣으면 된다.
-- [ ] **`NotFoundException` 정리** — 서비스 레지스트리(Eureka)를 쓸 때 "인스턴스를 못 찾음"을 뜻하던 예외다.
-  고정 URL로 바꾼 뒤로는 나지 않으므로 게이트웨이 `record-exceptions`에서 빼도 된다. 게이트웨이의 `circuit-breaker-aspect-order`도
-  애너테이션을 안 써서 의미가 없다.
 - [ ] **서킷이 열리면 알림** — 지금은 WARN 로그만 남는다. 지표(`resilience4j_circuitbreaker_state`)로
   [007-discord-alert-spec.md](007-discord-alert-spec.md)의 `service` 채널에 알릴지 정한다.

@@ -1,5 +1,6 @@
 package com.moduDrive.gateway.adapter.in.web.security;
 
+import com.moduDrive.common.infrastructure.resilience4j.CircuitBreakerExceptionCase;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.moduDrive.gateway.exception.AuthExceptionCase;
 import org.junit.jupiter.api.DisplayName;
@@ -64,14 +65,14 @@ class CustomAuthenticationEntryPointTest {
         void returns503() {
             MockServerWebExchange exchange = MockServerWebExchange.from(
                     MockServerHttpRequest.get("/api/secured").build());
-            AuthErrorAttributeUtils.setAuthErrorAttribute(exchange, AuthExceptionCase.AUTH_UNAVAILABLE);
+            AuthErrorAttributeUtils.setAuthErrorAttribute(exchange, CircuitBreakerExceptionCase.SERVICE_UNAVAILABLE);
 
             StepVerifier.create(entryPoint.commence(exchange, new InsufficientAuthenticationException("test")))
                     .verifyComplete();
 
             assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
             assertThat(exchange.getResponse().getBodyAsString().block())
-                    .contains(AuthExceptionCase.AUTH_UNAVAILABLE.getMessage());
+                    .contains(CircuitBreakerExceptionCase.SERVICE_UNAVAILABLE.getMessage());
         }
     }
 }

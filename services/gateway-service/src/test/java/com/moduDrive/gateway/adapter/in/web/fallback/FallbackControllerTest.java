@@ -10,6 +10,7 @@ import org.springframework.cloud.gateway.support.ServerWebExchangeUtils;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
 import org.springframework.mock.web.server.MockServerWebExchange;
+import org.springframework.web.client.HttpServerErrorException;
 import reactor.test.StepVerifier;
 
 import java.util.concurrent.TimeoutException;
@@ -27,6 +28,25 @@ class FallbackControllerTest {
         @Test
         void returnsGatewayTimeoutResponse() {
             MockServerWebExchange exchange = exchangeWithException(new TimeoutException("timeout"));
+
+            StepVerifier.create(controller.defaultFallback(exchange))
+                    .assertNext(response -> {
+                        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.GATEWAY_TIMEOUT);
+                        assertThat(response.getBody().getMessage())
+                                .isEqualTo(CircuitBreakerExceptionCase.CONNECTION_TIMEOUT.getMessage());
+                    })
+                    .verifyComplete();
+        }
+    }
+
+    @Nested
+    @DisplayName("서비스가 504를 돌려줘 fallback이 트리거됐을 때")
+    class WhenServiceReturnsGatewayTimeout {
+
+        @Test
+        void returnsGatewayTimeoutResponse() {
+            MockServerWebExchange exchange = exchangeWithException(
+                    HttpServerErrorException.create(HttpStatus.GATEWAY_TIMEOUT, "", null, null, null));
 
             StepVerifier.create(controller.defaultFallback(exchange))
                     .assertNext(response -> {
