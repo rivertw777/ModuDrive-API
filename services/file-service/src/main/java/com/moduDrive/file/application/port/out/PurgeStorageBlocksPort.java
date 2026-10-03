@@ -1,13 +1,15 @@
 package com.moduDrive.file.application.port.out;
 
 import com.moduDrive.file.domain.model.File.FileId;
+import com.moduDrive.file.domain.model.FileVersion;
 
-import java.util.UUID;
+import java.util.List;
 
 public interface PurgeStorageBlocksPort {
 
-    /** Permanently deletes every stored block for every version of this file. {@code ownerId} is
-     * always the file's own owner — the caller already verified ownership before reaching this
-     * point, and storage-service's revision lookup re-checks it against file-service. */
-    void purgeBlocks(FileId fileId, UUID ownerId);
+    /** Asks storage-service to delete every block of these versions. Call it inside the transaction
+     * that tombstones the file: the request is recorded with it (outbox) and goes out only once it
+     * commits, so blocks are never deleted for a purge that rolled back. {@code versions} are read
+     * before that same transaction deletes their rows. */
+    void purgeBlocks(FileId fileId, List<FileVersion> versions);
 }

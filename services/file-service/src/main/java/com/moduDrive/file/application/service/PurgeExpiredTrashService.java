@@ -59,7 +59,7 @@ class PurgeExpiredTrashService implements PurgeExpiredTrashUseCase {
             // AuditingConfig#auditorAware).
             filePurger.purgeRoot(root, null);
         } catch (RuntimeException e) {
-            // One bad root (storage-service unreachable, a since-changed row) must not abort the
+            // One bad root (a since-changed row, a failed write) must not abort the
             // rest of the sweep — every other namespace's expired trash still needs purging.
             log.error("Failed to purge expired trash root fileId={} namespaceId={}", root.getId(), root.getNamespaceId(), e);
         }

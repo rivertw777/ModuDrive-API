@@ -293,6 +293,13 @@ class FilePersistenceAdapter implements
     }
 
     @Override
+    public List<FileVersion> findAllByFileId(FileId fileId) {
+        return fileVersionRepository.findByFileId(fileId.value()).stream()
+                .map(fileMapper::mapFileVersionToDomain)
+                .toList();
+    }
+
+    @Override
     public List<FileVersion> findByFileIdOrderByCreatedAtDesc(FileId fileId, int limit) {
         return fileVersionRepository
                 .findByFileIdOrderByCreatedAtDesc(fileId.value(), PageRequest.of(0, limit))

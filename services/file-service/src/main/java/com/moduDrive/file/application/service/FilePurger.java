@@ -1,6 +1,6 @@
 package com.moduDrive.file.application.service;
 
-import com.moduDrive.common.core.transaction.AfterCommit;
+import com.moduDrive.file.application.port.out.FindFileVersionsPort;
 import com.moduDrive.file.application.port.out.PurgeStorageBlocksPort;
 import com.moduDrive.file.application.port.out.SaveFilePort;
 import com.moduDrive.file.domain.model.File;
@@ -32,18 +32,17 @@ class FilePurger {
     private final SaveFilePort saveFilePort;
     private final DirectoryCascader directoryCascader;
     private final PurgeStorageBlocksPort purgeStorageBlocksPort;
+    private final FindFileVersionsPort findFileVersionsPort;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     void purgeRoot(File root, UUID deletedBy) {
         if (root.isDirectory()) {
             directoryCascader.purge(new NamespaceId(root.getNamespaceId()), root.fullPath(), root.getTrashedAt(), deletedBy);
         } else {
+            // Read the versions now: purgeFile below deletes their rows. The request commits with the
+            // tombstone (outbox), so a rolled-back purge never deletes blocks.
             FileId fileId = new FileId(root.getId());
-            UUID ownerId = root.getOwnerId();
-            // Deferred to after commit: the S3 delete can't be rolled back, so it must not run
-            // until the tombstone below is actually durable — otherwise a later failure in this
-            // same transaction would roll the row back while its blocks stay gone.
-            AfterCommit.run(() -> purgeStorageBlocksPort.purgeBlocks(fileId, ownerId));
+            purgeStorageBlocksPort.purgeBlocks(fileId, findFileVersionsPort.findAllByFileId(fileId));
         }
         saveFilePort.purgeFile(new FileId(root.getId()), deletedBy);
     }

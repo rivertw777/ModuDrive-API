@@ -10,5 +10,7 @@ interface SpringDataFileVersionRepository extends JpaRepository<FileVersionJpaEn
 
     List<FileVersionJpaEntity> findByFileIdOrderByCreatedAtDesc(UUID fileId, Pageable pageable);
 
+    List<FileVersionJpaEntity> findByFileId(UUID fileId);
+
     void deleteByFileId(UUID fileId);
 }
