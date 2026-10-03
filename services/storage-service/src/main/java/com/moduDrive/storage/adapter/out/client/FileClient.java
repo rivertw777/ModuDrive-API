@@ -19,9 +19,11 @@ interface FileClient {
 
     // Upload-complete callback — internal so only storage-service, not an end user, can report a
     // file's size and block count (#440).
-    // No @Retry: each call saves a new FileVersion, so a resend after a read timeout would duplicate it.
+    // Safe to retry: file-service keys the version by s3Path, so a resend after a read timeout
+    // gets back the version the first try created instead of a second one.
     @PutMapping("/internal/files/{fileId}/uploaded")
-    @CircuitBreaker(name = "fileServiceCircuitBreaker", fallbackMethod = "updateFileStatusFallback")
+    @CircuitBreaker(name = "fileServiceCircuitBreaker")
+    @Retry(name = "fileServiceRetry", fallbackMethod = "updateFileStatusFallback")
     void updateFileStatus(@PathVariable String fileId,
                           @RequestParam String userId,
                           @RequestBody FileUploadCallbackRequest request);
