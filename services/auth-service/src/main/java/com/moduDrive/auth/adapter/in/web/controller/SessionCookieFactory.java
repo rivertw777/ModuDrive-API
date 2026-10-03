@@ -16,15 +16,15 @@ import java.util.Arrays;
 import java.util.Optional;
 
 /**
- * The auth cookies (spec 004 1-1-2, 2-2), all HttpOnly, Secure, SameSite=Strict, Path=/, no Domain.
+ * The auth cookies (spec 004 1-1-2, 2-1), all HttpOnly, Secure, SameSite=Strict, Path=/, no Domain.
  * The session cookie has no Max-Age — a browser-session cookie whose real lifetime is decided in
- * Redis. The device cookie lasts a year, restarted on every sign-in; the login-challenge cookie lasts
- * as long as its challenge.
+ * Redis. The device cookie lasts 90 days, as long as {@code known_device} remembers the device,
+ * restarted on every sign-in; the login-challenge cookie lasts as long as its challenge.
  */
 @Component
 class SessionCookieFactory {
 
-    private static final Duration DEVICE_MAX_AGE = Duration.ofDays(365);
+    private static final Duration DEVICE_MAX_AGE = Duration.ofDays(90);
     private static final Duration LOGIN_CHALLENGE_MAX_AGE = Duration.ofMinutes(5);
 
     Optional<SessionId> readSessionId(HttpServletRequest request) {
