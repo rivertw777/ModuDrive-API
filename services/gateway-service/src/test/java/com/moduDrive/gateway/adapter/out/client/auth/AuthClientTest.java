@@ -1,6 +1,10 @@
 package com.moduDrive.gateway.adapter.out.client.auth;
 
 import com.moduDrive.common.api.dto.auth.ValidateSessionRequest;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
+import io.github.resilience4j.timelimiter.TimeLimiterConfig;
+import io.github.resilience4j.timelimiter.TimeLimiterRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -15,6 +19,7 @@ import reactor.test.StepVerifier;
 
 import java.time.Duration;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -33,7 +38,7 @@ class AuthClientTest {
             WebClient stallingClient = WebClient.builder()
                     .exchangeFunction(request -> Mono.never())
                     .build();
-            AuthClient authClient = new AuthClient(stallingClient);
+            AuthClient authClient = new AuthClient(stallingClient, CircuitBreakerRegistry.ofDefaults(), timeLimiters());
 
             StepVerifier.withVirtualTime(() -> authClient.validateSession(new ValidateSessionRequest("session-id", true)))
                     .thenAwait(Duration.ofSeconds(4))
@@ -59,7 +64,7 @@ class AuthClientTest {
                                 .build());
                     })
                     .build();
-            AuthClient authClient = new AuthClient(recordingClient);
+            AuthClient authClient = new AuthClient(recordingClient, CircuitBreakerRegistry.ofDefaults(), timeLimiters());
 
             StepVerifier.create(authClient.validateSession(new ValidateSessionRequest("session-id", true)))
                     .expectNextCount(1)
@@ -68,5 +73,35 @@ class AuthClientTest {
             assertThat(captured.get().url().getPath()).isEqualTo("/internal/v1/auth/sessions/validate");
             assertThat(captured.get().url().toString()).doesNotContain("session-id");
         }
+    }
+
+    @Nested
+    @DisplayName("서킷 브레이커가 열려 있을 때")
+    class WhenTheCircuitIsOpen {
+
+        @Test
+        @DisplayName("auth-service를 부르지 않고 바로 실패한다")
+        void failsWithoutCallingAuthService() {
+            AtomicInteger calls = new AtomicInteger();
+            WebClient countingClient = WebClient.builder()
+                    .exchangeFunction(request -> {
+                        calls.incrementAndGet();
+                        return Mono.just(ClientResponse.create(HttpStatus.OK).build());
+                    })
+                    .build();
+            CircuitBreakerRegistry registry = CircuitBreakerRegistry.ofDefaults();
+            AuthClient authClient = new AuthClient(countingClient, registry, timeLimiters());
+            registry.circuitBreaker("authServiceCircuitBreaker").transitionToOpenState();
+
+            StepVerifier.create(authClient.validateSession(new ValidateSessionRequest("session-id", true)))
+                    .expectError(CallNotPermittedException.class)
+                    .verify();
+
+            assertThat(calls).hasValue(0);
+        }
+    }
+
+    private static TimeLimiterRegistry timeLimiters() {
+        return TimeLimiterRegistry.of(TimeLimiterConfig.custom().timeoutDuration(Duration.ofSeconds(3)).build());
     }
 }

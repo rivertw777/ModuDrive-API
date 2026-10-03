@@ -10,6 +10,9 @@ resilience4j:
     configs:
       default:
         timeout-duration: 15s
+    instances:
+      authSessionTimeLimiter:
+        timeout-duration: 3s
   circuitbreaker:
     circuit-breaker-aspect-order: 1
     configs:
@@ -27,6 +30,8 @@ resilience4j:
           - java.util.concurrent.TimeoutException
           - org.springframework.cloud.gateway.support.NotFoundException
           - io.netty.channel.AbstractChannel$AnnotatedConnectException
+          # The session check's connect failure / read timeout (AuthClient); routes never throw it.
+          - org.springframework.web.reactive.function.client.WebClientRequestException
     instances:
       memberServiceCircuitBreaker:
         baseConfig: default
