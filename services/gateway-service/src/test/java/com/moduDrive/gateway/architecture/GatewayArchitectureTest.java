@@ -13,30 +13,28 @@ class GatewayArchitectureTest {
             .importPackages("com.moduDrive.gateway");
 
     @Test
-    void adapterOutDoesNotDependOnAdapterIn() {
-        ArchRule rule = noClasses().that().resideInAPackage("..adapter.out..")
-                .should().dependOnClassesThat().resideInAPackage("..adapter.in..");
+    void clientDoesNotDependOnInboundPackages() {
+        ArchRule rule = noClasses().that().resideInAPackage("com.moduDrive.gateway.client..")
+                .should().dependOnClassesThat().resideInAnyPackage(
+                        "com.moduDrive.gateway.filter..", "com.moduDrive.gateway.security..", "com.moduDrive.gateway.fallback..");
         rule.check(classes);
     }
 
     @Test
-    void exceptionDoesNotDependOnAdapter() {
-        ArchRule rule = noClasses().that().resideInAPackage("..exception..")
-                .should().dependOnClassesThat().resideInAPackage("..adapter..");
+    void exceptionDoesNotDependOnOtherPackages() {
+        ArchRule rule = noClasses().that().resideInAPackage("com.moduDrive.gateway.exception..")
+                .should().dependOnClassesThat().resideInAnyPackage(
+                        "com.moduDrive.gateway.client..", "com.moduDrive.gateway.filter..", "com.moduDrive.gateway.security..",
+                        "com.moduDrive.gateway.fallback..", "com.moduDrive.gateway.config..");
         rule.check(classes);
     }
 
     @Test
-    void configDoesNotDependOnAdapterOut() {
-        ArchRule rule = noClasses().that().resideInAPackage("..gateway.config..")
-                .should().dependOnClassesThat().resideInAPackage("..adapter.out..");
-        rule.check(classes);
-    }
-
-    @Test
-    void configDoesNotDependOnAdapterIn() {
-        ArchRule rule = noClasses().that().resideInAPackage("..gateway.config..")
-                .should().dependOnClassesThat().resideInAPackage("..adapter.in..");
+    void configDoesNotDependOnImplementations() {
+        ArchRule rule = noClasses().that().resideInAPackage("com.moduDrive.gateway.config..")
+                .should().dependOnClassesThat().resideInAnyPackage(
+                        "com.moduDrive.gateway.client..", "com.moduDrive.gateway.filter..", "com.moduDrive.gateway.security..",
+                        "com.moduDrive.gateway.fallback..");
         rule.check(classes);
     }
 }

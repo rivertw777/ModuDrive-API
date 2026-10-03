@@ -10,7 +10,7 @@ one-way: `domain` ← `application` ← `adapter`. `domain` never imports `appli
 or `adapter`. `application` never imports `adapter`.
 
 Applies to the services with a real `domain/application/adapter` split: member, auth,
-file, storage. `gateway-service` (a reactive WebFlux edge service — `config/exception/adapter`
+file, storage. `gateway-service` (a reactive WebFlux edge service — `config/filter/security/client/fallback/exception`
 only, no domain/application layer) doesn't follow this structure; only borrow the adapter/config conventions below where
 they're actually relevant.
 
