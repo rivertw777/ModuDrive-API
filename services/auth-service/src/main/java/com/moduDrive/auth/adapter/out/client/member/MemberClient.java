@@ -13,8 +13,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 interface MemberClient {
 
     @PostMapping("/internal/v1/member/authenticate")
-    @CircuitBreaker(name = "memberServiceCircuitBreaker", fallbackMethod = "authenticateMemberFallback")
-    @Retry(name = "memberServiceRetry")
+    @CircuitBreaker(name = "memberServiceCircuitBreaker")
+    @Retry(name = "memberServiceRetry", fallbackMethod = "authenticateMemberFallback")
     ApiResponse<AuthenticateMemberResponse> authenticateMember(AuthenticateMemberRequest authenticateMemberRequest);
 
     default ApiResponse<AuthenticateMemberResponse> authenticateMemberFallback(AuthenticateMemberRequest authenticateMemberRequest, Throwable cause) {

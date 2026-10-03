@@ -14,7 +14,8 @@ public class FeignFallbackUtils {
     }
 
     public static <T> T handleFallback(Throwable cause) {
-        log.error("Fallback triggered for {}", cause.getClass().getSimpleName());
+        // DEBUG: an open circuit sends every call here; the circuit/retry WARNs already tell the story.
+        log.debug("Fallback triggered for {}", cause.getClass().getSimpleName());
 
         if (cause instanceof CallNotPermittedException) {
             throw new BusinessException(CircuitBreakerExceptionCase.SERVICE_IS_OPEN);

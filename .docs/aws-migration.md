@@ -116,7 +116,7 @@ Promtail은 docker socket 기반이라 **Fargate에서 못 쓴다** — 로그 �
 | 운영 부담 | 낮음 | Loki/Tempo/Prometheus/Grafana 직접 운영 |
 
 - 앱은 어느 쪽이든 **OTLP 그대로** — 지금 `OTEL_EXPORTER_OTLP_ENDPOINT`(기본 `http://otel-collector:4318`)로 보내므로 collector 주소만 바꾸면 된다.
-- 현재 알림: Grafana 알림 규칙 (`.docker/observability/grafana/alerting/alerts.yaml`) → 디스코드 채널 2개. 규칙 목록은 `spec/006-discord-alert-spec.md`.
+- 현재 알림: Grafana 알림 규칙 (`.docker/observability/grafana/alerting/alerts.yaml`) → 디스코드 채널 2개. 규칙 목록은 `spec/007-discord-alert-spec.md`.
   A를 고르면 이 규칙들을 옮겨야 한다.
 
 ### 2-11. 네트워크 / 도메인 / 프론트

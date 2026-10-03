@@ -15,8 +15,8 @@ interface StorageServiceClient {
     // storage-service's internal, service-to-service route (see its PurgeStoredFileController) —
     // not on /api/v1/storage/**, so only another trusted service reaches it, never an end user.
     @DeleteMapping("/internal/storage/{fileId}")
-    @CircuitBreaker(name = "storageServiceCircuitBreaker", fallbackMethod = "purgeStoredFileFallback")
-    @Retry(name = "storageServiceRetry")
+    @CircuitBreaker(name = "storageServiceCircuitBreaker")
+    @Retry(name = "storageServiceRetry", fallbackMethod = "purgeStoredFileFallback")
     ApiResponse<Void> purgeStoredFile(@PathVariable String fileId, @RequestParam String userId);
 
     default ApiResponse<Void> purgeStoredFileFallback(String fileId, String userId, Throwable cause) {
