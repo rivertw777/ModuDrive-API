@@ -8,11 +8,13 @@ import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestHeaderException;
@@ -83,6 +85,20 @@ public class GlobalExceptionHandler {
         String message = "잘못된 요청 파라미터입니다: " + e.getName();
         ApiResponse<Object> response = ApiResponse.error(HttpStatus.BAD_REQUEST, message);
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+    }
+
+    // The DB (or Redis) is unreachable — not a bug in this request, and it may come back. 503 lets a
+    // caller's circuit breaker count it and its retry resend it; a 500 would be read as a bug and ignored.
+    @ExceptionHandler({CannotCreateTransactionException.class, DataAccessResourceFailureException.class})
+    public ResponseEntity<ApiResponse<Object>> handleInfrastructureUnavailable(Exception e) {
+        logger.error("Infrastructure unavailable", e);
+        ApiResponse<Object> response = ApiResponse.error(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "일시적으로 서비스를 이용할 수 없습니다. 잠시 후 다시 시도해 주세요."
+        );
+        return ResponseEntity
+                .status(response.getStatus())
+                .body(response);
     }
 
     @ExceptionHandler(Exception.class)

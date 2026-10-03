@@ -8,6 +8,7 @@ import org.springframework.http.HttpInputMessage;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -31,6 +32,22 @@ class GlobalExceptionHandlerTest {
             assertThat(response.getBody().getMessage())
                     .isEqualTo("서버 오류가 발생했습니다.")
                     .doesNotContain("uk_member_email");
+        }
+    }
+
+    @Nested
+    @DisplayName("DB·Redis에 연결할 수 없을 때")
+    class WhenInfrastructureIsUnavailable {
+
+        @Test
+        void returns503SoTheCallersCircuitBreakerCountsIt() {
+            CannotCreateTransactionException e = new CannotCreateTransactionException(
+                    "Could not open JPA EntityManager", new RuntimeException("Connection refused: postgres:5432"));
+
+            ResponseEntity<ApiResponse<Object>> response = handler.handleInfrastructureUnavailable(e);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+            assertThat(response.getBody().getMessage()).doesNotContain("postgres");
         }
     }
 
