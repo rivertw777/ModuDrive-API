@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
-/** The emailed-code step of a login from a new device (spec 004 2-2). */
+/** The emailed-code step of a login from a new device (spec 004 2-1). */
 @RequiredArgsConstructor
 @WebAdapter
 @RestController

@@ -13,7 +13,7 @@ import java.io.Serializable;
 import java.time.Instant;
 import java.util.UUID;
 
-/** A device a member verified by email, by the SHA-256 of its id (spec 004 2-2). */
+/** A device a member verified by email, by the SHA-256 of its id (spec 004 2-1). */
 @Getter
 @Entity
 @Table(name = "known_device")

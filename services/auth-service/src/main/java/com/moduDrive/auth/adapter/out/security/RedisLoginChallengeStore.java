@@ -19,7 +19,7 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * Logins waiting for their emailed code as {@code login-challenge:{sha256(id)}} hashes (spec 004 2-2).
+ * Logins waiting for their emailed code as {@code login-challenge:{sha256(id)}} hashes (spec 004 2-1).
  * Wrong-code cap, request window and resend cooldown match member-service's sign-up email check.
  */
 @Component

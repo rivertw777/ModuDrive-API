@@ -35,7 +35,7 @@ class LoginService implements LoginUseCase {
         // Counted before the password is even checked, and cleared only once a session is issued —
         // so someone who knows the password still gets few guesses at a new device's code. A device
         // this email verified counts on its own, so failures from elsewhere can't lock it out; a
-        // made-up cookie isn't known and lands on the shared count (spec 004 2-1).
+        // made-up cookie isn't known and lands on the shared count (spec 004 2-2).
         DeviceId knownDevice = loginCommand.getDeviceId() != null
                 && knownDevicePort.isKnown(loginCommand.getMemberEmail(), loginCommand.getDeviceId())
                 ? loginCommand.getDeviceId() : null;
@@ -61,7 +61,7 @@ class LoginService implements LoginUseCase {
         }
 
         // A device this member hasn't verified: no session until the emailed code comes back, and no
-        // mail until the member asks for the code (spec 004 2-2).
+        // mail until the member asks for the code (spec 004 2-1).
         LoginChallengeId challengeId =
                 loginChallengePort.createChallenge(memberAuthData, loginCommand.getMemberEmail());
         return new LoginResult.VerificationRequired(challengeId);

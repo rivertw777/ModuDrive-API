@@ -13,7 +13,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * One {@code known_device} row per device a member verified by email (spec 004 2-2), keyed by the
+ * One {@code known_device} row per device a member verified by email (spec 004 2-1), keyed by the
  * SHA-256 of the device id so a leaked table can't be turned back into a working cookie. A device is
  * known while it was used within the last 90 days; each login from it restarts the 90 days.
  */
