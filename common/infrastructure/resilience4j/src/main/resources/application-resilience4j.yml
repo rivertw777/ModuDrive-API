@@ -7,9 +7,11 @@ spring:
             connect-timeout: 3000
             read-timeout: 5000
 
+# No aspect orders set: Resilience4j's default, Retry ( CircuitBreaker ( call ) ). The circuit breaker
+# records every attempt, and the fallback sits on @Retry so it only runs once retries are spent.
+# CallNotPermittedException isn't in retry-exceptions, so an open circuit is never retried.
 resilience4j:
   retry:
-    retry-aspect-order: 2
     configs:
       default:
         max-attempts: 3
@@ -18,7 +20,6 @@ resilience4j:
           - feign.RetryableException
           - feign.FeignException.ServiceUnavailable
   circuitbreaker:
-    circuit-breaker-aspect-order: 1
     configs:
       default:
         registerHealthIndicator: true

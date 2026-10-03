@@ -15,8 +15,8 @@ interface MemberClient {
 
     // Internal routes (#441), not exposed by the gateway.
     @GetMapping("/internal/v1/member/by-email")
-    @CircuitBreaker(name = "memberServiceCircuitBreaker", fallbackMethod = "findMemberByEmailFallback")
-    @Retry(name = "memberServiceRetry")
+    @CircuitBreaker(name = "memberServiceCircuitBreaker")
+    @Retry(name = "memberServiceRetry", fallbackMethod = "findMemberByEmailFallback")
     ApiResponse<MemberResponse> findMemberByEmail(@RequestParam("email") String email);
 
     default ApiResponse<MemberResponse> findMemberByEmailFallback(String email, Throwable cause) {
@@ -24,8 +24,8 @@ interface MemberClient {
     }
 
     @GetMapping("/internal/v1/member/{memberId}")
-    @CircuitBreaker(name = "memberServiceCircuitBreaker", fallbackMethod = "findMemberByIdFallback")
-    @Retry(name = "memberServiceRetry")
+    @CircuitBreaker(name = "memberServiceCircuitBreaker")
+    @Retry(name = "memberServiceRetry", fallbackMethod = "findMemberByIdFallback")
     ApiResponse<MemberResponse> findMemberById(@PathVariable("memberId") String memberId);
 
     default ApiResponse<MemberResponse> findMemberByIdFallback(String memberId, Throwable cause) {
