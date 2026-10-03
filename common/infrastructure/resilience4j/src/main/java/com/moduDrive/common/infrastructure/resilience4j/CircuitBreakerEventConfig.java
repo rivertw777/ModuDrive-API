@@ -1,8 +1,8 @@
 package com.moduDrive.common.infrastructure.resilience4j;
 
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.github.resilience4j.circuitbreaker.event.CircuitBreakerOnErrorEvent;
-import io.github.resilience4j.circuitbreaker.event.CircuitBreakerOnFailureRateExceededEvent;
 import io.github.resilience4j.circuitbreaker.event.CircuitBreakerOnStateTransitionEvent;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -10,6 +10,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.context.annotation.Configuration;
 
+/**
+ * Logs what a person reading the logs needs (spec 006 3): a circuit opening is WARN, everything else
+ * quieter. Counting failures is the metrics' job (resilience4j-micrometer), not one log line per call.
+ */
 @Slf4j
 @Configuration
 @RequiredArgsConstructor
@@ -20,28 +24,30 @@ public class CircuitBreakerEventConfig {
 
     @PostConstruct
     public void registerCircuitBreakerEventListeners() {
-        circuitBreakerRegistry.getAllCircuitBreakers().forEach(circuitBreaker -> circuitBreaker.getEventPublisher()
+        circuitBreakerRegistry.getAllCircuitBreakers().forEach(this::listen);
+        // Instances created after startup (first use of a name not in the yml) get the same listeners.
+        circuitBreakerRegistry.getEventPublisher().onEntryAdded(event -> listen(event.getAddedEntry()));
+    }
+
+    private void listen(CircuitBreaker circuitBreaker) {
+        circuitBreaker.getEventPublisher()
                 .onStateTransition(this::logStateTransition)
-                .onFailureRateExceeded(this::logFailureRateExceeded)
-                .onError(this::logErrorEvent));
+                .onError(this::logErrorEvent);
     }
 
     private void logStateTransition(CircuitBreakerOnStateTransitionEvent event) {
-        log.info("CircuitBreaker '{}' state changed from {} to {}",
-                event.getCircuitBreakerName(),
-                event.getStateTransition().getFromState(),
-                event.getStateTransition().getToState());
-    }
-
-    private void logFailureRateExceeded(CircuitBreakerOnFailureRateExceededEvent event) {
-        log.warn("CircuitBreaker '{}' failure rate exceeded: {}%",
-                event.getCircuitBreakerName(),
-                event.getFailureRate());
+        CircuitBreaker.State to = event.getStateTransition().getToState();
+        String message = "CircuitBreaker '{}' state changed from {} to {}";
+        if (to == CircuitBreaker.State.OPEN || to == CircuitBreaker.State.FORCED_OPEN) {
+            log.warn(message, event.getCircuitBreakerName(), event.getStateTransition().getFromState(), to);
+        } else {
+            log.info(message, event.getCircuitBreakerName(), event.getStateTransition().getFromState(), to);
+        }
     }
 
     private void logErrorEvent(CircuitBreakerOnErrorEvent event) {
-        log.error("CircuitBreaker '{}' recorded an error: {}",
+        log.debug("CircuitBreaker '{}' recorded an error: {}",
                 event.getCircuitBreakerName(),
-                event.getThrowable().getMessage());
+                event.getThrowable().toString());
     }
 }
