@@ -12,7 +12,7 @@ import lombok.RequiredArgsConstructor;
 
 import java.security.SecureRandom;
 
-/** Mails a new-device login its code, first time or again — each send a fresh code (spec 004 2-2). */
+/** Mails a new-device login its code, first time or again — each send a fresh code (spec 004 2-1). */
 @UseCase
 @RequiredArgsConstructor
 class SendLoginCodeService implements SendLoginCodeUseCase {

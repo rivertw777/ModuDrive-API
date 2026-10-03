@@ -17,6 +17,6 @@ public class SendVerificationMailCommand {
         this.purpose = purpose;
     }
 
-    /** Signup, or a login from a new device (auth spec 004 2-2) — same code, different wording. */
+    /** Signup, or a login from a new device (auth spec 004 2-1) — same code, different wording. */
     public enum Purpose { SIGN_UP, LOGIN }
 }

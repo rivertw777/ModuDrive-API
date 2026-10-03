@@ -79,13 +79,13 @@ class SessionCookieFactoryTest {
     class WhenHandlingTheDeviceAndChallengeCookies {
 
         @Test
-        @DisplayName("기기 쿠키는 세션 쿠키와 같은 속성에 1년 수명으로 내려준다")
-        void issuesAYearLongDeviceCookie() {
+        @DisplayName("기기 쿠키는 세션 쿠키와 같은 속성에 90일 수명으로 내려준다")
+        void issuesANinetyDayDeviceCookie() {
             factory.setDeviceId(response, new DeviceId("device-id"));
 
             assertThat(setCookieHeader())
                     .startsWith("__Host-device=device-id")
-                    .contains("Max-Age=31536000", "HttpOnly", "Secure", "SameSite=Strict", "Path=/")
+                    .contains("Max-Age=7776000", "HttpOnly", "Secure", "SameSite=Strict", "Path=/")
                     .doesNotContain("Domain");
         }
 

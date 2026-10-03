@@ -12,7 +12,7 @@ import lombok.val;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Mails the code of a login from a new device, on the member's request (spec 004 2-2). */
+/** Mails the code of a login from a new device, on the member's request (spec 004 2-1). */
 @RequiredArgsConstructor
 @WebAdapter
 @RestController

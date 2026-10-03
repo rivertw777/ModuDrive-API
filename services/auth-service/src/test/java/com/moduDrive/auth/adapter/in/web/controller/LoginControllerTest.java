@@ -71,7 +71,7 @@ class LoginControllerTest {
         }
 
         @Test
-        @DisplayName("기기 쿠키를 1년짜리로 다시 내려준다")
+        @DisplayName("기기 쿠키를 90일짜리로 다시 내려준다")
         void refreshesTheDeviceCookie() throws Exception {
             given(loginUseCase.login(any(LoginCommand.class))).willReturn(SIGNED_IN);
 
@@ -79,7 +79,7 @@ class LoginControllerTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(REQUEST_JSON))
                     .andExpect(cookie().value(SessionCookie.DEVICE_NAME, "device-id"))
-                    .andExpect(cookie().maxAge(SessionCookie.DEVICE_NAME, 365 * 24 * 60 * 60))
+                    .andExpect(cookie().maxAge(SessionCookie.DEVICE_NAME, 90 * 24 * 60 * 60))
                     .andExpect(cookie().httpOnly(SessionCookie.DEVICE_NAME, true))
                     .andExpect(cookie().sameSite(SessionCookie.DEVICE_NAME, "Strict"));
         }
