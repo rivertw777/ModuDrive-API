@@ -33,38 +33,6 @@ class FileServiceGetVersionAdapterTest {
     private final UUID userId = UUID.randomUUID();
 
     @Nested
-    @DisplayName("파일에 여러 버전이 있을 때")
-    class WhenFileHasVersions {
-
-        @Test
-        void returnsEveryVersionAsALocation() {
-            FileVersionDto v1 = new FileVersionDto(UUID.randomUUID(), fileId, 10L, 2, "path/v1");
-            FileVersionDto v2 = new FileVersionDto(UUID.randomUUID(), fileId, 20L, 4, "path/v2");
-            given(feignClient.getAllFileVersions(anyString(), anyString()))
-                    .willReturn(ApiResponse.success(List.of(v1, v2)));
-
-            List<VersionLocation> result = adapter.getAllVersions(fileId, userId);
-
-            assertThat(result).containsExactly(
-                    new VersionLocation("path/v1", 2),
-                    new VersionLocation("path/v2", 4));
-        }
-    }
-
-    @Nested
-    @DisplayName("버전이 없을 때")
-    class WhenNoVersionsExist {
-
-        @Test
-        void returnsEmptyList() {
-            given(feignClient.getAllFileVersions(anyString(), anyString()))
-                    .willReturn(ApiResponse.success(List.of()));
-
-            assertThat(adapter.getAllVersions(fileId, userId)).isEmpty();
-        }
-    }
-
-    @Nested
     @DisplayName("최신 버전을 조회할 때")
     class WhenResolvingLatestVersion {
 

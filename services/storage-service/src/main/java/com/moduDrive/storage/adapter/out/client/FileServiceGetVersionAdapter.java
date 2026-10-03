@@ -17,22 +17,6 @@ class FileServiceGetVersionAdapter implements GetFileVersionPort, GetArchiveEntr
 
     private final FileServiceFeignClient feignClient;
 
-    // Deliberately a different route than the one below — see GetAllFileVersionsController's
-    // javadoc: that route checks ownership, not the DOWNLOAD permission a VIEWER share also
-    // holds, since this result feeds a permanent purge.
-    @Override
-    public List<VersionLocation> getAllVersions(UUID fileId, UUID userId) {
-        List<FileVersionDto> versions = feignClient
-                .getAllFileVersions(fileId.toString(), userId.toString())
-                .getData();
-        if (versions == null) {
-            return List.of();
-        }
-        return versions.stream()
-                .map(v -> new VersionLocation(v.s3Path(), v.blockCount()))
-                .toList();
-    }
-
     @Override
     public VersionLocation getLatestVersion(UUID fileId, UUID userId, boolean markAccessed) {
         FileVersionDto v = firstOrThrow(
