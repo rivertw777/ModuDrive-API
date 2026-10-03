@@ -65,7 +65,7 @@ For the full layer breakdown, naming conventions, dependency-direction rules, an
 
 | Module                              | Purpose                                                      |
 |-------------------------------------|--------------------------------------------------------------|
-| `common:core`                       | `@UseCase`/`@WebAdapter`/`@PersistenceAdapter`/`@EventPublisher`/`@EventListener`, `ApiResponse<T>`, `BusinessException`, `ExceptionCase` interface, `SelfValidating`, `LoggingAspect`, `AfterCommit` (run an irreversible call once the transaction commits) |
+| `common:core`                       | `@UseCase`/`@WebAdapter`/`@PersistenceAdapter`/`@EventPublisher`/`@EventListener`, `ApiResponse<T>`, `BusinessException`, `ExceptionCase` interface, `SelfValidating`, `LoggingAspect` |
 | `common:api`                        | Shared DTOs for cross-service calls (auth, member)           |
 | `common:event`                      | Event DTOs + logical queue names (`*Queues`, used as the queue name as-is) for async cross-service messaging, packaged by the **producing** service (so an event several services consume later still has one owner): member (`MemberSignedUp` → file-service, `SignUpVerificationMailRequested` → mail-service, `MemberQueues`), file (`ShareInviteMailRequested` → mail-service, `FileSharedNotified` → notification-service, `BlocksPurgeRequested` → storage-service, `FileQueues`), auth (`LoginVerificationMailRequested` → mail-service, `AuthQueues`) |
 | `common:infrastructure:jpa`         | `BaseTimeEntity` (JPA auditing), `AuditingConfig`            |
