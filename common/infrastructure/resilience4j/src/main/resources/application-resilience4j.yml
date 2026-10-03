@@ -5,20 +5,25 @@ spring:
         config:
           default:
             connect-timeout: 3000
-            read-timeout: 5000
+            read-timeout: 10000
 
 # No aspect orders set: Resilience4j's default, Retry ( CircuitBreaker ( call ) ). The circuit breaker
 # records every attempt, and the fallback sits on @Retry so it only runs once retries are spent.
-# CallNotPermittedException isn't in retry-exceptions, so an open circuit is never retried.
+# Only connect failures and 503 are retried (RetryOnConnectFailure), so an open circuit
+# (CallNotPermittedException) or a read timeout is never retried.
 resilience4j:
   retry:
     configs:
       default:
         max-attempts: 3
+        # 500ms, then 1s, each ±50% at random: instances retrying the same recovering service
+        # don't all hit it on the same beat.
         wait-duration: 500ms
-        retry-exceptions:
-          - feign.RetryableException
-          - feign.FeignException.ServiceUnavailable
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        enable-randomized-wait: true
+        randomized-wait-factor: 0.5
+        retry-exception-predicate: com.moduDrive.common.infrastructure.resilience4j.RetryOnConnectFailure
   circuitbreaker:
     configs:
       default:
@@ -36,5 +41,4 @@ resilience4j:
           - feign.RetryableException
           - feign.FeignException.GatewayTimeout
           - feign.FeignException.BadGateway
-          - feign.FeignException.TooManyRequests
           - feign.FeignException.ServiceUnavailable

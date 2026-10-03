@@ -8,4 +8,7 @@ dependencies {
     api 'org.springframework.cloud:spring-cloud-starter-openfeign'
     // 있어야 Feign 호출이 계측되고 traceparent가 전파된다 — 없으면 호출 대상 서비스에서 trace가 새로 시작됨.
     api 'io.github.openfeign:feign-micrometer'
+    // Apache HttpClient 5 대신 JDK 기본 HttpURLConnection을 쓰면 연결 풀이 없고, 연결 시간 초과와 읽기 시간 초과가
+    // 같은 예외라 재시도 판단(RetryOnConnectFailure)에서 가를 수 없다.
+    api 'io.github.openfeign:feign-hc5'
 }
