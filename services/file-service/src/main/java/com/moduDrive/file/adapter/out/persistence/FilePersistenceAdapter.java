@@ -293,6 +293,11 @@ class FilePersistenceAdapter implements
     }
 
     @Override
+    public Optional<FileVersion> findByS3Path(String s3Path) {
+        return fileVersionRepository.findByS3Path(s3Path).map(fileMapper::mapFileVersionToDomain);
+    }
+
+    @Override
     public List<FileVersion> findAllByFileId(FileId fileId) {
         return fileVersionRepository.findByFileId(fileId.value()).stream()
                 .map(fileMapper::mapFileVersionToDomain)

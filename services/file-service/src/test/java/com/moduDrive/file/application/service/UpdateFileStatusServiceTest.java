@@ -3,6 +3,7 @@ package com.moduDrive.file.application.service;
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.file.application.port.in.command.UpdateFileStatusCommand;
 import com.moduDrive.file.application.port.out.FindFilePort;
+import com.moduDrive.file.application.port.out.FindFileVersionsPort;
 import com.moduDrive.file.application.port.out.SaveFilePort;
 import com.moduDrive.file.application.port.out.SaveFileVersionPort;
 import com.moduDrive.file.domain.model.File;
@@ -36,6 +37,7 @@ class UpdateFileStatusServiceTest {
     @Mock private FindFilePort findFilePort;
     @Mock private SaveFilePort saveFilePort;
     @Mock private SaveFileVersionPort saveFileVersionPort;
+    @Mock private FindFileVersionsPort findFileVersionsPort;
     @Mock private FileAccessGuard fileAccessGuard;
     @InjectMocks private UpdateFileStatusService updateFileStatusService;
 
@@ -75,6 +77,29 @@ class UpdateFileStatusServiceTest {
             assertThat(result.getCurrentVersionId()).isEqualTo(versionId);
             then(saveFileVersionPort).should().saveFileVersion(any(FileVersion.class));
             then(saveFilePort).should().saveFile(any(File.class));
+        }
+    }
+
+    @Nested
+    @DisplayName("같은 s3Path로 이미 버전이 있을 때 (재시도된 콜백)")
+    class WhenCallbackIsRetried {
+
+        @Test
+        void returnsFileWithoutCreatingAnotherVersion() {
+            FileVersion existing = FileVersion.withId(
+                    new FileVersionId(UUID.randomUUID()),
+                    new FileVersionFileId(fileId),
+                    new FileVersionFileSize(1024L),
+                    new FileVersionBlockCount(2),
+                    new FileVersionS3Path(s3Path));
+            given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(pendingFile));
+            given(findFileVersionsPort.findByS3Path(s3Path)).willReturn(Optional.of(existing));
+
+            File result = updateFileStatusService.updateFileStatus(command);
+
+            assertThat(result).isSameAs(pendingFile);
+            then(saveFileVersionPort).shouldHaveNoInteractions();
+            then(saveFilePort).shouldHaveNoInteractions();
         }
     }
 
