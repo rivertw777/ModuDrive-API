@@ -11,6 +11,9 @@ public interface FindFileVersionsPort {
 
     List<FileVersion> findByFileIdOrderByCreatedAtDesc(FileId fileId, int limit);
 
+    /** Every version of the file, unordered and unbounded — a purge has to drop all their blocks. */
+    List<FileVersion> findAllByFileId(FileId fileId);
+
     /** One query for many versions — a zip of a large folder needs every file's current version at once. */
     List<FileVersion> findAllByIds(Collection<UUID> versionIds);
 }

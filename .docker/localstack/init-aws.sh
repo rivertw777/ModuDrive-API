@@ -12,6 +12,7 @@ QUEUES=(
   mail-login-verification-requested
   mail-share-invite-requested
   notification-file-shared
+  storage-blocks-purge-requested
 )
 
 for queue in "${QUEUES[@]}"; do

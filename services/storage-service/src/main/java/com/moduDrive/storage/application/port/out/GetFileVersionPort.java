@@ -1,6 +1,5 @@
 package com.moduDrive.storage.application.port.out;
 
-import java.util.List;
 import java.util.UUID;
 
 public interface GetFileVersionPort {
@@ -15,10 +14,6 @@ public interface GetFileVersionPort {
      * caller id to pass along. One lookup — like {@link #getLatestVersion} — so s3Path and
      * blockCount can't tear across a version committed mid-download. */
     VersionLocation getPublicVersion(String fileId, String key);
-
-    /** Every version ever uploaded for this file, not just the latest — a purge has to delete
-     * every version's blocks, not only the one a download would resolve to. */
-    List<VersionLocation> getAllVersions(UUID fileId, UUID userId);
 
     record VersionLocation(String s3Path, int blockCount) {}
 }

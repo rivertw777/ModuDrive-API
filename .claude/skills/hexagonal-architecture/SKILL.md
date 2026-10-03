@@ -221,8 +221,8 @@ or the service layer depend on the Feign DTOs directly — only the
 @FeignClient(name = "member-service", url = "${clients.member-service.url}")
 interface MemberClient {
     @PostMapping("/api/v1/member/authenticate")
-    @CircuitBreaker(name = "memberServiceCircuitBreaker", fallbackMethod = "authenticateMemberFallback")
-    @Retry(name = "memberServiceRetry")
+    @CircuitBreaker(name = "memberServiceCircuitBreaker")
+    @Retry(name = "memberServiceRetry", fallbackMethod = "authenticateMemberFallback")
     ApiResponse<AuthenticateMemberResponse> authenticateMember(AuthenticateMemberRequest request);
 
     default ApiResponse<AuthenticateMemberResponse> authenticateMemberFallback(AuthenticateMemberRequest request, Throwable cause) {

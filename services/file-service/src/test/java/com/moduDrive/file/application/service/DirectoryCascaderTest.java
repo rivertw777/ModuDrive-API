@@ -1,6 +1,7 @@
 package com.moduDrive.file.application.service;
 
 import com.moduDrive.file.application.port.out.FindFilePort;
+import com.moduDrive.file.application.port.out.FindFileVersionsPort;
 import com.moduDrive.file.application.port.out.PurgeStorageBlocksPort;
 import com.moduDrive.file.application.port.out.SaveFilePort;
 import com.moduDrive.file.domain.model.File;
@@ -33,6 +34,7 @@ class DirectoryCascaderTest {
     @Mock private FindFilePort findFilePort;
     @Mock private SaveFilePort saveFilePort;
     @Mock private PurgeStorageBlocksPort purgeStorageBlocksPort;
+    @Mock private FindFileVersionsPort findFileVersionsPort;
     @InjectMocks private DirectoryCascader directoryCascader;
 
     private final NamespaceId namespaceId = new NamespaceId(UUID.randomUUID());
@@ -147,9 +149,9 @@ class DirectoryCascaderTest {
         then(saveFilePort).should(times(0)).purgeFile(eq(new FileId(restoredEarly.getId())), any());
         then(saveFilePort).should(times(0)).purgeFile(eq(new FileId(alreadyPurged.getId())), any());
         then(purgeStorageBlocksPort).should(times(1))
-                .purgeBlocks(new FileId(trashed.getId()), trashed.getOwnerId());
-        then(purgeStorageBlocksPort).should(times(0)).purgeBlocks(new FileId(restoredEarly.getId()), restoredEarly.getOwnerId());
-        then(purgeStorageBlocksPort).should(times(0)).purgeBlocks(new FileId(alreadyPurged.getId()), alreadyPurged.getOwnerId());
+                .purgeBlocks(eq(new FileId(trashed.getId())), any());
+        then(purgeStorageBlocksPort).should(times(0)).purgeBlocks(eq(new FileId(restoredEarly.getId())), any());
+        then(purgeStorageBlocksPort).should(times(0)).purgeBlocks(eq(new FileId(alreadyPurged.getId())), any());
     }
 
     @Test
@@ -184,6 +186,6 @@ class DirectoryCascaderTest {
         then(saveFilePort).should(times(1)).purgeFile(new FileId(ownDescendant.getId()), deletedBy);
         then(saveFilePort).should(times(0)).purgeFile(eq(new FileId(unrelatedNamesakeDescendant.getId())), any());
         then(purgeStorageBlocksPort).should(times(0))
-                .purgeBlocks(new FileId(unrelatedNamesakeDescendant.getId()), unrelatedNamesakeDescendant.getOwnerId());
+                .purgeBlocks(eq(new FileId(unrelatedNamesakeDescendant.getId())), any());
     }
 }

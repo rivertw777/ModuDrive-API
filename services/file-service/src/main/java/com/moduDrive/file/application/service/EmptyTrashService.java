@@ -56,7 +56,7 @@ class EmptyTrashService implements EmptyTrashUseCase {
         try {
             filePurger.purgeRoot(root, deletedBy);
         } catch (RuntimeException e) {
-            // One bad root (storage-service unreachable, a since-changed row) must not abort
+            // One bad root (a since-changed row, a failed write) must not abort
             // every other root already queued in this empty-trash call.
             log.error("Failed to purge trash root fileId={} namespaceId={}", root.getId(), root.getNamespaceId(), e);
         }

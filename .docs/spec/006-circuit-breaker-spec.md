@@ -131,9 +131,9 @@ Resilience4j 기본 순서대로 재시도가 바깥, 서킷 브레이커가 안
 |---|---|---|---|
 | 게이트웨이 → 각 서비스 | Spring Cloud Gateway 라우트 필터 (리액티브) | 서비스마다 하나 | [2-1](#2-1-게이트웨이-라우트) |
 | 게이트웨이 → auth 세션 확인 | `WebClient` + Resilience4j Reactor 연산자 | auth 라우트와 같은 것을 같이 씀 | [2-2](#2-2-게이트웨이-세션-확인) |
-| auth / file → member, file → storage | OpenFeign + `@CircuitBreaker` · `@Retry` | 호출 대상마다 하나 | [2-3](#2-3-서비스-간-호출-feign) |
+| auth / file → member | OpenFeign + `@CircuitBreaker` · `@Retry` | 호출 대상마다 하나 | [2-3](#2-3-서비스-간-호출-feign) |
 
-서비스 간 비동기 메시지(SQS)는 서킷 브레이커 대신 재시도·DLQ로 버틴다 ([005-messaging-spec.md 4-2](005-messaging-spec.md#4-2-처리-실패)).
+서비스 간 비동기 메시지(SQS — 파일 영구 삭제 시 블록 삭제 요청 등)는 서킷 브레이커 대신 재시도·DLQ로 버틴다 ([005-messaging-spec.md 4-2](005-messaging-spec.md#4-2-처리-실패)).
 
 ### 2-1. 게이트웨이 라우트
 
@@ -221,11 +221,9 @@ flowchart LR
     A["auth-service"]
     F["file-service"]
     M["member-service"]
-    S["storage-service"]
 
     A -- "로그인 비밀번호 확인<br/>memberServiceCircuitBreaker + Retry" --> M
     F -- "공유 대상 회원 조회<br/>memberServiceCircuitBreaker + Retry" --> M
-    F -- "저장된 블록 삭제<br/>storageServiceCircuitBreaker + Retry" --> S
 ```
 
 Feign 클라이언트 메서드에 `@CircuitBreaker`와 `@Retry`를 같이 단다.

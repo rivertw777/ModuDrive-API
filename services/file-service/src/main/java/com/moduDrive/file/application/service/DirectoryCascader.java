@@ -1,7 +1,7 @@
 package com.moduDrive.file.application.service;
 
-import com.moduDrive.common.core.transaction.AfterCommit;
 import com.moduDrive.file.application.port.out.FindFilePort;
+import com.moduDrive.file.application.port.out.FindFileVersionsPort;
 import com.moduDrive.file.application.port.out.PurgeStorageBlocksPort;
 import com.moduDrive.file.application.port.out.SaveFilePort;
 import com.moduDrive.file.domain.model.File;
@@ -31,6 +31,7 @@ class DirectoryCascader {
     private final FindFilePort findFilePort;
     private final SaveFilePort saveFilePort;
     private final PurgeStorageBlocksPort purgeStorageBlocksPort;
+    private final FindFileVersionsPort findFileVersionsPort;
 
     /** Rewrites the path prefix of every descendant after the directory itself moved/was renamed. */
     void movePath(NamespaceId namespaceId, String oldPrefix, String newPrefix) {
@@ -94,11 +95,9 @@ class DirectoryCascader {
                     && descendant.getTrashedAt().isAfter(rootTrashedAt)) return;
             // A nested subdirectory has no blocks of its own — only a real file does.
             if (!descendant.isDirectory()) {
+                // Before purgeFile deletes the version rows — see FilePurger.
                 FileId fileId = new FileId(descendant.getId());
-                UUID ownerId = descendant.getOwnerId();
-                // Deferred to after commit — see FilePurger's javadoc; the block delete can't be
-                // rolled back, so it must not run before the tombstone below is durable.
-                AfterCommit.run(() -> purgeStorageBlocksPort.purgeBlocks(fileId, ownerId));
+                purgeStorageBlocksPort.purgeBlocks(fileId, findFileVersionsPort.findAllByFileId(fileId));
             }
             saveFilePort.purgeFile(new FileId(descendant.getId()), deletedBy);
         });

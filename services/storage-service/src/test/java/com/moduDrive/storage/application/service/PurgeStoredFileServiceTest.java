@@ -1,9 +1,8 @@
 package com.moduDrive.storage.application.service;
 
 import com.moduDrive.storage.application.port.in.command.PurgeStoredFileCommand;
+import com.moduDrive.storage.application.port.in.command.PurgeStoredFileCommand.StoredVersion;
 import com.moduDrive.storage.application.port.out.DeleteBlocksPort;
-import com.moduDrive.storage.application.port.out.GetFileVersionPort;
-import com.moduDrive.storage.application.port.out.GetFileVersionPort.VersionLocation;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -15,31 +14,26 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 import java.util.UUID;
 
-import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 
 @ExtendWith(MockitoExtension.class)
 class PurgeStoredFileServiceTest {
 
-    @Mock private GetFileVersionPort getFileVersionPort;
     @Mock private DeleteBlocksPort deleteBlocksPort;
     @InjectMocks private PurgeStoredFileService purgeStoredFileService;
 
     private final UUID fileId = UUID.randomUUID();
-    private final UUID userId = UUID.randomUUID();
-    private final PurgeStoredFileCommand command = new PurgeStoredFileCommand(fileId, userId);
 
     @Nested
     @DisplayName("파일에 버전이 여러 개 있을 때")
     class WhenFileHasMultipleVersions {
 
         @Test
+        @DisplayName("모든 버전의 블록을 지운다")
         void deletesBlocksForEveryVersion() {
-            given(getFileVersionPort.getAllVersions(fileId, userId)).willReturn(List.of(
-                    new VersionLocation("path/v1", 3),
-                    new VersionLocation("path/v2", 5)));
-
-            purgeStoredFileService.purgeStoredFile(command);
+            purgeStoredFileService.purgeStoredFile(new PurgeStoredFileCommand(fileId, List.of(
+                    new StoredVersion("path/v1", 3),
+                    new StoredVersion("path/v2", 5))));
 
             then(deleteBlocksPort).should().deleteBlocks("path/v1", 3);
             then(deleteBlocksPort).should().deleteBlocks("path/v2", 5);
@@ -51,10 +45,9 @@ class PurgeStoredFileServiceTest {
     class WhenNoVersionsExist {
 
         @Test
+        @DisplayName("아무것도 지우지 않는다")
         void doesNothing() {
-            given(getFileVersionPort.getAllVersions(fileId, userId)).willReturn(List.of());
-
-            purgeStoredFileService.purgeStoredFile(command);
+            purgeStoredFileService.purgeStoredFile(new PurgeStoredFileCommand(fileId, List.of()));
 
             then(deleteBlocksPort).shouldHaveNoInteractions();
         }
