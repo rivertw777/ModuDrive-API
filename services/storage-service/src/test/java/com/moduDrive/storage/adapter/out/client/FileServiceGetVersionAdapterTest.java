@@ -26,7 +26,7 @@ import static org.mockito.BDDMockito.then;
 @ExtendWith(MockitoExtension.class)
 class FileServiceGetVersionAdapterTest {
 
-    @Mock private FileServiceFeignClient feignClient;
+    @Mock private FileClient fileClient;
     @InjectMocks private FileServiceGetVersionAdapter adapter;
 
     private final UUID fileId = UUID.randomUUID();
@@ -38,14 +38,14 @@ class FileServiceGetVersionAdapterTest {
 
         @Test
         void mapsTheLatestVersionAndForwardsMarkAccessed() {
-            given(feignClient.getFileRevisions(anyString(), anyString(), anyInt(), anyBoolean()))
+            given(fileClient.getFileRevisions(anyString(), anyString(), anyInt(), anyBoolean()))
                     .willReturn(ApiResponse.success(List.of(
                             new FileVersionDto(UUID.randomUUID(), fileId, 10L, 3, "path/v1"))));
 
             VersionLocation result = adapter.getLatestVersion(fileId, userId, true);
 
             assertThat(result).isEqualTo(new VersionLocation("path/v1", 3));
-            then(feignClient).should().getFileRevisions(fileId.toString(), userId.toString(), 1, true);
+            then(fileClient).should().getFileRevisions(fileId.toString(), userId.toString(), 1, true);
         }
     }
 
@@ -55,7 +55,7 @@ class FileServiceGetVersionAdapterTest {
 
         @Test
         void throwsFileNotFoundInStorage() {
-            given(feignClient.getFileRevisions(anyString(), anyString(), anyInt(), anyBoolean()))
+            given(fileClient.getFileRevisions(anyString(), anyString(), anyInt(), anyBoolean()))
                     .willReturn(ApiResponse.success(List.of()));
 
             Throwable thrown = catchThrowable(() -> adapter.getLatestVersion(fileId, userId, false));
@@ -74,19 +74,19 @@ class FileServiceGetVersionAdapterTest {
 
         @Test
         void forwardsFileIdAndKeyToTheInternalRouteAndMapsTheVersion() {
-            given(feignClient.getPublicFileRevisions(anyString(), anyString(), anyInt()))
+            given(fileClient.getPublicFileRevisions(anyString(), anyString(), anyInt()))
                     .willReturn(ApiResponse.success(List.of(
                             new FileVersionDto(UUID.randomUUID(), fileId, 42L, 5, "path/pub"))));
 
             VersionLocation result = adapter.getPublicVersion(fileId.toString(), key);
 
             assertThat(result).isEqualTo(new VersionLocation("path/pub", 5));
-            then(feignClient).should().getPublicFileRevisions(fileId.toString(), key, 1);
+            then(fileClient).should().getPublicFileRevisions(fileId.toString(), key, 1);
         }
 
         @Test
         void throwsFileNotFoundInStorageWhenNoVersionComesBack() {
-            given(feignClient.getPublicFileRevisions(anyString(), anyString(), anyInt()))
+            given(fileClient.getPublicFileRevisions(anyString(), anyString(), anyInt()))
                     .willReturn(ApiResponse.success(List.of()));
 
             Throwable thrown = catchThrowable(() -> adapter.getPublicVersion(fileId.toString(), key));
@@ -104,7 +104,7 @@ class FileServiceGetVersionAdapterTest {
         @Test
         void callsTheSignedInRouteAndMapsDirectoriesWithoutALocation() {
             List<UUID> ids = List.of(fileId);
-            given(feignClient.resolveArchiveEntries(new ResolveArchiveEntriesRequest(userId, ids)))
+            given(fileClient.resolveArchiveEntries(new ResolveArchiveEntriesRequest(userId, ids)))
                     .willReturn(ApiResponse.success(List.of(
                             new ArchiveEntryDto("docs/", null, null, null, null),
                             new ArchiveEntryDto("docs/a.txt", fileId, "s3/a", 2, 7L))));
@@ -121,14 +121,14 @@ class FileServiceGetVersionAdapterTest {
         @Test
         void callsThePublicRouteForAnAnonymousRequest() {
             List<UUID> ids = List.of(fileId);
-            given(feignClient.resolvePublicArchiveEntries(new ResolvePublicArchiveEntriesRequest("k", ids)))
+            given(fileClient.resolvePublicArchiveEntries(new ResolvePublicArchiveEntriesRequest("k", ids)))
                     .willReturn(ApiResponse.success(List.of()));
 
             var entries = adapter.getArchiveEntries(
                     new com.moduDrive.storage.application.port.out.ArchiveRequest(null, "k", ids));
 
             assertThat(entries).isEmpty();
-            then(feignClient).should(org.mockito.Mockito.never()).resolveArchiveEntries(org.mockito.ArgumentMatchers.any());
+            then(fileClient).should(org.mockito.Mockito.never()).resolveArchiveEntries(org.mockito.ArgumentMatchers.any());
         }
     }
 }
