@@ -5,11 +5,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpInputMessage;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.transaction.CannotCreateTransactionException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -79,6 +83,21 @@ class GlobalExceptionHandlerTest {
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
             assertThat(response.getBody().getMessage()).contains("chunkIndex");
+        }
+    }
+
+    @Nested
+    @DisplayName("경로가 지원하지 않는 HTTP 메서드로 요청했을 때")
+    class WhenMethodIsNotSupported {
+
+        @Test
+        void returns405WithTheAllowedMethodsInsteadOf500() {
+            HttpRequestMethodNotSupportedException e = new HttpRequestMethodNotSupportedException("GET", Set.of("POST"));
+
+            ResponseEntity<ApiResponse<Object>> response = handler.handleHttpRequestMethodNotSupportedException(e);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.METHOD_NOT_ALLOWED);
+            assertThat(response.getHeaders().getAllow()).containsExactly(HttpMethod.POST);
         }
     }
 }

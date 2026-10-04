@@ -11,11 +11,13 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.validation.BindingResult;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
@@ -23,6 +25,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.util.Map;
+import java.util.Set;
 
 @ControllerAdvice
 @RequiredArgsConstructor
@@ -85,6 +88,17 @@ public class GlobalExceptionHandler {
         String message = "잘못된 요청 파라미터입니다: " + e.getName();
         ApiResponse<Object> response = ApiResponse.error(HttpStatus.BAD_REQUEST, message);
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+    }
+
+    // The client used a method the path doesn't take (GET on a POST-only endpoint). Without this the
+    // catch-all below answers 500, which the gateway's error-rate alert reads as an outage.
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ApiResponse<Object>> handleHttpRequestMethodNotSupportedException(HttpRequestMethodNotSupportedException e) {
+        ApiResponse<Object> response = ApiResponse.error(HttpStatus.METHOD_NOT_ALLOWED, "지원하지 않는 요청 방식입니다.");
+        Set<HttpMethod> supported = e.getSupportedHttpMethods();
+        return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
+                .allow(supported == null ? new HttpMethod[0] : supported.toArray(HttpMethod[]::new))
+                .body(response);
     }
 
     // The DB (or Redis) is unreachable — not a bug in this request, and it may come back. 503 lets a
