@@ -46,7 +46,7 @@
 | `.docker/docker-compose.observability.yml` | 스택 전체 (compose 프로젝트명 `modudrive-observability`) |
 | `.docker/observability/*.yaml` | 각 컴포넌트 설정 — 디렉터리째 `/etc/modudrive`로 마운트 |
 | `.docker/observability/grafana/datasources/datasources.yaml` | Grafana 데이터소스 프로비저닝 (Prometheus/Tempo/Loki + 상호 링크) |
-| `.docker/observability/grafana/alerting/alerts.yaml` | 알림 규칙 4개(outbox 2 + DLQ + 서비스 다운) + Discord 수신처 ([007-discord-alert-spec.md](spec/007-discord-alert-spec.md)) |
+| `.docker/observability/grafana/alerting/alerts.yaml` | 알림 규칙 6개(outbox 2 + DLQ + 서비스 다운 + 서킷 열림 + 요청 실패율) + Discord 수신처 ([007-discord-alert-spec.md](spec/007-discord-alert-spec.md)) |
 | `common/infrastructure/observability` | 앱 쪽 공통 모듈 (Java 코드 없음, 의존성 + `application-observability.yml`만) |
 
 앱 쪽 공통 모듈은 모든 서비스가 의존하고, 각 서비스 `application.yml`의

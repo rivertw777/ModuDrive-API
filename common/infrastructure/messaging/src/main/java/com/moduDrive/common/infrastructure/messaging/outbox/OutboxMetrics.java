@@ -136,13 +136,17 @@ class OutboxMetrics {
     /**
      * The exception's own message, so the alert can say <em>message rejected</em> rather than only the
      * type. Cut short because it ends up as a label value: a message that carries an id or a byte count
-     * would otherwise start a new series for every row.
+     * would otherwise start a new series for every row. The AWS SDK appends {@code (Service: Sqs, Status
+     * Code: 400, Request ID: …)} to every message; that tail is dropped for the same reason — the request id
+     * differs per row. The row's {@code failure_reason} keeps it for whoever looks the row up.
      */
     private static String detail(String failureReason) {
         if (failureReason == null || !failureReason.contains(":")) {
             return "";
         }
-        String message = failureReason.split(":", 2)[1].replaceAll("\\s+", " ").trim();
+        String message = failureReason.split(":", 2)[1]
+                .replaceFirst(" \\(Service: .*", "")
+                .replaceAll("\\s+", " ").trim();
         return message.length() <= MAX_DETAIL_LENGTH ? message : message.substring(0, MAX_DETAIL_LENGTH) + "…";
     }
 

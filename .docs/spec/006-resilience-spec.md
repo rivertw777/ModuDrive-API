@@ -17,7 +17,7 @@
   - [2-2. 게이트웨이 세션 확인](#2-2-게이트웨이-세션-확인)
   - [2-3. 서비스 간 호출 (Feign)](#2-3-서비스-간-호출-feign)
 - [3. 로그](#3-로그)
-- [4. TODO](#4-todo)
+- [4. 알림](#4-알림)
 
 ---
 
@@ -181,6 +181,7 @@ flowchart LR
 |---|---|
 | 15초 안에 응답 없음 (`TimeoutException`) | 기록 |
 | 연결 거부 (`AnnotatedConnectException`) | 기록 |
+| 호스트에 도달 못 함 — 대상 IP가 사라짐 (`NoRouteToHostException`) | 기록 |
 | 호스트를 못 찾음 (`UnknownHostException`) | 기록 |
 | 서비스가 돌려준 HTTP 응답 502 · 503 · 504 (`CircuitBreakerStatusCodeException`) | 기록 |
 | 서비스가 돌려준 그 밖의 HTTP 응답 (4xx · 500) | 기록 안 함 |
@@ -194,6 +195,7 @@ flowchart LR
 | 서킷이 열려 있음 (`CallNotPermittedException`) | 503 `SERVICE_IS_OPEN` | 서비스가 일시적으로 차단되었습니다. 잠시 후 다시 시도해 주세요. |
 | 15초 안에 응답 없음 (`TimeoutException`) | 504 `CONNECTION_TIMEOUT` | 서비스 요청 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요. |
 | 연결 거부 (`AnnotatedConnectException`) | 503 `SERVICE_UNAVAILABLE` | 서비스가 연결 불가능합니다. 잠시 후 다시 시도해 주세요. |
+| 호스트에 도달 못 함 (`NoRouteToHostException`) | 503 `SERVICE_UNAVAILABLE` | 서비스가 연결 불가능합니다. 잠시 후 다시 시도해 주세요. |
 | 호스트를 못 찾음 (`UnknownHostException`) | 503 `SERVICE_UNAVAILABLE` | 서비스가 연결 불가능합니다. 잠시 후 다시 시도해 주세요. |
 | 서비스가 돌려준 HTTP 응답 504 (`CircuitBreakerStatusCodeException`) | 504 `CONNECTION_TIMEOUT` | 서비스 요청 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요. |
 | 서비스가 돌려준 HTTP 응답 502 · 503 (`CircuitBreakerStatusCodeException`) | 503 `SERVICE_UNAVAILABLE` | 서비스가 연결 불가능합니다. 잠시 후 다시 시도해 주세요. |
@@ -331,7 +333,13 @@ ApiResponse<AuthenticateMemberResponse> authenticateMember(AuthenticateMemberReq
 
 ---
 
-## 4. TODO
+## 4. 알림
 
-- [ ] **서킷이 열리면 알림** — 지금은 WARN 로그만 남는다. 지표(`resilience4j_circuitbreaker_state`)로
-  [007-discord-alert-spec.md](007-discord-alert-spec.md)의 `service` 채널에 알릴지 정한다.
+서비스는 떠 있는데 그 서비스로 가는 호출이 계속 실패해 서킷이 닫히지 않을 경우, 다음과 같은 알림을 보낸다.
+
+| 지표 | 알림 조건 | 무슨 뜻인가 |
+|---|---|---|
+| `resilience4j_circuitbreaker_state` — 서킷의 현재 상태 (서비스·서킷별) | `open` 또는 `half_open`이 2분 지속 | 대상 서비스 호출이 계속 실패한다 (502·503·504 · 타임아웃 · 연결 실패) |
+
+(상세 내용은 [007-discord-alert-spec.md 4](007-discord-alert-spec.md#4-사용-알림) 참고)
+
