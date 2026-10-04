@@ -33,11 +33,16 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 @DataJpaTest
 // AuditingConfig is a third-party auto-configuration, so the @DataJpaTest slice drops it —
 // without it @CreatedDate never fires and createdAt reads back null, unlike production.
-@Import({FilePersistenceAdapter.class, FileMapper.class, AuditingConfig.class})
+@Import({FilePersistenceAdapter.class, FileSharePersistenceAdapter.class, FileAccessPersistenceAdapter.class,
+        FileMapper.class, AuditingConfig.class})
 class FilePersistenceAdapterTest {
 
     @Autowired
     private FilePersistenceAdapter filePersistenceAdapter;
+    @Autowired
+    private FileSharePersistenceAdapter fileSharePersistenceAdapter;
+    @Autowired
+    private FileAccessPersistenceAdapter fileAccessPersistenceAdapter;
     @Autowired
     private SpringDataFileRepository springDataFileRepository;
     @Autowired
@@ -280,17 +285,17 @@ class FilePersistenceAdapterTest {
             UUID granteeId = UUID.randomUUID();
             FileId fileId = new FileId(fileIdValue);
 
-            FileShare created = filePersistenceAdapter.saveFileShare(FileShare.create(
+            FileShare created = fileSharePersistenceAdapter.saveFileShare(FileShare.create(
                     new FileShareFileId(fileIdValue), new FileShareOwnerId(ownerIdValue),
                     new FileShareSharedWithUserId(granteeId), new FileShareRole(Role.VIEWER)));
 
             created.changeRole(new FileShareRole(Role.EDITOR));
-            filePersistenceAdapter.saveFileShare(created);
+            fileSharePersistenceAdapter.saveFileShare(created);
 
-            assertThat(filePersistenceAdapter.findByFileId(fileId)).hasSize(1);
-            assertThat(filePersistenceAdapter.findByFileIdAndSharedWithUserId(fileId, granteeId))
+            assertThat(fileSharePersistenceAdapter.findByFileId(fileId)).hasSize(1);
+            assertThat(fileSharePersistenceAdapter.findByFileIdAndSharedWithUserId(fileId, granteeId))
                     .get().extracting(FileShare::getRole).isEqualTo(Role.EDITOR);
-            assertThat(filePersistenceAdapter.existsByFileIdAndSharedWithUserId(fileId, granteeId)).isTrue();
+            assertThat(fileSharePersistenceAdapter.existsByFileIdAndSharedWithUserId(fileId, granteeId)).isTrue();
         }
 
         @Test
@@ -300,14 +305,14 @@ class FilePersistenceAdapterTest {
             UUID olderFileId = UUID.randomUUID();
             UUID newerFileId = UUID.randomUUID();
 
-            filePersistenceAdapter.saveFileShare(FileShare.create(
+            fileSharePersistenceAdapter.saveFileShare(FileShare.create(
                     new FileShareFileId(olderFileId), new FileShareOwnerId(UUID.randomUUID()),
                     new FileShareSharedWithUserId(granteeId), new FileShareRole(Role.VIEWER)));
-            filePersistenceAdapter.saveFileShare(FileShare.create(
+            fileSharePersistenceAdapter.saveFileShare(FileShare.create(
                     new FileShareFileId(newerFileId), new FileShareOwnerId(UUID.randomUUID()),
                     new FileShareSharedWithUserId(granteeId), new FileShareRole(Role.VIEWER)));
 
-            assertThat(filePersistenceAdapter.findBySharedWithUserId(granteeId))
+            assertThat(fileSharePersistenceAdapter.findBySharedWithUserId(granteeId))
                     .extracting(FileShare::getFileId)
                     .containsExactly(newerFileId, olderFileId);
         }
@@ -335,18 +340,18 @@ class FilePersistenceAdapterTest {
             UUID fileIdValue = UUID.randomUUID();
             FileId fileId = new FileId(fileIdValue);
 
-            FileShare created = filePersistenceAdapter.saveFileShare(FileShare.createPending(
+            FileShare created = fileSharePersistenceAdapter.saveFileShare(FileShare.createPending(
                     new FileShareFileId(fileIdValue), new FileShareOwnerId(UUID.randomUUID()),
                     new FileShareGranteeEmail("guest@example.com"), new FileShareRole(Role.VIEWER)));
 
             assertThat(created.getSharedWithUserId()).isNull();
             assertThat(created.getToken()).isNotNull();
-            assertThat(filePersistenceAdapter.existsByFileIdAndGranteeEmail(fileId, "guest@example.com")).isTrue();
+            assertThat(fileSharePersistenceAdapter.existsByFileIdAndGranteeEmail(fileId, "guest@example.com")).isTrue();
             // Revoking a guest's grants has to follow them across ancestor directories, so the row
             // itself — not just its presence — has to be reachable by email (see RevokeFileShareService).
-            assertThat(filePersistenceAdapter.findByFileIdAndGranteeEmail(fileId, "guest@example.com"))
+            assertThat(fileSharePersistenceAdapter.findByFileIdAndGranteeEmail(fileId, "guest@example.com"))
                     .get().extracting(FileShare::getId).isEqualTo(created.getId());
-            assertThat(filePersistenceAdapter.findByToken(created.getToken()))
+            assertThat(fileSharePersistenceAdapter.findByToken(created.getToken()))
                     .get().extracting(FileShare::getGranteeEmail).isEqualTo("guest@example.com");
         }
 
@@ -354,11 +359,11 @@ class FilePersistenceAdapterTest {
         @DisplayName("다른 이메일로는 게스트 공유가 조회되지 않는다")
         void findByFileIdAndGranteeEmailMissesADifferentEmail() {
             UUID fileIdValue = UUID.randomUUID();
-            filePersistenceAdapter.saveFileShare(FileShare.createPending(
+            fileSharePersistenceAdapter.saveFileShare(FileShare.createPending(
                     new FileShareFileId(fileIdValue), new FileShareOwnerId(UUID.randomUUID()),
                     new FileShareGranteeEmail("guest@example.com"), new FileShareRole(Role.VIEWER)));
 
-            assertThat(filePersistenceAdapter.findByFileIdAndGranteeEmail(new FileId(fileIdValue), "someone-else@example.com"))
+            assertThat(fileSharePersistenceAdapter.findByFileIdAndGranteeEmail(new FileId(fileIdValue), "someone-else@example.com"))
                     .isEmpty();
         }
 
@@ -367,36 +372,36 @@ class FilePersistenceAdapterTest {
         void claimsAPendingGuestShareAndPersistsIt() {
             UUID fileIdValue = UUID.randomUUID();
             UUID memberId = UUID.randomUUID();
-            FileShare created = filePersistenceAdapter.saveFileShare(FileShare.createPending(
+            FileShare created = fileSharePersistenceAdapter.saveFileShare(FileShare.createPending(
                     new FileShareFileId(fileIdValue), new FileShareOwnerId(UUID.randomUUID()),
                     new FileShareGranteeEmail("guest@example.com"), new FileShareRole(Role.VIEWER)));
 
             UUID token = created.getToken();
             created.claim(memberId);
-            filePersistenceAdapter.saveFileShare(created);
+            fileSharePersistenceAdapter.saveFileShare(created);
 
-            assertThat(filePersistenceAdapter.findPendingByGranteeEmail("guest@example.com")).isEmpty();
-            assertThat(filePersistenceAdapter.findByFileIdAndSharedWithUserId(new FileId(fileIdValue), memberId))
+            assertThat(fileSharePersistenceAdapter.findPendingByGranteeEmail("guest@example.com")).isEmpty();
+            assertThat(fileSharePersistenceAdapter.findByFileIdAndSharedWithUserId(new FileId(fileIdValue), memberId))
                     .get().extracting(FileShare::getRole).isEqualTo(Role.VIEWER);
             // token survives the claim so the emailed /public link still resolves
-            assertThat(filePersistenceAdapter.findByToken(token)).isPresent();
+            assertThat(fileSharePersistenceAdapter.findByToken(token)).isPresent();
             // claim() clears granteeEmail (RevokeFileShareService.findGranteeShareByOwnIdentity
             // depends on this row no longer being reachable by its old email once claimed).
-            assertThat(filePersistenceAdapter.findByFileIdAndGranteeEmail(new FileId(fileIdValue), "guest@example.com"))
+            assertThat(fileSharePersistenceAdapter.findByFileIdAndGranteeEmail(new FileId(fileIdValue), "guest@example.com"))
                     .isEmpty();
         }
 
         @Test
         @DisplayName("다른 파일의 대기 공유는 클레임 대상에서 제외된다")
         void findsPendingSharesOnlyForTheGivenEmail() {
-            filePersistenceAdapter.saveFileShare(FileShare.createPending(
+            fileSharePersistenceAdapter.saveFileShare(FileShare.createPending(
                     new FileShareFileId(UUID.randomUUID()), new FileShareOwnerId(UUID.randomUUID()),
                     new FileShareGranteeEmail("guest@example.com"), new FileShareRole(Role.VIEWER)));
-            filePersistenceAdapter.saveFileShare(FileShare.createPending(
+            fileSharePersistenceAdapter.saveFileShare(FileShare.createPending(
                     new FileShareFileId(UUID.randomUUID()), new FileShareOwnerId(UUID.randomUUID()),
                     new FileShareGranteeEmail("someone-else@example.com"), new FileShareRole(Role.VIEWER)));
 
-            assertThat(filePersistenceAdapter.findPendingByGranteeEmail("guest@example.com")).hasSize(1);
+            assertThat(fileSharePersistenceAdapter.findPendingByGranteeEmail("guest@example.com")).hasSize(1);
         }
 
         @Test
@@ -406,8 +411,8 @@ class FilePersistenceAdapterTest {
             springDataFileShareRepository.save(
                     new FileShareJpaEntity(UUID.randomUUID(), UUID.randomUUID(), null, Role.VIEWER, token, "guest@example.com"));
 
-            assertThat(filePersistenceAdapter.findByToken(token)).isPresent();
-            assertThat(filePersistenceAdapter.findByToken(UUID.randomUUID())).isEmpty();
+            assertThat(fileSharePersistenceAdapter.findByToken(token)).isPresent();
+            assertThat(fileSharePersistenceAdapter.findByToken(UUID.randomUUID())).isEmpty();
         }
 
         @Test
@@ -415,13 +420,13 @@ class FilePersistenceAdapterTest {
         void deletesShare() {
             UUID fileIdValue = UUID.randomUUID();
             UUID granteeId = UUID.randomUUID();
-            FileShare created = filePersistenceAdapter.saveFileShare(FileShare.create(
+            FileShare created = fileSharePersistenceAdapter.saveFileShare(FileShare.create(
                     new FileShareFileId(fileIdValue), new FileShareOwnerId(UUID.randomUUID()),
                     new FileShareSharedWithUserId(granteeId), new FileShareRole(Role.VIEWER)));
 
-            filePersistenceAdapter.deleteFileShare(new FileShareId(created.getId()));
+            fileSharePersistenceAdapter.deleteFileShare(new FileShareId(created.getId()));
 
-            assertThat(filePersistenceAdapter.findByFileId(new FileId(fileIdValue))).isEmpty();
+            assertThat(fileSharePersistenceAdapter.findByFileId(new FileId(fileIdValue))).isEmpty();
         }
     }
 
@@ -558,9 +563,9 @@ class FilePersistenceAdapterTest {
             LocalDateTime firstAccess = LocalDateTime.now().minusMinutes(5);
             LocalDateTime secondAccess = LocalDateTime.now();
 
-            filePersistenceAdapter.recordAccess(
+            fileAccessPersistenceAdapter.recordAccess(
                     FileAccess.of(new FileAccessUserId(userId), new FileAccessFileId(fileId), firstAccess));
-            filePersistenceAdapter.recordAccess(
+            fileAccessPersistenceAdapter.recordAccess(
                     FileAccess.of(new FileAccessUserId(userId), new FileAccessFileId(fileId), secondAccess));
 
             var rows = springDataFileAccessRepository.findByUserIdOrderByAccessedAtDesc(
@@ -576,13 +581,13 @@ class FilePersistenceAdapterTest {
             UUID olderFileId = UUID.randomUUID();
             UUID newerFileId = UUID.randomUUID();
 
-            filePersistenceAdapter.recordAccess(FileAccess.of(
+            fileAccessPersistenceAdapter.recordAccess(FileAccess.of(
                     new FileAccessUserId(userId), new FileAccessFileId(olderFileId),
                     LocalDateTime.now().minusMinutes(10)));
-            filePersistenceAdapter.recordAccess(FileAccess.of(
+            fileAccessPersistenceAdapter.recordAccess(FileAccess.of(
                     new FileAccessUserId(userId), new FileAccessFileId(newerFileId), LocalDateTime.now()));
 
-            var result = filePersistenceAdapter.findByUserIdOrderByAccessedAtDesc(userId, 1);
+            var result = fileAccessPersistenceAdapter.findByUserIdOrderByAccessedAtDesc(userId, 1);
 
             assertThat(result).extracting(FileAccess::getFileId).containsExactly(newerFileId);
         }
@@ -594,10 +599,10 @@ class FilePersistenceAdapterTest {
             UUID seenFileId = UUID.randomUUID();
             UUID newFileId = UUID.randomUUID();
             LocalDateTime now = LocalDateTime.now();
-            filePersistenceAdapter.recordAccess(FileAccess.of(
+            fileAccessPersistenceAdapter.recordAccess(FileAccess.of(
                     new FileAccessUserId(userId), new FileAccessFileId(seenFileId), now.minusDays(1)));
 
-            filePersistenceAdapter.recordAccesses(userId, List.of(seenFileId, newFileId), now);
+            fileAccessPersistenceAdapter.recordAccesses(userId, List.of(seenFileId, newFileId), now);
             entityManager.flush();
 
             var rows = springDataFileAccessRepository.findByUserIdOrderByAccessedAtDesc(
