@@ -1,6 +1,5 @@
-package com.moduDrive.storage.adapter.out.session;
+package com.moduDrive.storage.adapter.out.memory;
 
-import com.moduDrive.common.core.annotation.PersistenceAdapter;
 import com.moduDrive.storage.application.port.out.CreateUploadSessionPort;
 import com.moduDrive.storage.application.port.out.FindUploadSessionPort;
 import com.moduDrive.storage.application.port.out.RemoveUploadSessionPort;
@@ -9,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -16,15 +16,15 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-@PersistenceAdapter
-class UploadSessionInMemoryAdapter implements CreateUploadSessionPort, FindUploadSessionPort, RemoveUploadSessionPort {
+@Component
+class InMemoryUploadSessionStore implements CreateUploadSessionPort, FindUploadSessionPort, RemoveUploadSessionPort {
 
-    private static final Logger logger = LoggerFactory.getLogger(UploadSessionInMemoryAdapter.class);
+    private static final Logger logger = LoggerFactory.getLogger(InMemoryUploadSessionStore.class);
 
     private final ConcurrentHashMap<UUID, UploadSession> store = new ConcurrentHashMap<>();
     private final Duration sessionTtl;
 
-    UploadSessionInMemoryAdapter(@Value("${modudrive.storage.upload-session-ttl-hours:24}") long ttlHours) {
+    InMemoryUploadSessionStore(@Value("${modudrive.storage.upload-session-ttl-hours:24}") long ttlHours) {
         this.sessionTtl = Duration.ofHours(ttlHours);
     }
 

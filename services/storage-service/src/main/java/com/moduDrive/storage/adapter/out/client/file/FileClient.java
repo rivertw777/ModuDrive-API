@@ -1,4 +1,4 @@
-package com.moduDrive.storage.adapter.out.client;
+package com.moduDrive.storage.adapter.out.client.file;
 
 import com.moduDrive.common.core.web.ApiResponse;
 import com.moduDrive.common.infrastructure.resilience4j.FeignFallbackUtils;

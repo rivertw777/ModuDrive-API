@@ -1,6 +1,7 @@
 package com.moduDrive.notification.adapter.out.persistence;
 
 import com.moduDrive.common.infrastructure.jpa.config.AuditingConfig;
+import com.moduDrive.notification.application.port.in.usecase.NotificationPage;
 import com.moduDrive.notification.domain.model.Notification;
 import com.moduDrive.notification.domain.model.Notification.NotificationDirectory;
 import com.moduDrive.notification.domain.model.Notification.NotificationEventId;
@@ -18,8 +19,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
@@ -108,11 +107,11 @@ class NotificationPersistenceAdapterTest {
             save(recipientId);
             save(UUID.randomUUID());
 
-            Page<Notification> page = notificationPersistenceAdapter.findByRecipientId(
-                    new NotificationRecipientId(recipientId), false, PageRequest.of(0, 20));
+            NotificationPage page = notificationPersistenceAdapter.findByRecipientId(
+                    new NotificationRecipientId(recipientId), false, 0, 20);
 
-            assertThat(page.getTotalElements()).isEqualTo(2);
-            assertThat(page.getContent()).allMatch(n -> n.getRecipientId().equals(recipientId));
+            assertThat(page.totalElements()).isEqualTo(2);
+            assertThat(page.content()).allMatch(n -> n.getRecipientId().equals(recipientId));
         }
 
         @Test
@@ -122,11 +121,11 @@ class NotificationPersistenceAdapterTest {
             save(recipientId);
             notificationPersistenceAdapter.saveNotification(read.markRead(LocalDateTime.now()));
 
-            Page<Notification> page = notificationPersistenceAdapter.findByRecipientId(
-                    new NotificationRecipientId(recipientId), true, PageRequest.of(0, 20));
+            NotificationPage page = notificationPersistenceAdapter.findByRecipientId(
+                    new NotificationRecipientId(recipientId), true, 0, 20);
 
-            assertThat(page.getTotalElements()).isEqualTo(1);
-            assertThat(page.getContent()).allMatch(n -> !n.isRead());
+            assertThat(page.totalElements()).isEqualTo(1);
+            assertThat(page.content()).allMatch(n -> !n.isRead());
         }
 
         @Test
@@ -135,12 +134,12 @@ class NotificationPersistenceAdapterTest {
             save(recipientId);
             save(recipientId);
 
-            Page<Notification> page = notificationPersistenceAdapter.findByRecipientId(
-                    new NotificationRecipientId(recipientId), false, PageRequest.of(0, 2));
+            NotificationPage page = notificationPersistenceAdapter.findByRecipientId(
+                    new NotificationRecipientId(recipientId), false, 0, 2);
 
-            assertThat(page.getContent()).hasSize(2);
-            assertThat(page.getTotalElements()).isEqualTo(3);
-            assertThat(page.getTotalPages()).isEqualTo(2);
+            assertThat(page.content()).hasSize(2);
+            assertThat(page.totalElements()).isEqualTo(3);
+            assertThat(page.last()).isFalse();
         }
     }
 

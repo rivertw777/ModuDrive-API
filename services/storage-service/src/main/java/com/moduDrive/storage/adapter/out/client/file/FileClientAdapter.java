@@ -1,19 +1,20 @@
-package com.moduDrive.storage.adapter.out.client;
+package com.moduDrive.storage.adapter.out.client.file;
 
-import com.moduDrive.common.core.annotation.PersistenceAdapter;
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.storage.application.port.out.ArchiveRequest;
+import com.moduDrive.storage.application.port.out.FileUploadCallbackPort;
 import com.moduDrive.storage.application.port.out.GetArchiveEntriesPort;
 import com.moduDrive.storage.application.port.out.GetFileVersionPort;
 import com.moduDrive.storage.exception.StorageExceptionCase;
 import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.UUID;
 
-@PersistenceAdapter
+@Component
 @RequiredArgsConstructor
-class FileServiceGetVersionAdapter implements GetFileVersionPort, GetArchiveEntriesPort {
+class FileClientAdapter implements GetFileVersionPort, GetArchiveEntriesPort, FileUploadCallbackPort {
 
     private final FileClient fileClient;
 
@@ -45,6 +46,15 @@ class FileServiceGetVersionAdapter implements GetFileVersionPort, GetArchiveEntr
                         e.blockCount() == null ? 0 : e.blockCount(),
                         e.fileSize() == null ? 0 : e.fileSize()))
                 .toList();
+    }
+
+    @Override
+    public void notifyUploadComplete(UUID fileId, UUID userId, long fileSize, int blockCount, String s3Path) {
+        fileClient.updateFileStatus(
+                fileId.toString(),
+                userId.toString(),
+                new FileUploadCallbackRequest(fileSize, blockCount, s3Path)
+        );
     }
 
     private FileVersionDto firstOrThrow(List<FileVersionDto> versions) {

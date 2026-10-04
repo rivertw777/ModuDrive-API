@@ -10,7 +10,7 @@ one-way: `domain` ← `application` ← `adapter`. `domain` never imports `appli
 or `adapter`. `application` never imports `adapter`.
 
 Applies to the services with a real `domain/application/adapter` split: member, auth,
-file, storage. `gateway-service` (a reactive WebFlux edge service — `config/filter/security/client/fallback/exception`
+file, storage, notification, mail (mail has no `domain/` yet — it only renders and sends). `gateway-service` (a reactive WebFlux edge service — `config/filter/security/client/fallback/exception`
 only, no domain/application layer) doesn't follow this structure; only borrow the adapter/config conventions below where
 they're actually relevant.
 
@@ -58,8 +58,9 @@ config/
                                adapter (security beans, encoders, cookie props).
 domain/
   model/<Entity>.java        Pure business object, no framework deps
-  vo/<Vo>.java                Standalone value object (only when shared across
-                               multiple domain models in the service)
+  vo/<Vo>.java                Standalone value object (only when it isn't owned
+                               by one model — used by several models, or by
+                               commands/ports with no model of their own)
 application/
   port/in/command/<Verb><Entity>Command.java   Immutable input, self-validating
   port/in/usecase/<Verb><Entity>UseCase.java   Public interface, entry contract
@@ -78,7 +79,9 @@ adapter/
   out/persistence/SpringData<Entity>Repository.java  extends JpaRepository
   in/messaging/<Source>EventListener.java            SQS consumer (@SqsListener methods), @EventListener
   out/messaging/Outbox<Domain>EventPublisher.java     Outbox publisher, @EventPublisher
-  out/<other>/...                                    security, client, etc.
+  out/client/<service>/<Service>ClientAdapter.java  Feign/WebClient adapter, @Component
+  out/<tech>/<Tech><Thing>Store.java                 Non-JPA stores, packaged by technology
+                                                     (redis/, memory/, s3/), @Component
 ```
 
 ## Domain model
@@ -86,9 +89,11 @@ adapter/
 Public class, private all-args constructor, static factory methods, value
 objects as **inner records** by default (`Member.MemberEmail`,
 `Member.MemberId`). Only promote a value object to a standalone
-`domain/vo/<Vo>.java` record when it's genuinely shared across multiple domain
-models in the service (see `auth-service`'s `domain/vo/MemberEmail.java`,
-reused by both `MemberAuthData` and `TokenPair`-adjacent flows).
+`domain/vo/<Vo>.java` record when no single model owns it — it's used by several
+models, or travels through commands and ports without a model of its own (see
+`auth-service`'s `domain/vo/`: `MemberEmail` keys login attempts, known devices and
+challenges, and `MemberPassword` only ever passes from `LoginCommand` to
+`AuthenticateMemberPort` — auth-service holds no member model to nest it in).
 
 ```java
 @Getter
