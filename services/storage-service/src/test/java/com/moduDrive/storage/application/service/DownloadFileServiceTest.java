@@ -6,13 +6,12 @@ import com.moduDrive.storage.application.port.out.DownloadQuotaPort;
 import com.moduDrive.storage.application.port.out.GetFileVersionPort;
 import com.moduDrive.storage.application.port.out.GetFileVersionPort.VersionLocation;
 import com.moduDrive.storage.application.port.out.RetrieveBlocksPort;
-import com.moduDrive.storage.config.StorageProperties;
 import com.moduDrive.storage.exception.StorageExceptionCase;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -43,8 +42,12 @@ class DownloadFileServiceTest {
     @Mock private GetFileVersionPort getFileVersionPort;
     @Mock private RetrieveBlocksPort retrieveBlocksPort;
     @Mock private DownloadQuotaPort downloadQuotaPort;
-    @Mock private StorageProperties storageProperties;
-    @InjectMocks private DownloadFileService downloadFileService;
+    private DownloadFileService downloadFileService;
+
+    @BeforeEach
+    void setUp() {
+        downloadFileService = new DownloadFileService(getFileVersionPort, retrieveBlocksPort, downloadQuotaPort, 4 * 1024 * 1024);
+    }
 
     private final String fileId = UUID.randomUUID().toString();
     private final UUID userId = UUID.randomUUID();
@@ -157,7 +160,6 @@ class DownloadFileServiceTest {
         @Test
         void alsoMetersTheQuotaByRealSizeSoItCannotBeUsedToBypassTheLimit() {
             given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", 1));
-            given(storageProperties.getBlockSize()).willReturn(4 * 1024 * 1024);
             given(retrieveBlocksPort.retrieveBlocks(anyString(), anyInt())).willReturn(List.of("data".getBytes()));
 
             downloadFileService.download(new DownloadFileCommand(fileId, userId, true));
@@ -169,7 +171,6 @@ class DownloadFileServiceTest {
         @Test
         void marksTheFileAsRecentlyAccessed() {
             given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", 1));
-            given(storageProperties.getBlockSize()).willReturn(4 * 1024 * 1024);
             given(retrieveBlocksPort.retrieveBlocks(anyString(), anyInt())).willReturn(List.of("data".getBytes()));
 
             downloadFileService.download(new DownloadFileCommand(fileId, userId, true));
@@ -180,7 +181,6 @@ class DownloadFileServiceTest {
         @Test
         void rejectsWithoutFetchingBlocksWhenOverQuota() {
             given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", 1));
-            given(storageProperties.getBlockSize()).willReturn(4 * 1024 * 1024);
             willThrow(new BusinessException(StorageExceptionCase.DOWNLOAD_QUOTA_EXCEEDED))
                     .given(downloadQuotaPort).checkWithinQuota(anyString(), anyString());
 
@@ -201,7 +201,6 @@ class DownloadFileServiceTest {
         @Test
         void rejectsBeforeFetchingAnyBlocks() {
             given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", 30));
-            given(storageProperties.getBlockSize()).willReturn(4 * 1024 * 1024);
 
             Throwable thrown = catchThrowable(() ->
                     downloadFileService.download(new DownloadFileCommand(fileId, userId, true)));

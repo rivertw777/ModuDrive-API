@@ -5,13 +5,12 @@ import com.moduDrive.storage.application.port.in.command.PublicDownloadFileComma
 import com.moduDrive.storage.application.port.out.DownloadQuotaPort;
 import com.moduDrive.storage.application.port.out.GetFileVersionPort;
 import com.moduDrive.storage.application.port.out.RetrieveBlocksPort;
-import com.moduDrive.storage.config.StorageProperties;
 import com.moduDrive.storage.exception.StorageExceptionCase;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -41,8 +40,12 @@ class PublicDownloadFileServiceTest {
     @Mock private GetFileVersionPort getFileVersionPort;
     @Mock private RetrieveBlocksPort retrieveBlocksPort;
     @Mock private DownloadQuotaPort downloadQuotaPort;
-    @Mock private StorageProperties storageProperties;
-    @InjectMocks private PublicDownloadFileService publicDownloadFileService;
+    private PublicDownloadFileService publicDownloadFileService;
+
+    @BeforeEach
+    void setUp() {
+        publicDownloadFileService = new PublicDownloadFileService(getFileVersionPort, retrieveBlocksPort, downloadQuotaPort, 4 * 1024 * 1024);
+    }
 
     private final String fileId = UUID.randomUUID().toString();
     private final String key = UUID.randomUUID().toString();
@@ -166,7 +169,6 @@ class PublicDownloadFileServiceTest {
         void alsoMetersTheQuotaSoTheViewRouteCannotBypassTheLimit() {
             given(getFileVersionPort.getPublicVersion(fileId, key))
                     .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", 1));
-            given(storageProperties.getBlockSize()).willReturn(4 * 1024 * 1024);
             given(retrieveBlocksPort.retrieveBlocks(anyString(), anyInt())).willReturn(List.of("data".getBytes()));
 
             publicDownloadFileService.downloadPublic(previewCommand());
@@ -180,7 +182,6 @@ class PublicDownloadFileServiceTest {
         void alsoMetersAKeylessPreview() {
             given(getFileVersionPort.getPublicVersion(fileId, null))
                     .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", 1));
-            given(storageProperties.getBlockSize()).willReturn(4 * 1024 * 1024);
             given(retrieveBlocksPort.retrieveBlocks(anyString(), anyInt())).willReturn(List.of("data".getBytes()));
 
             publicDownloadFileService.downloadPublic(new PublicDownloadFileCommand(fileId, null, true));
@@ -284,7 +285,6 @@ class PublicDownloadFileServiceTest {
         void rejectsBeforeFetchingAnyBlocks() {
             given(getFileVersionPort.getPublicVersion(fileId, key))
                     .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", 30));
-            given(storageProperties.getBlockSize()).willReturn(4 * 1024 * 1024);
 
             Throwable thrown = catchThrowable(() ->
                     publicDownloadFileService.downloadPublic(previewCommand()));

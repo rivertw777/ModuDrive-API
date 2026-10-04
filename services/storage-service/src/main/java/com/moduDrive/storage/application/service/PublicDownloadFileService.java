@@ -6,8 +6,7 @@ import com.moduDrive.storage.application.port.in.usecase.PublicDownloadFileUseCa
 import com.moduDrive.storage.application.port.out.DownloadQuotaPort;
 import com.moduDrive.storage.application.port.out.GetFileVersionPort;
 import com.moduDrive.storage.application.port.out.RetrieveBlocksPort;
-import com.moduDrive.storage.config.StorageProperties;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.io.OutputStream;
 import java.util.List;
@@ -17,19 +16,28 @@ import java.util.UUID;
  * is resolved by {@code (fileId, key)} instead of by id + caller, and file-service is the one
  * that decides whether that key still grants access. */
 @UseCase
-@RequiredArgsConstructor
 class PublicDownloadFileService implements PublicDownloadFileUseCase {
 
     private final GetFileVersionPort getFileVersionPort;
     private final RetrieveBlocksPort retrieveBlocksPort;
     private final DownloadQuotaPort downloadQuotaPort;
-    private final StorageProperties storageProperties;
+    private final int blockSize;
+
+    PublicDownloadFileService(GetFileVersionPort getFileVersionPort,
+                              RetrieveBlocksPort retrieveBlocksPort,
+                              DownloadQuotaPort downloadQuotaPort,
+                              @Value("${storage.block-size}") int blockSize) {
+        this.getFileVersionPort = getFileVersionPort;
+        this.retrieveBlocksPort = retrieveBlocksPort;
+        this.downloadQuotaPort = downloadQuotaPort;
+        this.blockSize = blockSize;
+    }
 
     @Override
     public byte[] downloadPublic(PublicDownloadFileCommand command) {
         GetFileVersionPort.VersionLocation version = locate(command);
         if (command.isInlinePreview()) {
-            BlockAssembler.requireWithinInlinePreviewLimit(version.blockCount(), storageProperties.getBlockSize());
+            BlockAssembler.requireWithinInlinePreviewLimit(version.blockCount(), blockSize);
         }
         String scope = quotaScope(command);
         // Anonymous fetches meter per file: every visitor who reaches it — however they got in —

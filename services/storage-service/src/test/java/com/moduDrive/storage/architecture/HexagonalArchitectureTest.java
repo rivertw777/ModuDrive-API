@@ -27,4 +27,12 @@ class HexagonalArchitectureTest {
                 .allowEmptyShould(true);
         rule.check(classes);
     }
+
+    @Test
+    void applicationDoesNotDependOnConfigOrCrossServiceDtos() {
+        ArchRule rule = noClasses().that().resideInAPackage("..application..")
+                .should().dependOnClassesThat().resideInAnyPackage(
+                        "com.moduDrive.storage.config..", "com.moduDrive.common.api..");
+        rule.check(classes);
+    }
 }
