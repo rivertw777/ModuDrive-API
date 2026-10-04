@@ -407,6 +407,23 @@ class OutboxRelayTest {
                     new OutboxMetrics.FailedGroup("queue-b", "IllegalStateException", "message rejected", 1));
         }
 
+        @Test
+        @DisplayName("AWS SDK가 메시지 끝에 붙이는 요청 정보는 사유에서 뗀다 — 행마다 다른 Request ID가 라벨에 들어가면 행마다 시계열이 생긴다")
+        void dropsTheAwsSdkRequestDetailsFromTheReason() {
+            recorder.record("queue-a", "k1", new OutboxTestEvent(UUID.randomUUID(), "rejected"));
+            recorder.record("queue-a", "k2", new OutboxTestEvent(UUID.randomUUID(), "rejected"));
+            willThrow(new PermanentPublishException(new IllegalStateException(
+                    "The specified queue does not exist. (Service: Sqs, Status Code: 400, Request ID: a1)")))
+                    .willThrow(new PermanentPublishException(new IllegalStateException(
+                            "The specified queue does not exist. (Service: Sqs, Status Code: 400, Request ID: b2)")))
+                    .given(messagePublisher).publish(anyString(), anyString(), any());
+
+            relay.relay();
+
+            assertThat(metrics.failedGroups()).containsExactly(new OutboxMetrics.FailedGroup(
+                    "queue-a", "IllegalStateException", "The specified queue does not exist.", 2));
+        }
+
         /** The relay writes {@code created_at} itself, so waiting is simulated by moving it back. */
         private void backdateOldestPendingBy(Duration age) {
             transactionTemplate.executeWithoutResult(tx -> entityManager
