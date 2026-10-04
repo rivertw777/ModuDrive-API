@@ -1,4 +1,4 @@
-package com.moduDrive.storage.adapter.out.client;
+package com.moduDrive.storage.adapter.out.client.file;
 
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.common.core.web.ApiResponse;
@@ -24,10 +24,10 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 
 @ExtendWith(MockitoExtension.class)
-class FileServiceGetVersionAdapterTest {
+class FileClientAdapterTest {
 
     @Mock private FileClient fileClient;
-    @InjectMocks private FileServiceGetVersionAdapter adapter;
+    @InjectMocks private FileClientAdapter adapter;
 
     private final UUID fileId = UUID.randomUUID();
     private final UUID userId = UUID.randomUUID();
@@ -129,6 +129,19 @@ class FileServiceGetVersionAdapterTest {
 
             assertThat(entries).isEmpty();
             then(fileClient).should(org.mockito.Mockito.never()).resolveArchiveEntries(org.mockito.ArgumentMatchers.any());
+        }
+    }
+
+    @Nested
+    @DisplayName("업로드 완료를 알릴 때")
+    class WhenNotifyingUploadComplete {
+
+        @Test
+        void forwardsTheUploadResultToFileService() {
+            adapter.notifyUploadComplete(fileId, userId, 10L, 3, "path/v1");
+
+            then(fileClient).should().updateFileStatus(
+                    fileId.toString(), userId.toString(), new FileUploadCallbackRequest(10L, 3, "path/v1"));
         }
     }
 }

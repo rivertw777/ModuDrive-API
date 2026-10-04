@@ -2,6 +2,7 @@ package com.moduDrive.notification.adapter.out.persistence;
 
 import com.moduDrive.common.core.annotation.PersistenceAdapter;
 import com.moduDrive.common.core.exception.BusinessException;
+import com.moduDrive.notification.application.port.in.usecase.NotificationPage;
 import com.moduDrive.notification.application.port.out.FindNotificationPort;
 import com.moduDrive.notification.application.port.out.SaveNotificationPort;
 import com.moduDrive.notification.domain.model.Notification;
@@ -11,7 +12,9 @@ import com.moduDrive.notification.domain.model.Notification.NotificationRecipien
 import com.moduDrive.notification.exception.NotificationExceptionCase;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -61,10 +64,13 @@ class NotificationPersistenceAdapter implements SaveNotificationPort, FindNotifi
     }
 
     @Override
-    public Page<Notification> findByRecipientId(NotificationRecipientId recipientId, boolean unreadOnly, Pageable pageable) {
-        Page<NotificationJpaEntity> page = unreadOnly
+    public NotificationPage findByRecipientId(NotificationRecipientId recipientId, boolean unreadOnly, int page, int size) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        Page<NotificationJpaEntity> result = unreadOnly
                 ? springDataNotificationRepository.findByRecipientIdAndReadAtIsNull(recipientId.value(), pageable)
                 : springDataNotificationRepository.findByRecipientId(recipientId.value(), pageable);
-        return page.map(notificationMapper::mapToDomain);
+        return new NotificationPage(
+                result.map(notificationMapper::mapToDomain).getContent(),
+                result.getNumber(), result.isLast(), result.getTotalElements());
     }
 }

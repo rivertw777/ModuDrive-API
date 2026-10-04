@@ -1,4 +1,4 @@
-package com.moduDrive.storage.adapter.out.security;
+package com.moduDrive.storage.adapter.out.redis;
 
 import com.moduDrive.common.infrastructure.redis.RedisRepository;
 import com.moduDrive.storage.application.port.out.ArchiveRequest;

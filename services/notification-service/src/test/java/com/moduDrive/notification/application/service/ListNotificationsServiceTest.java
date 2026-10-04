@@ -1,6 +1,7 @@
 package com.moduDrive.notification.application.service;
 
 import com.moduDrive.notification.application.port.in.command.ListNotificationsCommand;
+import com.moduDrive.notification.application.port.in.usecase.NotificationPage;
 import com.moduDrive.notification.application.port.out.FindNotificationPort;
 import com.moduDrive.notification.domain.model.Notification;
 import com.moduDrive.notification.fixture.NotificationTestFixture;
@@ -11,10 +12,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
 
 import java.util.List;
 import java.util.UUID;
@@ -32,7 +29,6 @@ class ListNotificationsServiceTest {
     private ListNotificationsService listNotificationsService;
 
     private final UUID recipientId = UUID.randomUUID();
-    private final Pageable pageable = PageRequest.of(0, 20);
 
     @Nested
     @DisplayName("전체 알림을 조회할 때")
@@ -40,15 +36,15 @@ class ListNotificationsServiceTest {
 
         @Test
         void delegatesToTheFindPortWithUnreadOnlyFalse() {
-            ListNotificationsCommand command = new ListNotificationsCommand(recipientId, false, pageable);
+            ListNotificationsCommand command = new ListNotificationsCommand(recipientId, false, 0, 20);
             Notification notification = NotificationTestFixture.anUnreadNotification(UUID.randomUUID(), recipientId);
-            given(findNotificationPort.findByRecipientId(command.getRecipientId(), false, pageable))
-                    .willReturn(new PageImpl<>(List.of(notification), pageable, 1));
+            given(findNotificationPort.findByRecipientId(command.getRecipientId(), false, 0, 20))
+                    .willReturn(new NotificationPage(List.of(notification), 0, true, 1));
 
-            Page<Notification> result = listNotificationsService.listNotifications(command);
+            NotificationPage result = listNotificationsService.listNotifications(command);
 
-            assertThat(result.getContent()).containsExactly(notification);
-            then(findNotificationPort).should().findByRecipientId(command.getRecipientId(), false, pageable);
+            assertThat(result.content()).containsExactly(notification);
+            then(findNotificationPort).should().findByRecipientId(command.getRecipientId(), false, 0, 20);
         }
     }
 
@@ -58,14 +54,14 @@ class ListNotificationsServiceTest {
 
         @Test
         void passesTheUnreadOnlyFlagThrough() {
-            ListNotificationsCommand command = new ListNotificationsCommand(recipientId, true, pageable);
-            given(findNotificationPort.findByRecipientId(command.getRecipientId(), true, pageable))
-                    .willReturn(Page.empty(pageable));
+            ListNotificationsCommand command = new ListNotificationsCommand(recipientId, true, 0, 20);
+            given(findNotificationPort.findByRecipientId(command.getRecipientId(), true, 0, 20))
+                    .willReturn(new NotificationPage(List.of(), 0, true, 0));
 
-            Page<Notification> result = listNotificationsService.listNotifications(command);
+            NotificationPage result = listNotificationsService.listNotifications(command);
 
-            assertThat(result).isEmpty();
-            then(findNotificationPort).should().findByRecipientId(command.getRecipientId(), true, pageable);
+            assertThat(result.content()).isEmpty();
+            then(findNotificationPort).should().findByRecipientId(command.getRecipientId(), true, 0, 20);
         }
     }
 }

@@ -1,8 +1,8 @@
-package com.moduDrive.storage.adapter.out.client;
+package com.moduDrive.storage.adapter.out.client.file;
 
 import java.util.UUID;
 
-public record FileVersionDto(
+record FileVersionDto(
         UUID versionId,
         UUID fileId,
         Long fileSize,

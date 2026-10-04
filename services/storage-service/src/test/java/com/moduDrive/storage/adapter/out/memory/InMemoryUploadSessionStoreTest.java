@@ -1,4 +1,4 @@
-package com.moduDrive.storage.adapter.out.session;
+package com.moduDrive.storage.adapter.out.memory;
 
 import com.moduDrive.storage.domain.model.UploadSession;
 import org.junit.jupiter.api.DisplayName;
@@ -9,7 +9,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class UploadSessionInMemoryAdapterTest {
+class InMemoryUploadSessionStoreTest {
 
     @Nested
     @DisplayName("세션을 명시적으로 제거할 때")
@@ -17,7 +17,7 @@ class UploadSessionInMemoryAdapterTest {
 
         @Test
         void isNoLongerFindable() {
-            UploadSessionInMemoryAdapter adapter = new UploadSessionInMemoryAdapter(24);
+            InMemoryUploadSessionStore adapter = new InMemoryUploadSessionStore(24);
             UploadSession session = UploadSession.create(UUID.randomUUID(), UUID.randomUUID(), 1);
             adapter.createSession(session);
 
@@ -35,7 +35,7 @@ class UploadSessionInMemoryAdapterTest {
         void evictsSessionsOlderThanTheTtl() {
             // TTL 0 makes every already-created session older than the sweep's cutoff, without
             // needing to sleep or backdate a timestamp.
-            UploadSessionInMemoryAdapter adapter = new UploadSessionInMemoryAdapter(0);
+            InMemoryUploadSessionStore adapter = new InMemoryUploadSessionStore(0);
             UploadSession session = UploadSession.create(UUID.randomUUID(), UUID.randomUUID(), 1);
             adapter.createSession(session);
 
@@ -46,7 +46,7 @@ class UploadSessionInMemoryAdapterTest {
 
         @Test
         void keepsSessionsWithinTheTtl() {
-            UploadSessionInMemoryAdapter adapter = new UploadSessionInMemoryAdapter(24);
+            InMemoryUploadSessionStore adapter = new InMemoryUploadSessionStore(24);
             UploadSession session = UploadSession.create(UUID.randomUUID(), UUID.randomUUID(), 1);
             adapter.createSession(session);
 

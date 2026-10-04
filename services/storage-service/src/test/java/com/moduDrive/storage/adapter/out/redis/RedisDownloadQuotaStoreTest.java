@@ -1,4 +1,4 @@
-package com.moduDrive.storage.adapter.out.quota;
+package com.moduDrive.storage.adapter.out.redis;
 
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.common.infrastructure.redis.RedisRepository;
