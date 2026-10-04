@@ -28,6 +28,8 @@ resilience4j:
         record-exceptions:
           - java.util.concurrent.TimeoutException
           - io.netty.channel.AbstractChannel$AnnotatedConnectException
+          # The target's IP is gone (stopped container, terminated task) — without this a route counts it as success.
+          - java.net.NoRouteToHostException
           - java.net.UnknownHostException
           # The session check's connect failure (AuthClient); routes never throw it.
           - org.springframework.web.reactive.function.client.WebClientRequestException
