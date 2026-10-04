@@ -1,4 +1,4 @@
-# 알림 규칙 전부 — 설계는 .docs/spec/006-discord-alert-spec.md.
+# 알림 규칙 전부 — 설계는 .docs/spec/007-discord-alert-spec.md.
 #
 # outbox: 전송 실패에 횟수 제한이 없어서 인프라 장애가 나도 FAILED 행이 안 생긴다. 테이블만 봐서는 멀쩡해
 # 보이므로 감지는 전적으로 이 규칙들에 달려 있다. consumer: 처리에 실패해 DLQ로 빠진 메시지를 본다 —
@@ -26,29 +26,38 @@ contactPoints:
           # (색은 Grafana가 상태에 따라 칠한다) 본문에 항목을 세운다. 쿼리는 문장 안에 넣으면 줄바꿈이
           # 깨지므로 코드 블록으로 뽑고, 링크는 Discord의 작은 글씨(`-# `)로 눌러 본문이 먼저 읽히게 한다.
           #
-          # 링크 줄은 건마다 그 건 밑에 붙는다 — 한 메시지에 발생과 해제가 같이 묶여도 어느 건의 링크인지
-          # 헷갈리지 않고, 일시 중지도 그 건만 정확히 잠재운다. group_by에 instance·queue·reason이 들어가
-          # 한 메시지의 건 수는 보통 1~2건이라, 링크가 길어도(SilenceURL은 매처가 통째로 인코딩된다)
-          # 디스코드 2000자 제한에 닿지 않는다. 한 메시지에 건이 많이 몰리기 시작하면 그때 다시 묶는다.
+          # 한 건이면 전부 보여 주고, 여러 건이 한 메시지로 묶이면(group_by가 알림 이름뿐이라 여러 서비스가
+          # 동시에 죽으면 그렇다) 건마다 한 줄씩만 쓴다. 건마다 명령어·SQL·링크까지 달면 SilenceURL이 길어
+          # 몇 건만 모여도 디스코드 2000자 제한을 넘는다. 건별 상세와 일시 중지는 Grafana 링크에서 본다.
+          # "서비스"는 routeId(게이트웨이 경로 = 대상 서비스)가 있으면 그것, 없으면 지표를 낸 서비스다.
           title: '{{ .CommonLabels.alertname }}{{ if eq .Status "resolved" }} (해제){{ end }}'
           message: |
-            {{ range .Alerts }}
+            {{ if eq (len .Alerts) 1 }}
+            {{- range .Alerts }}
             {{- if eq .Status "resolved" }}
             ✅  **{{ .Labels.alertname }} (해제)**
 
-            **서비스**: {{ reReplaceAll ":[0-9]+$" "" .Labels.instance }}
+            **서비스**: {{ or .Labels.routeId (reReplaceAll ":[0-9]+$" "" .Labels.instance) }}
             {{- if .Labels.queue }}
 
             **큐**: `{{ .Labels.queue }}`
+            {{- end }}
+            {{- if .Labels.name }}
+
+            **서킷**: `{{ .Labels.name }}`
             {{- end }}
             {{/* 링크 줄 앞 한 줄 띄우기. 발생 알림은 코드 블록으로 끝나 디스코드가 알아서 띄운다. */}}
             {{- else }}
             🚨  **{{ .Labels.alertname }}**
 
-            **서비스**: {{ reReplaceAll ":[0-9]+$" "" .Labels.instance }}
+            **서비스**: {{ or .Labels.routeId (reReplaceAll ":[0-9]+$" "" .Labels.instance) }}
             {{- if .Labels.queue }}
 
             **큐**: `{{ .Labels.queue }}`
+            {{- end }}
+            {{- if .Labels.name }}
+
+            **서킷**: `{{ .Labels.name }}`
             {{- end }}
 
             **사유**: {{ .Annotations.summary }}
@@ -90,7 +99,23 @@ contactPoints:
             {{- end }}
             {{- end }}
             -# [Grafana에서 보기]({{ .GeneratorURL }}) · [알림 일시 중지]({{ .SilenceURL }})
-            {{/* 건과 건 사이 한 줄 띄우기. 마지막 건 뒤에 남는 줄은 디스코드가 지운다. */}}
+            {{- end }}
+            {{- else }}
+            {{- if .Alerts.Firing }}
+            🚨  **{{ .CommonLabels.alertname }}** ({{ len .Alerts.Firing }}건)
+            {{ range .Alerts.Firing }}
+            - {{ or .Labels.routeId (reReplaceAll ":[0-9]+$" "" .Labels.instance) }}{{ if .Labels.queue }} · `{{ .Labels.queue }}`{{ end }}{{ if .Labels.name }} · `{{ .Labels.name }}`{{ end }} — {{ .Annotations.summary }}
+            {{- end }}
+
+            **조치**: {{ (index .Alerts.Firing 0).Annotations.action }}
+            {{ end }}
+            {{- if .Alerts.Resolved }}
+            ✅  **{{ .CommonLabels.alertname }} (해제)** ({{ len .Alerts.Resolved }}건)
+            {{ range .Alerts.Resolved }}
+            - {{ or .Labels.routeId (reReplaceAll ":[0-9]+$" "" .Labels.instance) }}{{ if .Labels.queue }} · `{{ .Labels.queue }}`{{ end }}{{ if .Labels.name }} · `{{ .Labels.name }}`{{ end }}
+            {{- end }}
+            {{ end }}
+            -# [Grafana에서 보기]({{ (index .Alerts 0).GeneratorURL }}) · 건별 명령어와 일시 중지는 Grafana에서
             {{- end }}
 
   # 서비스 상태 알림(응답 없음, 나중에 CPU·메모리)을 받는 두 번째 채널. 문구는 위와 똑같아야 하므로
@@ -108,11 +133,14 @@ policies:
   - orgId: 1
     # 어느 라벨에도 안 걸린 알림이 가는 곳. 정체를 모르는 알림은 인프라 쪽에서 받는 게 맞다.
     receiver: discord-service
-    # instance를 넣어 서비스마다 메시지를 따로 보낸다. 한 통에 몰면 2000자 제한에 걸려 잘리고
-    # 어느 서비스 얘기인지 훑기도 어렵다. 대가는 있다: 여럿이 동시에 죽으면 그 수만큼 연속 POST가
-    # 나가 디스코드 레이트 리밋(429)에 걸리고, Grafana는 그걸 재시도 없이 버린다. 동시 다운이
-    # 흔해지면 그때 다시 묶는다.
-    group_by: [alertname, instance, queue, reason]
+    # 알림 이름 하나 = 메시지 하나. 예전엔 서비스·큐마다 따로 보냈는데, 여럿이 동시에 터지면 웹후크 POST가
+    # 한꺼번에 나가 디스코드가 429로 막고, Grafana는 그걸 재시도 없이 버린다 — 재배포로 서비스 7개가 같이
+    # 내려갔을 때 3건이 실제로 사라졌다. 큰 장애일수록 알림이 많이 사라지는 셈이라 묶는다. 여러 건이 묶인
+    # 메시지는 템플릿이 건마다 한 줄로 줄인다(위 contactPoints).
+    group_by: [alertname]
+    # 이미 보낸 그룹은 이 간격으로만 다시 보낸다 — 해제 알림도 여기에 묶인다. 기본 5분이면 고친 뒤 해제가
+    # 최대 5분 늦게 와서 규칙 평가 주기(1분)에 맞췄다.
+    group_interval: 1m
     # 안 고치면 4시간마다 한 번 더 찌른다. 해제되면 Grafana가 알아서 복구 알림을 보낸다.
     repeat_interval: 4h
     # 규칙이 붙인 channel 라벨로 갈린다. 제목이 아니라 라벨로 거는 이유는 알림 제목을 고쳐도
@@ -301,3 +329,89 @@ groups:
                 - evaluator:
                     type: lt
                     params: [1]
+
+      # 서비스는 떠 있는데 그 서비스로 가는 호출이 계속 실패하는 경우 — 5xx·타임아웃·Redis/DB 막힘. 스크레이프는
+      # 성공하니 위 규칙으로는 안 보인다. 한 번 열린 건 알리지 않는다: 10초 뒤 스스로 다시 확인하고, 재배포 중에도
+      # 잠깐 열린다(그건 WARN 로그로 충분). 2분은 위 규칙과 같은 기준이다.
+      # half_open도 센다 — 장애가 이어지면 open과 half_open을 10초마다 오가므로 open만 보면 값이 번갈아
+      # 바뀌어 for가 계속 초기화된다. 둘을 합쳐야 "닫히지 않은 시간"이 이어진다.
+      # instance(부르는 쪽)와 name(불리는 쪽 — 서킷 이름이 대상 서비스 기준)으로 묶는다. member-service 하나가
+      # 아프면 auth·file·gateway에서 각각 오지만, 어느 경로가 막혔는지 바로 보이는 쪽을 택했다.
+      # 요청이 없으면 open에서 half_open으로 넘어가지 않아(automaticTransitionFromOpenToHalfOpenEnabled 기본 false)
+      # 대상이 복구된 뒤에도 다음 요청이 올 때까지 해제가 늦을 수 있다.
+      - uid: circuit-open
+        title: 서킷 열림
+        condition: C
+        for: 2m
+        labels:
+          channel: service
+        noDataState: OK
+        execErrState: OK
+        annotations:
+          summary: '2분째 닫히지 않음 — 대상 서비스 호출이 계속 실패 중 (502·503·504 · 타임아웃 · 연결 실패)'
+          action: '서킷이 부르는 서비스의 상태와 로그로 실패 원인 확인'
+          inspect: 'docker logs <container> 2>&1 | grep "{{ $labels.name }}"'
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              expr: max by (instance, name) (resilience4j_circuitbreaker_state{state=~"open|half_open"})
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+
+      # 사용자가 실제로 에러를 보고 있는지를 본다. 위 두 규칙은 원인 쪽만 본다 — 프로세스가 죽었나(up),
+      # 502/503/504나 연결 실패가 이어지나(서킷). DB·Redis 연결 실패는 GlobalExceptionHandler가 503으로 바꿔 서킷이
+      # 잡지만, 버그나 처리 못 한 예외는 500이라 서킷이 세지 않고 up도 1이다. 그래서 게이트웨이를 지난 요청의 5xx 비율을 본다.
+      # 5분 동안 5%를 넘고 5xx가 10건 이상일 때만 — 요청이 거의 없을 때 한두 건으로 울리지 않게 건수도 본다.
+      # routeId는 게이트웨이 경로 이름이자 대상 서비스 이름이라, 메시지의 "서비스"에 그대로 찍힌다.
+      - uid: route-error-rate
+        title: 요청 실패율 높음
+        condition: C
+        for: 2m
+        labels:
+          channel: service
+        noDataState: OK
+        execErrState: OK
+        annotations:
+          summary: '최근 5분 요청의 **{{ with $values.A }}{{ humanizePercentage .Value }}{{ end }}**가 5xx로 실패 중'
+          action: '그 서비스의 에러 로그로 원인 확인'
+          inspect: 'docker logs <container> 2>&1 | grep -E "ERROR|Exception"'
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              expr: >-
+                (sum by (routeId) (rate(spring_cloud_gateway_requests_seconds_count{outcome="SERVER_ERROR"}[5m]))
+                / sum by (routeId) (rate(spring_cloud_gateway_requests_seconds_count[5m])))
+                and on (routeId)
+                (sum by (routeId) (increase(spring_cloud_gateway_requests_seconds_count{outcome="SERVER_ERROR"}[5m])) >= 10)
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.05]
