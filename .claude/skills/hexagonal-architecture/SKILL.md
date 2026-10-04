@@ -190,6 +190,18 @@ class SignUpMemberController {
 }
 ```
 
+One controller per use case (`<Verb><Entity>Controller`). Two endpoints may share a
+controller only when they run the same use case (e.g. storage-service's
+`DownloadFileController`: attachment download + inline view of one `DownloadFileUseCase`).
+
+A controller calls a second use case only for a best-effort side effect that must run
+**outside** the first one's transaction — file-service's `RecordFileAccessUseCase` ("최근
+문서함") after `GetFile` / `UploadFileMetadata` / `GetLatestFileVersions`. Moving that call
+into the service would put its write inside the service's transaction: a `readOnly` one
+rejects the INSERT, and any failure marks the whole transaction rollback-only, turning a
+successful read or upload into a 500 (see `RecordFileAccessService`'s comment). Keep such
+calls in the controller, and keep anything that decides business outcomes in the service.
+
 ## Persistence adapter
 
 Package-private, `@PersistenceAdapter` + `@RequiredArgsConstructor`. **One

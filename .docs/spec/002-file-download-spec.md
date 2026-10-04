@@ -5,7 +5,7 @@
 ⚠️ 이 문서가 기준입니다. 코드가 이 문서와 다르면 코드를 고치고, 동작을 바꾸려면 이 문서를 먼저 고칩니다.
 
 > 기준 소스 (2026-09-23): API `dev` (851efb8), WEB `dev` (13ac387)
-> - API: storage-service `StorageController`, `ArchiveController`, `PrepareArchiveService`, `OpenArchiveService`, `RedisArchiveTokenStore`, `DownloadFileService`, `PublicDownloadFileService`, `BlockAssembler`, `RedisDownloadQuotaStore`, `S3StorageAdapter` / file-service `GetLatestFileVersionsService`, `GetPublicFileRevisionsService`, `ResolveArchiveEntriesService`, `ResolvePublicArchiveEntriesService`, `ArchiveEntryCollector`, `FileAccessGuard`, `PublicFileResolver` / gateway `SecurityConfig`, `UserContextFilter`
+> - API: storage-service `DownloadFileController`, `PublicDownloadFileController`, `ArchiveController`, `PrepareArchiveService`, `OpenArchiveService`, `RedisArchiveTokenStore`, `DownloadFileService`, `PublicDownloadFileService`, `BlockAssembler`, `RedisDownloadQuotaStore`, `S3StorageAdapter` / file-service `GetLatestFileVersionsService`, `GetPublicFileRevisionsService`, `ResolveArchiveEntriesService`, `ResolvePublicArchiveEntriesService`, `ArchiveEntryCollector`, `FileAccessGuard`, `PublicFileResolver` / gateway `SecurityConfig`, `UserContextFilter`
 > - WEB: `features/drive/api/download-file.ts`, `download-public-file.ts`, `download-archive.ts`, `view-file.ts`, `components/file-preview.tsx`, `file-list.tsx`, `public-folder-view.tsx`, `types.ts`(`canPreviewFile`)
 
 ---

@@ -8,7 +8,7 @@
 > - API: 배치 생성(3·4장)과 0바이트 수정(7장)은 rivertw777/ModuDrive-API#405에서 구현했습니다 (브랜치 `feature/405-batch-upload-api`). 나머지 장은 기존 소스 그대로입니다.
 > - WEB: 9장은 rivertw777/ModuDrive-WEB#207에서 구현했습니다 (브랜치 `feature/207-folder-upload`). 그 브랜치가 dev에 합쳐지기 전까지 WEB은 [부록 A](#부록-a-web-207-이전-동작)대로 동작합니다. 파일마다 `POST /api/v1/files/metadata`를 호출하고, 폴더 업로드는 지원하지 않습니다.
 >
-> 기준 소스: API file-service `UploadBatchService`, `UpdateFileStatusService` / storage-service `StorageController`, `SimpleUploadService`, `*ResumableUpload*Service`, `UploadChunkService`, `InMemoryUploadSessionStore`, `S3StorageAdapter` · WEB `features/drive/api/upload-file.ts`, `hooks/use-file-upload.ts`, `components/upload-dropzone.tsx`, `upload-button.tsx`
+> 기준 소스: API file-service `UploadBatchService`, `UpdateFileStatusService` / storage-service `SimpleUploadController`, `*ResumableUploadController`, `UploadChunkController`, `SimpleUploadService`, `*ResumableUpload*Service`, `UploadChunkService`, `InMemoryUploadSessionStore`, `S3StorageAdapter` · WEB `features/drive/api/upload-file.ts`, `hooks/use-file-upload.ts`, `components/upload-dropzone.tsx`, `upload-button.tsx`
 
 ---
 
