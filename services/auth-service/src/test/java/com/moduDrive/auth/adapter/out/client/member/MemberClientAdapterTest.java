@@ -1,6 +1,8 @@
 package com.moduDrive.auth.adapter.out.client.member;
 
 import com.moduDrive.auth.domain.model.MemberAuthData;
+import com.moduDrive.auth.domain.vo.MemberEmail;
+import com.moduDrive.auth.domain.vo.MemberPassword;
 import com.moduDrive.auth.exception.AuthExceptionCase;
 import com.moduDrive.common.api.dto.member.AuthenticateMemberRequest;
 import com.moduDrive.common.api.dto.member.AuthenticateMemberResponse;
@@ -46,7 +48,7 @@ class MemberClientAdapterTest {
                     "member-id", "river", "river@modudrive.com", true, List.of("MEMBER"));
             given(memberClient.authenticateMember(request)).willReturn(ApiResponse.success(response));
 
-            MemberAuthData result = memberClientAdapter.authenticateMember(request);
+            MemberAuthData result = memberClientAdapter.authenticateMember(new MemberEmail("river@modudrive.com"), new MemberPassword("raw-password"));
 
             assertThat(result.getMemberId()).isEqualTo("member-id");
             assertThat(result.getMemberRoles()).containsExactly("MEMBER");
@@ -63,7 +65,7 @@ class MemberClientAdapterTest {
                     "member-id", "river", "river@modudrive.com", false, List.of("MEMBER"));
             given(memberClient.authenticateMember(request)).willReturn(ApiResponse.success(response));
 
-            Throwable thrown = catchThrowable(() -> memberClientAdapter.authenticateMember(request));
+            Throwable thrown = catchThrowable(() -> memberClientAdapter.authenticateMember(new MemberEmail("river@modudrive.com"), new MemberPassword("raw-password")));
 
             assertThat(thrown)
                     .isInstanceOf(BusinessException.class)
@@ -84,7 +86,7 @@ class MemberClientAdapterTest {
                             Map.of(), null, StandardCharsets.UTF_8, null),
                     null, Map.of()));
 
-            Throwable thrown = catchThrowable(() -> memberClientAdapter.authenticateMember(request));
+            Throwable thrown = catchThrowable(() -> memberClientAdapter.authenticateMember(new MemberEmail("river@modudrive.com"), new MemberPassword("raw-password")));
 
             assertThat(thrown)
                     .isInstanceOf(BusinessException.class)

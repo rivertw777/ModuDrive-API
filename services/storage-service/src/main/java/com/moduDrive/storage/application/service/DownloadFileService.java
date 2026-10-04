@@ -6,20 +6,28 @@ import com.moduDrive.storage.application.port.in.usecase.DownloadFileUseCase;
 import com.moduDrive.storage.application.port.out.DownloadQuotaPort;
 import com.moduDrive.storage.application.port.out.GetFileVersionPort;
 import com.moduDrive.storage.application.port.out.RetrieveBlocksPort;
-import com.moduDrive.storage.config.StorageProperties;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.io.OutputStream;
 import java.util.List;
 
 @UseCase
-@RequiredArgsConstructor
 class DownloadFileService implements DownloadFileUseCase {
 
     private final GetFileVersionPort getFileVersionPort;
     private final RetrieveBlocksPort retrieveBlocksPort;
     private final DownloadQuotaPort downloadQuotaPort;
-    private final StorageProperties storageProperties;
+    private final int blockSize;
+
+    DownloadFileService(GetFileVersionPort getFileVersionPort,
+                        RetrieveBlocksPort retrieveBlocksPort,
+                        DownloadQuotaPort downloadQuotaPort,
+                        @Value("${storage.block-size}") int blockSize) {
+        this.getFileVersionPort = getFileVersionPort;
+        this.retrieveBlocksPort = retrieveBlocksPort;
+        this.downloadQuotaPort = downloadQuotaPort;
+        this.blockSize = blockSize;
+    }
 
     @Override
     public byte[] download(DownloadFileCommand command) {
@@ -30,7 +38,7 @@ class DownloadFileService implements DownloadFileUseCase {
         String s3Path = version.s3Path();
         int blockCount = version.blockCount();
         if (command.isInlinePreview()) {
-            BlockAssembler.requireWithinInlinePreviewLimit(blockCount, storageProperties.getBlockSize());
+            BlockAssembler.requireWithinInlinePreviewLimit(blockCount, blockSize);
         }
         downloadQuotaPort.checkWithinQuota(scope, s3Path);
         List<byte[]> blocks = retrieveBlocksPort.retrieveBlocks(s3Path, blockCount);

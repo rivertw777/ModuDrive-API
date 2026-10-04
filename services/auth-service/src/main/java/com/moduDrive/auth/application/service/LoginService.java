@@ -13,11 +13,9 @@ import com.moduDrive.auth.domain.model.MemberAuthData;
 import com.moduDrive.auth.domain.vo.DeviceId;
 import com.moduDrive.auth.domain.vo.LoginChallengeId;
 import com.moduDrive.auth.exception.AuthExceptionCase;
-import com.moduDrive.common.api.dto.member.AuthenticateMemberRequest;
 import com.moduDrive.common.core.annotation.UseCase;
 import com.moduDrive.common.core.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
-import lombok.val;
 
 @UseCase
 @RequiredArgsConstructor
@@ -42,11 +40,8 @@ class LoginService implements LoginUseCase {
         if (!loginAttemptPort.tryAttempt(loginCommand.getMemberEmail(), knownDevice)) {
             throw new BusinessException(AuthExceptionCase.TOO_MANY_LOGIN_ATTEMPTS);
         }
-        val request = new AuthenticateMemberRequest(
-                loginCommand.getMemberEmail().value(),
-                loginCommand.getMemberPassword().value()
-        );
-        MemberAuthData memberAuthData = authenticateMemberPort.authenticateMember(request);
+        MemberAuthData memberAuthData = authenticateMemberPort.authenticateMember(
+                loginCommand.getMemberEmail(), loginCommand.getMemberPassword());
 
         if (loginCommand.getDeviceId() != null
                 && knownDevicePort.refreshIfKnown(

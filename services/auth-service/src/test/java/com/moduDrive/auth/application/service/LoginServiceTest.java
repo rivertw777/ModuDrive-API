@@ -16,7 +16,6 @@ import com.moduDrive.auth.domain.vo.MemberPassword;
 import com.moduDrive.auth.domain.vo.SessionId;
 import com.moduDrive.auth.exception.AuthExceptionCase;
 import com.moduDrive.auth.fixture.MemberAuthDataTestFixture;
-import com.moduDrive.common.api.dto.member.AuthenticateMemberRequest;
 import com.moduDrive.common.core.exception.BusinessException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -55,8 +54,6 @@ class LoginServiceTest {
 
     private static final MemberEmail EMAIL = new MemberEmail("river@modudrive.com");
     private static final MemberPassword PASSWORD = new MemberPassword("raw-password");
-    private static final AuthenticateMemberRequest AUTHENTICATE_REQUEST =
-            new AuthenticateMemberRequest(EMAIL.value(), PASSWORD.value());
     private static final SessionId NEW_SESSION_ID = new SessionId("new-session-id");
     private static final SessionId PREVIOUS_SESSION_ID = new SessionId("previous-session-id");
     private static final DeviceId DEVICE_ID = new DeviceId("device-id");
@@ -67,7 +64,7 @@ class LoginServiceTest {
     /** Password is right; the attempt was counted on {@code countedOn}'s count (null = the shared one). */
     private void givenPasswordMatches(DeviceId countedOn) {
         given(loginAttemptPort.tryAttempt(EMAIL, countedOn)).willReturn(true);
-        given(authenticateMemberPort.authenticateMember(AUTHENTICATE_REQUEST)).willReturn(memberAuthData);
+        given(authenticateMemberPort.authenticateMember(EMAIL, PASSWORD)).willReturn(memberAuthData);
     }
 
     @Nested
@@ -159,7 +156,7 @@ class LoginServiceTest {
             given(knownDevicePort.isKnown(EMAIL, DEVICE_ID)).willReturn(false);
             given(loginAttemptPort.tryAttempt(EMAIL, null)).willReturn(true);
             willThrow(new BusinessException(AuthExceptionCase.INVALID_CREDENTIALS))
-                    .given(authenticateMemberPort).authenticateMember(AUTHENTICATE_REQUEST);
+                    .given(authenticateMemberPort).authenticateMember(EMAIL, PASSWORD);
 
             Throwable thrown = catchThrowable(() ->
                     loginService.login(new LoginCommand(EMAIL, PASSWORD, PREVIOUS_SESSION_ID, DEVICE_ID)));
