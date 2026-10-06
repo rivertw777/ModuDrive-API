@@ -291,9 +291,9 @@ Explore에서 `spring_cloud_gateway_requests_seconds_bucket` 그래프를 띄우
 
 ## 5. TODO
 
-- [ ] **AWS로 옮기면**: 서비스 응답 없음(`up`)을 뺀 나머지 지표는 모두 앱이 직접 내놓는 값이라, AWS CloudWatch는 이 값을 모른다.
-  OTel Collector에 CloudWatch EMF exporter를 붙이거나 ADOT를 쓰는 방법이 있다.
-  [aws-migration.md 2-10](../aws-migration.md#2-10--모니터링--알림)의 모니터링 항목과 함께 정한다.
+- [ ] **AWS로 옮기면**: 규칙 7개를 Amazon Managed Grafana로 옮긴다. 지표는 중앙 ADOT collector가 수집해 Amazon Managed Prometheus에 넣으므로
+  PromQL은 그대로 쓴다. 바뀌는 것은 둘이다. 메시지의 "서비스"를 뽑는 `instance` 라벨이 태스크 IP가 되므로 서비스 이름 라벨로 바꾸고,
+  `inspect` 문구(`docker logs`, TraceQL)를 CloudWatch Logs Insights·X-Ray 검색으로 바꾼다 ([aws-migration.md 2-10](../aws-migration.md#2-10--모니터링--알림)).
   DLQ 메시지 수는 예외다. CloudWatch가 `ApproximateNumberOfMessagesVisible`로 이미 알고 있으므로,
   Terraform으로 큐를 만들 때 CloudWatch Alarm을 같이 걸면 앱이 30초마다 세는 코드를 없앨 수 있다.
 - [ ] **알림 시스템 자체가 죽었을 때**: Prometheus나 Grafana가 멈추면 알림이 하나도 오지 않는데, 이를 알려 줄 장치가 없다.
