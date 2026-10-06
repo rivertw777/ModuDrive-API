@@ -78,7 +78,7 @@ class SendShareInviteMailService implements SendShareInviteMailUseCase {
         Map<String, byte[]> inlineImages = isGuestInvite
                 ? Map.of("logo", MailTemplates.LOGO_PNG, "fileIcon", fileIcon, "warning", MailTemplates.WARNING_PNG)
                 : Map.of("logo", MailTemplates.LOGO_PNG, "fileIcon", fileIcon);
-        sendMailPort.sendHtml(command.getEmail(), subject, html, fromDisplayName, inlineImages);
+        sendMailPort.sendHtml(command.getDeliveryId(), command.getEmail(), subject, html, fromDisplayName, inlineImages);
     }
 
     /** A member's signup name is free text with no character/format restriction beyond

@@ -1,14 +1,17 @@
 package com.moduDrive.common.infrastructure.sqs;
 
 import com.moduDrive.common.infrastructure.messaging.PermanentFailures;
+import com.moduDrive.common.infrastructure.messaging.RetryLaterException;
 import io.awspring.cloud.sqs.listener.SqsHeaders;
 import io.awspring.cloud.sqs.listener.SqsHeaders.MessageSystemAttributes;
 import io.awspring.cloud.sqs.listener.errorhandler.AsyncErrorHandler;
+import io.awspring.cloud.sqs.listener.errorhandler.ErrorHandlerVisibilityHelper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.Message;
 import software.amazon.awssdk.services.sqs.SqsAsyncClient;
 import software.amazon.awssdk.services.sqs.model.MessageAttributeValue;
 
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -22,7 +25,8 @@ import java.util.concurrent.CompletableFuture;
  *   <li>it's the last receive the queue's redrive policy allows: retries are used up, so move it now
  *       with the reason instead of letting SQS redrive it on the next receive without one.</li>
  * </ul>
- * Anything else backs off exponentially (visibility 1s, 2s, 4s...). The DLQ and the receive limit come
+ * Anything else backs off exponentially (visibility 1s, 2s, 4s...), unless it's a {@link RetryLaterException},
+ * which comes back after the delay it names. The DLQ and the receive limit come
  * from the queue's own {@link RedrivePolicy}, so they're set in one place (init-aws.sh / Terraform).
  * The redrive policy still catches what never reaches this handler (a crashed consumer, a body that
  * isn't JSON). If moving to the DLQ fails, the message falls back to the retry path rather than being lost.
@@ -55,7 +59,10 @@ class DeadLetteringErrorHandler implements AsyncErrorHandler<Object> {
             long receiveCount = receiveCount(message);
             boolean lastAttempt = policy.maxReceiveCount() != null && receiveCount >= policy.maxReceiveCount();
             if (!permanent && !lastAttempt) {
-                return retry.handle(message, failure);
+                Throwable later = PermanentFailures.findCause(failure, RetryLaterException.class::isInstance);
+                return later == null
+                        ? retry.handle(message, failure)
+                        : retryAfter(message, failure, ((RetryLaterException) later).delay());
             }
             String reason = permanent
                     ? reason(failure)
@@ -65,6 +72,12 @@ class DeadLetteringErrorHandler implements AsyncErrorHandler<Object> {
                 return retry.handle(message, failure);
             });
         });
+    }
+
+    /** Like the backoff, the future still fails so the message isn't acknowledged — only the delay differs. */
+    private static CompletableFuture<Void> retryAfter(Message<Object> message, Throwable failure, Duration delay) {
+        return ErrorHandlerVisibilityHelper.getVisibility(message).changeToAsync((int) delay.toSeconds())
+                .thenCompose(v -> CompletableFuture.failedFuture(failure));
     }
 
     private CompletableFuture<Void> moveToDeadLetterQueue(Message<Object> message, RedrivePolicy policy, String reason) {

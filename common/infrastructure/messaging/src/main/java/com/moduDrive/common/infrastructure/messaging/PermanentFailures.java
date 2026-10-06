@@ -33,7 +33,8 @@ public final class PermanentFailures {
             "jakarta.validation.ValidationException", // SelfValidating command rejected the payload
             "java.lang.IllegalArgumentException",
             "java.lang.NullPointerException",
-            "java.lang.ClassCastException");
+            "java.lang.ClassCastException",
+            "com.moduDrive.common.infrastructure.messaging.PermanentConsumeException"); // downstream refused it
 
     private PermanentFailures() {
     }

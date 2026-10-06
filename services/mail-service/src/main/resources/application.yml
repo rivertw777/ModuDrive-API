@@ -6,14 +6,6 @@ spring:
       - "classpath:application-observability.yml"
       - "classpath:application-redis.yml"
       - "classpath:application-sqs.yml"
-  mail:
-    host: ${MAIL_HOST}
-    port: ${MAIL_PORT}
-    username: ${MAIL_USERNAME}
-    password: ${MAIL_PASSWORD}
-    properties:
-      mail.smtp.auth: true
-      mail.smtp.starttls.enable: true
 
 modudrive:
   messaging:
@@ -21,6 +13,9 @@ modudrive:
       enabled: true
   mail:
     from: ${MAIL_FROM}
+    # Publishes SES's Send events (tagged with the delivery id) to the mail-ses-events queue — how a
+    # timed-out send is confirmed. Created by init-aws.sh locally, Terraform on AWS.
+    configuration-set: mail-events
 
 client:
   url: ${CLIENT_URL}

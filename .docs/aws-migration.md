@@ -38,7 +38,7 @@
 | Redis 7 | **ElastiCache for Valkey** | ⬜ TLS 설정 추가 |
 | LocalStack SQS | **Amazon SQS** 표준 큐 | ✅ 완료 (#365, #403) — 큐는 Terraform |
 | LocalStack S3 | **Amazon S3** | ✅ 완료 (#364) — 버킷은 Terraform |
-| SMTP (`MAIL_HOST`) | **SES** (SMTP 인터페이스) | 필요 없음 (설정만) |
+| LocalStack SES | **Amazon SES** (API, `SendRawEmail`) | ✅ 완료 — SMTP에서 SES API로 전환 |
 | `.docker/.env` 시크릿 | **Secrets Manager** / SSM Parameter Store | 필요 없음 (ECS가 env로 주입) |
 | Prometheus / Promtail / Loki / Tempo / Grafana(+ 디스코드 알림) | ★ **CloudWatch + X-Ray (ADOT)** 또는 Grafana 스택 자체 호스팅 | 앱은 OTLP 그대로. 알림 규칙은 옮겨야 함 |
 | (없음) | **Route 53 + ACM**, **CloudFront** (WEB 정적 호스팅) | — |
@@ -78,7 +78,7 @@
 ### 2-6. 메시징: Amazon SQS (확정)
 - **앱 쪽은 완료**: SQS 어댑터(#365 / PR #368), 로컬은 LocalStack(#403).
 - 선택 이유 (Kafka·RabbitMQ 비교), 큐 설정, task role 권한은 `spec/005-messaging-spec.md` 1장.
-- Terraform: 큐 4개 + `-dlq`(표준), visibility 10초, maxReceiveCount 4 — `.docker/localstack/init-aws.sh`와 똑같이.
+- Terraform: `init-aws.sh`의 큐 전부 + `-dlq`(표준), visibility 10초, maxReceiveCount 4 — `.docker/localstack/init-aws.sh`와 똑같이. 목록은 005 7장.
 
 ### 2-7. 파일 저장: Amazon S3
 - **앱 쪽은 완료 (#364 / PR #367)** — `S3Config`가 환경에 따라 동작이 갈린다:
@@ -88,16 +88,16 @@
 - 버킷 설정(Terraform): 퍼블릭 액세스 차단, SSE-S3/SSE-KMS 기본 암호화, 수명주기 정책.
 
 ### 2-8. 메일 → SES
-- SES SMTP 엔드포인트(`email-smtp.<region>.amazonaws.com:587`)를 `MAIL_HOST`에 넣으면 **코드 변경 없음**.
+- SMTP가 아니라 **SES API**(`spring-cloud-aws-starter-ses`, `SendRawEmail`)로 보낸다. AWS에선 `SES_ENDPOINT`를 비우면 실제 SES로, 인증은 task role(`ses:SendRawEmail`) — 관리할 SMTP 비밀번호가 없다.
 - 사전 작업: 도메인 인증(DKIM/SPF), **샌드박스 해제 요청**(안 하면 인증된 주소로만 발송 가능).
+- Terraform: Configuration Set `mail-events`(Send 이벤트 → SNS) + SNS 토픽 `mail-ses-events` + SQS 구독(raw)과 큐 정책, task role에 `ses:SendRawEmail`(identity + configuration set). **Configuration Set이 없으면 발송이 400(`ConfigurationSetDoesNotExist`)으로 전부 DLQ에 간다.**
 
 ### 2-9. 시크릿 → Secrets Manager / SSM Parameter Store
 - 옮길 것(`.docker/.env.example` 기준):
   - DB: `MEMBER_DB_PASSWORD`, `FILE_DB_PASSWORD`, `NOTIFICATION_DB_PASSWORD`, `AUTH_DB_PASSWORD` (+ RDS 마스터 비밀번호)
   - `REDIS_PASSWORD`, `STORAGE_ENCRYPTION_KEY`
-  - `MAIL_PASSWORD` (SES SMTP 자격증명으로 교체)
   - `DISCORD_MESSAGING_WEBHOOK_URL`, `DISCORD_SERVICE_WEBHOOK_URL` (알림을 디스코드로 계속 보낼 경우)
-- **AWS에선 필요 없는 것**: `SQS_*`, `STORAGE_S3_ACCESS_KEY`/`SECRET_KEY`(task role로 대체), `LOCALSTACK_AUTH_TOKEN`(로컬 전용).
+- **AWS에선 필요 없는 것**: `SQS_*`, `SES_ENDPOINT`, `STORAGE_S3_ACCESS_KEY`/`SECRET_KEY`(task role로 대체), `LOCALSTACK_AUTH_TOKEN`(로컬 전용).
 - ECS 태스크 정의의 `secrets`로 환경변수 주입 → 앱은 지금처럼 `${...}`로 읽음.
 - 비용: Parameter Store(SecureString)는 무료, Secrets Manager는 시크릿당 과금 대신 자동 로테이션.
   RDS 비밀번호만 Secrets Manager(로테이션), 나머지는 Parameter Store로 충분.

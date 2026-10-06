@@ -31,11 +31,11 @@ class SendVerificationMailServiceTest {
         @Test
         void sendsMailContainingVerificationCode() {
             SendVerificationMailCommand command =
-                    new SendVerificationMailCommand("river@modudrive.com", "042917", Purpose.SIGN_UP);
+                    new SendVerificationMailCommand("river@modudrive.com", "042917", Purpose.SIGN_UP, "d1");
 
             sendVerificationMailService.sendVerificationMail(command);
 
-            then(sendMailPort).should().sendHtml(
+            then(sendMailPort).should().sendHtml(eq("d1"),
                     eq("river@modudrive.com"),
                     contains("인증"),
                     argThat(html -> html.contains("042917") && html.contains("cid:logo") && !html.contains("{{")),
@@ -51,9 +51,9 @@ class SendVerificationMailServiceTest {
         @Test
         void sendsLoginWordedMailContainingVerificationCode() {
             sendVerificationMailService.sendVerificationMail(
-                    new SendVerificationMailCommand("river@modudrive.com", "042917", Purpose.LOGIN));
+                    new SendVerificationMailCommand("river@modudrive.com", "042917", Purpose.LOGIN, "d1"));
 
-            then(sendMailPort).should().sendHtml(
+            then(sendMailPort).should().sendHtml(eq("d1"),
                     eq("river@modudrive.com"),
                     contains("로그인"),
                     argThat(html -> html.contains("042917") && html.contains("로그인") && !html.contains("회원가입")
