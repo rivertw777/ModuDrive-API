@@ -19,6 +19,7 @@ management:
         include: health,prometheus
 
 logging:
-  pattern:
-    # LOG_CORRELATION_PATTERN 슬롯 — 기본 콘솔 패턴의 "---" 뒤, 스레드명 앞에 그대로 삽입된다.
-    correlation: "[${spring.application.name:},%X{traceId:-},%X{spanId:-}] "
+  structured:
+    format:
+      # 콘솔 로그를 한 줄 JSON으로 — traceId/spanId가 필드가 돼서 Loki·CloudWatch Logs Insights에서 그대로 검색된다.
+      console: ecs
