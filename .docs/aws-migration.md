@@ -92,12 +92,12 @@
 ### 2-8. 메일 → SES
 - SMTP가 아니라 **SES API**(`spring-cloud-aws-starter-ses`, `SendRawEmail`)로 보낸다. AWS에선 `SES_ENDPOINT`를 비우면 실제 SES로, 인증은 task role(`ses:SendRawEmail`) — 관리할 SMTP 비밀번호가 없다.
 - 사전 작업: 도메인 인증(DKIM/SPF), **샌드박스 해제 요청**(안 하면 인증된 주소로만 발송 가능).
-- **TODO (Terraform)** — 로컬은 `.docker/localstack/init-aws.sh`가 같은 것을 만든다. 빠지면 서비스가 안 뜨거나 메일이 전부 DLQ로 간다.
-  - [ ] SES identity(도메인) + DKIM/SPF 레코드
-  - [ ] Configuration Set `mail-events` + 이벤트 대상: `SEND` → SNS 토픽 `mail-ses-events`. **없으면 발송이 400(`ConfigurationSetDoesNotExist`)으로 전부 DLQ에 간다.**
-  - [ ] SQS `mail-ses-events` + `mail-ses-events-dlq`(redrive `maxReceiveCount` 4) — 없으면 mail-service 기동 실패(fail on missing queue)
-  - [ ] SNS → SQS 구독, **raw message delivery 켬** (리스너가 envelope 없는 SES 이벤트 JSON을 읽는다)
-  - [ ] `mail-ses-events` 큐 정책: `sqs:SendMessage`를 SNS 서비스 + `aws:SourceArn` = 해당 토픽으로만 허용 — 위조 Send 이벤트로 메일을 "보냄" 처리시켜 막는 것 방지 (#518 보안 리뷰)
+- **Terraform** — 로컬은 `.docker/localstack/init-aws.sh`가 같은 것을 만든다. 빠지면 서비스가 안 뜨거나 메일이 전부 DLQ로 간다. 체크한 항목은 `terraform/ses.tf`·`sqs.tf`·`dns.tf`에 작성됨(apply 전).
+  - [x] SES identity(도메인) + DKIM/SPF 레코드
+  - [x] Configuration Set `mail-events` + 이벤트 대상: `SEND` → SNS 토픽 `mail-ses-events`. **없으면 발송이 400(`ConfigurationSetDoesNotExist`)으로 전부 DLQ에 간다.**
+  - [x] SQS `mail-ses-events` + `mail-ses-events-dlq`(redrive `maxReceiveCount` 4) — 없으면 mail-service 기동 실패(fail on missing queue)
+  - [x] SNS → SQS 구독, **raw message delivery 켬** (리스너가 envelope 없는 SES 이벤트 JSON을 읽는다)
+  - [x] `mail-ses-events` 큐 정책: `sqs:SendMessage`를 SNS 서비스 + `aws:SourceArn` = 해당 토픽으로만 허용 — 위조 Send 이벤트로 메일을 "보냄" 처리시켜 막는 것 방지 (#518 보안 리뷰)
   - [ ] mail-service task role: `ses:SendRawEmail`(identity + configuration set 리소스), `mail-ses-events` 수신 권한
   - [ ] 배포 전 실제 SES(샌드박스)로 한 통 보내 `deliveryId` 태그(`<queue>_<outboxId>`)가 거절되지 않는지 확인 — LocalStack은 태그 값을 검증하지 않는다
 
@@ -191,8 +191,17 @@ ECS 태스크들 ──OTLP 트레이스──▶ ┌─────────
 - ⚠️ **WEB과 API는 같은 등록 도메인(사이트)에 있어야 한다** (예: `app.modudrive.com` / `api.modudrive.com`, 또는 CloudFront path behavior로 `/api/*`를 같은 origin에 붙임). 세션 쿠키가 `SameSite=Strict` + host-only라서 ([004 인증](spec/004-auth-spec.md) 1-1-2), 사이트가 다르면 로그인은 200인데 이후 요청에 쿠키가 안 실려 전부 401이 된다. `*.cloudfront.net`·`*.elb.amazonaws.com` 기본 도메인은 Public Suffix List에 있어 서로 다른 사이트로 취급되므로 **커스텀 도메인 필수**.
 
 ### 2-12. IaC / 배포
-- 아직 없음 — 레포에 Terraform 코드와 GitHub Actions 워크플로 모두 없다.
-- **Terraform**으로 전부 코드화 (콘솔 수작업 금지 — 재현·리뷰 불가).
+- **Terraform**으로 전부 코드화 (콘솔 수작업 금지 — 재현·리뷰 불가). 코드는 `terraform/` 루트 모듈 하나 — 파일을 관심사별로 나눈다
+  (`network.tf`·`security_groups.tf`·`rds.tf`·`redis.tf`·`s3.tf`·`sqs.tf`·`ses.tf`·`dns.tf`·`secrets.tf`). 환경은 하나(운영)뿐이라 모듈·워크스페이스로 나누지 않는다.
+- 상태는 S3 백엔드(`use_lockfile`로 S3 자체 잠금, DynamoDB 불필요). 상태 버킷은 Terraform이 자기 자신을 관리할 수 없으니 **한 번만 손으로** 만든다(버전 관리 켬).
+  ```bash
+  cp terraform/backend.hcl.example terraform/backend.hcl   # 버킷 이름 채우기
+  cd terraform && terraform init -backend-config=backend.hcl && terraform plan
+  # 계정 없이 문법만: terraform init -backend=false && terraform validate
+  ```
+- 도메인은 `domain_name` 변수 — 비워 두면(기본 null) Route 53 영역·SES identity·DKIM/MAIL FROM 레코드를 만들지 않는다. 넣고 apply한 뒤 출력 `name_servers`를 도메인 등록 업체에 설정한다.
+- 상태 파일에 `random_password`로 만든 비밀번호가 평문으로 들어간다 — 상태 버킷은 암호화 + 접근을 배포 역할로만 제한한다.
+- GitHub Actions 워크플로는 아직 없다 (3장 3단계).
 - GitHub Actions: OIDC로 AWS 인증(장기 키 없음) → 이미지 빌드 → ECR 푸시 → ECS 서비스 업데이트.
 
 ### 2-13. ★ 서비스 간 접근 제어: 서비스별 보안 그룹 (필수)
@@ -203,7 +212,7 @@ ECS 태스크들 ──OTLP 트레이스──▶ ┌─────────
 - 인바운드는 **"허용할 호출자의 보안 그룹 → 내 앱 포트"**만 연다. CIDR(`10.0.0.0/16` 같은 대역)로 열지 않는다 — 대역으로 열면 같은 VPC 안의 모든 태스크가 닿는다.
 - 효과 예: 게이트웨이가 뚫려도 네트워크상 member·file·storage의 `/internal`에는 닿지 않는다 (게이트웨이는 그 서비스들의 **공개 API 포트**로만 라우팅하고, 그 요청은 게이트웨이 세션 확인을 거친다).
 
-#### 인바운드 규칙 (2026-09-25 코드 기준 호출 관계)
+#### 인바운드 규칙 (2026-10-06 코드 기준 호출 관계 — `terraform/security_groups.tf`와 같다)
 
 | 보안 그룹 | 허용할 출발지 | 포트 | 이유 (코드) |
 |---|---|---|---|
@@ -212,7 +221,7 @@ ECS 태스크들 ──OTLP 트레이스──▶ ┌─────────
 | `auth-sg` | `gateway-sg` | 10011 | 라우팅(`/api/v1/auth/**`) + 세션 확인(`AuthClient`) |
 | `member-sg` | `gateway-sg`, `auth-sg`, `file-sg` | 10010 | 라우팅 / 로그인 확인(auth `MemberClient`) / 공유 대상 조회(file `MemberClient`) |
 | `file-sg` | `gateway-sg`, `storage-sg` | 10012 | 라우팅 / 버전·zip 항목 조회·업로드 완료(storage `FileClient`) |
-| `storage-sg` | `gateway-sg`, `file-sg` | 10013 | 라우팅 / 파일 삭제(file `StorageServiceClient`) |
+| `storage-sg` | `gateway-sg` | 10013 | 라우팅. file → storage 블록 삭제는 SQS(`storage-blocks-purge-requested`)로 바뀌어 HTTP 호출이 없다 (#499) |
 | `notification-sg` | `gateway-sg` | 10015 | 라우팅(`/api/v1/notifications/**`) |
 | `mail-sg` | **없음** | — | HTTP API가 없다 (SQS 소비만). 게이트웨이도 라우팅하지 않는다 |
 
@@ -220,7 +229,7 @@ ECS 태스크들 ──OTLP 트레이스──▶ ┌─────────
 
 | 보안 그룹 | 허용할 출발지 | 포트 |
 |---|---|---|
-| `rds-sg` | `member-sg`, `file-sg`, `notification-sg` (각자 자기 DB 로그인만 가능 — 2-4) | 5432 |
+| `rds-sg` | `member-sg`, `file-sg`, `notification-sg`, `auth-sg` (각자 자기 DB 로그인만 가능 — 2-4) | 5432 |
 | `redis-sg` | `auth-sg`, `member-sg`, `storage-sg`, `mail-sg` | 6379 |
 
 - 관리 포트(9464, actuator·Prometheus)는 중앙 ADOT collector의 보안 그룹에서만 연다. 반대로 ADOT의 `4318`(OTLP)은 서비스 보안 그룹들에서만 연다 (2-10).
@@ -247,7 +256,9 @@ ECS 태스크들 ──OTLP 트레이스──▶ ┌─────────
    - `S3Config` task role 대응 — #364 / PR #367
    - SQS 어댑터 — #365 / PR #368
    - 로컬 SQS·S3를 LocalStack으로 통일 — #403 / PR #404
-2. ⬜ **Terraform 기반 인프라** — VPC, RDS, ElastiCache, S3, SQS, SES, ECR, ECS, ALB, Secrets, **서비스별 보안 그룹 (2-13, 필수)**
+2. 🔄 **Terraform 기반 인프라** — 코드만 작성·`validate`, 실제 apply는 AWS 계정 준비 후
+   - ✅ 2-1단계: 상태 백엔드, VPC(서브넷·NAT·VPC 엔드포인트), **서비스별 보안 그룹 (2-13)**, RDS, ElastiCache(Valkey, TLS), S3, SQS(큐·DLQ), SES(Configuration Set·Send 이벤트·identity·DKIM·MAIL FROM), Route 53 영역, SSM 시크릿
+   - ⬜ 2-2단계: ECR, ECS 클러스터·서비스 7개(Service Connect, 태스크 정의 env/secrets), ALB + ACM, task role(SQS·S3·SES 권한), **DB·로그인 생성 일회성 태스크**(`postgres_init.sh`를 관리자 계정으로 실행)
 3. ⬜ **CI/CD** — GitHub Actions → ECR → ECS
 4. ⬜ **모니터링 · 알림** — AMP·AMG·중앙 ADOT·로그 그룹, 알림 7개 이전 (2-10)
 5. ⬜ **WEB** — S3 + CloudFront, 도메인 연결
