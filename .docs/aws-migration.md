@@ -40,7 +40,7 @@
 | LocalStack S3 | **Amazon S3** | ✅ 완료 (#364) — 버킷은 Terraform |
 | LocalStack SES | **Amazon SES** (API, `SendRawEmail`) | ✅ 완료 — SMTP에서 SES API로 전환 |
 | `.docker/.env` 시크릿 | **Secrets Manager** / SSM Parameter Store | 필요 없음 (ECS가 env로 주입) |
-| Prometheus / Promtail / Loki / Tempo / Grafana(+ 디스코드 알림) | ★ **CloudWatch + X-Ray (ADOT)** 또는 Grafana 스택 자체 호스팅 | 앱은 OTLP 그대로. 알림 규칙은 옮겨야 함 |
+| Prometheus / Promtail / Loki / Tempo / Grafana(+ 디스코드 알림) | ★ **AMP + Managed Grafana + X-Ray + CloudWatch Logs** (중앙 ADOT collector) | 앱은 그대로. 알림 규칙은 AMG로 옮김(PromQL 그대로) |
 | (없음) | **Route 53 + ACM**, **CloudFront** (WEB 정적 호스팅) | — |
 | (없음) | **Terraform** (IaC), **GitHub Actions OIDC** (배포) | — |
 
@@ -92,7 +92,14 @@
 ### 2-8. 메일 → SES
 - SMTP가 아니라 **SES API**(`spring-cloud-aws-starter-ses`, `SendRawEmail`)로 보낸다. AWS에선 `SES_ENDPOINT`를 비우면 실제 SES로, 인증은 task role(`ses:SendRawEmail`) — 관리할 SMTP 비밀번호가 없다.
 - 사전 작업: 도메인 인증(DKIM/SPF), **샌드박스 해제 요청**(안 하면 인증된 주소로만 발송 가능).
-- Terraform: Configuration Set `mail-events`(Send 이벤트 → SNS) + SNS 토픽 `mail-ses-events` + SQS 구독(raw)과 큐 정책, task role에 `ses:SendRawEmail`(identity + configuration set). **Configuration Set이 없으면 발송이 400(`ConfigurationSetDoesNotExist`)으로 전부 DLQ에 간다.**
+- **TODO (Terraform)** — 로컬은 `.docker/localstack/init-aws.sh`가 같은 것을 만든다. 빠지면 서비스가 안 뜨거나 메일이 전부 DLQ로 간다.
+  - [ ] SES identity(도메인) + DKIM/SPF 레코드
+  - [ ] Configuration Set `mail-events` + 이벤트 대상: `SEND` → SNS 토픽 `mail-ses-events`. **없으면 발송이 400(`ConfigurationSetDoesNotExist`)으로 전부 DLQ에 간다.**
+  - [ ] SQS `mail-ses-events` + `mail-ses-events-dlq`(redrive `maxReceiveCount` 4) — 없으면 mail-service 기동 실패(fail on missing queue)
+  - [ ] SNS → SQS 구독, **raw message delivery 켬** (리스너가 envelope 없는 SES 이벤트 JSON을 읽는다)
+  - [ ] `mail-ses-events` 큐 정책: `sqs:SendMessage`를 SNS 서비스 + `aws:SourceArn` = 해당 토픽으로만 허용 — 위조 Send 이벤트로 메일을 "보냄" 처리시켜 막는 것 방지 (#518 보안 리뷰)
+  - [ ] mail-service task role: `ses:SendRawEmail`(identity + configuration set 리소스), `mail-ses-events` 수신 권한
+  - [ ] 배포 전 실제 SES(샌드박스)로 한 통 보내 `deliveryId` 태그(`<queue>_<outboxId>`)가 거절되지 않는지 확인 — LocalStack은 태그 값을 검증하지 않는다
 
 ### 2-9. 시크릿 → Secrets Manager / SSM Parameter Store
 - 옮길 것(`.docker/.env.example` 기준):
@@ -106,44 +113,74 @@
 - `STORAGE_ENCRYPTION_KEY`는 장기적으로 KMS 봉투 암호화 검토.
 
 ### 2-10. ★ 모니터링 · 알림
-Promtail은 docker socket 기반이라 **Fargate에서 못 쓴다** — 로그 수집은 반드시 바뀐다.
 
-| | A. AWS 네이티브 (추천) | B. Grafana 스택 유지 |
-|---|---|---|
-| 로그 | CloudWatch Logs (`awslogs` 드라이버) | FireLens(Fluent Bit) → Loki(ECS, S3 백엔드) |
-| 트레이스 | ADOT Collector → **X-Ray** | ADOT/otel-collector → Tempo(S3 백엔드) |
-| 메트릭 | ADOT → Amazon Managed Prometheus 또는 CloudWatch | Prometheus 자체 호스팅 |
-| 대시보드 | CloudWatch (필요시 Amazon Managed Grafana) | Grafana 자체 호스팅 |
-| 알림 | 규칙을 CloudWatch Alarm 등으로 **다시 작성** | 현재 Grafana 알림 규칙 그대로 |
-| 운영 부담 | 낮음 | Loki/Tempo/Prometheus/Grafana 직접 운영 |
+**확정 (2026-10-06): AMP + Amazon Managed Grafana + X-Ray + CloudWatch Logs, 수집은 중앙 ADOT collector 1개.**
 
-- 앱은 어느 쪽이든 **OTLP 그대로** — 지금 `OTEL_EXPORTER_OTLP_ENDPOINT`(기본 `http://otel-collector:4318`)로 보내므로 collector 주소만 바꾸면 된다.
-- 현재 알림: Grafana 알림 규칙 (`.docker/observability/grafana/alerting/alerts.yaml`) → 디스코드 채널 2개. 규칙 목록은 `spec/007-discord-alert-spec.md`.
-  A를 고르면 이 규칙들을 옮겨야 한다. **C. 메트릭만 AMP + Amazon Managed Grafana**로 가면 Grafana 알림 규칙을 거의 그대로 쓸 수 있다
-  (대신 AMG는 IAM Identity Center 로그인 필수 + 사용자 수 과금 — 혼자 운영할 땐 오버헤드).
+선택 기준은 **혼자서도 운영이 간단할 것**과 **지금 만든 것(PromQL 알림 7개, Grafana, OTLP)을 그대로 쓸 것** — 저장소와 Grafana는 전부 관리형으로 두고, 직접 띄우는 건 중앙 ADOT collector ECS 서비스 하나뿐이다.
 
-#### 이관 때 결정·작업할 것 (2026-10-06 정리)
+```
+ECS 태스크들 ──OTLP 트레이스──▶ ┌─────────────────────┐ ──▶ X-Ray
+            ◀──:9464 수집─────  │ 중앙 ADOT collector │ ──▶ AMP (remote write)
+            ──stdout(awslogs)─▶ └─────────────────────┘
+                 CloudWatch Logs ◀───────────── Amazon Managed Grafana ──▶ Discord
+```
 
-로컬에서 할 수 있는 앱 쪽 작업(DB·S3 span, userId 태그, exemplar, 지연 알림)은 [observability.md 6장](observability.md#6-요청-트레이싱-개선)에서 한다 — 백엔드가 무엇이든 그대로 쓰인다. 여기엔 AWS 구성이 정해져야 할 수 있는 것만 둔다.
+| 신호 | 로컬 | AWS | 수집 |
+|---|---|---|---|
+| 메트릭 | Prometheus | **Amazon Managed Prometheus (AMP)** | 중앙 ADOT가 ECS observer로 태스크를 찾아 `:9464` 수집 → remote write |
+| 트레이스 | otel-collector → Tempo | **X-Ray** | 앱 OTLP → 중앙 ADOT(tail sampling) → X-Ray |
+| 로그 | Promtail → Loki | **CloudWatch Logs** | `awslogs` 드라이버 — 사이드카 없음 (Promtail은 docker socket 기반이라 Fargate에서 못 쓴다) |
+| 대시보드·알림 | Grafana | **Amazon Managed Grafana (AMG)** | AMP·X-Ray·CloudWatch 데이터소스 |
 
-- [ ] **tail sampling 구조** — ADOT를 태스크마다 사이드카로 붙이면 한 trace의 span이 여러 collector로 흩어져
-  "에러·느린 trace는 전량 보관"(지금 collector 정책)이 깨진다. 둘 중 하나를 고른다:
-  - 2단 구성: 사이드카(또는 앱)가 `loadbalancing` exporter로 **traceID 기준** 라우팅 → 뒤의 sampling 전용 collector ECS 서비스(2대 이상)가 판단
-  - 포기하고 head sampling(X-Ray 기본) — 에러 trace도 확률적으로 버려진다
-- [ ] **ALB는 trace에 끼지 않는다** — ALB는 W3C `traceparent`가 아니라 `X-Amzn-Trace-Id`를 붙인다. trace는 gateway부터 시작하고, ALB 구간은 ALB 액세스 로그(S3)로 본다.
-- [ ] **로그 2갈래 라우팅** (FireLens/Fluent Bit): ERROR/WARN·감사 로그 → 검색용 단기 저장(CloudWatch Logs 또는 Loki, 7~14일), 전량 → S3(장기, Athena 조회).
-  전량을 CloudWatch Logs에 넣으면 MAU 500만 규모(요청 하루 수천만 건)에서 수집 비용이 인프라 비용에 육박한다.
-- [ ] **트레이스 비용** — X-Ray는 trace 백만 건당 과금이라 100%는 불가. 지금 collector 정책(에러 + 1초 초과 + 5%)을 그대로 가져간다.
-- [ ] **메트릭 레이블에 userId·fileId 금지** — 시계열 폭발(AMP는 샘플 수 과금). 고유값은 span 태그와 로그에만 둔다(지금 코드도 그렇게 한다).
-- [ ] **AWS가 기본 제공하는 지표 연결** — 앱이 못 보는 구간이라 Grafana 데이터소스(CloudWatch)로 붙이거나 CloudWatch Alarm으로 건다:
+#### 다른 선택지를 뺀 이유
+
+| 선택지 | 뺀 이유 |
+|---|---|
+| CloudWatch만 (메트릭·대시보드·알림까지) | 알림 7개를 CloudWatch Alarm으로 다시 써야 한다. Prometheus 지표를 커스텀 메트릭으로 넣으면 레이블 조합마다 과금이라 히스토그램 버킷 × URI × 상태 × 태스크로 비용이 커진다 |
+| Grafana 스택 직접 운영 (Loki·Tempo·Prometheus·Grafana on ECS) | 저장소(S3/EFS)·업그레이드·장애 대응을 혼자 떠안는다 — "간단한 운영"과 반대 |
+| Grafana Cloud (SaaS) | 운영은 가장 쉽고 도구도 똑같지만, 데이터가 AWS 밖으로 나가 전송 비용이 들고 대용량에서 요금이 빠르게 오른다. AWS 이관 학습 목표와도 어긋난다 |
+
+#### 설계 요점
+
+- **앱은 바뀌지 않는다** — `OTEL_EXPORTER_OTLP_ENDPOINT`를 중앙 collector의 Service Connect 주소로만 바꾼다. 메트릭(`/actuator/prometheus`)·JSON 로그(`traceId`·`userId` 필드)는 그대로.
+- **사이드카가 아니라 중앙 collector 1개** — 한 trace의 span이 전부 한 collector로 모여야 tail sampling(에러 + 1초 초과 + 5%)이 지금처럼 동작한다.
+  태스크마다 사이드카를 붙이면 span이 흩어져 "에러 trace 전량 보관"이 깨진다. collector가 죽어도 telemetry만 잠시 빠지고 서비스는 영향 없다(앱은 비동기 export, 실패 시 버림).
+  **collector를 2대 이상으로 늘릴 땐** 앞단 collector가 `loadbalancing` exporter로 **traceID 기준** 라우팅하는 2단 구성으로 바꾼다 — 처음부터 할 필요는 없다.
+- **수집 대상 자동 탐색** — 로컬 `prometheus.yml`은 서비스 7개를 `static_configs`로 박아 두지만, ECS에선 태스크 IP가 바뀌고 서비스당 태스크가 여럿이다.
+  ADOT `ecs_observer`가 태스크 정의 라벨로 대상을 찾는다. 알림 메시지의 "서비스"는 `instance`(태스크 IP)에서 뽑으므로 서비스 이름 라벨(`job`·`service`)을 붙이고 템플릿도 그 라벨을 쓰게 바꾼다.
+- **알림** — `alerts.yaml`(규칙 7개, Discord 수신처 2개)을 AMG로 옮긴다. PromQL이라 쿼리는 그대로, 바뀌는 건 라벨(위)과 `inspect` 문구(`docker logs` → CloudWatch Logs Insights, TraceQL → X-Ray 검색).
+  Discord 웹후크 URL은 Secrets Manager/Parameter Store(2-9).
+- **로그 검색** — LogQL 대신 CloudWatch Logs Insights. JSON 필드라 `filter traceId = "..."`, `filter userId = "..."`가 바로 된다.
+- **ALB는 trace에 끼지 않는다** — ALB는 W3C `traceparent`가 아니라 `X-Amzn-Trace-Id`를 붙인다. trace는 gateway부터, ALB 구간은 ALB 액세스 로그(S3)로 본다.
+- **메트릭 레이블에 userId·fileId 금지** — AMP는 샘플 수 과금. 고유값은 span 태그와 로그에만 둔다(지금 코드도 그렇다).
+
+#### 비용 관리 (MAU 500만 가정)
+
+- **로그가 비용의 대부분이다.** 시작은 CloudWatch Logs 보존 7~14일 + INFO 로그 줄이기(+ Infrequent Access 로그 클래스 검토).
+  그래도 크면 **FireLens(Fluent Bit) 2갈래**로 바꾼다: ERROR/WARN·감사 로그 → CloudWatch Logs, 전량 → S3(장기, Athena 조회). 처음부터 하지 않는다.
+- **트레이스** — X-Ray는 trace 건수 과금이라 100%는 불가. 지금 tail sampling 정책을 그대로 가져간다.
+- **메트릭** — 수집 주기 15초 → 30~60초 검토, 안 쓰는 지표는 collector에서 drop.
+- **AMG** — 사용자 수 과금(혼자면 월 $9 수준), 로그인에 IAM Identity Center 1회 설정 필요.
+
+#### 이관 때 확인할 것 (불확실)
+
+- [ ] X-Ray가 앱의 W3C 형식 trace ID(첫 32비트가 타임스탬프가 아님)를 그대로 받는지 — 안 되면 ADOT/SDK에 X-Ray ID 생성기 설정
+- [ ] AMP가 exemplar를 저장하고 AMG에서 X-Ray로 링크되는지 — 안 되면 알림 문구의 trace 검색 안내로 대체
+- [ ] 단일 collector의 처리량 한계(CPU·메모리)와 tail sampling `decision_wait`(30s) 동안의 메모리 — 넘으면 위 2단 구성
+
+#### Terraform으로 만들 것
+
+- [ ] AMP 워크스페이스
+- [ ] AMG 워크스페이스 + IAM Identity Center 사용자, 데이터소스(AMP·X-Ray·CloudWatch) 권한 역할
+- [ ] 중앙 ADOT collector ECS 서비스 + 설정(SSM Parameter): `otlp` 수신 → `tail_sampling` → `awsxray`, `prometheus`(ecs_observer) → `prometheusremotewrite`(SigV4)
+- [ ] ADOT task role: `aps:RemoteWrite`, `xray:PutTraceSegments`·`xray:PutTelemetryRecords`, ecs_observer용 `ecs:ListTasks`·`ecs:DescribeTasks`·`ecs:DescribeTaskDefinition`·`ec2:DescribeInstances`
+- [ ] 서비스 태스크 정의: `awslogs` 로그 드라이버 + 로그 그룹(보존 기간), 수집 대상 라벨, `OTEL_EXPORTER_OTLP_ENDPOINT`
+- [ ] 보안 그룹: ADOT → 각 서비스 `9464`, 각 서비스 → ADOT `4318` (2-13)
+- [ ] AWS 기본 지표를 AMG(CloudWatch 데이터소스)에 연결 + 알림 추가:
   - SQS `ApproximateAgeOfOldestMessage` — 컨슈머가 느려져 큐가 쌓이는 것 (지금은 DLQ 개수만 본다)
-  - S3 4xx/5xx·`503 SlowDown`·`FirstByteLatency` (요청 지표는 버킷에서 켜야 나온다, 유료)
+  - S3 4xx/5xx·`503 SlowDown`·`FirstByteLatency` (버킷 요청 지표는 켜야 나온다, 유료)
   - ALB 5xx·`TargetResponseTime`, CloudFront 캐시 히트율·오리진 에러율, ECS Container Insights(CPU·메모리)
-- [ ] **Prometheus 수집 대상 자동 탐색** — 지금 `prometheus.yml`은 서비스 7개를 `static_configs`(`<서비스>:9464`)로 박아 둔다.
-  ECS에선 태스크마다 IP가 바뀌고 서비스당 여러 태스크가 뜨므로 고정 주소로는 한 태스크만 잡히거나 아예 못 잡는다.
-  ADOT를 쓰면 **ECS observer**(태스크 정의 라벨로 대상 발견), Prometheus를 직접 운영하면 `ecs_sd_configs`류 설정이나 Cloud Map DNS SD로 바꾼다.
-  알림 규칙의 `instance` 라벨도 태스크 IP가 되므로, 메시지의 "서비스"가 읽히게 서비스 이름 라벨(`job`·`service`)을 붙인다.
-- [ ] 알림 수신처를 디스코드로 계속 둘지 (실무는 Slack + PagerDuty 같은 온콜 도구)
+- [ ] (선택) 알림 수신처를 디스코드로 계속 둘지 — 실무는 Slack + PagerDuty 같은 온콜 도구
 
 ### 2-11. 네트워크 / 도메인 / 프론트
 - VPC: 퍼블릭 서브넷(ALB), 프라이빗 서브넷(ECS, RDS, ElastiCache).
@@ -186,7 +223,7 @@ Promtail은 docker socket 기반이라 **Fargate에서 못 쓴다** — 로그 �
 | `rds-sg` | `member-sg`, `file-sg`, `notification-sg` (각자 자기 DB 로그인만 가능 — 2-4) | 5432 |
 | `redis-sg` | `auth-sg`, `member-sg`, `storage-sg`, `mail-sg` | 6379 |
 
-- 관리 포트(9464, actuator·Prometheus)는 모니터링 수집기(ADOT 또는 Prometheus)의 보안 그룹에서만 연다 (2-10 결정 후).
+- 관리 포트(9464, actuator·Prometheus)는 중앙 ADOT collector의 보안 그룹에서만 연다. 반대로 ADOT의 `4318`(OTLP)은 서비스 보안 그룹들에서만 연다 (2-10).
 - 아웃바운드: SQS·S3·Secrets Manager·ECR·CloudWatch는 VPC 엔드포인트로 가고(2-11), SES(메일)와 외부 알림(디스코드)만 NAT로 나간다. 아웃바운드도 좁히려면 엔드포인트용 보안 그룹과 NAT 경로만 허용한다.
 - ECS Service Connect를 써도 그대로 적용된다 — 호출은 호출하는 태스크의 네트워크 인터페이스에서 출발하므로, 받는 쪽 보안 그룹에서 출발지 보안 그룹으로 걸러진다.
 
@@ -212,7 +249,7 @@ Promtail은 docker socket 기반이라 **Fargate에서 못 쓴다** — 로그 �
    - 로컬 SQS·S3를 LocalStack으로 통일 — #403 / PR #404
 2. ⬜ **Terraform 기반 인프라** — VPC, RDS, ElastiCache, S3, SQS, SES, ECR, ECS, ALB, Secrets, **서비스별 보안 그룹 (2-13, 필수)**
 3. ⬜ **CI/CD** — GitHub Actions → ECR → ECS
-4. ⬜ **모니터링 · 알림** — 2-10 결정 후
+4. ⬜ **모니터링 · 알림** — AMP·AMG·중앙 ADOT·로그 그룹, 알림 7개 이전 (2-10)
 5. ⬜ **WEB** — S3 + CloudFront, 도메인 연결
 
 ---
@@ -224,4 +261,4 @@ Promtail은 docker socket 기반이라 **Fargate에서 못 쓴다** — 로그 �
 | 메시징 | **SQS** (2026-09-19 확정) |
 | 컴퓨팅 | **ECS Fargate** (2026-09-19 확정) |
 | 서비스 간 접근 제어 | **서비스별 보안 그룹** (2026-09-25 확정, 2-13). 공용 토큰은 2026-09-27 제거. VPC Lattice + IAM은 이관 안정화 후 검토 |
-| ★ 모니터링 · 알림 | 미정 — AWS 네이티브(추천) vs Grafana 스택 자체 호스팅 vs AMP + Managed Grafana. 함께 정할 것: tail sampling 구조, 로그 2갈래 라우팅 (2-10) |
+| ★ 모니터링 · 알림 | **AMP + Managed Grafana + X-Ray + CloudWatch Logs**, 수집은 중앙 ADOT collector 1개 (2026-10-06 확정, 2-10). 로그 2갈래(FireLens→S3)·collector 2단은 필요해질 때 |

@@ -194,4 +194,4 @@ gateway → 서비스(WebClient/Netty)와 SQS(outbox 헤더 저장 → relay Obs
 업로드·다운로드 성공률은 따로 만들지 않는다 — storage-service가 서버에서 직접 S3에 올리므로(presigned URL 아님) 실패가 전부
 `http_server_requests_seconds_count{uri=..., outcome=...}`에 이미 잡힌다.
 
-AWS 이관 때 정할 것(tail sampling 구조, 로그 2갈래, SQS 적체·S3·ALB 지표)은 [aws-migration.md 2-10](aws-migration.md#2-10--모니터링--알림).
+AWS 구성(AMP + Managed Grafana + X-Ray + CloudWatch Logs, 중앙 ADOT collector)과 이관 때 할 일은 [aws-migration.md 2-10](aws-migration.md#2-10--모니터링--알림).
