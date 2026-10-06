@@ -97,7 +97,7 @@ class MailEventListenerTest {
         @DisplayName("SES가 거절한 메일이면 재시도 없이 DLQ로 보내고, 수정 후 재처리할 수 있게 선점을 돌려놓는다")
         void sendsARejectedMailStraightToTheDlq() {
             given(processedEvents.claim(MemberQueues.SIGN_UP_VERIFICATION_MAIL_REQUESTED, "outbox-1")).willReturn(true);
-            willThrow(new MailRejectedException(new RuntimeException("Email address is not verified."))).given(sendVerificationMailUseCase)
+            willThrow(new MailRejectedException("MessageRejectedException: MessageRejected")).given(sendVerificationMailUseCase)
                     .sendVerificationMail(any(SendVerificationMailCommand.class));
 
             assertThatThrownBy(() -> listener.onSignUpVerificationRequested(event, "outbox-1"))

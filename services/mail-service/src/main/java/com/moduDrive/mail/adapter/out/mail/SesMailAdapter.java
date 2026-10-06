@@ -63,7 +63,8 @@ class SesMailAdapter implements SendMailPort {
             message.writeTo(raw);
         } catch (MessagingException | IOException e) {
             // Malformed MIME structure, not a sending failure — retrying the same body would fail identically.
-            throw new MailRejectedException(e);
+            // Type only: an AddressException's message quotes the address.
+            throw new MailRejectedException(e.getClass().getName());
         }
 
         // Three outcomes besides success, and only the last is a plain retry:
@@ -78,7 +79,11 @@ class SesMailAdapter implements SendMailPort {
                     .tags(MessageTag.builder().name(DELIVERY_TAG).value(deliveryId).build()));
         } catch (AwsServiceException e) {
             if (e.statusCode() == 400 && !e.isThrottlingException()) {
-                throw new MailRejectedException(e);
+                // SES's message can quote the recipient (sandbox: "not verified... failed the check: x@y");
+                // the error code and request id say which refusal it was.
+                String code = e.awsErrorDetails() == null ? "HTTP 400" : e.awsErrorDetails().errorCode();
+                throw new MailRejectedException(
+                        e.getClass().getSimpleName() + ": " + code + " (request id " + e.requestId() + ")");
             }
             throw e;
         } catch (ApiCallTimeoutException e) {

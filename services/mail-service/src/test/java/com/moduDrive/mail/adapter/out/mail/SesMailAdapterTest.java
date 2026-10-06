@@ -105,15 +105,19 @@ class SesMailAdapterTest {
         }
 
         @Test
-        @DisplayName("SES가 이 요청 자체를 거절하면(400) 다시 보내도 같으니 거절로 알린다")
+        @DisplayName("SES가 이 요청 자체를 거절하면(400) 다시 보내도 같으니 거절로 알린다 — 사유엔 수신자 주소를 담지 않는다")
         @SuppressWarnings("unchecked")
         void reportsARefusalAsRejected() {
-            willThrow(MessageRejectedException.builder().statusCode(400)
+            willThrow(MessageRejectedException.builder().statusCode(400).message(
+                            "Email address is not verified. The following identities failed the check: river@modudrive.com")
                     .awsErrorDetails(AwsErrorDetails.builder().errorCode("MessageRejected").build()).build())
                     .given(sesClient).sendRawEmail(any(Consumer.class));
 
             assertThatThrownBy(() -> adapter().sendHtml("q_outbox-1", "river@modudrive.com", "s", "<p>b</p>", null, Map.of()))
-                    .isInstanceOf(MailRejectedException.class);
+                    .isInstanceOf(MailRejectedException.class)
+                    .hasMessageStartingWith("MessageRejectedException: MessageRejected")
+                    .hasMessageNotContaining("river@modudrive.com")
+                    .hasNoCause();
         }
 
         @Test
