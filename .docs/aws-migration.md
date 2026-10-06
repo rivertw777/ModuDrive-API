@@ -35,7 +35,7 @@
 | 서비스 간 호출: 고정 URL(`clients.<서비스>.url`, compose DNS) | **ECS Service Connect** | ✅ 완료 (#363) — URL 값만 |
 | gateway-service (Spring Cloud Gateway) | 그대로 유지 + 앞단 **ALB** | 필요 없음 |
 | Postgres 18 (서비스별 DB 3개, Flyway) | **RDS for PostgreSQL** | 필요 없음 (접속 정보만) |
-| Redis 7 | **ElastiCache for Valkey** | ⬜ TLS 설정 추가 |
+| Redis 7 | **ElastiCache for Valkey** | ✅ 완료 — `REDIS_SSL_ENABLED=true`만 |
 | LocalStack SQS | **Amazon SQS** 표준 큐 | ✅ 완료 (#365, #403) — 큐는 Terraform |
 | LocalStack S3 | **Amazon S3** | ✅ 완료 (#364) — 버킷은 Terraform |
 | LocalStack SES | **Amazon SES** (API, `SendRawEmail`) | ✅ 완료 — SMTP에서 SES API로 전환 |
@@ -73,7 +73,9 @@
 
 ### 2-5. Redis → ElastiCache for Valkey
 - 사용처: auth(토큰), member(인증 코드), storage(다운로드 쿼터), mail(메시지 중복 처리 방지).
-- Valkey는 Redis 호환. 전송 암호화(TLS)를 켜면 `application-redis.yml`에 `spring.data.redis.ssl.enabled: true` 추가 필요 — **현재 설정 없음**.
+- Valkey는 Redis 호환. **전송 암호화(TLS)를 켠다** — 켜면 TLS 연결만 받는다.
+  앱은 `application-redis.yml`의 `ssl.enabled`가 `REDIS_SSL_ENABLED`(기본 false)를 읽으므로, ECS 태스크 정의에 `REDIS_SSL_ENABLED=true`만 넣으면 된다.
+  인증서는 Amazon 발급이라 JVM 기본 trust store로 검증된다(SSL bundle 불필요). `REDIS_PASSWORD`는 ElastiCache AUTH 토큰 — AUTH는 TLS가 켜져 있어야 쓸 수 있다.
 
 ### 2-6. 메시징: Amazon SQS (확정)
 - **앱 쪽은 완료**: SQS 어댑터(#365 / PR #368), 로컬은 LocalStack(#403).
