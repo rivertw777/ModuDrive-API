@@ -60,6 +60,10 @@
 - `management.tracing.sampling.probability: 1.0` — 앱은 전량 export, 샘플링은 collector가 결정
 - `logging.pattern.correlation` — 로그 줄에 `[앱이름,traceId,spanId]`를 찍음 (Loki→Tempo 링크의 근거)
 - SQS observation 켬 (`application-sqs.yml`) — 프로듀서→컨슈머로 trace가 이어지게 (`spec/005-messaging-spec.md` 6장)
+- gateway는 모든 응답(401·CSRF 403·fallback 포함)에 `X-Trace-Id` 헤더를 붙인다 (`TraceIdResponseFilter`, CORS
+  `exposedHeaders`에도 등록). WEB은 5xx 알림에 이 값을 "오류 코드"로 보여준다 — 사용자가 알려준 코드로 Loki/Tempo를 바로 검색.
+  정상 요청 트레이스는 tail sampling으로 5%만 남지만 로그는 전부 남는다.
+- gateway(WebFlux)는 `spring.reactor.context-propagation: auto` — 없으면 스레드가 바뀌면서 로그의 traceId 칸이 빈다.
 
 ---
 

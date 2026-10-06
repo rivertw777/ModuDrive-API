@@ -23,10 +23,11 @@ import java.util.Set;
  * and don't let a page spoof it, so the SPA needs no CSRF token (#205).
  *
  * <p>A {@link WebFilter} ordered ahead of Spring Security, so a forged request is refused before
- * its cookie is ever looked up — it can't even refresh the session's idle timeout.
+ * its cookie is ever looked up — it can't even refresh the session's idle timeout. One step behind
+ * {@link TraceIdResponseFilter}, so a refused request still gets its trace id.
  */
 @Component
-@Order(Ordered.HIGHEST_PRECEDENCE)
+@Order(Ordered.HIGHEST_PRECEDENCE + 1)
 class CsrfOriginGuardFilter implements WebFilter {
 
     private static final Set<HttpMethod> STATE_CHANGING_METHODS =
