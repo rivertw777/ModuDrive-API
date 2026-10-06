@@ -92,7 +92,14 @@
 ### 2-8. 메일 → SES
 - SMTP가 아니라 **SES API**(`spring-cloud-aws-starter-ses`, `SendRawEmail`)로 보낸다. AWS에선 `SES_ENDPOINT`를 비우면 실제 SES로, 인증은 task role(`ses:SendRawEmail`) — 관리할 SMTP 비밀번호가 없다.
 - 사전 작업: 도메인 인증(DKIM/SPF), **샌드박스 해제 요청**(안 하면 인증된 주소로만 발송 가능).
-- Terraform: Configuration Set `mail-events`(Send 이벤트 → SNS) + SNS 토픽 `mail-ses-events` + SQS 구독(raw)과 큐 정책, task role에 `ses:SendRawEmail`(identity + configuration set). **Configuration Set이 없으면 발송이 400(`ConfigurationSetDoesNotExist`)으로 전부 DLQ에 간다.**
+- **TODO (Terraform)** — 로컬은 `.docker/localstack/init-aws.sh`가 같은 것을 만든다. 빠지면 서비스가 안 뜨거나 메일이 전부 DLQ로 간다.
+  - [ ] SES identity(도메인) + DKIM/SPF 레코드
+  - [ ] Configuration Set `mail-events` + 이벤트 대상: `SEND` → SNS 토픽 `mail-ses-events`. **없으면 발송이 400(`ConfigurationSetDoesNotExist`)으로 전부 DLQ에 간다.**
+  - [ ] SQS `mail-ses-events` + `mail-ses-events-dlq`(redrive `maxReceiveCount` 4) — 없으면 mail-service 기동 실패(fail on missing queue)
+  - [ ] SNS → SQS 구독, **raw message delivery 켬** (리스너가 envelope 없는 SES 이벤트 JSON을 읽는다)
+  - [ ] `mail-ses-events` 큐 정책: `sqs:SendMessage`를 SNS 서비스 + `aws:SourceArn` = 해당 토픽으로만 허용 — 위조 Send 이벤트로 메일을 "보냄" 처리시켜 막는 것 방지 (#518 보안 리뷰)
+  - [ ] mail-service task role: `ses:SendRawEmail`(identity + configuration set 리소스), `mail-ses-events` 수신 권한
+  - [ ] 배포 전 실제 SES(샌드박스)로 한 통 보내 `deliveryId` 태그(`<queue>_<outboxId>`)가 거절되지 않는지 확인 — LocalStack은 태그 값을 검증하지 않는다
 
 ### 2-9. 시크릿 → Secrets Manager / SSM Parameter Store
 - 옮길 것(`.docker/.env.example` 기준):
