@@ -78,7 +78,7 @@ AWS SQS는 완전관리형 큐 서비스로 시간당 과금이 아닌 월 100�
 | 항목 | 내용 |
 |---|---|
 | 브로커 | Amazon SQS (표준 큐) |
-| 큐/DLQ/redrive 정의 | Terraform (예정) — [1-2-1](#1-2-1-큐-설정) |
+| 큐/DLQ/redrive 정의 | Terraform `terraform/sqs.tf` — [1-2-1](#1-2-1-큐-설정) |
 | 접속 | endpoint·키 **미설정** → SDK 기본 체인이 ECS task role + `AWS_REGION`을 쓴다 |
 
 #### 1-2-1. 큐 설정
@@ -92,12 +92,12 @@ Terraform으로 만들 때 `init-aws.sh`와 **똑같이** 맞춘다 — 로컬�
 | `VisibilityTimeout` | 10초 | 메시지를 가져간 Consumer에게 주는 **처리 시간**. 10초 안에 못 끝내면 큐에 다시 나타난다 |
 | `RedrivePolicy.maxReceiveCount` | 4 | 같은 메시지를 4번 받고도 못 지우면 SQS가 DLQ로 옮긴다 = 첫 시도 1 + 재시도 3. 에러 핸들러는 이 값을 큐에서 읽어서, 마지막 시도에 실패하면 사유를 달아 직접 DLQ로 옮긴다 ([4-2](#4-2-처리-실패)) |
 | `RedrivePolicy.deadLetterTargetArn` | `<이름>-dlq`의 ARN | 옮겨갈 DLQ. SQS 규칙상 원래 큐와 **같은 종류**(표준)여야 한다 |
-| DLQ `MessageRetentionPeriod` | 기본값(4일) | DLQ 메시지는 이 기간이 지나면 사라진다 — 알림([4-2-1](#4-2-1-dlq에-들어간-뒤))을 받으면 그 안에 redrive. 최대 14일까지 늘릴 수 있음 |
+| DLQ `MessageRetentionPeriod` | 14일(최대) | DLQ 메시지는 이 기간이 지나면 사라진다 — 알림([4-2-1](#4-2-1-dlq에-들어간-뒤))을 받으면 그 안에 redrive. 사람이 처리할 때까지 기다려야 하니 최대로 둔다 (`terraform/sqs.tf`, 로컬 LocalStack은 기본값) |
 
 #### 1-2-2. task role 권한
 
 로컬 LocalStack은 권한을 검사하지 않아서, 하나라도 빠지면 운영에서만 `AccessDenied`가 난다.
-서비스마다 **자기가 쓰는 큐에만** 준다(최소 권한 — 한 서비스가 뚫려도 남의 큐는 못 건드리게).
+서비스마다 **자기가 쓰는 큐에만** 준다(최소 권한 — 한 서비스가 뚫려도 남의 큐는 못 건드리게). 서비스별 큐 목록은 `terraform/iam.tf`의 `queue_producers`·`queue_consumers` — `*Queues` 상수나 `@SqsListener`를 바꾸면 같이 고친다.
 
 | 누가 | 권한 | 왜 |
 |---|---|---|

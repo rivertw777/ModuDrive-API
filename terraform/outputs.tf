@@ -34,3 +34,22 @@ output "ssm_parameter_arns" {
     },
   )
 }
+
+output "alb_dns_name" {
+  description = "Without a domain, the stack answers here over plain HTTP"
+  value       = aws_lb.main.dns_name
+}
+
+output "ecr_repository_urls" {
+  description = "Where CI pushes each service's image"
+  value       = { for name, repo in aws_ecr_repository.service : name => repo.repository_url }
+}
+
+output "db_init_run_task" {
+  description = "Run once after the first apply, before the services can start"
+  value = join(" ", [
+    "aws ecs run-task --cluster ${aws_ecs_cluster.main.name} --launch-type FARGATE",
+    "--task-definition ${aws_ecs_task_definition.db_init.family}",
+    "--network-configuration 'awsvpcConfiguration={subnets=[${module.vpc.private_subnets[0]}],securityGroups=[${aws_security_group.db_init.id}]}'",
+  ])
+}

@@ -26,3 +26,28 @@ variable "redis_node_type" {
   type    = string
   default = "cache.t4g.small"
 }
+
+# The image every service runs — CI passes the commit SHA (terraform apply -var image_tag=<sha>), so a
+# deploy is a plan you can read. Repositories are immutable: a tag always means the same image.
+variable "image_tag" {
+  type = string
+}
+
+# Per service: Fargate size and how far autoscaling may go. Tasks start at min and scale on CPU.
+variable "services" {
+  type = map(object({
+    cpu    = number
+    memory = number
+    min    = number
+    max    = number
+  }))
+  default = {
+    gateway      = { cpu = 512, memory = 1024, min = 2, max = 6 }
+    member       = { cpu = 512, memory = 1024, min = 1, max = 4 }
+    auth         = { cpu = 512, memory = 1024, min = 2, max = 6 }
+    file         = { cpu = 512, memory = 1024, min = 2, max = 6 }
+    storage      = { cpu = 1024, memory = 2048, min = 2, max = 6 }
+    mail         = { cpu = 512, memory = 1024, min = 1, max = 2 }
+    notification = { cpu = 512, memory = 1024, min = 1, max = 2 }
+  }
+}

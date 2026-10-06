@@ -68,6 +68,8 @@
 ### 2-4. DB: RDS for PostgreSQL
 - 현재 서비스별 DB 4개 + 서비스별 로그인(#355 / PR #358): `member_db`/`member_service`, `file_db`/`file_service`,
   `notification_db`/`notification_service`, `auth_db`/`auth_service`. 로컬은 `.docker/postgres/postgres_init.sh`가 만든다 — **RDS에선 이 DB·로그인을 따로 만들어야 한다**.
+  RDS가 프라이빗이라 Terraform으로는 못 만들고, 같은 스크립트를 **일회성 ECS 태스크**(`modudrive-db-init`, 명령은 출력 `db_init_run_task`)로 한 번 실행한다.
+  RDS 관리자는 superuser가 아니라서 PostgreSQL 16부터 `CREATE DATABASE ... OWNER <로그인>`이 `must be able to SET ROLE`로 실패한다 — 스크립트가 만든 로그인을 관리자에게 `GRANT`해서 해결(로컬 superuser에도 그대로 동작).
 - 테이블은 각 서비스가 기동할 때 Flyway가 만든다(#359 / PR #360, `.docs/db-migration.md`) — 별도 작업 없음.
 - 처음엔 단일 인스턴스(db.t4g 계열) + 자동 백업. 트래픽 늘면 Multi-AZ → Aurora 검토.
 
@@ -201,6 +203,13 @@ ECS 태스크들 ──OTLP 트레이스──▶ ┌─────────
   ```
 - 도메인은 `domain_name` 변수 — 비워 두면(기본 null) Route 53 영역·SES identity·DKIM/MAIL FROM 레코드를 만들지 않는다. 넣고 apply한 뒤 출력 `name_servers`를 도메인 등록 업체에 설정한다.
 - 상태 파일에 `random_password`로 만든 비밀번호가 평문으로 들어간다 — 상태 버킷은 암호화 + 접근을 배포 역할로만 제한한다.
+- **첫 apply 순서** — 서비스는 ECR 이미지와 DB가 있어야 뜬다:
+  1. `terraform apply -target=aws_ecr_repository.service -var image_tag=init` — 저장소만 먼저
+  2. 서비스 이미지 7개를 빌드해 같은 태그로 ECR에 푸시 (3장 3단계 CI/CD가 생기면 CI가 한다)
+  3. `terraform apply -target=aws_ecs_task_definition.db_init -var image_tag=<태그>` → 출력 `db_init_run_task` 명령 실행 (DB·로그인 생성, 한 번만)
+  4. `terraform apply -var image_tag=<태그>` — 나머지 전부. 이후 배포는 4번만 반복
+- 운영은 `SPRING_PROFILES_ACTIVE=prod` — `dev`는 테스트 계정 시드(`db/seed`)와 Swagger를 켠다.
+- 트레이스 export는 `MANAGEMENT_TRACING_EXPORT_ENABLED=false`로 꺼 둔다 — 모니터링 단계(2-10)에서 중앙 ADOT를 만들면 지우고 `OTEL_EXPORTER_OTLP_ENDPOINT`를 넣는다.
 - GitHub Actions 워크플로는 아직 없다 (3장 3단계).
 - GitHub Actions: OIDC로 AWS 인증(장기 키 없음) → 이미지 빌드 → ECR 푸시 → ECS 서비스 업데이트.
 
@@ -232,7 +241,7 @@ ECS 태스크들 ──OTLP 트레이스──▶ ┌─────────
 | `rds-sg` | `member-sg`, `file-sg`, `notification-sg`, `auth-sg` (각자 자기 DB 로그인만 가능 — 2-4) | 5432 |
 | `redis-sg` | `auth-sg`, `member-sg`, `storage-sg`, `mail-sg` | 6379 |
 
-- 관리 포트(9464, actuator·Prometheus)는 중앙 ADOT collector의 보안 그룹에서만 연다. 반대로 ADOT의 `4318`(OTLP)은 서비스 보안 그룹들에서만 연다 (2-10).
+- 관리 포트(9464, actuator·Prometheus)는 중앙 ADOT collector의 보안 그룹에서만 연다 — 예외로 gateway의 9464는 ALB 헬스 체크용으로 `alb-sg`에도 연다. DB 생성 일회성 태스크는 전용 `db-init-sg`로 `rds-sg`에 들어간다. 반대로 ADOT의 `4318`(OTLP)은 서비스 보안 그룹들에서만 연다 (2-10).
 - 아웃바운드: SQS·S3·Secrets Manager·ECR·CloudWatch는 VPC 엔드포인트로 가고(2-11), SES(메일)와 외부 알림(디스코드)만 NAT로 나간다. 아웃바운드도 좁히려면 엔드포인트용 보안 그룹과 NAT 경로만 허용한다.
 - ECS Service Connect를 써도 그대로 적용된다 — 호출은 호출하는 태스크의 네트워크 인터페이스에서 출발하므로, 받는 쪽 보안 그룹에서 출발지 보안 그룹으로 걸러진다.
 
@@ -258,7 +267,7 @@ ECS 태스크들 ──OTLP 트레이스──▶ ┌─────────
    - 로컬 SQS·S3를 LocalStack으로 통일 — #403 / PR #404
 2. 🔄 **Terraform 기반 인프라** — 코드만 작성·`validate`, 실제 apply는 AWS 계정 준비 후
    - ✅ 2-1단계: 상태 백엔드, VPC(서브넷·NAT·VPC 엔드포인트), **서비스별 보안 그룹 (2-13)**, RDS, ElastiCache(Valkey, TLS), S3, SQS(큐·DLQ), SES(Configuration Set·Send 이벤트·identity·DKIM·MAIL FROM), Route 53 영역, SSM 시크릿
-   - ⬜ 2-2단계: ECR, ECS 클러스터·서비스 7개(Service Connect, 태스크 정의 env/secrets), ALB + ACM, task role(SQS·S3·SES 권한), **DB·로그인 생성 일회성 태스크**(`postgres_init.sh`를 관리자 계정으로 실행)
+   - ✅ 2-2단계: ECR, ECS 클러스터·서비스 7개(Service Connect, 태스크 정의 env/secrets, CPU 오토스케일링, 배포 실패 자동 롤백), ALB + ACM(도메인 있을 때), task role(SQS·S3·SES 최소 권한), DB·로그인 생성 일회성 태스크
 3. ⬜ **CI/CD** — GitHub Actions → ECR → ECS
 4. ⬜ **모니터링 · 알림** — AMP·AMG·중앙 ADOT·로그 그룹, 알림 7개 이전 (2-10)
 5. ⬜ **WEB** — S3 + CloudFront, 도메인 연결

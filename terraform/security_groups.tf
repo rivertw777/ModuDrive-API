@@ -41,12 +41,15 @@ resource "aws_security_group" "alb" {
   vpc_id      = module.vpc.vpc_id
 }
 
-resource "aws_vpc_security_group_ingress_rule" "alb_https" {
+# 80 only redirects to 443 once a domain exists (alb.tf).
+resource "aws_vpc_security_group_ingress_rule" "alb_public" {
+  for_each = toset(["80", "443"])
+
   security_group_id = aws_security_group.alb.id
   cidr_ipv4         = "0.0.0.0/0"
   ip_protocol       = "tcp"
-  from_port         = 443
-  to_port           = 443
+  from_port         = tonumber(each.key)
+  to_port           = tonumber(each.key)
 }
 
 resource "aws_security_group" "service" {
@@ -69,6 +72,22 @@ resource "aws_vpc_security_group_ingress_rule" "service" {
   to_port     = local.service_ports[each.value.service]
 }
 
+# The ALB health-checks gateway on the actuator port (alb.tf).
+resource "aws_vpc_security_group_ingress_rule" "alb_to_gateway_health" {
+  security_group_id            = aws_security_group.service["gateway"].id
+  referenced_security_group_id = aws_security_group.alb.id
+  ip_protocol                  = "tcp"
+  from_port                    = 9464
+  to_port                      = 9464
+}
+
+# The one-off db-init task (ecs.tf): reaches Postgres as the admin to create the databases.
+resource "aws_security_group" "db_init" {
+  name        = "${var.project}-db-init"
+  description = "One-off database setup task"
+  vpc_id      = module.vpc.vpc_id
+}
+
 resource "aws_security_group" "postgres" {
   name        = "${var.project}-postgres"
   description = "RDS PostgreSQL"
@@ -76,10 +95,13 @@ resource "aws_security_group" "postgres" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "postgres" {
-  for_each = toset(local.postgres_clients)
+  for_each = merge(
+    { for name in local.postgres_clients : name => aws_security_group.service[name].id },
+    { db-init = aws_security_group.db_init.id },
+  )
 
   security_group_id            = aws_security_group.postgres.id
-  referenced_security_group_id = aws_security_group.service[each.key].id
+  referenced_security_group_id = each.value
   ip_protocol                  = "tcp"
   from_port                    = 5432
   to_port                      = 5432
@@ -108,10 +130,13 @@ resource "aws_security_group" "vpc_endpoints" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "vpc_endpoints" {
-  for_each = local.service_ports
+  for_each = merge(
+    { for name, sg in aws_security_group.service : name => sg.id },
+    { db-init = aws_security_group.db_init.id },
+  )
 
   security_group_id            = aws_security_group.vpc_endpoints.id
-  referenced_security_group_id = aws_security_group.service[each.key].id
+  referenced_security_group_id = each.value
   ip_protocol                  = "tcp"
   from_port                    = 443
   to_port                      = 443
@@ -122,7 +147,7 @@ resource "aws_vpc_security_group_ingress_rule" "vpc_endpoints" {
 resource "aws_vpc_security_group_egress_rule" "all" {
   for_each = merge(
     { for name, sg in aws_security_group.service : name => sg.id },
-    { alb = aws_security_group.alb.id },
+    { alb = aws_security_group.alb.id, db-init = aws_security_group.db_init.id },
   )
 
   security_group_id = each.value
