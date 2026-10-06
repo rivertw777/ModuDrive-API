@@ -115,7 +115,7 @@ class MailEventListener {
         } catch (MailOutcomeUnknownException e) {
             throw new RetryLaterException(SEND_EVENT_WAIT, e);
         } catch (MailRejectedException e) {
-            // Would be refused again on every retry: straight to the DLQ with SES's reason. The claim goes
+            // Would be refused again on every retry: straight to the DLQ with SES's error code. The claim goes
             // back so a redrive after the fix can send it.
             processedEvents.release(queue, deduplicationId);
             throw new PermanentConsumeException(e);
