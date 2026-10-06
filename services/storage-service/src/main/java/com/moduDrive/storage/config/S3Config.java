@@ -1,5 +1,7 @@
 package com.moduDrive.storage.config;
 
+import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.instrumentation.awssdk.v2_2.AwsSdkTelemetry;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -19,13 +21,17 @@ import java.net.URI;
 public class S3Config {
 
     /** An endpoint means an S3 emulator (local LocalStack); without one this talks to real S3.
-     * Without keys the SDK's default credential chain applies — the ECS task role on AWS. */
+     * Without keys the SDK's default credential chain applies — the ECS task role on AWS.
+     * Every call is a span (bucket, operation, status) under the request that made it. */
     @Bean
-    public S3Client s3Client(StorageProperties properties) {
+    public S3Client s3Client(StorageProperties properties, OpenTelemetry openTelemetry) {
         StorageProperties.S3Properties s3 = properties.getS3();
         boolean customEndpoint = StringUtils.hasText(s3.getEndpoint());
 
-        S3ClientBuilder builder = S3Client.builder().region(Region.of(s3.getRegion()));
+        S3ClientBuilder builder = S3Client.builder()
+                .region(Region.of(s3.getRegion()))
+                .overrideConfiguration(c -> c.addExecutionInterceptor(
+                        AwsSdkTelemetry.create(openTelemetry).createExecutionInterceptor()));
         if (customEndpoint) {
             builder.endpointOverride(URI.create(s3.getEndpoint())).forcePathStyle(true);
         }
