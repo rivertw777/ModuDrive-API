@@ -68,7 +68,8 @@ services:
       - modudrive_network
     ports:
       - "127.0.0.1:9090:9090"
-    command: ["--config.file=/etc/modudrive/prometheus.yml", "--storage.tsdb.path=/prometheus"]
+    # exemplar-storage: keep the trace_id each histogram bucket carries (Grafana links it to Tempo).
+    command: ["--config.file=/etc/modudrive/prometheus.yml", "--storage.tsdb.path=/prometheus", "--enable-feature=exemplar-storage"]
     volumes:
       - ./observability:/etc/modudrive:ro
       - prometheus_data:/prometheus

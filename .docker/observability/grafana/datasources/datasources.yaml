@@ -14,6 +14,12 @@ datasources:
     access: proxy
     url: http://prometheus:9090
     isDefault: true
+    jsonData:
+      # Histogram buckets carry the trace_id of a request that landed in them (exemplars) — Explore draws
+      # them as dots on the graph, and clicking one opens the trace in Tempo.
+      exemplarTraceIdDestinations:
+        - name: trace_id
+          datasourceUid: tempo
 
   - name: Tempo
     type: tempo

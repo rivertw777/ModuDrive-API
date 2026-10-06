@@ -117,7 +117,31 @@ Promtail은 docker socket 기반이라 **Fargate에서 못 쓴다** — 로그 �
 
 - 앱은 어느 쪽이든 **OTLP 그대로** — 지금 `OTEL_EXPORTER_OTLP_ENDPOINT`(기본 `http://otel-collector:4318`)로 보내므로 collector 주소만 바꾸면 된다.
 - 현재 알림: Grafana 알림 규칙 (`.docker/observability/grafana/alerting/alerts.yaml`) → 디스코드 채널 2개. 규칙 목록은 `spec/007-discord-alert-spec.md`.
-  A를 고르면 이 규칙들을 옮겨야 한다.
+  A를 고르면 이 규칙들을 옮겨야 한다. **C. 메트릭만 AMP + Amazon Managed Grafana**로 가면 Grafana 알림 규칙을 거의 그대로 쓸 수 있다
+  (대신 AMG는 IAM Identity Center 로그인 필수 + 사용자 수 과금 — 혼자 운영할 땐 오버헤드).
+
+#### 이관 때 결정·작업할 것 (2026-10-06 정리)
+
+로컬에서 할 수 있는 앱 쪽 작업(DB·S3 span, userId 태그, exemplar, 지연 알림)은 [observability.md 6장](observability.md#6-요청-트레이싱-개선)에서 한다 — 백엔드가 무엇이든 그대로 쓰인다. 여기엔 AWS 구성이 정해져야 할 수 있는 것만 둔다.
+
+- [ ] **tail sampling 구조** — ADOT를 태스크마다 사이드카로 붙이면 한 trace의 span이 여러 collector로 흩어져
+  "에러·느린 trace는 전량 보관"(지금 collector 정책)이 깨진다. 둘 중 하나를 고른다:
+  - 2단 구성: 사이드카(또는 앱)가 `loadbalancing` exporter로 **traceID 기준** 라우팅 → 뒤의 sampling 전용 collector ECS 서비스(2대 이상)가 판단
+  - 포기하고 head sampling(X-Ray 기본) — 에러 trace도 확률적으로 버려진다
+- [ ] **ALB는 trace에 끼지 않는다** — ALB는 W3C `traceparent`가 아니라 `X-Amzn-Trace-Id`를 붙인다. trace는 gateway부터 시작하고, ALB 구간은 ALB 액세스 로그(S3)로 본다.
+- [ ] **로그 2갈래 라우팅** (FireLens/Fluent Bit): ERROR/WARN·감사 로그 → 검색용 단기 저장(CloudWatch Logs 또는 Loki, 7~14일), 전량 → S3(장기, Athena 조회).
+  전량을 CloudWatch Logs에 넣으면 MAU 500만 규모(요청 하루 수천만 건)에서 수집 비용이 인프라 비용에 육박한다.
+- [ ] **트레이스 비용** — X-Ray는 trace 백만 건당 과금이라 100%는 불가. 지금 collector 정책(에러 + 1초 초과 + 5%)을 그대로 가져간다.
+- [ ] **메트릭 레이블에 userId·fileId 금지** — 시계열 폭발(AMP는 샘플 수 과금). 고유값은 span 태그와 로그에만 둔다(지금 코드도 그렇게 한다).
+- [ ] **AWS가 기본 제공하는 지표 연결** — 앱이 못 보는 구간이라 Grafana 데이터소스(CloudWatch)로 붙이거나 CloudWatch Alarm으로 건다:
+  - SQS `ApproximateAgeOfOldestMessage` — 컨슈머가 느려져 큐가 쌓이는 것 (지금은 DLQ 개수만 본다)
+  - S3 4xx/5xx·`503 SlowDown`·`FirstByteLatency` (요청 지표는 버킷에서 켜야 나온다, 유료)
+  - ALB 5xx·`TargetResponseTime`, CloudFront 캐시 히트율·오리진 에러율, ECS Container Insights(CPU·메모리)
+- [ ] **Prometheus 수집 대상 자동 탐색** — 지금 `prometheus.yml`은 서비스 7개를 `static_configs`(`<서비스>:9464`)로 박아 둔다.
+  ECS에선 태스크마다 IP가 바뀌고 서비스당 여러 태스크가 뜨므로 고정 주소로는 한 태스크만 잡히거나 아예 못 잡는다.
+  ADOT를 쓰면 **ECS observer**(태스크 정의 라벨로 대상 발견), Prometheus를 직접 운영하면 `ecs_sd_configs`류 설정이나 Cloud Map DNS SD로 바꾼다.
+  알림 규칙의 `instance` 라벨도 태스크 IP가 되므로, 메시지의 "서비스"가 읽히게 서비스 이름 라벨(`job`·`service`)을 붙인다.
+- [ ] 알림 수신처를 디스코드로 계속 둘지 (실무는 Slack + PagerDuty 같은 온콜 도구)
 
 ### 2-11. 네트워크 / 도메인 / 프론트
 - VPC: 퍼블릭 서브넷(ALB), 프라이빗 서브넷(ECS, RDS, ElastiCache).
@@ -198,4 +222,4 @@ Promtail은 docker socket 기반이라 **Fargate에서 못 쓴다** — 로그 �
 | 메시징 | **SQS** (2026-09-19 확정) |
 | 컴퓨팅 | **ECS Fargate** (2026-09-19 확정) |
 | 서비스 간 접근 제어 | **서비스별 보안 그룹** (2026-09-25 확정, 2-13). 공용 토큰은 2026-09-27 제거. VPC Lattice + IAM은 이관 안정화 후 검토 |
-| ★ 모니터링 · 알림 | 미정 — AWS 네이티브(추천) vs Grafana 스택 자체 호스팅 |
+| ★ 모니터링 · 알림 | 미정 — AWS 네이티브(추천) vs Grafana 스택 자체 호스팅 vs AMP + Managed Grafana. 함께 정할 것: tail sampling 구조, 로그 2갈래 라우팅 (2-10) |

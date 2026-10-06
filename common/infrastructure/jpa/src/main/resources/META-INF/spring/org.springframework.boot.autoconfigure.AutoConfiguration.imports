@@ -1,1 +1,2 @@
 com.moduDrive.common.infrastructure.jpa.config.AuditingConfig
+com.moduDrive.common.infrastructure.jpa.config.JdbcObservationConfig

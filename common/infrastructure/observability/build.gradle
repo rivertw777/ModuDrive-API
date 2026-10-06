@@ -11,4 +11,7 @@ dependencies {
     api 'io.micrometer:micrometer-tracing-bridge-otel'
     api 'io.opentelemetry:opentelemetry-exporter-otlp'
     api 'io.micrometer:micrometer-registry-prometheus'
+    // UserIdObservationFilter — servlet services bring both at runtime; the gateway (WebFlux) never loads it.
+    compileOnly 'org.springframework.boot:spring-boot-starter-web'
+    testImplementation 'org.springframework.boot:spring-boot-starter-web'
 }

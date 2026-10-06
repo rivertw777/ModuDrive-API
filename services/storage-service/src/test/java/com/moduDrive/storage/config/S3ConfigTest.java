@@ -1,5 +1,6 @@
 package com.moduDrive.storage.config;
 
+import io.opentelemetry.api.OpenTelemetry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -22,7 +23,7 @@ class S3ConfigTest {
             properties.getS3().setRegion("ap-northeast-2");
 
             // when — would throw if it tried headBucket/createBucket against a real endpoint
-            S3Client client = new S3Config().s3Client(properties);
+            S3Client client = new S3Config().s3Client(properties, OpenTelemetry.noop());
 
             // then
             assertThat(client.serviceClientConfiguration().endpointOverride()).isEmpty();

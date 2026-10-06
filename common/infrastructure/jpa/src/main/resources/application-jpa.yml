@@ -13,6 +13,12 @@ spring:
         show_sql: true
         format_sql: true
         use_sql_comments: true
+
+# DB spans (datasource-micrometer). Connection span = time holding a pooled connection (pool waits show
+# up here), query span = one statement. ResultSet fetches are left out — a span per row read is noise.
+# Parameter values stay out of spans (include-parameter-values defaults to false) — they can be PII.
+jdbc:
+  includes: connection, query
 ---
 # Local test users (test / test2). db/seed only ships in services that seed — never applied outside dev.
 spring:
