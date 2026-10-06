@@ -12,6 +12,7 @@
 - [3. 컴포넌트별 정리](#3-컴포넌트별-정리)
 - [4. 실행](#4-실행)
 - [5. 운영 메모 / 트러블슈팅](#5-운영-메모--트러블슈팅)
+- [6. 요청 트레이싱 개선](#6-요청-트레이싱-개선)
 
 ---
 
@@ -46,8 +47,8 @@
 | `.docker/docker-compose.observability.yml` | 스택 전체 (compose 프로젝트명 `modudrive-observability`) |
 | `.docker/observability/*.yaml` | 각 컴포넌트 설정 — 디렉터리째 `/etc/modudrive`로 마운트 |
 | `.docker/observability/grafana/datasources/datasources.yaml` | Grafana 데이터소스 프로비저닝 (Prometheus/Tempo/Loki + 상호 링크) |
-| `.docker/observability/grafana/alerting/alerts.yaml` | 알림 규칙 6개(outbox 2 + DLQ + 서비스 다운 + 서킷 열림 + 요청 실패율) + Discord 수신처 ([007-discord-alert-spec.md](spec/007-discord-alert-spec.md)) |
-| `common/infrastructure/observability` | 앱 쪽 공통 모듈 (Java 코드 없음, 의존성 + `application-observability.yml`만) |
+| `.docker/observability/grafana/alerting/alerts.yaml` | 알림 규칙 7개(outbox 2 + DLQ + 서비스 다운 + 서킷 열림 + 요청 실패율 + 느린 요청) + Discord 수신처 ([007-discord-alert-spec.md](spec/007-discord-alert-spec.md)) |
+| `common/infrastructure/observability` | 앱 쪽 공통 모듈 — 의존성 + `application-observability.yml` + `UserIdObservationFilter`(6장) |
 
 앱 쪽 공통 모듈은 모든 서비스가 의존하고, 각 서비스 `application.yml`의
 `spring.config.import`로 `classpath:application-observability.yml`을 불러온다.
@@ -158,3 +159,39 @@ gateway → 서비스(WebClient/Netty)와 SQS(outbox 헤더 저장 → relay Obs
 - gateway는 Prometheus의 `/actuator/prometheus` 스크레이프(15초마다)도 트레이스로 남긴다. 5% baseline에 걸리면
   Tempo에 잡음처럼 보일 수 있음 — 거슬리면 `ObservationPredicate`로 actuator 경로를 제외.
 - otel-collector 설정의 `otlp/tempo` exporter 이름은 deprecated 경고가 뜸(`otlp_grpc` 권장) — 동작엔 문제 없음.
+
+---
+
+## 6. 요청 트레이싱 개선
+
+2026-10-06 정리. trace ID로 원인을 찾는 경로는 셋이다 — 지금은 ①만 된다.
+
+| 출발점 | 흐름 | 필요한 것 |
+|---|---|---|
+| ① 고객 문의 | 오류 코드(`X-Trace-Id`) → 로그 → trace → 원인 span | 응답 헤더, 로그 traceId ✅ |
+| ② 알림 | "5xx·지연 증가" 알림 → 그래프의 튄 지점 → **exemplar**로 그 시점 trace → 로그 | 메트릭 ↔ trace 연결 |
+| ③ 오류 코드 없는 문의 | "user 123이 10시쯤 실패" → **userId·시간으로 trace·로그 검색** | span·로그에 userId |
+
+그리고 trace를 찾아도 "file-service 3초"에서 끝나면 소용없다 — 그 안의 DB 쿼리·S3 호출이 span으로 보여야 원인까지 간다.
+
+### 로컬에서 하는 것 (AWS 구성과 무관)
+
+2026-10-06 구현, 같은 날 로컬 스택에서 아래 "확인" 칸을 전부 확인했다(collector 샘플링 100%로 잠깐 바꿔서 — 3장 확인 팁).
+쿼리 span의 SQL은 파라미터가 `?`로 남는다. storage → file 내부 호출처럼 gateway를 안 거친 요청엔 `user.id`가 없다(헤더를 안 넘기므로).
+
+| 항목 | 어디 | 확인 |
+|---|---|---|
+| **DB 쿼리 span** — 커넥션(풀 대기 포함)·쿼리마다 span. 파라미터 값은 안 남김(PII) | `datasource-micrometer-spring-boot`(`common:infrastructure:jpa`), `jdbc.includes` | 로그인 trace에 member-service 아래 `query` span |
+| 부모 없는 쿼리는 span 안 만듦 — outbox relay 1초 폴링·Flyway가 trace를 쏟아내지 않게 | `JdbcObservationConfig` | Tempo에 `query` 하나짜리 trace가 안 쌓임 |
+| **S3 호출 span** | storage-service `S3Config` (`opentelemetry-aws-sdk-2.2`, Boot BOM의 OTel API 1.62에 맞춘 2.28.1) | 업로드 trace에 `S3.PutObject` span |
+| **userId** — 서버 span 태그 `user.id`, 로그 필드 `userId` (메트릭 레이블엔 안 넣음) | `UserIdObservationFilter`(`common:infrastructure:observability`, 서블릿 서비스만) | Tempo `{ span.user.id = "<uuid>" }`, Loki `{service="file-service"} \| json \| userId="<uuid>"` |
+| **exemplar** — 요청 지표를 히스토그램(100ms·300ms·1s·3s·10s)으로, 버킷마다 trace_id | `application-observability.yml` `slo`, Prometheus `--enable-feature=exemplar-storage`, Grafana Prometheus 데이터소스 `exemplarTraceIdDestinations` | Explore에서 `spring_cloud_gateway_requests_seconds_bucket` 그래프에 점 → 클릭하면 Tempo |
+| **느린 요청 알림** — 1초 넘는 요청 비율, storage-service 제외 | `alerts.yaml` `route-slow-rate`, [007 4-7](spec/007-discord-alert-spec.md#4-7-느린-요청-많음) | Grafana 알림 규칙 목록에 "느린 요청 많음" |
+
+- exemplar는 **샘플링에 남은 trace만 열린다** — 정상 요청은 tail sampling에서 95%가 버려지므로 빠른 버킷의 점은 "trace not found"가 흔하다. 1초 넘는 버킷은 collector가 전부 남기므로 장애 분석에 쓰는 점은 열린다.
+- JDBC metrics(`db.client.operation.duration`)도 같이 생긴다 — 레이블이 쿼리 요약(`SELECT file` 수준)이라 시계열이 쿼리 모양 수만큼 는다. 많아지면 `jdbc.opentelemetry.metrics.enabled: false`.
+
+업로드·다운로드 성공률은 따로 만들지 않는다 — storage-service가 서버에서 직접 S3에 올리므로(presigned URL 아님) 실패가 전부
+`http_server_requests_seconds_count{uri=..., outcome=...}`에 이미 잡힌다.
+
+AWS 이관 때 정할 것(tail sampling 구조, 로그 2갈래, SQS 적체·S3·ALB 지표)은 [aws-migration.md 2-10](aws-migration.md#2-10--모니터링--알림).
