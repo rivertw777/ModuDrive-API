@@ -76,6 +76,8 @@ class SecurityConfig {
         config.setAllowedOrigins(List.of(clientUrl));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        // The client is another origin — without this its JS can't read the header (TraceIdResponseFilter).
+        config.setExposedHeaders(List.of("X-Trace-Id"));
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);

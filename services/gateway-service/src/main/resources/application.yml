@@ -4,6 +4,10 @@ spring:
   config:
     import:
       - "classpath:application-observability.yml"
+  # Reactive chains hop threads, so the MDC (traceId/spanId in every log line) would be empty
+  # without restoring it from the Reactor context on each hop.
+  reactor:
+    context-propagation: auto
 
 resilience4j:
   timelimiter:
