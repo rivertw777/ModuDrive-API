@@ -25,10 +25,13 @@ public class SendShareInviteMailCommand {
      * own capability token, which the mail hands over as {@code /files/{fileId}?key=} so the
      * recipient can open the file without logging in. */
     private final UUID inviteToken;
+    /** See {@code SendMailPort.sendHtml}. */
+    private final String deliveryId;
 
     public SendShareInviteMailCommand(
             String email, String fileName, boolean directory, String category, String role, UUID fileId,
-            String granterName, String granterEmail, String message, UUID inviteToken) {
+            String granterName, String granterEmail, String message, UUID inviteToken,
+            String deliveryId) {
         this.email = email;
         this.fileName = fileName;
         this.directory = directory;
@@ -39,5 +42,6 @@ public class SendShareInviteMailCommand {
         this.granterEmail = granterEmail;
         this.message = message;
         this.inviteToken = inviteToken;
+        this.deliveryId = deliveryId;
     }
 }

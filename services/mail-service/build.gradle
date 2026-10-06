@@ -30,6 +30,8 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    // SesClient for SendRawEmail; starter-mail only builds the MIME message (jakarta.mail).
+    implementation 'io.awspring.cloud:spring-cloud-aws-starter-ses'
     implementation 'org.springframework.boot:spring-boot-starter-mail'
     testImplementation 'com.tngtech.archunit:archunit-junit5:1.4.2'
     testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'

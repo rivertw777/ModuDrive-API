@@ -187,14 +187,14 @@ sequenceDiagram
     RL->>DB: 행 상태 SENT (7일 보관)
 
     Q->>ML: 메시지 전달
-    ML->>R: 초대 메일 발송 (SMTP)
+    ML->>R: 초대 메일 발송 (SES)
     ML-->>Q: 처리 완료 → 메시지 삭제
 ```
 
 - **파란 박스가 핵심**: 공유 행과 메일 이벤트가 한 트랜잭션. 공유가 저장되면 메일은
   반드시 나가고, 커밋이 실패하면 둘 다 없음 → "공유는 됐는데 메일이 안 감"도, "메일은 왔는데 공유가 없음"도 불가능.
 - 이벤트 기록은 `ShareFileService`가 공유 행 저장 직후 이벤트 포트(`PublishMailEventPort`)를 직접 불러서 한다 — 같은 `@Transactional` 안.
-- 사용자 응답(200 OK)은 메일 발송(SMTP)을 기다리지 않음. 메일은 보통 수 초 안에 도착.
+- 사용자 응답(200 OK)은 메일 발송(SES)을 기다리지 않음. 메일은 보통 수 초 안에 도착.
 
 ---
 
@@ -344,7 +344,7 @@ flowchart LR
 
 | 구분 | 예 | 처리 |
 |---|---|---|
-| 재처리 가능 | SMTP·네트워크 타임아웃, DB 락, **분류에 없는 모든 예외** | 지수 백오프(1s → 2s → 4s)로 재시도, 4번째도 실패하면 DLQ — 사유 `Retries exhausted after 4 attempts: <마지막 예외>` |
+| 재처리 가능 | SES·네트워크 타임아웃, DB 락, **분류에 없는 모든 예외** | 지수 백오프(1s → 2s → 4s)로 재시도, 4번째도 실패하면 DLQ — 사유 `Retries exhausted after 4 attempts: <마지막 예외>` |
 | 재처리 불가 | `IllegalArgumentException`, `NullPointerException`, `ClassCastException`, 검증 실패(`ValidationException`), 페이로드 타입 변환 실패 | 한 번 실패하면 바로 DLQ, 원본 본문 + 사유(`DeadLetterReason`) 보관 |
 
 - 분류에 없는 예외는 **재처리 가능**으로 본다 — 잘못 버려서 사람이 되살리는 쪽이 더 비싸다.
@@ -420,7 +420,7 @@ sequenceDiagram
 
 ## 7. 사용 큐 목록
 
-큐는 6개, 전부 **표준(standard) 큐**. 큐마다 실패 메시지가 옮겨지는 DLQ(`<이름>-dlq`)가 하나씩 짝으로 있다.
+큐는 7개, 전부 **표준(standard) 큐**. 큐마다 실패 메시지가 옮겨지는 DLQ(`<이름>-dlq`)가 하나씩 짝으로 있다.
 
 | 큐 | Publisher | Consumer | 무슨 일 |
 |---|---|---|---|
@@ -429,6 +429,7 @@ sequenceDiagram
 | `mail-share-invite-requested` | file-service — 공유 행 저장과 같은 트랜잭션 | mail-service — 초대 메일 발송 | 파일/폴더를 이메일로 공유 (비회원이면 로그인 없이 여는 링크) |
 | `notification-file-shared` | file-service — 초대 메일 이벤트와 같이 기록 | notification-service — 알림 행 저장 | 공유 대상이 **회원**일 때 벨 아이콘 알림 |
 | `storage-blocks-purge-requested` | file-service — 파일 tombstone·버전 행 삭제와 같은 트랜잭션 (지우기 전에 읽은 버전별 S3 위치·블록 수를 담는다) | storage-service — 모든 버전의 S3 블록 삭제 | 휴지통에서 영구 삭제 (직접 · 휴지통 비우기 · 보존 기간 만료) |
+| `mail-ses-events` | SES — Configuration Set `mail-events`의 Send 이벤트 (SNS 경유, raw) | mail-service — 태그의 `deliveryId`를 처리 완료로 기록 | 메일을 보낼 때마다 (시간 제한에 걸린 발송이 실제로 나갔는지 확인용) |
 | `member-signed-up` | member-service — 가입 트랜잭션 안에서 기록 | file-service — 네임스페이스 생성(자기 트랜잭션으로 먼저 커밋) → 대기 공유를 새 회원에게 연결 | 새 회원의 드라이브가 생기고, 가입 전에 받은 초대가 "공유 문서함"에 나타남 |
 
 ---

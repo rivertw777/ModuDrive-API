@@ -45,7 +45,29 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # Local stand-in for Amazon SQS and S3. Queues and the bucket come from localstack/init-aws.sh, run
+  # Local inbox: every mail LocalStack's SES accepts, whatever the recipient — read them at
+  # http://localhost:8025. Nothing is delivered for real, and nothing survives a restart.
+  mailpit:
+    image: axllent/mailpit:v1.31.4
+    networks:
+      - modudrive_network
+    ports:
+      - "127.0.0.1:8025:8025"
+    restart: unless-stopped
+
+  # Feeds mailpit from LocalStack's SES store (mailpit/ses-to-mailpit.py) — LocalStack's own SMTP relay
+  # is Ultimate-plan only.
+  ses-to-mailpit:
+    image: python:3.13-alpine
+    networks:
+      - modudrive_network
+    command: ["python", "-u", "/app/ses-to-mailpit.py"]
+    volumes:
+      # The folder, not the file: a single-file mount breaks once the file is replaced (see localstack below).
+      - ./mailpit:/app:ro
+    restart: unless-stopped
+
+  # Local stand-in for Amazon SQS, S3, SES and SNS (SES events). Queues, the bucket and the sender identity come from localstack/init-aws.sh, run
   # on every start. In memory only — the free plan has no persistence, so a restart drops queued
   # messages and every uploaded block while Postgres keeps the file rows: `make reset` after one.
   # localstack_data only caches the license. Needs a (free, non-commercial) auth token.
@@ -57,11 +79,13 @@ services:
       - "127.0.0.1:4566:4566"
     environment:
       - LOCALSTACK_AUTH_TOKEN=${LOCALSTACK_AUTH_TOKEN:?set LOCALSTACK_AUTH_TOKEN in .docker/.env}
-      - SERVICES=s3,sqs
-      # What the init script creates: queues in the services' SQS_REGION, storage-service's bucket.
+      - SERVICES=s3,sqs,ses,sns
+      # What the init script creates: queues in the services' SQS_REGION, storage-service's bucket,
+      # mail-service's verified sender (SES rejects mail from an unverified one, LocalStack too).
       - AWS_DEFAULT_REGION=${SQS_REGION}
       - STORAGE_S3_BUCKET=${STORAGE_S3_BUCKET}
       - STORAGE_S3_REGION=${STORAGE_S3_REGION}
+      - MAIL_FROM=${MAIL_FROM}
     volumes:
       - localstack_data:/var/lib/localstack
       # 폴더째 마운트: 파일 하나만 마운트하면 Docker Desktop(WSL) 재시작 때 마운트가 깨져 exit 127로 죽는다.

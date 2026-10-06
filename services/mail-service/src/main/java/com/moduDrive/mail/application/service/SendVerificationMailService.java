@@ -26,7 +26,7 @@ class SendVerificationMailService implements SendVerificationMailUseCase {
         String subject = login ? "[ModuDrive] 새 기기 로그인 인증을 완료해 주세요" : "[ModuDrive] 이메일 인증을 완료해 주세요";
 
         // A display name, so the inbox shows "ModuDrive" rather than the bare sending address.
-        sendMailPort.sendHtml(command.getEmail(), subject, html, "ModuDrive",
+        sendMailPort.sendHtml(command.getDeliveryId(), command.getEmail(), subject, html, "ModuDrive",
                 Map.of("logo", MailTemplates.LOGO_PNG, "warning", MailTemplates.WARNING_PNG));
     }
 }

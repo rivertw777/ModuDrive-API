@@ -9,6 +9,9 @@ public interface SendMailPort {
      * {@code inlinePngImages} (contentId -> PNG bytes) are attached as MIME inline parts and must
      * be referenced from {@code htmlBody} as {@code <img src="cid:contentId">}. PNG, not SVG: raw
      * {@code <svg>} in the body is stripped by webmail sanitizers as an XSS vector, and an attached
-     * SVG still shows as a broken image in Naver and Gmail. */
-    void sendHtml(String to, String subject, String htmlBody, String fromDisplayName, Map<String, byte[]> inlinePngImages);
+     * SVG still shows as a broken image in Naver and Gmail.
+     * {@code deliveryId} names this one delivery — the same on every retry of it — so a send whose
+     * outcome came back unknown can be confirmed later instead of guessed at; see
+     * {@link MailOutcomeUnknownException}. */
+    void sendHtml(String deliveryId, String to, String subject, String htmlBody, String fromDisplayName, Map<String, byte[]> inlinePngImages);
 }

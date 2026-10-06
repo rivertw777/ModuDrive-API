@@ -20,6 +20,8 @@ class PermanentFailuresTest {
                     new RuntimeException("listener failed", new IllegalArgumentException("bad role")))).isTrue();
             assertThat(PermanentFailures.isPermanentForConsumer(new NumberFormatException("x"))).isTrue();
             assertThat(PermanentFailures.isPermanentForConsumer(new MessageConversionException("not json"))).isTrue();
+            assertThat(PermanentFailures.isPermanentForConsumer(
+                    new RuntimeException(new PermanentConsumeException(new RuntimeException("rejected"))))).isTrue();
         }
 
         @Test
