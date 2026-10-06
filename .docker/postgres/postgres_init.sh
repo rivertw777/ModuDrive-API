@@ -6,6 +6,9 @@ set -eu
 create_db() { # <db> <role> <password>
     psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres -v pw="$3" <<SQL
 CREATE ROLE $2 LOGIN PASSWORD :'pw';
+-- Owning a database needs SET ROLE on the owner. A superuser (local) has it already; RDS's admin is
+-- only CREATEROLE, and since PostgreSQL 16 creating a role no longer grants that — so grant it.
+GRANT $2 TO CURRENT_USER;
 CREATE DATABASE $1 OWNER $2;
 REVOKE ALL ON DATABASE $1 FROM PUBLIC;
 SQL
