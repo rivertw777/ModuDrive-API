@@ -32,9 +32,8 @@ datasources:
     url: http://loki:3100
     jsonData:
       derivedFields:
-        # logging.pattern.correlation이 찍는 "[app,traceId,spanId]" 형식에 맞춘 정규식.
-        # traceId=32자리 hex, spanId=16자리 hex.
+        # 서비스 로그는 JSON(logging.structured.format.console: ecs) — "traceId" 필드(32자리 hex)를 뽑는다.
         - datasourceUid: tempo
-          matcherRegex: '\[[^,\]]+,([0-9a-f]{32}),[0-9a-f]{16}\]'
+          matcherRegex: '"traceId":"([0-9a-f]{32})"'
           name: TraceID
           url: '$${__value.raw}'

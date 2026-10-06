@@ -19,7 +19,7 @@
 
 ```
                  ┌──────────── Spring 서비스 (gateway/member/auth/file/storage/mail/notification) ────────────┐
-                 │  :9464/actuator/prometheus      stdout 로그 "[app,traceId,spanId]"      OTLP HTTP 트레이스   │
+                 │  :9464/actuator/prometheus      stdout JSON 로그(traceId 필드)          OTLP HTTP 트레이스   │
                  └───────┬──────────────────────────────────┬─────────────────────────────────┬──────────────┘
                          │ pull (15s)                       │ docker 로그 파일                  │ push :4318
                          ▼                                  ▼                                 ▼
@@ -58,7 +58,9 @@
 - `management.server.port: 9464` — 액추에이터를 앱 포트와 분리. 호스트에 퍼블리시 안 함(내부 네트워크 전용)
 - 노출 엔드포인트: `health`, `prometheus`만
 - `management.tracing.sampling.probability: 1.0` — 앱은 전량 export, 샘플링은 collector가 결정
-- `logging.pattern.correlation` — 로그 줄에 `[앱이름,traceId,spanId]`를 찍음 (Loki→Tempo 링크의 근거)
+- `logging.structured.format.console: ecs` — 콘솔 로그가 한 줄 JSON. `traceId`/`spanId`가 최상위 필드라 Loki는
+  `{service="file-service"} | json | traceId="..."`, CloudWatch Logs Insights는 `filter traceId = "..."`로 바로 검색된다.
+  `docker logs`로 볼 땐 `| jq -r .message`가 편하다.
 - SQS observation 켬 (`application-sqs.yml`) — 프로듀서→컨슈머로 trace가 이어지게 (`spec/005-messaging-spec.md` 6장)
 - gateway는 모든 응답(401·CSRF 403·fallback 포함)에 `X-Trace-Id` 헤더를 붙인다 (`TraceIdResponseFilter`, CORS
   `exposedHeaders`에도 등록). WEB은 5xx 알림에 이 값을 "오류 코드"로 보여준다 — 사용자가 알려준 코드로 Loki/Tempo를 바로 검색.
@@ -102,7 +104,7 @@
 - 3000은 ModuDrive-WEB(Vite)이 쓰므로 3001.
 - 익명 Viewer 접근 허용, admin 비밀번호는 `GRAFANA_ADMIN_PASSWORD`.
 - 데이터소스 상호 링크:
-  - **Loki → Tempo**: 로그 줄의 `[app,<32hex traceId>,<16hex spanId>]`를 정규식으로 뽑아 TraceID 링크 생성
+  - **Loki → Tempo**: 로그 JSON의 `"traceId":"<32hex>"`를 정규식으로 뽑아 TraceID 링크 생성
   - **Tempo → Loki**: trace에서 해당 traceId 로그로 점프 (`tracesToLogsV2`)
 - 대시보드는 프로비저닝 안 함 — Explore에서 직접 조회.
 - 알림은 Grafana 내장 기능으로 처리 — Alertmanager 컨테이너 없음. 규칙·수신처·정책 모두
