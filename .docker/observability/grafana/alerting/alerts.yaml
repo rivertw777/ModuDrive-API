@@ -415,3 +415,48 @@ groups:
                 - evaluator:
                     type: gt
                     params: [0.05]
+
+      # 에러 없이 느려지는 경우 — DB 쿼리·커넥션 풀 고갈·하위 서비스 지연. 위 규칙들은 실패만 센다.
+      # 게이트웨이를 지난 요청 중 1초를 넘긴 비율을 경로별로 본다. 1초는 otel-collector의 slow-requests 정책과
+      # 같은 기준이라, 여기 걸린 요청의 trace는 샘플링에 버려지지 않고 전부 Tempo에 있다.
+      # le="1.0" 버킷은 application-observability.yml의 slo 버킷 — 거기서 1s를 빼면 이 규칙은 조용히 죽는다.
+      # storage-service는 뺀다: 업로드·다운로드는 파일 크기만큼 오래 걸리는 게 정상이라 1초 기준이 의미가 없다.
+      # 5xx 규칙과 같은 이유로 건수(10건)도 본다.
+      - uid: route-slow-rate
+        title: 느린 요청 많음
+        condition: C
+        for: 2m
+        labels:
+          channel: service
+        noDataState: OK
+        execErrState: OK
+        annotations:
+          summary: '최근 5분 요청의 **{{ with $values.A }}{{ humanizePercentage .Value }}{{ end }}**가 1초를 넘김'
+          action: 'Grafana → Explore → Tempo에 아래 쿼리로 느린 trace를 열어 가장 긴 span(DB 쿼리·하위 호출)을 확인'
+          inspect: '{ resource.service.name = "{{ $labels.routeId }}" && kind = server && duration > 1s }'
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              expr: >-
+                (1 - sum by (routeId) (rate(spring_cloud_gateway_requests_seconds_bucket{le="1.0", routeId!="storage-service"}[5m]))
+                / sum by (routeId) (rate(spring_cloud_gateway_requests_seconds_count{routeId!="storage-service"}[5m])))
+                and on (routeId)
+                ((sum by (routeId) (increase(spring_cloud_gateway_requests_seconds_count{routeId!="storage-service"}[5m]))
+                - sum by (routeId) (increase(spring_cloud_gateway_requests_seconds_bucket{le="1.0", routeId!="storage-service"}[5m]))) >= 10)
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.05]

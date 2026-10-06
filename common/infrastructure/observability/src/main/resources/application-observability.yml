@@ -17,6 +17,16 @@ management:
     web:
       exposure:
         include: health,prometheus
+  metrics:
+    distribution:
+      # Request timers as histograms, so latency can be alerted on (the "느린 요청" rule reads the 1s
+      # bucket) and each bucket carries an exemplar — the trace_id of a request that landed in it, which
+      # Grafana links to Tempo. A few fixed buckets rather than percentiles-histogram's ~70: series count
+      # is what Prometheus (and AMP, billed per sample) pays for. 1s matches the collector's slow-request
+      # policy, so the exemplars in the slow buckets point at traces that were kept.
+      slo:
+        http.server.requests: 100ms, 300ms, 1s, 3s, 10s
+        spring.cloud.gateway.requests: 100ms, 300ms, 1s, 3s, 10s
 
 logging:
   structured:
