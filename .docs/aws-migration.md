@@ -71,7 +71,7 @@
   RDS가 프라이빗이라 Terraform으로는 못 만들고, 같은 스크립트를 **일회성 ECS 태스크**(`modudrive-db-init`, 명령은 출력 `db_init_run_task`)로 한 번 실행한다.
   RDS 관리자는 superuser가 아니라서 PostgreSQL 16부터 `CREATE DATABASE ... OWNER <로그인>`이 `must be able to SET ROLE`로 실패한다 — 스크립트가 만든 로그인을 관리자에게 `GRANT`해서 해결(로컬 superuser에도 그대로 동작).
 - 테이블은 각 서비스가 기동할 때 Flyway가 만든다(#359 / PR #360, `.docs/db-migration.md`) — 별도 작업 없음.
-- 처음엔 단일 인스턴스(db.t4g 계열) + 자동 백업. 트래픽 늘면 Multi-AZ → Aurora 검토.
+- 크기·Multi-AZ는 규모 프로필(2-12)로 정한다 — 테스트는 db.t4g.micro 단일 AZ, 운영은 db.m7g.large Multi-AZ. 자동 백업 7일. 그 이상은 Aurora 검토.
 
 ### 2-5. Redis → ElastiCache for Valkey
 - 사용처: auth(토큰), member(인증 코드), storage(다운로드 쿼터), mail(메시지 중복 처리 방지).
@@ -186,7 +186,7 @@ ECS 태스크들 ──OTLP 트레이스──▶ ┌─────────
 
 ### 2-11. 네트워크 / 도메인 / 프론트
 - VPC: 퍼블릭 서브넷(ALB), 프라이빗 서브넷(ECS, RDS, ElastiCache).
-- NAT Gateway는 비싸다 — S3/ECR/SQS/Secrets Manager/CloudWatch는 **VPC 엔드포인트**로 돌리면 NAT 트래픽 절감.
+- NAT Gateway는 비싸다 — S3/ECR/SQS/Secrets Manager/CloudWatch는 **VPC 엔드포인트**로 돌리면 NAT 트래픽 절감. 둘 다 운영 프로필에서만 켠다(2-12) — 테스트 프로필은 NAT 없이 태스크를 퍼블릭 서브넷에 공인 IP로 두고, 무료인 S3 게이트웨이 엔드포인트만 쓴다.
 - Route 53(도메인) + ACM(인증서). ModuDrive-WEB은 **S3 + CloudFront** 정적 호스팅,
   `CLIENT_URL`/CORS/쿠키 도메인 재설정 필요.
 - WEB의 **CSP**는 CloudFront **응답 헤더 정책**으로 붙인다. 정책 문자열은 ModuDrive-WEB `vite.config.ts`의 `contentSecurityPolicy()`가 원본(`vite preview`가 같은 헤더를 보냄) — `connect-src`에 API 도메인을 넣고, 둘을 같이 고친다.
@@ -201,9 +201,25 @@ ECS 태스크들 ──OTLP 트레이스──▶ ┌─────────
   cd terraform && terraform init -backend-config=backend.hcl && terraform plan
   # 계정 없이 문법만: terraform init -backend=false && terraform validate
   ```
+- **규모 프로필** — `scale` 변수 하나로 고른다(기본 `test`). 아키텍처(서비스·보안 그룹·큐·IAM)는 같고, 돈이 드는 것과 이중화만 다르다. 값은 전부 `terraform/scale.tf` 한 곳에 — 섞어 쓰지 않는다.
+
+  | | `test` (운영 테스트) | `production` (MAU 500만 목표) |
+  |---|---|---|
+  | 태스크 위치 | 퍼블릭 서브넷 + 공인 IP (NAT 없음) | 프라이빗 서브넷 + AZ마다 NAT |
+  | VPC 인터페이스 엔드포인트 | 없음 (S3 게이트웨이만) | SQS·ECR·logs·SSM·Secrets |
+  | ECS | 서비스당 1개, 전부 0.5 vCPU/1 GB, **Fargate Spot** | 사용자 대면 서비스 최소 2개, gateway·auth·file·storage 1 vCPU/2 GB, 일반 Fargate |
+  | RDS | db.t4g.micro, 단일 AZ, 삭제 방지 끔 | db.m7g.large, **Multi-AZ**, 삭제 방지 |
+  | Valkey | cache.t4g.micro 1노드 | cache.m7g.large 2노드 + 자동 장애 조치 |
+  | Container Insights | 끔 | 켬 |
+  | 대략 비용(서울, 트래픽 전) | 월 $100~150 | 최소 태스크 기준 월 $1,300 안팎 — 트래픽에 따라 오토스케일·NAT·로그 비용이 더해진다 |
+
+  - `test`가 감수하는 것: 네트워크 격리가 보안 그룹에만 의존(인바운드는 여전히 막힘, RDS·Redis는 계속 프라이빗), Spot 회수·재배포 때 잠깐 끊김, Redis 재시작 시 전원 로그아웃.
+  - `production` 숫자는 MAU 500만의 **출발점**이지 측정값이 아니다 — 부하 테스트와 오토스케일링 기록으로 맞춘다.
+  - 바꾸면 ECS 서비스(Spot ↔ 일반)와 서브넷이 교체되고 RDS 클래스 변경은 재시작이 따른다 — 사용자가 없을 때 바꾼다.
 - 도메인은 `domain_name` 변수 — 비워 두면(기본 null) Route 53 영역·SES identity·DKIM/MAIL FROM 레코드를 만들지 않는다. 넣고 apply한 뒤 출력 `name_servers`를 도메인 등록 업체에 설정한다.
 - 상태 파일에 `random_password`로 만든 비밀번호가 평문으로 들어간다 — 상태 버킷은 암호화 + 접근을 배포 역할로만 제한한다.
 - **첫 apply 순서** — 서비스는 ECR 이미지와 DB가 있어야 뜬다:
+  (아래 모든 명령에 `-var scale=test` 또는 `-var scale=production`, 생략하면 `test`)
   1. `terraform apply -target=aws_ecr_repository.service -var image_tag=init` — 저장소만 먼저
   2. 서비스 이미지 7개를 빌드해 같은 태그로 ECR에 푸시 (3장 3단계 CI/CD가 생기면 CI가 한다)
   3. `terraform apply -target=aws_ecs_task_definition.db_init -var image_tag=<태그>` → 출력 `db_init_run_task` 명령 실행 (DB·로그인 생성, 한 번만)

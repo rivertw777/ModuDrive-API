@@ -50,6 +50,6 @@ output "db_init_run_task" {
   value = join(" ", [
     "aws ecs run-task --cluster ${aws_ecs_cluster.main.name} --launch-type FARGATE",
     "--task-definition ${aws_ecs_task_definition.db_init.family}",
-    "--network-configuration 'awsvpcConfiguration={subnets=[${module.vpc.private_subnets[0]}],securityGroups=[${aws_security_group.db_init.id}]}'",
+    "--network-configuration 'awsvpcConfiguration={subnets=[${local.task_subnets[0]}],securityGroups=[${aws_security_group.db_init.id}],assignPublicIp=${local.task_assign_public_ip ? "ENABLED" : "DISABLED"}}'",
   ])
 }

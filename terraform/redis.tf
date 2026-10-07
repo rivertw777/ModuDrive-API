@@ -9,11 +9,13 @@ resource "aws_elasticache_replication_group" "redis" {
   replication_group_id = var.project
   description          = "Sessions, verification codes, quotas, mail idempotency"
   engine               = "valkey"
-  node_type            = var.redis_node_type
+  node_type            = local.scale.redis_node_type
 
-  # ponytail: one node — a restart logs everyone out (sessions live here). Two nodes with
-  # automatic_failover_enabled once that's not acceptable.
-  num_cache_clusters = 1
+  # Sessions live here: with one node (test scale) a node restart logs everyone out. Production keeps
+  # a replica in the other AZ that takes over on its own.
+  num_cache_clusters         = local.scale.redis_nodes
+  automatic_failover_enabled = local.scale.redis_nodes > 1
+  multi_az_enabled           = local.scale.redis_nodes > 1
 
   subnet_group_name  = aws_elasticache_subnet_group.redis.name
   security_group_ids = [aws_security_group.redis.id]

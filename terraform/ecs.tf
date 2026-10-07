@@ -67,8 +67,13 @@ resource "aws_ecs_cluster" "main" {
 
   setting {
     name  = "containerInsights"
-    value = "enabled"
+    value = local.scale.container_insights ? "enabled" : "disabled"
   }
+}
+
+resource "aws_ecs_cluster_capacity_providers" "main" {
+  cluster_name       = aws_ecs_cluster.main.name
+  capacity_providers = ["FARGATE", "FARGATE_SPOT"]
 }
 
 resource "aws_service_discovery_http_namespace" "main" {
@@ -89,8 +94,8 @@ resource "aws_ecs_task_definition" "service" {
   family                   = "${var.project}-${each.key}"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
-  cpu                      = var.services[each.key].cpu
-  memory                   = var.services[each.key].memory
+  cpu                      = local.scale.services[each.key].cpu
+  memory                   = local.scale.services[each.key].memory
   execution_role_arn       = aws_iam_role.execution.arn
   task_role_arn            = aws_iam_role.task[each.key].arn
 
@@ -134,12 +139,17 @@ resource "aws_ecs_service" "service" {
   name            = "${each.key}-service"
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.service[each.key].arn
-  desired_count   = var.services[each.key].min
-  launch_type     = "FARGATE"
+  desired_count   = local.scale.services[each.key].min
+
+  capacity_provider_strategy {
+    capacity_provider = local.scale.fargate_spot ? "FARGATE_SPOT" : "FARGATE"
+    weight            = 1
+  }
 
   network_configuration {
-    subnets         = module.vpc.private_subnets
-    security_groups = [aws_security_group.service[each.key].id]
+    subnets          = local.task_subnets
+    security_groups  = [aws_security_group.service[each.key].id]
+    assign_public_ip = local.task_assign_public_ip
   }
 
   # A deploy whose tasks never turn healthy rolls itself back to the last good task definition.
@@ -194,8 +204,8 @@ resource "aws_appautoscaling_target" "service" {
   service_namespace  = "ecs"
   resource_id        = "service/${aws_ecs_cluster.main.name}/${aws_ecs_service.service[each.key].name}"
   scalable_dimension = "ecs:service:DesiredCount"
-  min_capacity       = var.services[each.key].min
-  max_capacity       = var.services[each.key].max
+  min_capacity       = local.scale.services[each.key].min
+  max_capacity       = local.scale.services[each.key].max
 }
 
 resource "aws_appautoscaling_policy" "cpu" {
