@@ -8,7 +8,6 @@ import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 
@@ -16,22 +15,6 @@ import java.util.List;
 
 @FeignClient(name = "file-service", url = "${clients.file-service.url}")
 interface FileClient {
-
-    // Upload-complete callback — internal so only storage-service, not an end user, can report a
-    // file's size and block count (#440).
-    // Safe to retry: file-service keys the version by s3Path, so a resend after a read timeout
-    // gets back the version the first try created instead of a second one.
-    @PutMapping("/internal/files/{fileId}/uploaded")
-    @CircuitBreaker(name = "fileServiceCircuitBreaker")
-    @Retry(name = "fileServiceRetry", fallbackMethod = "updateFileStatusFallback")
-    void updateFileStatus(@PathVariable String fileId,
-                          @RequestParam String userId,
-                          @RequestBody FileUploadCallbackRequest request);
-
-    default void updateFileStatusFallback(String fileId, String userId, FileUploadCallbackRequest request,
-                                          Throwable cause) {
-        FeignFallbackUtils.handleFallback(cause);
-    }
 
     // Internal, service-to-service route (see file-service's GetLatestFileVersionsController) —
     // not the tenant-facing /api/v1/files/{fileId}/revisions. userId is the original caller,
@@ -83,6 +66,16 @@ interface FileClient {
     ApiResponse<List<ArchiveEntryDto>> resolvePublicArchiveEntries(@RequestBody ResolvePublicArchiveEntriesRequest request);
 
     default ApiResponse<List<ArchiveEntryDto>> resolvePublicArchiveEntriesFallback(ResolvePublicArchiveEntriesRequest request, Throwable cause) {
+        return FeignFallbackUtils.handleFallback(cause);
+    }
+
+    // Uncommitted-upload sweep: which of these blocks file-service owns now. A read, so safe to retry.
+    @PostMapping("/internal/files/blocks/committed")
+    @CircuitBreaker(name = "fileServiceCircuitBreaker")
+    @Retry(name = "fileServiceRetry", fallbackMethod = "findCommittedBlocksFallback")
+    ApiResponse<List<String>> findCommittedBlocks(@RequestBody FindCommittedBlocksRequest request);
+
+    default ApiResponse<List<String>> findCommittedBlocksFallback(FindCommittedBlocksRequest request, Throwable cause) {
         return FeignFallbackUtils.handleFallback(cause);
     }
 }

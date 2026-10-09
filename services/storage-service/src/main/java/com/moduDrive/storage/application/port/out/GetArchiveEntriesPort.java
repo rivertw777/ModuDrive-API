@@ -9,12 +9,12 @@ public interface GetArchiveEntriesPort {
      * duplicate top-level names numbered). */
     List<ArchiveEntry> getArchiveEntries(ArchiveRequest request);
 
-    /** {@code path} is the path inside the zip; a directory ends in {@code /} and has no
-     * {@code s3Path}. */
-    record ArchiveEntry(String path, UUID fileId, String s3Path, int blockCount, long fileSize) {
+    /** {@code path} is the path inside the zip; a directory ends in {@code /} and has no blocks.
+     * {@code versionKey}/{@code blockKeys} as in {@link GetFileVersionPort.VersionLocation}. */
+    record ArchiveEntry(String path, UUID fileId, String versionKey, List<String> blockKeys, long fileSize) {
 
         public boolean isDirectory() {
-            return s3Path == null;
+            return blockKeys == null;
         }
     }
 }

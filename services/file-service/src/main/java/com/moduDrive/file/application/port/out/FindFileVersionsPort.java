@@ -15,8 +15,8 @@ public interface FindFileVersionsPort {
     /** Every version of the file, unordered and unbounded — a purge has to drop all their blocks. */
     List<FileVersion> findAllByFileId(FileId fileId);
 
-    /** The version an upload already created — s3Path is unique per upload. */
-    Optional<FileVersion> findByS3Path(String s3Path);
+    /** The version a commit already created — the client picks a fresh uploadId per upload. */
+    Optional<FileVersion> findByUploadId(UUID uploadId);
 
     /** One query for many versions — a zip of a large folder needs every file's current version at once. */
     List<FileVersion> findAllByIds(Collection<UUID> versionIds);

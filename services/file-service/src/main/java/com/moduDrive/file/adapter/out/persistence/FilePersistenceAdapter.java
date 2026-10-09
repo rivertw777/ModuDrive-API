@@ -126,8 +126,8 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
         fileRepository.markPurged(fileId.value(), LocalDateTime.now(), deletedBy);
     }
 
-    // The file's versions would otherwise dangle forever, pointing at S3 prefixes that
-    // FilePurger/DirectoryCascader already deleted the blocks under. Its share and favorite rows
+    // The file's versions would otherwise dangle forever, holding block references that
+    // FilePurger/DirectoryCascader already released. Its share and favorite rows
     // likewise — no FK cascade, so a grant or a star on a purged file/folder would linger and
     // only ever get filtered out at read time (ListSharedWithMeService / ListFavoritesService).
     private void cascadeDeleteAttachments(FileId fileId) {
@@ -258,8 +258,8 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
     @Override
     public FileVersion saveFileVersion(FileVersion fileVersion) {
         FileVersionJpaEntity entity = new FileVersionJpaEntity(
-                fileVersion.getFileId(), fileVersion.getFileSize(),
-                fileVersion.getBlockCount(), fileVersion.getS3Path()
+                fileVersion.getFileId(), fileVersion.getOwnerId(), fileVersion.getFileSize(),
+                fileVersion.getUploadId(), fileVersion.getHashes()
         );
         return fileMapper.mapFileVersionToDomain(fileVersionRepository.save(entity));
     }
@@ -272,8 +272,8 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
     }
 
     @Override
-    public Optional<FileVersion> findByS3Path(String s3Path) {
-        return fileVersionRepository.findByS3Path(s3Path).map(fileMapper::mapFileVersionToDomain);
+    public Optional<FileVersion> findByUploadId(UUID uploadId) {
+        return fileVersionRepository.findByUploadId(uploadId).map(fileMapper::mapFileVersionToDomain);
     }
 
     @Override

@@ -258,6 +258,7 @@ flowchart LR
     A -- "memberServiceCircuitBreaker + Retry" --> M
     F -- "memberServiceCircuitBreaker + Retry" --> M
     S -- "fileServiceCircuitBreaker + Retry" --> F
+    F -- "storageServiceCircuitBreaker + Retry" --> S
 ```
 
 Feign 클라이언트 메서드에 `@CircuitBreaker`와 `@Retry`를 같이 단다.

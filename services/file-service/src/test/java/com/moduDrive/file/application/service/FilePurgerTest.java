@@ -1,7 +1,8 @@
 package com.moduDrive.file.application.service;
 
+import com.moduDrive.file.fixture.FileVersionTestFixture;
 import com.moduDrive.file.application.port.out.FindFileVersionsPort;
-import com.moduDrive.file.application.port.out.PurgeStorageBlocksPort;
+import com.moduDrive.file.application.port.out.ReleaseBlocksPort;
 import com.moduDrive.file.application.port.out.SaveFilePort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
@@ -31,7 +32,7 @@ class FilePurgerTest {
 
     @Mock private SaveFilePort saveFilePort;
     @Mock private DirectoryCascader directoryCascader;
-    @Mock private PurgeStorageBlocksPort purgeStorageBlocksPort;
+    @Mock private ReleaseBlocksPort releaseBlocksPort;
     @Mock private FindFileVersionsPort findFileVersionsPort;
     @InjectMocks private FilePurger filePurger;
 
@@ -49,21 +50,19 @@ class FilePurgerTest {
     class WhenRootIsAFile {
 
         @Test
-        @DisplayName("버전 행을 지우기 전에 읽어 블록 삭제를 요청하고, 그다음 행을 tombstone으로 만든다")
-        void requestsBlockPurgeWithVersionsReadBeforeTombstoning() {
+        @DisplayName("버전 행을 지우기 전에 읽어 블록 참조를 풀고, 그다음 행을 tombstone으로 만든다")
+        void releasesBlocksOfVersionsReadBeforeTombstoning() {
             File file = makeFile(new FileIsDirectory(false));
             FileId fileId = new FileId(file.getId());
-            List<FileVersion> versions = List.of(FileVersion.withId(new FileVersionId(UUID.randomUUID()),
-                    new FileVersionFileId(file.getId()), new FileVersionFileSize(10L),
-                    new FileVersionBlockCount(2), new FileVersionS3Path("blocks/v1")));
+            List<FileVersion> versions = List.of(FileVersionTestFixture.aVersion(UUID.randomUUID(), file.getId(), 10L));
             given(findFileVersionsPort.findAllByFileId(fileId)).willReturn(versions);
 
             filePurger.purgeRoot(file, callerId);
 
             // purgeFile deletes the version rows — reading them afterwards would find nothing.
-            InOrder order = inOrder(findFileVersionsPort, purgeStorageBlocksPort, saveFilePort);
+            InOrder order = inOrder(findFileVersionsPort, releaseBlocksPort, saveFilePort);
             order.verify(findFileVersionsPort).findAllByFileId(fileId);
-            order.verify(purgeStorageBlocksPort).purgeBlocks(fileId, versions);
+            order.verify(releaseBlocksPort).releaseBlocks(versions);
             order.verify(saveFilePort).purgeFile(fileId, callerId);
             then(directoryCascader).shouldHaveNoInteractions();
         }
@@ -80,7 +79,7 @@ class FilePurgerTest {
             filePurger.purgeRoot(directory, callerId);
 
             then(directoryCascader).should().purge(any(), eq(directory.fullPath()), any(), eq(callerId));
-            then(purgeStorageBlocksPort).shouldHaveNoInteractions();
+            then(releaseBlocksPort).shouldHaveNoInteractions();
             then(saveFilePort).should().purgeFile(new FileId(directory.getId()), callerId);
         }
     }

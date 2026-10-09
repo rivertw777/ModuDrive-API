@@ -6,6 +6,7 @@ import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.script.RedisScript;
 
 import java.time.Duration;
+import java.util.Collections;
 import java.util.List;
 
 public class RedisRepository {
@@ -22,6 +23,12 @@ public class RedisRepository {
 
     public String get(String key) {
         return redisTemplate.opsForValue().get(key);
+    }
+
+    /** One round trip for many keys; a missing key comes back as null at its position. */
+    public List<String> multiGet(List<String> keys) {
+        List<String> values = redisTemplate.opsForValue().multiGet(keys);
+        return values == null ? Collections.nCopies(keys.size(), null) : values;
     }
 
     /** Atomic read-and-remove — for single-use tokens, so two concurrent redeems can't both win. */

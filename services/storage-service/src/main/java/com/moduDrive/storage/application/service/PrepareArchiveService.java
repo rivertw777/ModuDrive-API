@@ -28,7 +28,7 @@ class PrepareArchiveService implements PrepareArchiveUseCase {
                 .filter(entry -> !entry.isDirectory())
                 .toList();
         // Same per-file counters a single download spends — a zip mustn't be a way around them.
-        files.forEach(file -> downloadQuotaPort.checkWithinQuota(request.quotaScope(file.fileId()), file.s3Path()));
+        files.forEach(file -> downloadQuotaPort.checkWithinQuota(request.quotaScope(file.fileId()), file.versionKey()));
         return archiveTokenPort.issue(request);
     }
 }

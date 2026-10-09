@@ -1,5 +1,6 @@
 package com.moduDrive.file.adapter.in.web.controller;
 
+import com.moduDrive.file.fixture.FileVersionTestFixture;
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.common.core.web.GlobalExceptionHandler;
 import com.moduDrive.file.application.port.in.command.GetFileRevisionsCommand;
@@ -42,16 +43,14 @@ class GetFileRevisionsControllerTest {
 
         @Test
         void returnsRevisionList() throws Exception {
-            FileVersion v = FileVersion.withId(new FileVersionId(UUID.randomUUID()),
-                    new FileVersionFileId(FILE_ID), new FileVersionFileSize(512L),
-                    new FileVersionBlockCount(1), new FileVersionS3Path("s3://b/k"));
+            FileVersion v = FileVersionTestFixture.aVersion(UUID.randomUUID(), FILE_ID, 512L);
             given(getFileRevisionsUseCase.getFileRevisions(any(GetFileRevisionsCommand.class)))
                     .willReturn(List.of(v));
 
             mockMvc.perform(get("/api/v1/files/{fileId}/revisions", FILE_ID)
                             .header("X_USER_ID", USER_ID))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.data[0].s3Path").value("s3://b/k"));
+                    .andExpect(jsonPath("$.data[0].hashes[0]").value(FileVersionTestFixture.HASH_A));
         }
     }
 

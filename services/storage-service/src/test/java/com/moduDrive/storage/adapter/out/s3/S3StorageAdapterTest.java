@@ -10,21 +10,26 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
-import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectResponse;
-import software.amazon.awssdk.core.ResponseBytes;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,13 +37,18 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willAnswer;
 import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.never;
 
 @ExtendWith(MockitoExtension.class)
 class S3StorageAdapterTest {
+
+    private static final String KEY = "blocks/owner/aaa";
+    private static final Instant DECIDED_AT = Instant.parse("2026-10-08T12:00:00.500Z");
 
     @Mock
     private S3Client s3Client;
@@ -59,26 +69,35 @@ class S3StorageAdapterTest {
     class WhenStoringThenRetrieving {
 
         @Test
-        void roundTripsToOriginalBytes() throws IOException {
+        void roundTripsToOriginalBytesInKeyOrder() throws IOException {
             stubS3();
-            byte[] original = "hello modudrive block".getBytes(StandardCharsets.UTF_8);
+            adapter.storeBlock("blocks/o/b", "world".getBytes());
+            adapter.storeBlock("blocks/o/a", "hello ".getBytes());
 
-            adapter.storeBlocks("path/to/file", List.of(original));
-            List<byte[]> retrieved = adapter.retrieveBlocks("path/to/file", 1);
-
-            assertThat(retrieved).containsExactly(original);
+            assertThat(adapter.retrieveBlocks(List.of("blocks/o/a", "blocks/o/b", "blocks/o/a")))
+                    .containsExactly("hello ".getBytes(), "world".getBytes(), "hello ".getBytes());
         }
 
         @Test
-        void encryptsIdenticalBlocksDifferently() throws IOException {
+        void streamsTheSameBytes() throws IOException {
+            stubS3();
+            adapter.storeBlock("blocks/o/a", "hello ".getBytes());
+            adapter.storeBlock("blocks/o/b", "world".getBytes());
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+            adapter.streamBlocks(List.of("blocks/o/a", "blocks/o/b"), out);
+
+            assertThat(out.toByteArray()).isEqualTo("hello world".getBytes(StandardCharsets.UTF_8));
+        }
+
+        @Test
+        void encryptsTheSameBlockDifferentlyEachTime() throws IOException {
             stubPut();
-            byte[] block = new byte[32]; // identical zero-filled plaintext blocks
+            adapter.storeBlock(KEY, new byte[32]);
+            byte[] first = fakeBucket.get(KEY);
+            adapter.storeBlock(KEY, new byte[32]);
 
-            adapter.storeBlocks("path/to/file", List.of(block, block));
-
-            byte[] stored0 = fakeBucket.get("path/to/file/block_0");
-            byte[] stored1 = fakeBucket.get("path/to/file/block_1");
-            assertThat(stored0).isNotEqualTo(stored1); // random IV, not ECB
+            assertThat(fakeBucket.get(KEY)).isNotEqualTo(first); // random IV, not ECB
         }
     }
 
@@ -89,169 +108,125 @@ class S3StorageAdapterTest {
         @Test
         void refusesToDecryptAtTheWrongLocation() throws IOException {
             stubS3();
-            byte[] original = "victim file contents".getBytes(StandardCharsets.UTF_8);
-            adapter.storeBlocks("victim/path", List.of(original));
-            // Same ciphertext (and tag), planted at a different object key — as if an attacker
-            // with bucket write access copied another file's block into this file's location.
-            fakeBucket.put("attacker/path/block_0", fakeBucket.get("victim/path/block_0"));
+            adapter.storeBlock("blocks/victim/h", "victim file contents".getBytes(StandardCharsets.UTF_8));
+            // Same ciphertext (and tag), planted at another owner's key — as if someone with bucket
+            // write access copied a block across.
+            fakeBucket.put("blocks/attacker/h", fakeBucket.get("blocks/victim/h"));
 
-            Throwable thrown = catchThrowable(() -> adapter.retrieveBlocks("attacker/path", 1));
+            Throwable thrown = catchThrowable(() -> adapter.retrieveBlocks(List.of("blocks/attacker/h")));
 
             assertThat(thrown).isInstanceOf(RuntimeException.class);
         }
     }
 
     @Nested
-    @DisplayName("업로드 도중 실패했을 때")
-    class WhenUploadFailsPartway {
+    @DisplayName("블록 저장이 실패했을 때")
+    class WhenStoringFails {
 
         @Test
-        void deletesTheAlreadyUploadedBlocksAndThrowsStorageError() throws IOException {
-            stubPut();
+        void throwsStorageError() {
             willThrow(SdkClientException.create("network blip"))
-                    .given(s3Client).putObject(
-                            org.mockito.ArgumentMatchers.argThat(
-                                    (PutObjectRequest r) -> r.key().endsWith("block_2")),
-                            any(RequestBody.class));
-            List<byte[]> blocks = List.of("a".getBytes(), "b".getBytes(), "c".getBytes());
+                    .given(s3Client).putObject(any(PutObjectRequest.class), any(RequestBody.class));
 
-            Throwable thrown = catchThrowable(() -> adapter.storeBlocks("path/to/file", blocks));
+            Throwable thrown = catchThrowable(() -> adapter.storeBlock(KEY, "x".getBytes()));
 
-            assertThat(thrown)
-                    .isInstanceOf(BusinessException.class)
-                    .extracting(e -> ((BusinessException) e).getExceptionCase())
-                    .isEqualTo(StorageExceptionCase.STORAGE_ERROR);
-            then(s3Client).should().deleteObjects(org.mockito.ArgumentMatchers.argThat(
-                    (DeleteObjectsRequest r) -> r.delete().objects().size() == 2));
-        }
-
-        @Test
-        void cleanupFailureDoesNotHideTheOriginalError() throws IOException {
-            stubPut();
-            willThrow(SdkClientException.create("network blip"))
-                    .given(s3Client).putObject(
-                            org.mockito.ArgumentMatchers.argThat(
-                                    (PutObjectRequest r) -> r.key().endsWith("block_1")),
-                            any(RequestBody.class));
-            willThrow(SdkClientException.create("cleanup also failed"))
-                    .given(s3Client).deleteObjects(any(DeleteObjectsRequest.class));
-            List<byte[]> blocks = List.of("a".getBytes(), "b".getBytes());
-
-            Throwable thrown = catchThrowable(() -> adapter.storeBlocks("path/to/file", blocks));
-
-            assertThat(thrown)
-                    .isInstanceOf(BusinessException.class)
-                    .extracting(e -> ((BusinessException) e).getExceptionCase())
-                    .isEqualTo(StorageExceptionCase.STORAGE_ERROR);
+            assertThat(((BusinessException) thrown).getExceptionCase()).isEqualTo(StorageExceptionCase.STORAGE_ERROR);
         }
     }
 
     @Nested
-    @DisplayName("휴지통 파일을 영구 삭제할 때")
-    class WhenPurgingAFile {
+    @DisplayName("블록을 지울 때")
+    class WhenDeleting {
 
-        @Test
-        void deletesEveryBlockKeyUnderThePrefix() {
-            given(s3Client.deleteObjects(any(DeleteObjectsRequest.class)))
-                    .willReturn(DeleteObjectsResponse.builder().build());
-
-            adapter.deleteBlocks("path/to/file", 3);
-
-            then(s3Client).should().deleteObjects(org.mockito.ArgumentMatchers.argThat(
-                    (DeleteObjectsRequest r) -> r.delete().objects().size() == 3
-                            && r.delete().objects().stream().map(o -> o.key())
-                                    .toList().equals(List.of("path/to/file/block_0", "path/to/file/block_1", "path/to/file/block_2"))));
+        private void headReturns(Instant lastModified, String eTag) {
+            given(s3Client.headObject(any(HeadObjectRequest.class)))
+                    .willReturn(HeadObjectResponse.builder().lastModified(lastModified).eTag(eTag).build());
         }
 
         @Test
-        void doesNothingForAZeroBlockVersion() {
-            adapter.deleteBlocks("path/to/file", 0);
+        @DisplayName("결정 전에 쓰인 블록은 HEAD 때 본 ETag를 조건으로 지운다")
+        void deletesABlockWrittenBeforeTheDecisionConditionally() {
+            headReturns(DECIDED_AT.minusSeconds(3600), "\"etag-1\"");
 
-            then(s3Client).shouldHaveNoInteractions();
+            adapter.deleteUnlessRewritten(KEY, DECIDED_AT);
+
+            then(s3Client).should().deleteObject(argThat((DeleteObjectRequest r) ->
+                    r.key().equals(KEY) && "\"etag-1\"".equals(r.ifMatch())));
         }
 
         @Test
-        void batchesAboveTheS3DeleteObjectsLimit() {
-            given(s3Client.deleteObjects(any(DeleteObjectsRequest.class)))
-                    .willReturn(DeleteObjectsResponse.builder().build());
+        @DisplayName("결정과 같은 초에 쓰인 블록은 결정 뒤로 보고 남긴다")
+        void keepsABlockWrittenInTheSameSecond() {
+            headReturns(Instant.parse("2026-10-08T12:00:00Z"), "\"e\"");
 
-            // DeleteObjects rejects more than 1000 keys per request — 1001 blocks must split
-            // into a 1000-key batch and a 1-key batch, not one oversized request.
-            adapter.deleteBlocks("path/to/file", 1001);
+            adapter.deleteUnlessRewritten(KEY, DECIDED_AT);
 
-            then(s3Client).should(org.mockito.Mockito.times(2)).deleteObjects(
-                    org.mockito.ArgumentMatchers.any(DeleteObjectsRequest.class));
+            then(s3Client).should(never()).deleteObject(any(DeleteObjectRequest.class));
         }
 
         @Test
-        void throwsWhenS3ReportsPartialFailure() {
-            given(s3Client.deleteObjects(any(DeleteObjectsRequest.class))).willReturn(
-                    DeleteObjectsResponse.builder()
-                            .errors(software.amazon.awssdk.services.s3.model.S3Error.builder()
-                                    .key("path/to/file/block_0").code("AccessDenied").build())
-                            .build());
+        @DisplayName("결정 뒤에 다시 올라온 블록은 남긴다")
+        void keepsABlockRewrittenAfterTheDecision() {
+            headReturns(DECIDED_AT.plusSeconds(60), "\"e\"");
 
-            Throwable thrown = catchThrowable(() -> adapter.deleteBlocks("path/to/file", 1));
+            adapter.deleteUnlessRewritten(KEY, DECIDED_AT);
 
-            assertThat(thrown)
-                    .isInstanceOf(BusinessException.class)
-                    .extracting(e -> ((BusinessException) e).getExceptionCase())
-                    .isEqualTo(StorageExceptionCase.STORAGE_ERROR);
+            then(s3Client).should(never()).deleteObject(any(DeleteObjectRequest.class));
+        }
+
+        @Test
+        @DisplayName("이미 없는 블록이면 아무것도 하지 않는다")
+        void ignoresAMissingBlock() {
+            given(s3Client.headObject(any(HeadObjectRequest.class))).willThrow(NoSuchKeyException.builder().statusCode(404).build());
+
+            adapter.deleteUnlessRewritten(KEY, DECIDED_AT);
+
+            then(s3Client).should(never()).deleteObject(any(DeleteObjectRequest.class));
+        }
+
+        @Test
+        @DisplayName("HEAD와 DELETE 사이에 덮어써져 조건이 맞지 않으면(412) 남긴다")
+        void keepsABlockOverwrittenBetweenHeadAndDelete() {
+            headReturns(DECIDED_AT.minusSeconds(3600), "\"old\"");
+            given(s3Client.deleteObject(any(DeleteObjectRequest.class)))
+                    .willThrow(S3Exception.builder().statusCode(412).build());
+
+            adapter.deleteUnlessRewritten(KEY, DECIDED_AT);
+        }
+
+        @Test
+        @DisplayName("그 밖의 삭제 실패는 다시 시도할 수 있게 던진다")
+        void throwsOtherFailures() {
+            headReturns(DECIDED_AT.minusSeconds(3600), "\"e\"");
+            given(s3Client.deleteObject(any(DeleteObjectRequest.class)))
+                    .willThrow(S3Exception.builder().statusCode(500).build());
+
+            Throwable thrown = catchThrowable(() -> adapter.deleteUnlessRewritten(KEY, DECIDED_AT));
+
+            assertThat(((BusinessException) thrown).getExceptionCase()).isEqualTo(StorageExceptionCase.STORAGE_ERROR);
         }
     }
 
     @Nested
-    @DisplayName("blockCount가 상한을 초과할 때")
+    @DisplayName("블록 수가 상한을 넘을 때")
     class WhenBlockCountExceedsCap {
 
-        @Test
-        void throwsBeforeAllocatingAnyArray() {
-            Throwable thrown = catchThrowable(() -> adapter.retrieveBlocks("path/to/file", 100_001));
-
-            assertThat(thrown)
-                    .isInstanceOf(BusinessException.class)
-                    .extracting(e -> ((BusinessException) e).getExceptionCase())
-                    .isEqualTo(StorageExceptionCase.TOO_MANY_BLOCKS);
-        }
+        private final List<String> tooMany = Collections.nCopies(100_001, KEY);
 
         @Test
-        void deleteBlocksAlsoThrowsBeforeDeletingAnything() {
-            Throwable thrown = catchThrowable(() -> adapter.deleteBlocks("path/to/file", 100_001));
+        void retrieveThrowsBeforeFetchingAnything() {
+            Throwable thrown = catchThrowable(() -> adapter.retrieveBlocks(tooMany));
 
-            assertThat(thrown)
-                    .isInstanceOf(BusinessException.class)
-                    .extracting(e -> ((BusinessException) e).getExceptionCase())
-                    .isEqualTo(StorageExceptionCase.TOO_MANY_BLOCKS);
+            assertThat(((BusinessException) thrown).getExceptionCase()).isEqualTo(StorageExceptionCase.TOO_MANY_BLOCKS);
             then(s3Client).shouldHaveNoInteractions();
         }
 
         @Test
-        void streamBlocksAlsoThrowsBeforeFetchingAnything() {
-            Throwable thrown = catchThrowable(
-                    () -> adapter.streamBlocks("path/to/file", 100_001, new ByteArrayOutputStream()));
+        void streamThrowsBeforeFetchingAnything() {
+            Throwable thrown = catchThrowable(() -> adapter.streamBlocks(tooMany, new ByteArrayOutputStream()));
 
-            assertThat(thrown)
-                    .isInstanceOf(BusinessException.class)
-                    .extracting(e -> ((BusinessException) e).getExceptionCase())
-                    .isEqualTo(StorageExceptionCase.TOO_MANY_BLOCKS);
-        }
-    }
-
-    @Nested
-    @DisplayName("블록을 저장하고 스트림으로 조회할 때")
-    class WhenStoringThenStreaming {
-
-        @Test
-        void writesTheSameBytesAsRetrieveBlocks() throws IOException {
-            stubS3();
-            byte[] block0 = "hello ".getBytes(StandardCharsets.UTF_8);
-            byte[] block1 = "world".getBytes(StandardCharsets.UTF_8);
-            adapter.storeBlocks("path/to/file", List.of(block0, block1));
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-
-            adapter.streamBlocks("path/to/file", 2, out);
-
-            assertThat(out.toByteArray()).isEqualTo("hello world".getBytes(StandardCharsets.UTF_8));
+            assertThat(((BusinessException) thrown).getExceptionCase()).isEqualTo(StorageExceptionCase.TOO_MANY_BLOCKS);
+            then(s3Client).shouldHaveNoInteractions();
         }
     }
 

@@ -9,18 +9,14 @@ import org.springframework.http.HttpStatus;
 @AllArgsConstructor
 public enum StorageExceptionCase implements ExceptionCase {
 
-    SESSION_NOT_FOUND(HttpStatus.NOT_FOUND, "업로드 세션을 찾을 수 없습니다."),
-    SESSION_OWNER_MISMATCH(HttpStatus.FORBIDDEN, "해당 업로드 세션에 접근할 권한이 없습니다."),
-    SESSION_ALREADY_COMPLETED(HttpStatus.BAD_REQUEST, "이미 완료된 업로드 세션입니다."),
-    CHUNKS_INCOMPLETE(HttpStatus.BAD_REQUEST, "아직 모든 청크가 업로드되지 않았습니다."),
-    INVALID_CHUNK_INDEX(HttpStatus.BAD_REQUEST, "청크 인덱스가 세션의 totalChunks 범위를 벗어났습니다."),
-    CHUNK_UPLOAD_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "청크 업로드에 실패했습니다."),
+    /** Empty, or the bytes don't hash to the hash in the path. */
+    INVALID_BLOCK(HttpStatus.BAD_REQUEST, "블록 내용이 해시와 일치하지 않습니다."),
+    BLOCK_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "블록 하나는 블록 크기를 초과할 수 없습니다."),
+    /** The owner already uploaded {@code storage.upload-blocks-per-window} blocks in the last 24h. */
+    UPLOAD_LIMIT_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, "업로드 한도를 초과했습니다. 잠시 후 다시 시도해 주세요."),
     FILE_NOT_FOUND_IN_STORAGE(HttpStatus.NOT_FOUND, "스토리지에서 파일을 찾을 수 없습니다."),
     STORAGE_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "스토리지 오류가 발생했습니다."),
-    FILE_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "파일 크기는 5GB를 초과할 수 없습니다."),
     TOO_MANY_BLOCKS(HttpStatus.BAD_REQUEST, "블록 수가 허용 범위를 초과했습니다."),
-    /** Same message whether the credential is missing, expired, or was issued for a different
-     * file — an anonymous caller must not be able to tell those apart. */
     /** Guards inline preview only — regular download has no such cap. Without it, previewing a
      * multi-GB file would fully materialize it in heap (twice: once assembled, once sliced for
      * Range) on a route the gateway now permits without auth. */

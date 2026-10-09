@@ -2,7 +2,7 @@ package com.moduDrive.file.application.service;
 
 import com.moduDrive.file.application.port.out.FindFilePort;
 import com.moduDrive.file.application.port.out.FindFileVersionsPort;
-import com.moduDrive.file.application.port.out.PurgeStorageBlocksPort;
+import com.moduDrive.file.application.port.out.ReleaseBlocksPort;
 import com.moduDrive.file.application.port.out.SaveFilePort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.FileId;
@@ -30,7 +30,7 @@ class DirectoryCascader {
 
     private final FindFilePort findFilePort;
     private final SaveFilePort saveFilePort;
-    private final PurgeStorageBlocksPort purgeStorageBlocksPort;
+    private final ReleaseBlocksPort releaseBlocksPort;
     private final FindFileVersionsPort findFileVersionsPort;
 
     /** Rewrites the path prefix of every descendant after the directory itself moved/was renamed. */
@@ -96,8 +96,7 @@ class DirectoryCascader {
             // A nested subdirectory has no blocks of its own — only a real file does.
             if (!descendant.isDirectory()) {
                 // Before purgeFile deletes the version rows — see FilePurger.
-                FileId fileId = new FileId(descendant.getId());
-                purgeStorageBlocksPort.purgeBlocks(fileId, findFileVersionsPort.findAllByFileId(fileId));
+                releaseBlocksPort.releaseBlocks(findFileVersionsPort.findAllByFileId(new FileId(descendant.getId())));
             }
             saveFilePort.purgeFile(new FileId(descendant.getId()), deletedBy);
         });

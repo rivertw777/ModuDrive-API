@@ -54,9 +54,9 @@ class OpenArchiveService implements OpenArchiveUseCase {
                 // Not closed: closing it would close the zip underneath.
                 CountingOutputStream counting = new CountingOutputStream(zip);
                 try {
-                    retrieveBlocksPort.streamBlocks(entry.s3Path(), entry.blockCount(), counting);
+                    retrieveBlocksPort.streamBlocks(entry.blockKeys(), counting);
                 } finally {
-                    downloadQuotaPort.recordUsage(request.quotaScope(entry.fileId()), entry.s3Path(), counting.count());
+                    downloadQuotaPort.recordUsage(request.quotaScope(entry.fileId()), entry.versionKey(), counting.count());
                 }
             }
             zip.closeEntry();

@@ -37,16 +37,16 @@ class PublicDownloadFileService implements PublicDownloadFileUseCase {
     public byte[] downloadPublic(PublicDownloadFileCommand command) {
         GetFileVersionPort.VersionLocation version = locate(command);
         if (command.isInlinePreview()) {
-            BlockAssembler.requireWithinInlinePreviewLimit(version.blockCount(), blockSize);
+            BlockAssembler.requireWithinInlinePreviewLimit(version.blockKeys().size(), blockSize);
         }
         String scope = quotaScope(command);
         // Anonymous fetches meter per file: every visitor who reaches it — however they got in —
         // draws on the same window, but a stranger's traffic can't spend the owner's own
         // (user-scoped) quota.
-        downloadQuotaPort.checkWithinQuota(scope, version.s3Path());
-        List<byte[]> blocks = retrieveBlocksPort.retrieveBlocks(version.s3Path(), version.blockCount());
+        downloadQuotaPort.checkWithinQuota(scope, version.versionKey());
+        List<byte[]> blocks = retrieveBlocksPort.retrieveBlocks(version.blockKeys());
         byte[] assembled = BlockAssembler.assemble(blocks);
-        downloadQuotaPort.recordUsage(scope, version.s3Path(), assembled.length);
+        downloadQuotaPort.recordUsage(scope, version.versionKey(), assembled.length);
         return assembled;
     }
 
@@ -54,12 +54,12 @@ class PublicDownloadFileService implements PublicDownloadFileUseCase {
     public void downloadPublicStream(PublicDownloadFileCommand command, OutputStream out) {
         GetFileVersionPort.VersionLocation version = locate(command);
         String scope = quotaScope(command);
-        downloadQuotaPort.checkWithinQuota(scope, version.s3Path());
+        downloadQuotaPort.checkWithinQuota(scope, version.versionKey());
         CountingOutputStream counting = new CountingOutputStream(out);
         try {
-            retrieveBlocksPort.streamBlocks(version.s3Path(), version.blockCount(), counting);
+            retrieveBlocksPort.streamBlocks(version.blockKeys(), counting);
         } finally {
-            downloadQuotaPort.recordUsage(scope, version.s3Path(), counting.count());
+            downloadQuotaPort.recordUsage(scope, version.versionKey(), counting.count());
         }
     }
 

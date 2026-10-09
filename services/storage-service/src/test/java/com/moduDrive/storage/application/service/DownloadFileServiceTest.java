@@ -20,11 +20,13 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.UncheckedIOException;
 import java.util.List;
+import java.util.stream.IntStream;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -58,8 +60,8 @@ class DownloadFileServiceTest {
 
         @Test
         void returnsAssembledBytes() {
-            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", 2));
-            given(retrieveBlocksPort.retrieveBlocks(anyString(), anyInt()))
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(2)));
+            given(retrieveBlocksPort.retrieveBlocks(anyList()))
                     .willReturn(List.of("hello ".getBytes(), "world".getBytes()));
 
             byte[] result = downloadFileService.download(new DownloadFileCommand(fileId, userId));
@@ -69,8 +71,8 @@ class DownloadFileServiceTest {
 
         @Test
         void assembleSingleBlockCorrectly() {
-            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", 1));
-            given(retrieveBlocksPort.retrieveBlocks(anyString(), anyInt()))
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(1)));
+            given(retrieveBlocksPort.retrieveBlocks(anyList()))
                     .willReturn(List.of("data".getBytes()));
 
             byte[] result = downloadFileService.download(new DownloadFileCommand(fileId, userId));
@@ -85,17 +87,17 @@ class DownloadFileServiceTest {
 
         @Test
         void delegatesToStreamBlocksWithoutAssemblingAByteArray() {
-            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", 2));
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(2)));
 
             downloadFileService.downloadStream(new DownloadFileCommand(fileId, userId), new ByteArrayOutputStream());
 
-            then(retrieveBlocksPort).should().streamBlocks(eq("files/abc/xyz"), eq(2), any(OutputStream.class));
-            then(retrieveBlocksPort).should(never()).retrieveBlocks(anyString(), anyInt());
+            then(retrieveBlocksPort).should().streamBlocks(eq(keys(2)), any(OutputStream.class));
+            then(retrieveBlocksPort).should(never()).retrieveBlocks(anyList());
         }
 
         @Test
         void doesNotMarkTheFileAsRecentlyAccessed() {
-            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", 2));
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(2)));
 
             downloadFileService.downloadStream(new DownloadFileCommand(fileId, userId), new ByteArrayOutputStream());
 
@@ -104,7 +106,7 @@ class DownloadFileServiceTest {
 
         @Test
         void checksTheUserScopedQuotaBeforeStreaming() {
-            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", 2));
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(2)));
 
             downloadFileService.downloadStream(new DownloadFileCommand(fileId, userId), new ByteArrayOutputStream());
 
@@ -113,9 +115,9 @@ class DownloadFileServiceTest {
 
         @Test
         void recordsOnlyTheBytesThatActuallyReachedTheClient() {
-            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", 2));
-            willAnswer(inv -> { ((OutputStream) inv.getArgument(2)).write(new byte[512]); return null; })
-                    .given(retrieveBlocksPort).streamBlocks(anyString(), anyInt(), any());
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(2)));
+            willAnswer(inv -> { ((OutputStream) inv.getArgument(1)).write(new byte[512]); return null; })
+                    .given(retrieveBlocksPort).streamBlocks(anyList(), any());
 
             downloadFileService.downloadStream(new DownloadFileCommand(fileId, userId), new ByteArrayOutputStream());
 
@@ -124,11 +126,11 @@ class DownloadFileServiceTest {
 
         @Test
         void stillRecordsWhatWasSentWhenStreamingAbortsPartway() {
-            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", 2));
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(2)));
             willAnswer(inv -> {
-                ((OutputStream) inv.getArgument(2)).write(new byte[100]);
+                ((OutputStream) inv.getArgument(1)).write(new byte[100]);
                 throw new UncheckedIOException(new IOException("client gone"));
-            }).given(retrieveBlocksPort).streamBlocks(anyString(), anyInt(), any());
+            }).given(retrieveBlocksPort).streamBlocks(anyList(), any());
 
             catchThrowable(() -> downloadFileService.downloadStream(
                     new DownloadFileCommand(fileId, userId), new ByteArrayOutputStream()));
@@ -138,7 +140,7 @@ class DownloadFileServiceTest {
 
         @Test
         void rejectsBeforeStreamingWhenTheFileIsOverItsDownloadQuota() {
-            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", 2));
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(2)));
             willThrow(new BusinessException(StorageExceptionCase.DOWNLOAD_QUOTA_EXCEEDED))
                     .given(downloadQuotaPort).checkWithinQuota(anyString(), anyString());
 
@@ -159,8 +161,8 @@ class DownloadFileServiceTest {
 
         @Test
         void alsoMetersTheQuotaByRealSizeSoItCannotBeUsedToBypassTheLimit() {
-            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", 1));
-            given(retrieveBlocksPort.retrieveBlocks(anyString(), anyInt())).willReturn(List.of("data".getBytes()));
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(1)));
+            given(retrieveBlocksPort.retrieveBlocks(anyList())).willReturn(List.of("data".getBytes()));
 
             downloadFileService.download(new DownloadFileCommand(fileId, userId, true));
 
@@ -170,8 +172,8 @@ class DownloadFileServiceTest {
 
         @Test
         void marksTheFileAsRecentlyAccessed() {
-            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", 1));
-            given(retrieveBlocksPort.retrieveBlocks(anyString(), anyInt())).willReturn(List.of("data".getBytes()));
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(1)));
+            given(retrieveBlocksPort.retrieveBlocks(anyList())).willReturn(List.of("data".getBytes()));
 
             downloadFileService.download(new DownloadFileCommand(fileId, userId, true));
 
@@ -180,7 +182,7 @@ class DownloadFileServiceTest {
 
         @Test
         void rejectsWithoutFetchingBlocksWhenOverQuota() {
-            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", 1));
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(1)));
             willThrow(new BusinessException(StorageExceptionCase.DOWNLOAD_QUOTA_EXCEEDED))
                     .given(downloadQuotaPort).checkWithinQuota(anyString(), anyString());
 
@@ -200,7 +202,7 @@ class DownloadFileServiceTest {
 
         @Test
         void rejectsBeforeFetchingAnyBlocks() {
-            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", 30));
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(30)));
 
             Throwable thrown = catchThrowable(() ->
                     downloadFileService.download(new DownloadFileCommand(fileId, userId, true)));
@@ -210,5 +212,9 @@ class DownloadFileServiceTest {
                     .isEqualTo(StorageExceptionCase.PREVIEW_TOO_LARGE);
             then(retrieveBlocksPort).shouldHaveNoInteractions();
         }
+    }
+
+    private static List<String> keys(int count) {
+        return IntStream.range(0, count).mapToObj(i -> "blocks/owner/h" + i).toList();
     }
 }

@@ -2,6 +2,7 @@ package com.moduDrive.storage.adapter.out.client.file;
 
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.common.core.web.ApiResponse;
+import com.moduDrive.storage.application.port.out.GetArchiveEntriesPort.ArchiveEntry;
 import com.moduDrive.storage.application.port.out.GetFileVersionPort.VersionLocation;
 import com.moduDrive.storage.exception.StorageExceptionCase;
 import org.junit.jupiter.api.DisplayName;
@@ -31,6 +32,8 @@ class FileClientAdapterTest {
 
     private final UUID fileId = UUID.randomUUID();
     private final UUID userId = UUID.randomUUID();
+    private static final UUID VERSION_ID = UUID.randomUUID();
+    private static final UUID OWNER_ID = UUID.randomUUID();
 
     @Nested
     @DisplayName("최신 버전을 조회할 때")
@@ -40,11 +43,12 @@ class FileClientAdapterTest {
         void mapsTheLatestVersionAndForwardsMarkAccessed() {
             given(fileClient.getFileRevisions(anyString(), anyString(), anyInt(), anyBoolean()))
                     .willReturn(ApiResponse.success(List.of(
-                            new FileVersionDto(UUID.randomUUID(), fileId, 10L, 3, "path/v1"))));
+                            new FileVersionDto(VERSION_ID, fileId, 10L, OWNER_ID, List.of("h1", "h2", "h1")))));
 
             VersionLocation result = adapter.getLatestVersion(fileId, userId, true);
 
-            assertThat(result).isEqualTo(new VersionLocation("path/v1", 3));
+            assertThat(result).isEqualTo(new VersionLocation(VERSION_ID.toString(), List.of(
+                    "blocks/" + OWNER_ID + "/h1", "blocks/" + OWNER_ID + "/h2", "blocks/" + OWNER_ID + "/h1")));
             then(fileClient).should().getFileRevisions(fileId.toString(), userId.toString(), 1, true);
         }
     }
@@ -76,11 +80,11 @@ class FileClientAdapterTest {
         void forwardsFileIdAndKeyToTheInternalRouteAndMapsTheVersion() {
             given(fileClient.getPublicFileRevisions(anyString(), anyString(), anyInt()))
                     .willReturn(ApiResponse.success(List.of(
-                            new FileVersionDto(UUID.randomUUID(), fileId, 42L, 5, "path/pub"))));
+                            new FileVersionDto(VERSION_ID, fileId, 42L, OWNER_ID, List.of("h9")))));
 
             VersionLocation result = adapter.getPublicVersion(fileId.toString(), key);
 
-            assertThat(result).isEqualTo(new VersionLocation("path/pub", 5));
+            assertThat(result).isEqualTo(new VersionLocation(VERSION_ID.toString(), List.of("blocks/" + OWNER_ID + "/h9")));
             then(fileClient).should().getPublicFileRevisions(fileId.toString(), key, 1);
         }
 
@@ -106,15 +110,15 @@ class FileClientAdapterTest {
             List<UUID> ids = List.of(fileId);
             given(fileClient.resolveArchiveEntries(new ResolveArchiveEntriesRequest(userId, ids)))
                     .willReturn(ApiResponse.success(List.of(
-                            new ArchiveEntryDto("docs/", null, null, null, null),
-                            new ArchiveEntryDto("docs/a.txt", fileId, "s3/a", 2, 7L))));
+                            new ArchiveEntryDto("docs/", null, null, null, null, null),
+                            new ArchiveEntryDto("docs/a.txt", fileId, VERSION_ID, OWNER_ID, List.of("h1"), 7L))));
 
             var entries = adapter.getArchiveEntries(
                     new com.moduDrive.storage.application.port.out.ArchiveRequest(userId, null, ids));
 
             assertThat(entries).containsExactly(
-                    new com.moduDrive.storage.application.port.out.GetArchiveEntriesPort.ArchiveEntry("docs/", null, null, 0, 0),
-                    new com.moduDrive.storage.application.port.out.GetArchiveEntriesPort.ArchiveEntry("docs/a.txt", fileId, "s3/a", 2, 7));
+                    new ArchiveEntry("docs/", null, null, null, 0),
+                    new ArchiveEntry("docs/a.txt", fileId, VERSION_ID.toString(), List.of("blocks/" + OWNER_ID + "/h1"), 7));
             assertThat(entries.get(0).isDirectory()).isTrue();
         }
 
@@ -133,15 +137,15 @@ class FileClientAdapterTest {
     }
 
     @Nested
-    @DisplayName("업로드 완료를 알릴 때")
-    class WhenNotifyingUploadComplete {
+    @DisplayName("커밋된 블록을 물을 때")
+    class WhenAskingForCommittedBlocks {
 
         @Test
-        void forwardsTheUploadResultToFileService() {
-            adapter.notifyUploadComplete(fileId, userId, 10L, 3, "path/v1");
+        void returnsWhatFileServiceAnswered() {
+            given(fileClient.findCommittedBlocks(new FindCommittedBlocksRequest(OWNER_ID, List.of("h1", "h2"))))
+                    .willReturn(ApiResponse.success(List.of("h1")));
 
-            then(fileClient).should().updateFileStatus(
-                    fileId.toString(), userId.toString(), new FileUploadCallbackRequest(10L, 3, "path/v1"));
+            assertThat(adapter.findCommitted(OWNER_ID, List.of("h1", "h2"))).containsExactly("h1");
         }
     }
 }

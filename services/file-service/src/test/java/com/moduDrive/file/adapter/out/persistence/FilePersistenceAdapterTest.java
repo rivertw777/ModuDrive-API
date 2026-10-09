@@ -435,41 +435,43 @@ class FilePersistenceAdapterTest {
     class WhenFindingVersionsByIds {
 
         @Test
-        @DisplayName("요청한 id의 버전만 돌려준다")
+        @DisplayName("요청한 id의 버전만 블록 목록과 함께 돌려준다")
         void returnsOnlyTheRequestedVersions() {
             UUID fileIdValue = UUID.randomUUID();
-            UUID v1 = springDataFileVersionRepository.save(new FileVersionJpaEntity(fileIdValue, 10L, 1, "s3://b/v1")).getId();
-            springDataFileVersionRepository.save(new FileVersionJpaEntity(fileIdValue, 20L, 2, "s3://b/v2"));
+            UUID v1 = springDataFileVersionRepository.save(version(fileIdValue, UUID.randomUUID(), List.of("h1", "h2", "h1"))).getId();
+            springDataFileVersionRepository.save(version(fileIdValue, UUID.randomUUID(), List.of("h3")));
 
-            assertThat(filePersistenceAdapter.findAllByIds(java.util.List.of(v1)))
-                    .extracting(com.moduDrive.file.domain.model.FileVersion::getS3Path)
-                    .containsExactly("s3://b/v1");
+            assertThat(filePersistenceAdapter.findAllByIds(List.of(v1)))
+                    .extracting(com.moduDrive.file.domain.model.FileVersion::getHashes)
+                    .containsExactly(List.of("h1", "h2", "h1"));
         }
     }
 
     @Nested
-    @DisplayName("버전을 s3Path로 찾을 때")
-    class WhenFindingVersionByS3Path {
+    @DisplayName("버전을 uploadId로 찾을 때")
+    class WhenFindingVersionByUploadId {
 
         @Test
-        @DisplayName("그 s3Path의 버전을 돌려준다")
+        @DisplayName("그 uploadId의 버전을 돌려준다")
         void returnsTheVersion() {
-            springDataFileVersionRepository.save(new FileVersionJpaEntity(UUID.randomUUID(), 10L, 1, "s3://b/v1"));
+            UUID uploadId = UUID.randomUUID();
+            springDataFileVersionRepository.save(version(UUID.randomUUID(), uploadId, List.of("h1")));
 
-            assertThat(filePersistenceAdapter.findByS3Path("s3://b/v1"))
-                    .get().extracting(com.moduDrive.file.domain.model.FileVersion::getBlockCount).isEqualTo(1);
-            assertThat(filePersistenceAdapter.findByS3Path("s3://b/none")).isEmpty();
+            assertThat(filePersistenceAdapter.findByUploadId(uploadId))
+                    .get().extracting(com.moduDrive.file.domain.model.FileVersion::getUploadId).isEqualTo(uploadId);
+            assertThat(filePersistenceAdapter.findByUploadId(UUID.randomUUID())).isEmpty();
         }
 
         @Test
-        @DisplayName("같은 s3Path로 두 번째 버전은 저장되지 않는다")
-        void rejectsASecondVersionWithTheSameS3Path() {
+        @DisplayName("같은 uploadId로 두 번째 버전은 저장되지 않는다")
+        void rejectsASecondVersionWithTheSameUploadId() {
             UUID fileIdValue = UUID.randomUUID();
-            springDataFileVersionRepository.saveAndFlush(new FileVersionJpaEntity(fileIdValue, 10L, 1, "s3://b/v1"));
+            UUID uploadId = UUID.randomUUID();
+            springDataFileVersionRepository.saveAndFlush(version(fileIdValue, uploadId, List.of("h1")));
 
-            // Two concurrent callbacks both miss findByS3Path; uk_file_version_s3_path rejects the second.
+            // Two concurrent commits both miss findByUploadId; uk_file_version_upload_id rejects the second.
             Throwable thrown = catchThrowable(() -> springDataFileVersionRepository.saveAndFlush(
-                    new FileVersionJpaEntity(fileIdValue, 10L, 1, "s3://b/v1")));
+                    version(fileIdValue, uploadId, List.of("h1"))));
 
             assertThat(thrown).isInstanceOf(DataIntegrityViolationException.class);
         }
@@ -485,8 +487,8 @@ class FilePersistenceAdapterTest {
             FileJpaEntity saved = springDataFileRepository.save(new FileJpaEntity(
                     namespaceIdValue, "report.pdf", "/1", UUID.randomUUID(), FileStatus.DELETED, false));
             UUID fileIdValue = saved.getId();
-            springDataFileVersionRepository.save(new FileVersionJpaEntity(fileIdValue, 10L, 1, "s3://b/v1"));
-            springDataFileVersionRepository.save(new FileVersionJpaEntity(fileIdValue, 20L, 2, "s3://b/v2"));
+            springDataFileVersionRepository.save(version(fileIdValue, UUID.randomUUID(), List.of("h1")));
+            springDataFileVersionRepository.save(version(fileIdValue, UUID.randomUUID(), List.of("h1")));
 
             filePersistenceAdapter.deleteFile(new FileId(fileIdValue));
 
@@ -531,7 +533,7 @@ class FilePersistenceAdapterTest {
         void purgeKeepsTheRowAsATombstoneAndClearsAttachments() {
             UUID fileIdValue = springDataFileRepository.save(new FileJpaEntity(
                     namespaceIdValue, "report.pdf", "/1", UUID.randomUUID(), FileStatus.TRASHED, false)).getId();
-            springDataFileVersionRepository.save(new FileVersionJpaEntity(fileIdValue, 10L, 1, "s3://b/v1"));
+            springDataFileVersionRepository.save(version(fileIdValue, UUID.randomUUID(), List.of("h1")));
             springDataFileShareRepository.save(
                     new FileShareJpaEntity(fileIdValue, UUID.randomUUID(), UUID.randomUUID(), Role.VIEWER));
             springDataFileFavoriteRepository.save(new FileFavoriteJpaEntity(UUID.randomUUID(), fileIdValue));
@@ -720,5 +722,9 @@ class FilePersistenceAdapterTest {
 
             assertThat(page.content()).extracting(File::getName).containsExactly("keep.txt");
         }
+    }
+
+    private static FileVersionJpaEntity version(UUID fileId, UUID uploadId, List<String> hashes) {
+        return new FileVersionJpaEntity(fileId, UUID.randomUUID(), 10L, uploadId, hashes);
     }
 }

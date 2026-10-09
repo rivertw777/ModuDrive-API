@@ -1,5 +1,6 @@
 package com.moduDrive.file.application.service;
 
+import com.moduDrive.file.fixture.FileVersionTestFixture;
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.file.application.port.in.command.GetLatestFileVersionsCommand;
 import com.moduDrive.file.application.port.out.FindFilePort;
@@ -53,9 +54,7 @@ class GetLatestFileVersionsServiceTest {
 
         @Test
         void returnsVersionList() {
-            FileVersion v = FileVersion.withId(new FileVersionId(UUID.randomUUID()),
-                    new FileVersionFileId(fileId), new FileVersionFileSize(512L),
-                    new FileVersionBlockCount(1), new FileVersionS3Path("s3://b/k"));
+            FileVersion v = FileVersionTestFixture.aVersion(UUID.randomUUID(), fileId, 512L);
 
             given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(file));
             given(findFileVersionsPort.findByFileIdOrderByCreatedAtDesc(any(), eq(1))).willReturn(List.of(v));

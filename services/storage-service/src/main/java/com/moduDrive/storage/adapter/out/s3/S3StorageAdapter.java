@@ -11,12 +11,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.Delete;
-import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
-import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
-import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
@@ -31,8 +31,9 @@ import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
-import java.util.stream.IntStream;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
@@ -43,10 +44,8 @@ class S3StorageAdapter implements StoreBlocksPort, RetrieveBlocksPort, DeleteBlo
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final int GCM_IV_LENGTH = 12;
     private static final int GCM_TAG_LENGTH_BITS = 128;
-    // ponytail: hardcoded ceiling, not a config value. 5GB max file / 4MB default block size is
-    // ~1250 blocks in practice; 100k leaves generous headroom for smaller client chunk sizes
-    // while still keeping `new ArrayList<>(blockCount)` bounded (a caller-supplied blockCount
-    // with no cap at all lets one download request pre-allocate an OOM-sized array).
+    // ponytail: hardcoded ceiling, not a config value. 5GB max file / 4MB blocks is 1,280 blocks;
+    // this only guards against a malformed version pre-allocating an oversized list.
     private static final int MAX_BLOCK_COUNT = 100_000;
 
     private final S3Client s3Client;
@@ -59,79 +58,63 @@ class S3StorageAdapter implements StoreBlocksPort, RetrieveBlocksPort, DeleteBlo
         this.key = new SecretKeySpec(Base64.getDecoder().decode(properties.getEncryptionKey()), "AES");
     }
 
+    /** No cleanup on failure: the client retries the same block, and a block that is never
+     * committed is deleted by the uncommitted-upload sweep. */
     @Override
-    public int storeBlocks(String s3BasePath, List<byte[]> rawBlocks) {
-        int uploaded = 0;
+    public void storeBlock(String key, byte[] rawBlock) {
         try {
-            for (int i = 0; i < rawBlocks.size(); i++) {
-                String key = s3BasePath + "/block_" + i;
-                byte[] processed = encrypt(compress(rawBlocks.get(i)), key);
-                s3Client.putObject(
-                        PutObjectRequest.builder()
-                                .bucket(properties.getS3().getBucket())
-                                .key(key)
-                                .build(),
-                        RequestBody.fromBytes(processed)
-                );
-                uploaded++;
-            }
+            s3Client.putObject(
+                    PutObjectRequest.builder()
+                            .bucket(properties.getS3().getBucket())
+                            .key(key)
+                            .build(),
+                    RequestBody.fromBytes(encrypt(compress(rawBlock), key))
+            );
         } catch (RuntimeException e) {
-            // Best-effort cleanup of whatever already landed in the bucket — a failed multi-GB
-            // upload retried a few times would otherwise leave that many GB of unreferenced
-            // blocks behind (#212). Cleanup failing must not hide the original cause.
-            deleteBestEffort(s3BasePath, uploaded);
+            logger.error("Failed to store block {}", key, e);
             throw new BusinessException(StorageExceptionCase.STORAGE_ERROR);
         }
-        return rawBlocks.size();
     }
 
-    // S3's DeleteObjects rejects more than 1000 keys per request — a multi-GB file
-    // easily has more blocks than that, so a single request would fail outright above this size.
-    private static final int DELETE_BATCH_SIZE = 1000;
-
-    /** A real purge, not best-effort: unlike {@link #deleteBestEffort}, a failure here propagates
-     * so the caller (a trash purge) can roll back rather than silently leave blocks behind while
-     * believing the file is gone. */
+    /** HEAD, then a delete conditional on the ETag that HEAD saw: an upload of the same key landing
+     * between the two changes the ETag (the IV is random, so even the same bytes encrypt
+     * differently) and the delete is refused instead of taking the new upload with it. A failure
+     * propagates, so the caller can retry. */
     @Override
-    public void deleteBlocks(String s3BasePath, int blockCount) {
-        if (blockCount == 0) {
-            return;
-        }
-        if (blockCount > MAX_BLOCK_COUNT) {
-            throw new BusinessException(StorageExceptionCase.TOO_MANY_BLOCKS);
-        }
-        List<ObjectIdentifier> ids = blockIdentifiers(s3BasePath, blockCount);
-        for (int from = 0; from < ids.size(); from += DELETE_BATCH_SIZE) {
-            List<ObjectIdentifier> batch = ids.subList(from, Math.min(from + DELETE_BATCH_SIZE, ids.size()));
-            DeleteObjectsResponse response = s3Client.deleteObjects(DeleteObjectsRequest.builder()
-                    .bucket(properties.getS3().getBucket())
-                    .delete(Delete.builder().objects(batch).build())
-                    .build());
-            // DeleteObjects answers 200 even when individual keys failed (permission, legal
-            // hold, transient) — the failed keys ride along in this list instead of an
-            // exception, so a partial failure must be checked for explicitly or it reads as success.
-            if (!response.errors().isEmpty()) {
-                logger.error("Failed to delete {} block(s) under {}: {}", response.errors().size(), s3BasePath, response.errors());
-                throw new BusinessException(StorageExceptionCase.STORAGE_ERROR);
+    public void deleteUnlessRewritten(String key, Instant decidedAt) {
+        String bucket = properties.getS3().getBucket();
+        HeadObjectResponse head;
+        try {
+            head = s3Client.headObject(HeadObjectRequest.builder().bucket(bucket).key(key).build());
+        } catch (S3Exception e) {
+            // NoSuchKeyException, or a bare 404 — HEAD has no body to carry an error code.
+            if (e.statusCode() == 404) {
+                return;
             }
+            logger.error("Failed to look up block {} before deleting it", key, e);
+            throw new BusinessException(StorageExceptionCase.STORAGE_ERROR);
+        } catch (RuntimeException e) {
+            logger.error("Failed to look up block {} before deleting it", key, e);
+            throw new BusinessException(StorageExceptionCase.STORAGE_ERROR);
         }
-    }
-
-    private void deleteBestEffort(String s3BasePath, int uploadedCount) {
-        if (uploadedCount == 0) {
+        // S3 keeps LastModified to the second, so compare at that precision — a write in the same
+        // second as the decision counts as after it. Keeping a block too long only costs storage.
+        if (!head.lastModified().isBefore(decidedAt.truncatedTo(ChronoUnit.SECONDS))) {
             return;
         }
         try {
-            deleteBlocks(s3BasePath, uploadedCount);
-        } catch (RuntimeException cleanupFailure) {
-            logger.error("Failed to clean up {} orphaned block(s) under {}", uploadedCount, s3BasePath, cleanupFailure);
+            s3Client.deleteObject(DeleteObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(key)
+                    .ifMatch(head.eTag())
+                    .build());
+        } catch (S3Exception e) {
+            if (e.statusCode() == 412) {
+                return; // rewritten after the HEAD — the new upload keeps it
+            }
+            logger.error("Failed to delete block {}", key, e);
+            throw new BusinessException(StorageExceptionCase.STORAGE_ERROR);
         }
-    }
-
-    private static List<ObjectIdentifier> blockIdentifiers(String s3BasePath, int blockCount) {
-        return IntStream.range(0, blockCount)
-                .mapToObj(i -> ObjectIdentifier.builder().key(s3BasePath + "/block_" + i).build())
-                .toList();
     }
 
     private byte[] compress(byte[] data) {
@@ -162,33 +145,34 @@ class S3StorageAdapter implements StoreBlocksPort, RetrieveBlocksPort, DeleteBlo
     }
 
     @Override
-    public List<byte[]> retrieveBlocks(String s3BasePath, int blockCount) {
-        if (blockCount > MAX_BLOCK_COUNT) {
-            throw new BusinessException(StorageExceptionCase.TOO_MANY_BLOCKS);
-        }
-        List<byte[]> blocks = new ArrayList<>(blockCount);
-        for (int i = 0; i < blockCount; i++) {
-            blocks.add(fetchBlock(s3BasePath, i));
+    public List<byte[]> retrieveBlocks(List<String> keys) {
+        requireWithinBlockCountLimit(keys);
+        List<byte[]> blocks = new ArrayList<>(keys.size());
+        for (String key : keys) {
+            blocks.add(fetchBlock(key));
         }
         return blocks;
     }
 
     @Override
-    public void streamBlocks(String s3BasePath, int blockCount, OutputStream out) {
-        if (blockCount > MAX_BLOCK_COUNT) {
-            throw new BusinessException(StorageExceptionCase.TOO_MANY_BLOCKS);
-        }
+    public void streamBlocks(List<String> keys, OutputStream out) {
+        requireWithinBlockCountLimit(keys);
         try {
-            for (int i = 0; i < blockCount; i++) {
-                out.write(fetchBlock(s3BasePath, i));
+            for (String key : keys) {
+                out.write(fetchBlock(key));
             }
         } catch (IOException e) {
             throw new RuntimeException("streaming download failed", e);
         }
     }
 
-    private byte[] fetchBlock(String s3BasePath, int index) {
-        String key = s3BasePath + "/block_" + index;
+    private static void requireWithinBlockCountLimit(List<String> keys) {
+        if (keys.size() > MAX_BLOCK_COUNT) {
+            throw new BusinessException(StorageExceptionCase.TOO_MANY_BLOCKS);
+        }
+    }
+
+    private byte[] fetchBlock(String key) {
         byte[] encrypted = s3Client.getObjectAsBytes(
                 GetObjectRequest.builder()
                         .bucket(properties.getS3().getBucket())
