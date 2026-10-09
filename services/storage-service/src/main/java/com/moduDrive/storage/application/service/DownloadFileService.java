@@ -35,16 +35,14 @@ class DownloadFileService implements DownloadFileUseCase {
         // Only an inline preview counts as "opening" the file for the recent list (Drive-style).
         var version = getFileVersionPort.getLatestVersion(
                 command.getFileId(), command.getUserId(), command.isInlinePreview());
-        String s3Path = version.s3Path();
-        int blockCount = version.blockCount();
         if (command.isInlinePreview()) {
-            BlockAssembler.requireWithinInlinePreviewLimit(blockCount, blockSize);
+            BlockAssembler.requireWithinInlinePreviewLimit(version.blockKeys().size(), blockSize);
         }
-        downloadQuotaPort.checkWithinQuota(scope, s3Path);
-        List<byte[]> blocks = retrieveBlocksPort.retrieveBlocks(s3Path, blockCount);
+        downloadQuotaPort.checkWithinQuota(scope, version.versionKey());
+        List<byte[]> blocks = retrieveBlocksPort.retrieveBlocks(version.blockKeys());
         byte[] assembled = BlockAssembler.assemble(blocks);
         // Inline preview counts too — same bytes leave the building either way.
-        downloadQuotaPort.recordUsage(scope, s3Path, assembled.length);
+        downloadQuotaPort.recordUsage(scope, version.versionKey(), assembled.length);
         return assembled;
     }
 
@@ -53,14 +51,12 @@ class DownloadFileService implements DownloadFileUseCase {
         String scope = command.getUserId().toString();
         // A plain download never touches "recent" — markAccessed=false.
         var version = getFileVersionPort.getLatestVersion(command.getFileId(), command.getUserId(), false);
-        String s3Path = version.s3Path();
-        int blockCount = version.blockCount();
-        downloadQuotaPort.checkWithinQuota(scope, s3Path);
+        downloadQuotaPort.checkWithinQuota(scope, version.versionKey());
         CountingOutputStream counting = new CountingOutputStream(out);
         try {
-            retrieveBlocksPort.streamBlocks(s3Path, blockCount, counting);
+            retrieveBlocksPort.streamBlocks(version.blockKeys(), counting);
         } finally {
-            downloadQuotaPort.recordUsage(scope, s3Path, counting.count());
+            downloadQuotaPort.recordUsage(scope, version.versionKey(), counting.count());
         }
     }
 }

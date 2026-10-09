@@ -43,9 +43,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 class UploadBatchService implements UploadBatchUseCase {
 
-    // ponytail: mirrors storage-service's modudrive.storage.max-file-size-bytes, which is what
-    // actually enforces the limit on the bytes; this only turns an oversized batch away before
-    // any row is created. Keep the two in sync.
+    // The commit (CommitFileUploadService) enforces this on the bytes actually stored; here it only
+    // turns an oversized batch away before any row is created. Keep WEB's MAX_FILE_SIZE in sync.
     static final long MAX_FILE_SIZE_BYTES = 5L * 1024 * 1024 * 1024;
     /** file.name and file.path are varchar(255) (V1__init.sql). Checked here so an overlong entry
      * is a 400 instead of a raw DataIntegrityViolation surfacing as a 500. */

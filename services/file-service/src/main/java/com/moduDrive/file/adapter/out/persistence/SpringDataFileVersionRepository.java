@@ -13,7 +13,7 @@ interface SpringDataFileVersionRepository extends JpaRepository<FileVersionJpaEn
 
     List<FileVersionJpaEntity> findByFileId(UUID fileId);
 
-    Optional<FileVersionJpaEntity> findByS3Path(String s3Path);
+    Optional<FileVersionJpaEntity> findByUploadId(UUID uploadId);
 
     void deleteByFileId(UUID fileId);
 }

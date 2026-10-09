@@ -1,9 +1,11 @@
 package com.moduDrive.storage.application.port.out;
 
+import java.time.Instant;
+
 public interface DeleteBlocksPort {
 
-    /** Deletes every block object under this version's S3 prefix. Deleting a key that's already
-     * gone is a normal S3 no-op, not an error — safe to call again on a version that was already
-     * (partially) cleaned up. */
-    void deleteBlocks(String s3BasePath, int blockCount);
+    /** Deletes the block at {@code key} unless it was written after {@code decidedAt} — then it
+     * belongs to an upload that started after the decision to delete, and is kept. A key that's
+     * already gone is a no-op, so this is safe to repeat. */
+    void deleteUnlessRewritten(String key, Instant decidedAt);
 }

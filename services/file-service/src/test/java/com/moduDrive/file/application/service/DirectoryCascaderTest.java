@@ -2,7 +2,7 @@ package com.moduDrive.file.application.service;
 
 import com.moduDrive.file.application.port.out.FindFilePort;
 import com.moduDrive.file.application.port.out.FindFileVersionsPort;
-import com.moduDrive.file.application.port.out.PurgeStorageBlocksPort;
+import com.moduDrive.file.application.port.out.ReleaseBlocksPort;
 import com.moduDrive.file.application.port.out.SaveFilePort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
@@ -33,7 +33,7 @@ class DirectoryCascaderTest {
 
     @Mock private FindFilePort findFilePort;
     @Mock private SaveFilePort saveFilePort;
-    @Mock private PurgeStorageBlocksPort purgeStorageBlocksPort;
+    @Mock private ReleaseBlocksPort releaseBlocksPort;
     @Mock private FindFileVersionsPort findFileVersionsPort;
     @InjectMocks private DirectoryCascader directoryCascader;
 
@@ -148,10 +148,9 @@ class DirectoryCascaderTest {
         then(saveFilePort).should(times(1)).purgeFile(new FileId(trashed.getId()), deletedBy);
         then(saveFilePort).should(times(0)).purgeFile(eq(new FileId(restoredEarly.getId())), any());
         then(saveFilePort).should(times(0)).purgeFile(eq(new FileId(alreadyPurged.getId())), any());
-        then(purgeStorageBlocksPort).should(times(1))
-                .purgeBlocks(eq(new FileId(trashed.getId())), any());
-        then(purgeStorageBlocksPort).should(times(0)).purgeBlocks(eq(new FileId(restoredEarly.getId())), any());
-        then(purgeStorageBlocksPort).should(times(0)).purgeBlocks(eq(new FileId(alreadyPurged.getId())), any());
+        then(findFileVersionsPort).should(times(1)).findAllByFileId(new FileId(trashed.getId()));
+        then(findFileVersionsPort).should(times(0)).findAllByFileId(new FileId(restoredEarly.getId()));
+        then(findFileVersionsPort).should(times(0)).findAllByFileId(new FileId(alreadyPurged.getId()));
     }
 
     @Test
@@ -168,7 +167,7 @@ class DirectoryCascaderTest {
         directoryCascader.purge(namespaceId, "/A", trashedAt, deletedBy);
 
         then(saveFilePort).should(times(1)).purgeFile(new FileId(deletedDirectory.getId()), deletedBy);
-        then(purgeStorageBlocksPort).shouldHaveNoInteractions();
+        then(releaseBlocksPort).shouldHaveNoInteractions();
     }
 
     @Test
@@ -185,7 +184,6 @@ class DirectoryCascaderTest {
 
         then(saveFilePort).should(times(1)).purgeFile(new FileId(ownDescendant.getId()), deletedBy);
         then(saveFilePort).should(times(0)).purgeFile(eq(new FileId(unrelatedNamesakeDescendant.getId())), any());
-        then(purgeStorageBlocksPort).should(times(0))
-                .purgeBlocks(eq(new FileId(unrelatedNamesakeDescendant.getId())), any());
+        then(findFileVersionsPort).should(times(0)).findAllByFileId(new FileId(unrelatedNamesakeDescendant.getId()));
     }
 }

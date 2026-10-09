@@ -428,7 +428,7 @@ sequenceDiagram
 | `mail-login-verification-requested` | auth-service — 새 기기 로그인 챌린지를 Redis에 넣고 기록 | mail-service — 로그인 인증 코드 메일 발송 | 처음 보는 기기에서 로그인 |
 | `mail-share-invite-requested` | file-service — 공유 행 저장과 같은 트랜잭션 | mail-service — 초대 메일 발송 | 파일/폴더를 이메일로 공유 (비회원이면 로그인 없이 여는 링크) |
 | `notification-file-shared` | file-service — 초대 메일 이벤트와 같이 기록 | notification-service — 알림 행 저장 | 공유 대상이 **회원**일 때 벨 아이콘 알림 |
-| `storage-blocks-purge-requested` | file-service — 파일 tombstone·버전 행 삭제와 같은 트랜잭션 (지우기 전에 읽은 버전별 S3 위치·블록 수를 담는다) | storage-service — 모든 버전의 S3 블록 삭제 | 휴지통에서 영구 삭제 (직접 · 휴지통 비우기 · 보존 기간 만료) |
+| `storage-blocks-purge-requested` | file-service — 참조 없는 블록 정리 작업(1시간마다)이 `block` 행을 지우는 트랜잭션 (소유자·해시 목록·결정 시각을 담는다) | storage-service — `blocks/{ownerId}/{hash}` 삭제. 결정 시각 뒤에 다시 올라온 블록은 남김 | 영구 삭제로 참조 수가 0이 된 블록이 24시간 지남 ([008](008-file-upload-spec.md)) |
 | `mail-ses-events` | SES — Configuration Set `mail-events`의 Send 이벤트 (SNS 경유, raw) | mail-service — 태그의 `deliveryId`를 처리 완료로 기록 | 메일을 보낼 때마다 (시간 제한에 걸린 발송이 실제로 나갔는지 확인용) |
 | `member-signed-up` | member-service — 가입 트랜잭션 안에서 기록 | file-service — 네임스페이스 생성(자기 트랜잭션으로 먼저 커밋) → 대기 공유를 새 회원에게 연결 | 새 회원의 드라이브가 생기고, 가입 전에 받은 초대가 "공유 문서함"에 나타남 |
 

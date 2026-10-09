@@ -42,10 +42,10 @@
 ## 2. 전체 흐름
 
 ```
-클라이언트 ──▶ gateway ──▶ storage-service ──(Feign)──▶ file-service  : 권한 확인 + 최신 버전 위치(s3Path, blockCount)
+클라이언트 ──▶ gateway ──▶ storage-service ──(Feign)──▶ file-service  : 권한 확인 + 최신 버전의 블록 목록(ownerId, hashes)
                                 │
                                 ├─▶ Redis : 쿼터 확인
-                                ├─▶ S3    : 블록 0..N-1을 순서대로 get → 복호화 → 압축 해제
+                                ├─▶ S3    : blocks/{ownerId}/{hash}를 목록 순서대로 get → 복호화 → 압축 해제
                                 └─▶ Redis : 실제로 내려간 바이트 기록
 ```
 
@@ -159,7 +159,7 @@ WEB ──<a href> 링크 이동: GET /api/v1/storage/public/archive/{token}─�
 
 - 권한과 버전 판단은 다운로드와 같습니다. 단, 미리보기는 **최근 문서함에 기록합니다** (`markAccessed=true`, 로그인 사용자만).
 - **서버가 파일 전체를 메모리에 조립한 뒤** 응답합니다 (`byte[]`).
-  - 조립 전에 `blockCount × STORAGE_BLOCK_SIZE(4MB) > 100MB`이면 `PREVIEW_TOO_LARGE`로 거절합니다.
+  - 조립 전에 `블록 수 × STORAGE_BLOCK_SIZE(4MB) > 100MB`이면 `PREVIEW_TOO_LARGE`로 거절합니다.
 - 응답 헤더:
   - `Content-Type`: `fileName` 확장자로 결정 (`FileMimeTypes`). `fileName`은 표시용일 뿐, 저장소를 조회하는 데는 쓰지 않습니다.
   - `Content-Disposition: inline`
@@ -184,7 +184,7 @@ WEB ──<a href> 링크 이동: GET /api/v1/storage/public/archive/{token}─�
 
 같은 파일을 짧은 시간에 과도하게 받는 것을 막습니다 (구글 드라이브의 "다운로드 한도 초과"와 같은 개념).
 
-- 카운터 키는 `download-quota:{scope}:{s3Path}`입니다.
+- 카운터 키는 `download-quota:{scope}:{versionId}`입니다.
   - 로그인: `scope` = userId → **사용자 × 파일 버전**마다 카운터
   - 공개 링크: `scope` = `public:{fileId}` → 익명 방문자 전원이 **파일 버전 하나의 카운터를 함께** 씀. `key`는 쓰지 않음 — 임의의 `key`로 새 카운터를 만들 수 없게 하기 위함
 - 한도는 `STORAGE_DOWNLOAD_QUOTA_PER_FILE_BYTES`(기본 **10GB**), 창은 `STORAGE_DOWNLOAD_QUOTA_WINDOW`(기본 **24시간**)입니다.
@@ -218,7 +218,7 @@ WEB ──<a href> 링크 이동: GET /api/v1/storage/public/archive/{token}─�
 | 항목 | 값 | 위치 |
 |---|---|---|
 | 다운로드 크기 상한 | 없음 (스트리밍) | — |
-| 미리보기 서버 상한 | `blockCount × 4MB` ≤ 100MB (추정치) | `BlockAssembler.MAX_INLINE_PREVIEW_BYTES` |
+| 미리보기 서버 상한 | `블록 수 × 4MB` ≤ 100MB (추정치) | `BlockAssembler.MAX_INLINE_PREVIEW_BYTES` |
 | 미리보기 WEB 상한 | 텍스트·이미지 10MB | WEB `PREVIEW_MAX_BYTES` |
 | 블록 수 상한 | 100,000 (넘으면 `TOO_MANY_BLOCKS`) | `S3StorageAdapter.MAX_BLOCK_COUNT` |
 | 파일별 다운로드 쿼터 | 24시간당 10GB | `STORAGE_DOWNLOAD_QUOTA_PER_FILE_BYTES`, `STORAGE_DOWNLOAD_QUOTA_WINDOW` |
@@ -253,7 +253,7 @@ WEB ──<a href> 링크 이동: GET /api/v1/storage/public/archive/{token}─�
 | 5 | 대체 업로드 진행 중인 파일 다운로드 | 이전 버전이 내려감 |
 | 6 | 업로드가 끝나지 않은 새 파일 | WEB 메뉴에 다운로드가 없음. API를 직접 부르면 404 `FILE_NOT_FOUND_IN_STORAGE` |
 | 7 | 로그인 사용자가 50MB 영상 미리보기 | 스트림 토큰 발급 → `<video src>`. 시킹할 때마다 Range 요청이 가고, **서버는 매번 50MB 전체를 조립** |
-| 8 | 150MB 영상 미리보기 (간단 업로드로는 불가하므로 이어 올리기, 5MB 블록 30개) | 서버 추정 30 × 4MB = 120MB > 100MB → `PREVIEW_TOO_LARGE` |
+| 8 | 150MB 영상 미리보기 (4MB 블록 38개) | 서버 추정 38 × 4MB = 152MB > 100MB → `PREVIEW_TOO_LARGE` |
 | 9 | 같은 사용자가 3GB 파일을 24시간 안에 4번 다운로드 | 1·2·3번째 통과(누적 9GB), 4번째도 통과(요청 전 9GB < 10GB), 5번째는 `DOWNLOAD_QUOTA_EXCEEDED` |
 | 10 | 비로그인 방문자가 링크 공유 파일 다운로드 | `key` 없이 허용. 공개 카운터에 기록 |
 | 11 | 링크 공유 아닌 파일에 임의 `key`를 붙여 공개 다운로드 | 404 |
@@ -274,9 +274,8 @@ WEB ──<a href> 링크 이동: GET /api/v1/storage/public/archive/{token}─�
 | 2 | 응답 `Content-Disposition`의 파일명이 **fileId**. `Content-Length`도 없음 | 링크 이동 방식으로 바꾸면 파일명이 UUID로 저장되고, 브라우저가 남은 시간을 표시하지 못함. 1번을 고치려면 같이 고쳐야 함 |
 | 3 | 미리보기가 요청마다 **파일 전체를 서버 메모리에 조립** (Range도 마찬가지) | 영상 시킹 한 번마다 최대 100MB 조립 + S3 전체 읽기. 동시 시청자가 많으면 힙 압박 |
 | 4 | 미리보기 쿼터가 Range 요청에도 **파일 전체 크기**로 기록 | 영상을 여러 번 시킹하면 실제 전송량보다 훨씬 빨리 10GB 쿼터를 소진 |
-| 5 | 미리보기 크기 추정이 `blockCount × 4MB`인데, 이어 올리기 파일의 블록은 5MB ([001-file-upload-spec.md 6](001-file-upload-spec.md#6-저장-방식)) | 추정치가 실제보다 작게 나옴. 이어 올리기로 올린 파일은 최대 약 125MB까지 100MB 상한을 통과해 메모리에 조립될 수 있음 |
-| 6 | 스트리밍 도중 오류가 나면 이미 200 헤더가 나간 뒤라, 클라이언트는 **잘린 파일**을 받을 수 있음 | `Content-Length`가 없어 브라우저가 잘린 걸 알아채지 못할 수 있음 (2번과 관련) |
-| 7 | 과거 버전을 받을 수 없음 | 버전 이력이 목록 조회로만 쓰임 |
+| 5 | 스트리밍 도중 오류가 나면 이미 200 헤더가 나간 뒤라, 클라이언트는 **잘린 파일**을 받을 수 있음 | `Content-Length`가 없어 브라우저가 잘린 걸 알아채지 못할 수 있음 (2번과 관련) |
+| 6 | 과거 버전을 받을 수 없음 | 버전 이력이 목록 조회로만 쓰임 |
 
 ## 13. TODO
 

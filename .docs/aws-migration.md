@@ -237,7 +237,7 @@ ECS 태스크들 ──OTLP 트레이스──▶ ┌─────────
 - 인바운드는 **"허용할 호출자의 보안 그룹 → 내 앱 포트"**만 연다. CIDR(`10.0.0.0/16` 같은 대역)로 열지 않는다 — 대역으로 열면 같은 VPC 안의 모든 태스크가 닿는다.
 - 효과 예: 게이트웨이가 뚫려도 네트워크상 member·file·storage의 `/internal`에는 닿지 않는다 (게이트웨이는 그 서비스들의 **공개 API 포트**로만 라우팅하고, 그 요청은 게이트웨이 세션 확인을 거친다).
 
-#### 인바운드 규칙 (2026-10-06 코드 기준 호출 관계 — `terraform/security_groups.tf`와 같다)
+#### 인바운드 규칙 (2026-10-08 코드 기준 호출 관계 — `terraform/security_groups.tf`와 같다)
 
 | 보안 그룹 | 허용할 출발지 | 포트 | 이유 (코드) |
 |---|---|---|---|
@@ -245,8 +245,8 @@ ECS 태스크들 ──OTLP 트레이스──▶ ┌─────────
 | `gateway-sg` | `alb-sg` | 10001 | ALB → gateway |
 | `auth-sg` | `gateway-sg` | 10011 | 라우팅(`/api/v1/auth/**`) + 세션 확인(`AuthClient`) |
 | `member-sg` | `gateway-sg`, `auth-sg`, `file-sg` | 10010 | 라우팅 / 로그인 확인(auth `MemberClient`) / 공유 대상 조회(file `MemberClient`) |
-| `file-sg` | `gateway-sg`, `storage-sg` | 10012 | 라우팅 / 버전·zip 항목 조회·업로드 완료(storage `FileClient`) |
-| `storage-sg` | `gateway-sg` | 10013 | 라우팅. file → storage 블록 삭제는 SQS(`storage-blocks-purge-requested`)로 바뀌어 HTTP 호출이 없다 (#499) |
+| `file-sg` | `gateway-sg`, `storage-sg` | 10012 | 라우팅 / 버전·zip 항목·커밋된 블록 조회(storage `FileClient`) |
+| `storage-sg` | `gateway-sg`, `file-sg` | 10013 | 라우팅 / commit 때 올라온 블록 조회(file `StorageClient`). 블록 삭제는 SQS(`storage-blocks-purge-requested`) |
 | `notification-sg` | `gateway-sg` | 10015 | 라우팅(`/api/v1/notifications/**`) |
 | `mail-sg` | **없음** | — | HTTP API가 없다 (SQS 소비만). 게이트웨이도 라우팅하지 않는다 |
 

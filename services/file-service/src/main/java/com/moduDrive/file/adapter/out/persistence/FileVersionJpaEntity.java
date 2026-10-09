@@ -6,8 +6,11 @@ import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.BatchSize;
 import org.hibernate.annotations.UuidGenerator;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Getter
@@ -24,17 +27,28 @@ class FileVersionJpaEntity extends CreatedAtEntity {
     @Column(nullable = false)
     private UUID fileId;
 
+    @Column(nullable = false)
+    private UUID ownerId;
+
     private Long fileSize;
 
-    private int blockCount;
-
     @Column(nullable = false)
-    private String s3Path;
+    private UUID uploadId;
 
-    FileVersionJpaEntity(UUID fileId, Long fileSize, int blockCount, String s3Path) {
+    // Eager: every reader (download, zip, purge) needs the blocklist, and versions are mapped to
+    // the domain outside a transaction. BatchSize keeps a zip of many files to a few queries.
+    @ElementCollection(fetch = FetchType.EAGER)
+    @BatchSize(size = 100)
+    @CollectionTable(name = "file_version_block", joinColumns = @JoinColumn(name = "version_id"))
+    @OrderColumn(name = "idx")
+    @Column(name = "hash", nullable = false, length = 64)
+    private List<String> hashes = new ArrayList<>();
+
+    FileVersionJpaEntity(UUID fileId, UUID ownerId, Long fileSize, UUID uploadId, List<String> hashes) {
         this.fileId = fileId;
+        this.ownerId = ownerId;
         this.fileSize = fileSize;
-        this.blockCount = blockCount;
-        this.s3Path = s3Path;
+        this.uploadId = uploadId;
+        this.hashes = new ArrayList<>(hashes);
     }
 }

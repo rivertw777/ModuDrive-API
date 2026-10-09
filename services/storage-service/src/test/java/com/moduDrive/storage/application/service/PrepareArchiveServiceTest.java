@@ -17,6 +17,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
+import java.util.stream.IntStream;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -39,7 +40,7 @@ class PrepareArchiveServiceTest {
     private final List<UUID> picked = List.of(UUID.randomUUID());
 
     private ArchiveEntry file(String path, long size) {
-        return new ArchiveEntry(path, fileId, "s3/" + path, 1, size);
+        return new ArchiveEntry(path, fileId, "s3/" + path, keys(1), size);
     }
 
     @Nested
@@ -50,7 +51,7 @@ class PrepareArchiveServiceTest {
         void checksEachFilesQuotaAndIssuesAToken() {
             ArchiveRequest request = new ArchiveRequest(userId, null, picked);
             given(getArchiveEntriesPort.getArchiveEntries(request))
-                    .willReturn(List.of(new ArchiveEntry("docs/", null, null, 0, 0), file("docs/a.txt", 5)));
+                    .willReturn(List.of(new ArchiveEntry("docs/", null, null, null, 0), file("docs/a.txt", 5)));
             given(archiveTokenPort.issue(request)).willReturn("tok");
 
             String token = prepareArchiveService.prepare(new PrepareArchiveCommand(userId, null, picked));
@@ -85,5 +86,9 @@ class PrepareArchiveServiceTest {
             assertThat(((BusinessException) thrown).getExceptionCase()).isEqualTo(StorageExceptionCase.DOWNLOAD_QUOTA_EXCEEDED);
             then(archiveTokenPort).shouldHaveNoInteractions();
         }
+    }
+
+    private static List<String> keys(int count) {
+        return IntStream.range(0, count).mapToObj(i -> "blocks/owner/h" + i).toList();
     }
 }

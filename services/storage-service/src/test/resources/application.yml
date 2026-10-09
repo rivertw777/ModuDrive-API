@@ -10,6 +10,7 @@ storage:
     secret-key: test
     region: ap-northeast-2
   block-size: 4194304
+  upload-blocks-per-window: 25600
   encryption-key: MBDmFlbqAnqqs/HpwcOPOA==
 
 clients:

@@ -15,7 +15,7 @@ public interface DownloadQuotaPort {
      * the counter and lock the owner out of their own file; every anonymous visitor of one file
      * therefore meters together, one window per file.
      *
-     * <p>{@code fileKey} is the storage path of a single version, so uploading a new version starts
+     * <p>{@code fileKey} identifies a single version, so uploading a new version starts
      * a fresh window — a new version is new bytes.
      */
     void checkWithinQuota(String scope, String fileKey);

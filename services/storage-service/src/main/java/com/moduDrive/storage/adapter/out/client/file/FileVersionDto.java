@@ -1,12 +1,13 @@
 package com.moduDrive.storage.adapter.out.client.file;
 
+import java.util.List;
 import java.util.UUID;
 
 record FileVersionDto(
         UUID versionId,
         UUID fileId,
         Long fileSize,
-        int blockCount,
-        String s3Path
+        UUID ownerId,
+        List<String> hashes
 ) {
 }

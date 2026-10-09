@@ -2,33 +2,34 @@ package com.moduDrive.storage.adapter.out.client.file;
 
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.storage.application.port.out.ArchiveRequest;
-import com.moduDrive.storage.application.port.out.FileUploadCallbackPort;
+import com.moduDrive.storage.application.port.out.FindCommittedBlocksPort;
 import com.moduDrive.storage.application.port.out.GetArchiveEntriesPort;
 import com.moduDrive.storage.application.port.out.GetFileVersionPort;
+import com.moduDrive.storage.domain.model.Blocks;
 import com.moduDrive.storage.exception.StorageExceptionCase;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Component
 @RequiredArgsConstructor
-class FileClientAdapter implements GetFileVersionPort, GetArchiveEntriesPort, FileUploadCallbackPort {
+class FileClientAdapter implements GetFileVersionPort, GetArchiveEntriesPort, FindCommittedBlocksPort {
 
     private final FileClient fileClient;
 
     @Override
     public VersionLocation getLatestVersion(UUID fileId, UUID userId, boolean markAccessed) {
-        FileVersionDto v = firstOrThrow(
-                fileClient.getFileRevisions(fileId.toString(), userId.toString(), 1, markAccessed).getData());
-        return new VersionLocation(v.s3Path(), v.blockCount());
+        return locate(firstOrThrow(
+                fileClient.getFileRevisions(fileId.toString(), userId.toString(), 1, markAccessed).getData()));
     }
 
     @Override
     public VersionLocation getPublicVersion(String fileId, String key) {
-        FileVersionDto v = firstOrThrow(fileClient.getPublicFileRevisions(fileId, key, 1).getData());
-        return new VersionLocation(v.s3Path(), v.blockCount());
+        return locate(firstOrThrow(fileClient.getPublicFileRevisions(fileId, key, 1).getData()));
     }
 
     @Override
@@ -42,19 +43,25 @@ class FileClientAdapter implements GetFileVersionPort, GetArchiveEntriesPort, Fi
             return List.of();
         }
         return entries.stream()
-                .map(e -> new ArchiveEntry(e.path(), e.fileId(), e.s3Path(),
-                        e.blockCount() == null ? 0 : e.blockCount(),
-                        e.fileSize() == null ? 0 : e.fileSize()))
+                .map(e -> e.hashes() == null
+                        ? new ArchiveEntry(e.path(), null, null, null, 0)
+                        : new ArchiveEntry(e.path(), e.fileId(), e.versionId().toString(),
+                                blockKeys(e.ownerId(), e.hashes()), e.fileSize() == null ? 0 : e.fileSize()))
                 .toList();
     }
 
     @Override
-    public void notifyUploadComplete(UUID fileId, UUID userId, long fileSize, int blockCount, String s3Path) {
-        fileClient.updateFileStatus(
-                fileId.toString(),
-                userId.toString(),
-                new FileUploadCallbackRequest(fileSize, blockCount, s3Path)
-        );
+    public Set<String> findCommitted(UUID ownerId, List<String> hashes) {
+        List<String> committed = fileClient.findCommittedBlocks(new FindCommittedBlocksRequest(ownerId, hashes)).getData();
+        return committed == null ? Set.of() : new HashSet<>(committed);
+    }
+
+    private static VersionLocation locate(FileVersionDto v) {
+        return new VersionLocation(v.versionId().toString(), blockKeys(v.ownerId(), v.hashes()));
+    }
+
+    private static List<String> blockKeys(UUID ownerId, List<String> hashes) {
+        return hashes.stream().map(hash -> Blocks.key(ownerId, hash)).toList();
     }
 
     private FileVersionDto firstOrThrow(List<FileVersionDto> versions) {

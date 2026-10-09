@@ -1,5 +1,6 @@
 package com.moduDrive.file.adapter.in.web.controller;
 
+import com.moduDrive.file.fixture.FileVersionTestFixture;
 import com.moduDrive.common.core.web.GlobalExceptionHandler;
 import com.moduDrive.file.application.port.in.command.ResolveArchiveEntriesCommand;
 import com.moduDrive.file.application.port.in.usecase.ArchiveEntry;
@@ -40,8 +41,7 @@ class ResolveArchiveEntriesControllerTest {
 
         @Test
         void returnsEntriesWithDirectoriesHavingNoLocation() throws Exception {
-            FileVersion v = FileVersion.withId(new FileVersionId(UUID.randomUUID()), new FileVersionFileId(FILE_ID),
-                    new FileVersionFileSize(5L), new FileVersionBlockCount(1), new FileVersionS3Path("s3/k"));
+            FileVersion v = FileVersionTestFixture.aVersion(UUID.randomUUID(), FILE_ID, 5L);
             given(resolveArchiveEntriesUseCase.resolveArchiveEntries(any(ResolveArchiveEntriesCommand.class)))
                     .willReturn(List.of(new ArchiveEntry("docs/", null), new ArchiveEntry("docs/a.txt", v)));
 
@@ -50,8 +50,8 @@ class ResolveArchiveEntriesControllerTest {
                             .content("{\"userId\":\"" + UUID.randomUUID() + "\",\"fileIds\":[\"" + FILE_ID + "\"]}"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data[0].path").value("docs/"))
-                    .andExpect(jsonPath("$.data[0].s3Path").doesNotExist())
-                    .andExpect(jsonPath("$.data[1].s3Path").value("s3/k"))
+                    .andExpect(jsonPath("$.data[0].hashes").doesNotExist())
+                    .andExpect(jsonPath("$.data[1].hashes[0]").value(FileVersionTestFixture.HASH_A))
                     .andExpect(jsonPath("$.data[1].fileId").value(FILE_ID.toString()));
         }
     }

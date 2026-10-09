@@ -18,8 +18,8 @@ locals {
     gateway      = ["alb"]
     auth         = ["gateway"]                 # route + session check (AuthClient)
     member       = ["gateway", "auth", "file"] # route / login check / share target lookup
-    file         = ["gateway", "storage"]      # route / versions, zip entries, upload done
-    storage      = ["gateway"]                 # route (file → storage became SQS, #499)
+    file         = ["gateway", "storage"]      # route / versions, zip entries, committed blocks
+    storage      = ["gateway", "file"]         # route / uploaded blocks on commit (block purge is SQS)
     notification = ["gateway"]                 # route
     mail         = []
   }

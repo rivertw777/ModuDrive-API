@@ -41,7 +41,7 @@
 | **최상위 항목** | 배치에서 사용자가 직접 고른 파일·폴더. 폴더 안의 하위 항목은 최상위 항목이 아님 |
 | **배치 생성** | 배치의 폴더 트리와 파일 행을 file-service에 **요청 하나로** 만드는 것. 파일은 `PENDING`으로 생기고 `fileId`를 받음 |
 | **간단 업로드** | 20MB 이하 파일 — multipart 요청 1번으로 전송 |
-| **이어 올리기(resumable)** | 20MB 초과 파일 — 5MB 청크로 나눠 전송 후 complete 호출. 이름과 달리 **끊긴 지점부터 다시 올리는 기능은 없음** (13장) |
+| **이어 올리기(resumable)** | 20MB 초과 파일 — 4MB 청크로 나눠 전송 후 complete 호출. 청크는 받는 즉시 S3에 저장되고, 끊기면 **받지 못한 청크만** 다시 보냄 (5장) |
 | **완료 콜백** | storage-service가 저장을 끝낸 뒤 file-service에 알려 `UPLOADED`로 바꾸는 서버 간 호출 |
 
 ## 2. 전체 흐름
@@ -205,34 +205,51 @@ data: { "conflicts": ["보고서.pdf", "a.txt"] }
 
 ## 5. 바이트 전송
 
+> ⚠️ 5~8장(간단 업로드·이어 올리기 세션·완료 콜백)은 해시 블록 방식으로 바뀌었습니다. 지금 동작은 [008](008-file-upload-spec.md)이 기준입니다.
+
 | 파일 크기 | 방식 | 요청 |
 |---|---|---|
 | 5GB 초과 | 배치에서 빠짐 (클라이언트가 거르고, 서버도 400) | — |
-| 20MB 초과 | 이어 올리기 | 세션 생성 → 청크(5MB)를 **0번부터 순서대로 하나씩** PUT → complete |
+| 20MB 초과 | 이어 올리기 | (저장된 세션이 있으면 조회) → 세션 생성 → 청크(4MB)를 **0번부터 순서대로 하나씩** PUT → complete |
 | 20MB 이하 | 간단 업로드 | `POST /api/v1/storage/upload?fileId=` multipart `file` 1번 |
 
 - 파일끼리도, 한 파일의 청크끼리도 **동시에 보내지 않습니다** (전부 순차).
-- 이어 올리기 세션 생성 시 `{ fileId, totalChunks, fileSize }`를 보내고, 서버는 선언한 `fileSize`가 5GB를 넘으면 `413 FILE_TOO_LARGE`로 거절합니다.
+- 이어 올리기 세션 생성 시 `{ fileId, totalChunks, fileSize }`를 보냅니다. 서버가 거절하는 경우:
+  - 선언한 `fileSize`가 5GB 초과 (`413 FILE_TOO_LARGE`)
+  - `totalChunks`가 `ceil(fileSize / 4MB)`와 다름 (`400 INVALID_TOTAL_CHUNKS`) — 청크 하나가 4MB 이하이므로, 이걸로 세션 하나가 S3에 쓸 수 있는 양이 `fileSize + 4MB`로 묶입니다
 - 청크 PUT마다 서버가 확인하는 것:
   - 세션 존재 (`404 SESSION_NOT_FOUND`)
   - 세션 소유자 = 호출자 (`403 SESSION_OWNER_MISMATCH`)
-  - 이미 완료된 세션 아님 (`400 SESSION_ALREADY_COMPLETED`)
   - `chunkIndex < totalChunks` (`400 INVALID_CHUNK_INDEX`)
-  - 지금까지 받은 합계 + 이번 청크 ≤ 5GB (`413 FILE_TOO_LARGE`)
-- 같은 `chunkIndex`를 다시 보내면 덮어씁니다.
-- complete는 모든 청크가 있어야 합니다 (`400 CHUNKS_INCOMPLETE`). **실제로 받은 합계**로 5GB를 다시 검사합니다 (선언값을 낮게 속이는 경우 대비).
+  - 청크 크기 ≤ 블록 크기 4MB (`413 CHUNK_TOO_LARGE`)
+- 확인이 끝나면 청크를 **바로 블록 하나로 S3에 저장**하고, 세션에 "몇 번 청크가 몇 바이트로 도착"을 기록합니다 (6장).
+- 같은 `chunkIndex`를 다시 보내면 블록을 덮어씁니다. 실패한 청크를 다시 보내는 방법이 이것입니다.
+- **받은 청크 조회** `GET /api/v1/storage/upload/resumable/{sessionId}` → `{ sessionId, totalChunks, receivedChunks: [0, 1, 3] }`. 소유자만 조회할 수 있습니다.
+- complete는 모든 청크가 있어야 합니다 (`400 CHUNKS_INCOMPLETE`). **실제로 받은 합계**로 5GB를 다시 검사합니다 (선언값을 낮게 속이는 경우 대비). 블록은 이미 S3에 있으므로 complete는 완료 콜백만 보냅니다.
+- 끝난 세션(complete 성공)은 지워지므로, 이후 그 세션으로 오는 요청은 전부 `404 SESSION_NOT_FOUND`입니다.
 - 간단 업로드는 서버에서 5GB 검사를 하지 않고, multipart 한도(`STORAGE_MULTIPART_MAX_FILE_SIZE`, 기본 25MB)가 사실상 상한입니다.
 - 간단 업로드 요청의 `fileId`가 호출자 소유인지는 storage-service가 아니라 **완료 콜백에서** file-service가 확인합니다 (7장).
 
 ## 6. 저장 방식
 
 - **간단 업로드**: 받은 바이트 전체를 메모리에 올린 뒤 **4MB 블록**으로 나눕니다.
-- **이어 올리기**: 받은 청크를 세션(storage-service **JVM 메모리**의 `ConcurrentHashMap`)에 쌓아두고, complete 때 **청크 하나를 블록 하나로** 저장합니다. 그래서 이어 올리기 파일의 블록 크기는 4MB가 아니라 **5MB**(청크 크기)입니다.
-- 블록마다 **GZIP 압축 → AES-GCM 암호화** 후 S3 `files/{fileId}/{랜덤 UUID}/block_{i}`에 순서대로 put 합니다.
-  - 버전마다 새 UUID 경로를 쓰므로 대체 업로드가 이전 버전 블록을 덮어쓰지 않습니다.
+- **이어 올리기**: 청크 하나가 곧 블록 하나입니다. 청크를 받는 즉시 `files/{fileId}/{sessionId}/block_{chunkIndex}`에 저장하므로, storage-service 메모리는 **요청당 청크 하나(4MB)**만 씁니다. 세션 ID가 그대로 버전의 저장 경로가 되어 complete 때 복사할 것이 없습니다.
+- 블록마다 **GZIP 압축 → AES-GCM 암호화** 후 S3에 put 합니다.
+  - 업로드마다 새 UUID 경로를 쓰므로(간단 업로드는 랜덤 UUID, 이어 올리기는 세션 ID) 대체 업로드가 이전 버전 블록을 덮어쓰지 않습니다.
   - 빈 파일(0바이트)은 빈 블록 1개로 저장됩니다.
-- 블록 저장 중 하나라도 실패하면 **이미 올린 블록을 지우려 시도**하고(실패해도 무시) `500 STORAGE_ERROR`를 반환합니다.
-- 세션은 **1시간마다** 정리되며, 생성 후 **24시간**(`modudrive.storage.upload-session-ttl-hours`)이 지난 세션은 완료 여부와 상관없이 삭제됩니다. complete가 성공하면 바로 삭제합니다.
+- 간단 업로드는 블록 저장 중 하나라도 실패하면 **이미 올린 블록을 지우려 시도**하고(실패해도 무시) `500 STORAGE_ERROR`를 반환합니다. 이어 올리기 청크는 실패해도 지우지 않습니다 — 클라이언트가 같은 번호로 다시 보내 덮어쓰고, 끝내 완료되지 않으면 아래 정리 작업이 지웁니다.
+
+### 이어 올리기 세션 (Redis)
+
+| 키 | 타입 | 내용 | 만료 |
+|---|---|---|---|
+| `upload-session:{sessionId}` | hash | `fileId`, `ownerId`, `totalChunks`, 받은 청크마다 `c{index}` = 바이트 수 | 생성 후 **24시간** (`UploadSession.TTL` 상수) |
+| `upload-sessions` | sorted set | `{sessionId}:{fileId}:{totalChunks}`, 점수 = 생성 시각 | 없음 (정리 작업이 뺌) |
+
+- Redis에 있으므로 storage-service 인스턴스가 여러 개여도, 재시작해도 세션이 유지됩니다.
+- 만료된 세션에 청크가 오면 세션을 다시 만들지 않고 `404 SESSION_NOT_FOUND`로 답합니다 (Lua로 존재 확인 후 기록).
+- **정리 작업** (1시간마다): 생성 후 **25시간**(유효 기간 + 1시간)이 지난 `upload-sessions` 항목을 원자적으로 꺼내 그 블록을 지웁니다. 이때 세션 hash는 이미 만료됐으므로 그 블록으로 complete가 일어날 수 없습니다. 인스턴스 여러 개가 동시에 돌아도 같은 항목을 두 번 꺼내지 않습니다.
+- complete는 **완료 콜백을 보내기 전에** `upload-sessions`에서 자기 항목을 뺍니다. file-service가 버전을 만들었을 수 있는 블록은 정리 작업이 절대 지우지 않습니다. 콜백이 성공하면 세션 hash도 지웁니다.
 
 ## 7. 완료 콜백
 
@@ -258,7 +275,8 @@ file-service는 한 트랜잭션에서 다음을 처리합니다.
 
 ## 8. 실패 처리
 
-- **자동 재시도는 없습니다.** 어느 요청이든 실패하면 그 파일은 실패입니다.
+- **이어 올리기만 자동 재시도합니다.** 세션 생성·청크 PUT·complete가 네트워크 오류, 429, 5xx로 실패하면 1초/2초/4초 간격으로 3번 다시 보냅니다. 그 밖의 4xx는 바로 실패입니다. 간단 업로드는 재시도하지 않습니다.
+- 이어 올리기가 끝내 실패하면 WEB이 세션 ID를 `localStorage`(`upload-session:{fileId}:{size}:{lastModified}`)에 남겨 둡니다. 같은 파일을 **대체**로 다시 올리면(같은 `fileId`) 받은 청크를 조회해 **나머지만** 보냅니다. 세션이 만료(24시간)됐으면 처음부터 올립니다.
 - 배치 생성 이후의 실패는 **파일 단위로 격리**됩니다. 실패한 파일만 실패로 표시하고 다음 파일로 넘어갑니다.
 - **[재시도] 버튼은 없습니다.** 다시 올리려면 파일을 다시 선택합니다. 이때 앞선 시도가 남긴 같은 이름의 `PENDING` 파일과 충돌하므로 대체/둘 다 유지를 묻게 됩니다.
 
@@ -267,10 +285,10 @@ file-service는 한 트랜잭션에서 다음을 처리합니다.
 | 실패 시점 | 파일 행 | S3 |
 |---|---|---|
 | 배치 생성 | 없음 (전체 롤백) | 없음 |
-| 바이트 전송 중 (새 파일) | `PENDING`으로 남음 | 없음 (이어 올리기 청크는 세션과 함께 24시간 안에 삭제) |
-| 바이트 전송 중 (대체) | `PENDING`으로 남음. 이전 버전은 그대로 열람 가능 | 없음 |
-| 블록 저장 중 | `PENDING` | 부분 블록 삭제 시도 |
-| 완료 콜백 | `PENDING` | **블록이 남음** |
+| 바이트 전송 중 (새 파일) | `PENDING`으로 남음 | 간단 업로드: 없음. 이어 올리기: 받은 청크가 남음 — 24시간 안에 이어 올리지 않으면 25시간 뒤 정리 작업이 삭제 |
+| 바이트 전송 중 (대체) | `PENDING`으로 남음. 이전 버전은 그대로 열람 가능 | 새 파일과 같음 |
+| 블록 저장 중 | `PENDING` | 간단 업로드: 부분 블록 삭제 시도. 이어 올리기: 그 청크만 실패 (재시도 대상) |
+| 완료 콜백 | `PENDING` | **블록이 남음**. 이어 올리기는 세션이 남아 complete를 다시 부를 수 있음 |
 
 - `PENDING` 파일을 정리하는 스케줄러는 **없습니다.** 사용자가 직접 삭제해야 합니다.
 - 업로드 취소 기능과 탭 닫기 경고(`beforeunload`)는 없습니다.
@@ -333,11 +351,12 @@ file-service는 한 트랜잭션에서 다음을 처리합니다.
 | 배치 항목 수 | 5,000개 | API `UploadBatchRequest` |
 | 상대 경로 / 이름 / 부모 경로 길이 | 255자 | API `UploadBatchRequest`, `UploadBatchService.MAX_COLUMN_LENGTH` (`file.name`·`file.path` 컬럼) |
 | 간단 업로드 ↔ 이어 올리기 경계 | 20MB | WEB `RESUMABLE_THRESHOLD` |
-| 청크 크기 | 5MB | WEB `CHUNK_SIZE` |
+| 청크 크기 | 4MB — 블록 크기와 같아야 함 (서버가 더 큰 청크를 거절) | WEB `CHUNK_SIZE`, API `STORAGE_BLOCK_SIZE` |
 | multipart 한도 | 25MB | API `STORAGE_MULTIPART_MAX_FILE_SIZE` / `_REQUEST_SIZE` |
-| 블록 크기 (간단 업로드) | 4MB | API `STORAGE_BLOCK_SIZE` |
+| 블록 크기 | 4MB | API `STORAGE_BLOCK_SIZE` |
 | 블록 수 상한 | 100,000 | API `UpdateFileStatusRequest`, `S3StorageAdapter` (함께 바꿔야 함) |
-| 이어 올리기 세션 유효 기간 | 24시간 (1시간마다 정리) | API `modudrive.storage.upload-session-ttl-hours` |
+| 이어 올리기 세션 유효 기간 | 24시간 (Redis TTL). 남은 블록은 25시간 뒤 정리 (1시간마다) | API `UploadSession.TTL` (상수) |
+| 이어 올리기 자동 재시도 | 3번 (1초/2초/4초) | WEB `RETRY_DELAYS_MS` |
 | 사용자별 용량 한도 | **검사 안 함** (`quota_bytes`는 사용량 화면 표시에만 쓰임) | — |
 
 ## 11. API 요약
@@ -348,8 +367,9 @@ file-service는 한 트랜잭션에서 다음을 처리합니다.
 | `POST /api/v1/files/metadata` | file | 클라이언트 (WEB #207 전까지) | 파일 하나 생성(`PENDING`) 또는 대체 시작 — [부록 A](#부록-a-web-207-이전-동작). WEB이 배치로 옮긴 뒤 제거 여부를 따로 판단 |
 | `POST /api/v1/storage/upload?fileId=` | storage | 클라이언트 | 간단 업로드 (multipart `file`) |
 | `POST /api/v1/storage/upload/resumable` | storage | 클라이언트 | 이어 올리기 세션 생성 → `sessionId` |
-| `PUT /api/v1/storage/upload/resumable/{sessionId}?chunkIndex=` | storage | 클라이언트 | 청크 전송 (multipart `chunk`) |
-| `POST /api/v1/storage/upload/resumable/{sessionId}/complete` | storage | 클라이언트 | 청크 조립 → 블록 저장 → 완료 콜백 |
+| `GET /api/v1/storage/upload/resumable/{sessionId}` | storage | 클라이언트 | 받은 청크 조회 (이어 올리기 재개) |
+| `PUT /api/v1/storage/upload/resumable/{sessionId}?chunkIndex=` | storage | 클라이언트 | 청크 전송 (multipart `chunk`) → 바로 S3에 블록으로 저장 |
+| `POST /api/v1/storage/upload/resumable/{sessionId}/complete` | storage | 클라이언트 | 청크가 다 왔는지·크기 확인 → 완료 콜백 |
 | `PUT /internal/files/{fileId}/uploaded?userId=` | file | storage-service | 완료 콜백 — 버전 생성, `UPLOADED` (내부 토큰) |
 
 ## 12. 시나리오 검증
@@ -364,7 +384,7 @@ file-service는 한 트랜잭션에서 다음을 처리합니다.
 | 6 | #5에서 "둘 다 유지", `보고서 (1).pdf`도 이미 있음 | 서버가 `보고서 (2).pdf`로 생성 |
 | 7 | #5에서 "취소" | `보고서.pdf`는 응답에 없고 패널에서도 빠짐, `a.txt`만 올라감 |
 | 8 | 같은 이름의 폴더 `자료`가 있는 곳에 파일 `자료`(확장자 없음) 업로드 | 묻지 않고 `자료 (1)` 파일로 생성 |
-| 9 | 30MB 파일 1개 | 세션 생성 → 청크 6개(5MB×6) 순차 PUT → complete. S3에 블록 6개(각 최대 5MB) |
+| 9 | 30MB 파일 1개 | 세션 생성 → 청크 8개(4MB×7 + 2MB) 순차 PUT → complete. 청크마다 받는 즉시 S3에 블록 1개 |
 | 10 | 파일 100개 중 30번째가 5xx | 30번째만 실패, 나머지 99개 완료. 헤더 `N개 완료, 1개 실패` (폴더 안이면 그 폴더 줄이 `1개 실패`). 30번째는 `PENDING`으로 목록에 남음 |
 | 11 | #10 후 그 파일을 다시 업로드 | 남아 있는 `PENDING` 파일과 충돌 → 대체를 고르면 그 행을 이어서 완료 |
 | 12 | 폴더 안에 0바이트 `.gitkeep` | 정상 완료 (`fileSize: 0`, `UPLOADED`) |
@@ -372,7 +392,9 @@ file-service는 한 트랜잭션에서 다음을 처리합니다.
 | 14 | 6,000개 파일 폴더 | 아무것도 올리지 않고 에러 메시지 |
 | 15 | 목록 화면을 연 사이 대상 폴더가 다른 탭에서 휴지통으로 감 | `404 DIRECTORY_NOT_FOUND`, 아무것도 안 생김 |
 | 16 | `relativePath`에 `../x.txt`를 넣어 직접 호출 | `400`, 아무것도 안 생김 |
-| 17 | 이어 올리기 중 네트워크 끊김 / storage-service 재시작 | 그 파일 실패. 처음부터 다시 올려야 함 (받은 청크 조회 API 없음, 세션이 메모리에만 있음) |
+| 17 | 이어 올리기 중 네트워크가 잠깐 끊김 / storage-service 재시작 | 실패한 청크만 자동 재시도(최대 3번) 후 이어서 진행. 세션은 Redis에 있어 재시작과 무관 |
+| 18 | #17이 재시도로도 안 됨 → 그 파일 실패 → 같은 파일을 다시 골라 "대체" | 저장된 세션으로 받은 청크를 조회해 나머지만 전송 |
+| 19 | 이어 올리기를 시작하고 탭을 닫은 채 하루가 지남 | 세션은 24시간에 만료, 받은 블록은 25시간 뒤 정리 작업이 삭제. 파일 행은 `PENDING`으로 남음 (13장 4번) |
 
 ## 13. 알려진 문제
 
@@ -380,19 +402,19 @@ file-service는 한 트랜잭션에서 다음을 처리합니다.
 
 | # | 문제 | 영향 |
 |---|---|---|
-| 1 | 이어 올리기 청크를 **storage-service 힙**에 모았다가 complete 때 한꺼번에 저장함 | 5GB 파일 1개가 힙 5GB를 차지할 수 있음. 동시에 큰 업로드가 몇 개만 와도 OOM 위험. 인스턴스가 여러 개면 청크가 다른 인스턴스로 가서 `SESSION_NOT_FOUND` |
-| 2 | 끊긴 지점부터 다시 올리는 기능 없음 | "이어 올리기"라는 이름과 달리 실패하면 처음부터 다시 |
+| 1 | ~~이어 올리기 청크를 storage-service 힙에 모음~~ | **해결**: 청크를 받는 즉시 S3에 저장, 세션은 Redis (5·6장) |
+| 2 | ~~끊긴 지점부터 다시 올리는 기능 없음~~ | **해결**: 청크 자동 재시도 + 받은 청크 조회로 나머지만 전송 (8장) |
 | 3 | 완료 콜백이 실패해도 저장한 블록을 지우지 않음 | S3에 참조 없는 블록이 쌓임 |
 | 4 | `PENDING` 파일 정리 스케줄러 없음 | 실패·이탈한 업로드가 목록에 영원히 남음. 열면 404 |
 | 5 | 간단 업로드는 storage-service에서 5GB 검사를 하지 않음 | multipart 25MB 한도가 막아주므로 현재는 문제없음. 한도를 올리면 구멍이 됨 |
-| 6 | 이어 올리기 파일의 블록 크기가 설정값(4MB)이 아니라 청크 크기(5MB) | 블록 크기를 설정으로 바꿔도 이어 올리기에는 적용되지 않음 |
+| 6 | ~~이어 올리기 블록이 5MB~~ | **해결**: 청크 = 블록 = 4MB, 서버가 더 큰 청크를 거절 |
+| 8 | complete가 서버에서는 성공했는데 응답만 유실되면, WEB의 재시도가 `404 SESSION_NOT_FOUND`를 받음 | 파일은 실제로 `UPLOADED`인데 패널에는 실패로 보임. 목록을 새로고침하면 정상 |
 | 7 | 한글 이름의 유니코드 정규화(NFC/NFD)를 맞추지 않음 | macOS에서 올린 NFD 이름이 기존 NFC 이름과 충돌로 잡히지 않아, 화면상 같은 이름이 둘 생길 수 있음 |
 
 ## 14. TODO
 
 - **동시 전송** (여러 파일 병렬)
-- **자동 재시도** (네트워크·5xx·429에 1초/2초/4초 간격 3번) + 파일별 [재시도] 버튼
-- **청크를 받는 즉시 S3에 기록 + 세션을 Redis로 이동 + 받은 청크 조회 API** (13장 1·2번) — 지금은 큰 이어 올리기 몇 개를 동시에 보내는 것만으로 storage-service를 OOM으로 죽일 수 있어 가용성 공격에도 쓰일 수 있음
+- **간단 업로드 자동 재시도** + 파일별 [재시도] 버튼 (이어 올리기는 자동 재시도 완료)
 - **업로드 취소** (`DELETE /api/v1/files/{fileId}/upload`) + `beforeunload` 경고 + **24시간 지난 `PENDING` 자동 삭제** (13장 4번)
 - **완료 콜백 실패 시 저장한 블록 삭제** (13장 3번) — S3에 참조 없는 블록이 쌓이지 않게
 - **사용자별 용량 한도**: 배치 생성 단계에서 `items`의 `size` 합으로 검사 — 지금은 `quota_bytes`가 사용량 표시에만 쓰여, 5GB 파일을 반복해 올리면 스토리지를 고갈시킬 수 있음

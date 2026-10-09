@@ -35,12 +35,11 @@ locals {
         gateway = { CLIENT_URL = local.client_url }
         file    = { MODUDRIVE_FILE_DEFAULT_QUOTA_BYTES = "21474836480" }
         storage = {
-          STORAGE_S3_BUCKET                     = aws_s3_bucket.storage.bucket
-          STORAGE_S3_REGION                     = var.region
-          STORAGE_BLOCK_SIZE                    = "4194304"
-          STORAGE_MULTIPART_MAX_FILE_SIZE       = "25MB"
-          STORAGE_MULTIPART_MAX_REQUEST_SIZE    = "25MB"
-          MODUDRIVE_STORAGE_MAX_FILE_SIZE_BYTES = "5368709120"
+          STORAGE_S3_BUCKET                  = aws_s3_bucket.storage.bucket
+          STORAGE_S3_REGION                  = var.region
+          STORAGE_BLOCK_SIZE                 = "4194304"
+          STORAGE_MULTIPART_MAX_FILE_SIZE    = "25MB"
+          STORAGE_MULTIPART_MAX_REQUEST_SIZE = "25MB"
         }
         mail = { CLIENT_URL = local.client_url, MAIL_FROM = local.mail_from }
       }, name, {}),

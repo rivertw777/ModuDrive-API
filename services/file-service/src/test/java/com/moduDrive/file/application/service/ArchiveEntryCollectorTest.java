@@ -1,5 +1,6 @@
 package com.moduDrive.file.application.service;
 
+import com.moduDrive.file.fixture.FileVersionTestFixture;
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.file.application.port.in.usecase.ArchiveEntry;
 import com.moduDrive.file.application.port.out.FindFilePort;
@@ -50,8 +51,7 @@ class ArchiveEntryCollectorTest {
     }
 
     private static FileVersion version(UUID id, File file) {
-        return FileVersion.withId(new FileVersionId(id), new FileVersionFileId(file.getId()),
-                new FileVersionFileSize(10L), new FileVersionBlockCount(1), new FileVersionS3Path("s3/" + file.getName()));
+        return FileVersionTestFixture.aVersion(id, file.getId(), 10L);
     }
 
     @Nested
@@ -76,7 +76,7 @@ class ArchiveEntryCollectorTest {
 
             assertThat(entries).extracting(ArchiveEntry::path)
                     .containsExactly("photos/", "photos/a.jpg", "photos/empty/", "photos/2024/b.jpg");
-            assertThat(entries.get(1).version().getS3Path()).isEqualTo("s3/a.jpg");
+            assertThat(entries.get(1).version().getId()).isEqualTo(aV);
         }
     }
 

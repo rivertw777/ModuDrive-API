@@ -44,6 +44,7 @@ dependencies {
     // S3 calls as spans. Pinned to the release built on the opentelemetry-api the Boot BOM ships (1.62).
     implementation 'io.opentelemetry.instrumentation:opentelemetry-aws-sdk-2.2:2.28.1-alpha'
     testImplementation 'com.tngtech.archunit:archunit-junit5:1.4.2'
+    testImplementation 'org.testcontainers:testcontainers'
     testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
 }
 

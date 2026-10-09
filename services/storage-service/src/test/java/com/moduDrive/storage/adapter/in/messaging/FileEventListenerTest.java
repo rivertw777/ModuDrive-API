@@ -1,9 +1,8 @@
 package com.moduDrive.storage.adapter.in.messaging;
 
 import com.moduDrive.common.event.file.BlocksPurgeRequested;
-import com.moduDrive.storage.application.port.in.command.PurgeStoredFileCommand;
-import com.moduDrive.storage.application.port.in.command.PurgeStoredFileCommand.StoredVersion;
-import com.moduDrive.storage.application.port.in.usecase.PurgeStoredFileUseCase;
+import com.moduDrive.storage.application.port.in.command.PurgeBlocksCommand;
+import com.moduDrive.storage.application.port.in.usecase.PurgeBlocksUseCase;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -12,6 +11,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -21,22 +21,21 @@ import static org.mockito.BDDMockito.then;
 @ExtendWith(MockitoExtension.class)
 class FileEventListenerTest {
 
-    @Mock private PurgeStoredFileUseCase purgeStoredFileUseCase;
+    @Mock private PurgeBlocksUseCase purgeBlocksUseCase;
     @InjectMocks private FileEventListener listener;
 
     @Test
-    @DisplayName("블록 삭제 요청을 받으면 이벤트에 담긴 모든 버전의 블록 삭제를 맡긴다")
-    void purgesEveryVersionInTheEvent() {
-        UUID fileId = UUID.randomUUID();
+    @DisplayName("블록 삭제 요청을 받으면 소유자·해시·결정 시각을 그대로 넘긴다")
+    void passesTheEventThrough() {
+        UUID ownerId = UUID.randomUUID();
+        Instant decidedAt = Instant.parse("2026-10-08T00:00:00Z");
 
-        listener.onBlocksPurgeRequested(new BlocksPurgeRequested(fileId, List.of(
-                new BlocksPurgeRequested.StoredVersion("path/v1", 2),
-                new BlocksPurgeRequested.StoredVersion("path/v2", 4))));
+        listener.onBlocksPurgeRequested(new BlocksPurgeRequested(ownerId, List.of("h1", "h2"), decidedAt));
 
-        ArgumentCaptor<PurgeStoredFileCommand> command = ArgumentCaptor.forClass(PurgeStoredFileCommand.class);
-        then(purgeStoredFileUseCase).should().purgeStoredFile(command.capture());
-        assertThat(command.getValue().getFileId()).isEqualTo(fileId);
-        assertThat(command.getValue().getVersions())
-                .containsExactly(new StoredVersion("path/v1", 2), new StoredVersion("path/v2", 4));
+        ArgumentCaptor<PurgeBlocksCommand> command = ArgumentCaptor.forClass(PurgeBlocksCommand.class);
+        then(purgeBlocksUseCase).should().purgeBlocks(command.capture());
+        assertThat(command.getValue().getOwnerId()).isEqualTo(ownerId);
+        assertThat(command.getValue().getHashes()).containsExactly("h1", "h2");
+        assertThat(command.getValue().getDecidedAt()).isEqualTo(decidedAt);
     }
 }

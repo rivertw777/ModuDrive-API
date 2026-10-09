@@ -23,6 +23,7 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.stream.IntStream;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -59,15 +60,15 @@ class OpenArchiveServiceTest {
         void streamsAZipWithFoldersAndFileContentsAndMetersEachFile() throws Exception {
             given(archiveTokenPort.redeem("tok")).willReturn(Optional.of(request));
             given(getArchiveEntriesPort.getArchiveEntries(request)).willReturn(List.of(
-                    new ArchiveEntry("사진/", null, null, 0, 0),
-                    new ArchiveEntry("사진/빈폴더/", null, null, 0, 0),
-                    new ArchiveEntry("사진/a.txt", fileId, "s3/a", 2, 5)));
+                    new ArchiveEntry("사진/", null, null, null, 0),
+                    new ArchiveEntry("사진/빈폴더/", null, null, null, 0),
+                    new ArchiveEntry("사진/a.txt", fileId, "s3/a", keys(2), 5)));
             willAnswer(invocation -> {
-                OutputStream out = invocation.getArgument(2);
+                OutputStream out = invocation.getArgument(1);
                 out.write("he".getBytes());
                 out.write("llo".getBytes());
                 return null;
-            }).given(retrieveBlocksPort).streamBlocks(eq("s3/a"), eq(2), any());
+            }).given(retrieveBlocksPort).streamBlocks(eq(keys(2)), any());
 
             Archive archive = openArchiveService.open("tok");
             ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -83,13 +84,13 @@ class OpenArchiveServiceTest {
         void namesASeveralItemZipWithATimestamp() {
             given(archiveTokenPort.redeem("tok")).willReturn(Optional.of(request));
             given(getArchiveEntriesPort.getArchiveEntries(request)).willReturn(List.of(
-                    new ArchiveEntry("a.txt", fileId, "s3/a", 1, 1),
-                    new ArchiveEntry("docs/", null, null, 0, 0)));
+                    new ArchiveEntry("a.txt", fileId, "s3/a", keys(1), 1),
+                    new ArchiveEntry("docs/", null, null, null, 0)));
 
             Archive archive = openArchiveService.open("tok");
 
             assertThat(archive.fileName()).matches("ModuDrive-\\d{8}-\\d{6}\\.zip");
-            then(retrieveBlocksPort).should(org.mockito.Mockito.never()).streamBlocks(any(), anyInt(), any());
+            then(retrieveBlocksPort).should(org.mockito.Mockito.never()).streamBlocks(any(), any());
         }
     }
 
@@ -116,5 +117,9 @@ class OpenArchiveServiceTest {
             }
         }
         return entries;
+    }
+
+    private static List<String> keys(int count) {
+        return IntStream.range(0, count).mapToObj(i -> "blocks/owner/h" + i).toList();
     }
 }

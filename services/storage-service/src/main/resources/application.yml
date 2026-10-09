@@ -9,15 +9,10 @@ spring:
       - "classpath:application-resilience4j.yml"
   servlet:
     multipart:
-      # frontend switches to chunked/resumable upload above 20MB (see RESUMABLE_THRESHOLD
-      # in ModuDrive-WEB upload-file.ts); this only needs to cover the simple-upload path
-      # plus a margin, and the 5MB resumable chunk requests comfortably.
+      # Uploads come one 4MB block per request (spec 008); this only needs to cover that plus
+      # the multipart envelope.
       max-file-size: ${STORAGE_MULTIPART_MAX_FILE_SIZE}
       max-request-size: ${STORAGE_MULTIPART_MAX_REQUEST_SIZE}
-
-modudrive:
-  storage:
-    max-file-size-bytes: ${MODUDRIVE_STORAGE_MAX_FILE_SIZE_BYTES}
 
 storage:
   s3:
@@ -27,6 +22,9 @@ storage:
     secret-key: ${STORAGE_S3_SECRET_KEY:}
     region: ${STORAGE_S3_REGION}
   block-size: ${STORAGE_BLOCK_SIZE}
+  # Block uploads per user per 24h (spec 008) — 25,600 × 4MB = 100GB. Caps what uncommitted
+  # uploads can pile up in S3 and Redis before the sweep.
+  upload-blocks-per-window: ${STORAGE_UPLOAD_BLOCKS_PER_WINDOW:25600}
   encryption-key: ${STORAGE_ENCRYPTION_KEY}
   # Per-file download volume per rolling window before that file is blocked (Google Drive style).
   # 0 or negative disables the quota.
