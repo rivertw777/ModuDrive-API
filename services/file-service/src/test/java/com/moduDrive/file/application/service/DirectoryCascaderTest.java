@@ -93,7 +93,7 @@ class DirectoryCascaderTest {
         File active = childAt("/A", "b.txt", FileStatus.UPLOADED);
         File alreadyTrashed = childAt("/A", "c.txt", FileStatus.TRASHED);
         File alreadyPurged = childAt("/A", "d.txt", FileStatus.DELETED);
-        given(findFilePort.findByNamespaceIdAndPathStartingWith(namespaceId, "/A"))
+        given(findFilePort.lockByNamespaceIdAndPathStartingWith(namespaceId, "/A"))
                 .willReturn(List.of(active, alreadyTrashed, alreadyPurged));
 
         directoryCascader.softDelete(namespaceId, "/A", trashedAt);

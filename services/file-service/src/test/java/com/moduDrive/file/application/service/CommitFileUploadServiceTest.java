@@ -37,6 +37,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -116,7 +117,7 @@ class CommitFileUploadServiceTest {
     private void fileExists() {
         givenNamespace();
         given(findFileVersionsPort.findByUploadId(uploadId)).willReturn(Optional.empty());
-        lenient().when(findFilePort.findActiveByNamespaceIdAndPathAndName(any(), eq("/사진"), eq("a.bin")))
+        lenient().when(findFilePort.lockActiveByNamespaceIdAndPathAndName(any(), eq("/사진"), eq("a.bin")))
                 .thenReturn(Optional.of(file));
     }
 
@@ -230,6 +231,23 @@ class CommitFileUploadServiceTest {
         }
 
         @Test
+        @DisplayName("현재 버전과 내용이 같으면 새 버전 없이 현재 버전을 돌려준다")
+        void makesNoNewVersionForUnchangedContent() {
+            FileVersion current = FileVersionTestFixture.aVersion(UUID.randomUUID(), file.getId(), size, blocklist);
+            file.markUploaded(current.getId(), size);
+            fileExists();
+            givenCommitted(Map.of(HASH_A, BLOCK, HASH_B, BLOCK, HASH_C, 10));
+            given(findFileVersionsPort.findAllByIds(List.of(current.getId()))).willReturn(List.of(current));
+
+            CommitResult result = commitOne(command(size, blocklist));
+
+            assertThat(result.version()).isEqualTo(current);
+            then(referenceBlocksPort).shouldHaveNoInteractions();
+            then(saveFileVersionPort).shouldHaveNoInteractions();
+            then(saveFileAccessPort).should().recordAccesses(eq(ownerId), eq(List.of(file.getId())), any());
+        }
+
+        @Test
         @DisplayName("빈 파일은 블록 없이 버전을 만든다")
         void commitsAnEmptyFileWithNoBlocks() {
             fileExists();
@@ -261,6 +279,43 @@ class CommitFileUploadServiceTest {
             then(lockCommittedBlocksPort).shouldHaveNoInteractions();
             then(referenceBlocksPort).shouldHaveNoInteractions();
             then(saveFileVersionPort).shouldHaveNoInteractions();
+        }
+
+        @Test
+        @DisplayName("같은 uploadId인데 내용이 다르면 거절한다")
+        void rejectsTheSameUploadIdWithOtherContent() {
+            FileVersion done = FileVersionTestFixture.aVersion(UUID.randomUUID(), file.getId(), size, blocklist);
+            givenNamespace();
+            given(findFileVersionsPort.findByUploadId(uploadId)).willReturn(Optional.of(done));
+
+            assertThat(commitError(command(size, List.of(HASH_A, HASH_A, HASH_C))))
+                    .isEqualTo(FileExceptionCase.INVALID_BLOCKLIST);
+        }
+
+        @Test
+        @DisplayName("동시에 보낸 같은 commit에 져서 자리 충돌이 나면, 이긴 쪽 버전을 돌려준다")
+        void answersWithTheWinnersVersionAfterLosingTheRace() {
+            fileExists();
+            givenCommitted(Map.of(HASH_A, BLOCK, HASH_B, BLOCK, HASH_C, 10));
+            FileVersion winner = FileVersionTestFixture.aVersion(UUID.randomUUID(), file.getId(), size, blocklist);
+            given(findFileVersionsPort.findByUploadId(uploadId)).willReturn(Optional.empty(), Optional.of(winner));
+            given(saveFileVersionPort.saveFileVersion(any(FileVersion.class)))
+                    .willThrow(new DataIntegrityViolationException("uk_file_version_upload_id"));
+
+            assertThat(commitOne(command(size, blocklist)).version()).isEqualTo(winner);
+        }
+
+        @Test
+        @DisplayName("한 묶음에서 같은 uploadId를 다른 내용에 쓰면, 진 쪽은 이긴 쪽 버전이 아니라 거절로 답한다")
+        void rejectsALoserWhoseContentDiffersFromTheWinner() {
+            fileExists();
+            givenCommitted(Map.of(HASH_A, BLOCK, HASH_B, BLOCK, HASH_C, 10));
+            FileVersion winner = FileVersionTestFixture.aVersion(UUID.randomUUID(), file.getId(), 10L, List.of(HASH_A));
+            given(findFileVersionsPort.findByUploadId(uploadId)).willReturn(Optional.empty(), Optional.of(winner));
+            given(saveFileVersionPort.saveFileVersion(any(FileVersion.class)))
+                    .willThrow(new DataIntegrityViolationException("uk_file_version_upload_id"));
+
+            assertThat(commitError(command(size, blocklist))).isEqualTo(FileExceptionCase.INVALID_BLOCKLIST);
         }
 
         @Test
@@ -332,13 +387,13 @@ class CommitFileUploadServiceTest {
             givenNamespace();
             given(findFileVersionsPort.findByUploadId(uploadId)).willReturn(Optional.empty());
             givenCommitted(Map.of());
-            given(findFilePort.findActiveByNamespaceIdAndPathAndName(any(), eq("/사진/2024"), eq("a.bin")))
+            given(findFilePort.lockActiveByNamespaceIdAndPathAndName(any(), eq("/사진/2024"), eq("a.bin")))
                     .willReturn(Optional.empty());
-            given(findFilePort.findActiveByNamespaceIdAndPathAndName(any(), eq("/"), eq("사진")))
+            given(findFilePort.lockActiveByNamespaceIdAndPathAndName(any(), eq("/"), eq("사진")))
                     .willReturn(Optional.of(File.withId(new FileId(UUID.randomUUID()), new FileNamespaceId(namespace.getId()),
                             new FileName("사진"), new FilePath("/"), new FileOwnerId(ownerId), null, null,
                             FileStatus.UPLOADED, new FileIsDirectory(true))));
-            given(findFilePort.findActiveByNamespaceIdAndPathAndName(any(), eq("/사진"), eq("2024")))
+            given(findFilePort.lockActiveByNamespaceIdAndPathAndName(any(), eq("/사진"), eq("2024")))
                     .willReturn(Optional.empty());
             UUID newId = UUID.randomUUID();
             given(saveFilePort.saveFile(any(File.class))).willAnswer(inv -> {
@@ -412,7 +467,7 @@ class CommitFileUploadServiceTest {
             givenNamespace();
             given(findFileVersionsPort.findByUploadId(uploadId)).willReturn(Optional.empty());
             givenCommitted(Map.of());
-            given(findFilePort.findActiveByNamespaceIdAndPathAndName(any(), eq("/사진"), eq("a.bin")))
+            given(findFilePort.lockActiveByNamespaceIdAndPathAndName(any(), eq("/사진"), eq("a.bin")))
                     .willReturn(Optional.of(File.withId(new FileId(UUID.randomUUID()), new FileNamespaceId(namespace.getId()),
                             new FileName("a.bin"), new FilePath("/사진"), new FileOwnerId(ownerId), null, null,
                             FileStatus.UPLOADED, new FileIsDirectory(true))));
@@ -428,9 +483,9 @@ class CommitFileUploadServiceTest {
             givenNamespace();
             given(findFileVersionsPort.findByUploadId(uploadId)).willReturn(Optional.empty());
             givenCommitted(Map.of());
-            given(findFilePort.findActiveByNamespaceIdAndPathAndName(any(), eq("/사진"), eq("a.bin")))
+            given(findFilePort.lockActiveByNamespaceIdAndPathAndName(any(), eq("/사진"), eq("a.bin")))
                     .willReturn(Optional.empty());
-            given(findFilePort.findActiveByNamespaceIdAndPathAndName(any(), eq("/"), eq("사진")))
+            given(findFilePort.lockActiveByNamespaceIdAndPathAndName(any(), eq("/"), eq("사진")))
                     .willReturn(Optional.of(File.withId(new FileId(UUID.randomUUID()), new FileNamespaceId(namespace.getId()),
                             new FileName("사진"), new FilePath("/"), new FileOwnerId(ownerId), null, null,
                             FileStatus.UPLOADED, new FileIsDirectory(false))));
@@ -527,9 +582,9 @@ class CommitFileUploadServiceTest {
         @DisplayName("없는 폴더를 상위부터 만들고 마지막 폴더의 ID를 돌려준다")
         void createsMissingFoldersTopDown() {
             File photos = folder("/", "사진");
-            given(findFilePort.findActiveByNamespaceIdAndPathAndName(any(), eq("/"), eq("사진"))).willReturn(Optional.of(photos));
-            given(findFilePort.findActiveByNamespaceIdAndPathAndName(any(), eq("/사진"), eq("v1.2"))).willReturn(Optional.empty());
-            given(findFilePort.findActiveByNamespaceIdAndPathAndName(any(), eq("/사진/v1.2"), eq("빈폴더"))).willReturn(Optional.empty());
+            given(findFilePort.lockActiveByNamespaceIdAndPathAndName(any(), eq("/"), eq("사진"))).willReturn(Optional.of(photos));
+            given(findFilePort.lockActiveByNamespaceIdAndPathAndName(any(), eq("/사진"), eq("v1.2"))).willReturn(Optional.empty());
+            given(findFilePort.lockActiveByNamespaceIdAndPathAndName(any(), eq("/사진/v1.2"), eq("빈폴더"))).willReturn(Optional.empty());
             File created = folder("/사진/v1.2", "빈폴더");
             given(saveFilePort.saveFile(any(File.class))).willAnswer(inv ->
                     "빈폴더".equals(inv.<File>getArgument(0).getName()) ? created : inv.getArgument(0));
@@ -549,7 +604,7 @@ class CommitFileUploadServiceTest {
         @DisplayName("다른 commit이 같은 폴더를 먼저 만들었으면 다시 찾아 그 폴더를 돌려준다")
         void findsAFolderAnotherCommitCreatedFirst() {
             File raced = folder("/", "사진");
-            given(findFilePort.findActiveByNamespaceIdAndPathAndName(any(), eq("/"), eq("사진")))
+            given(findFilePort.lockActiveByNamespaceIdAndPathAndName(any(), eq("/"), eq("사진")))
                     .willReturn(Optional.empty(), Optional.of(raced));
             given(saveFilePort.saveFile(any(File.class)))
                     .willThrow(new BusinessException(FileExceptionCase.FILE_ALREADY_EXISTS));
@@ -564,8 +619,8 @@ class CommitFileUploadServiceTest {
         @DisplayName("이미 있는 폴더는 그대로 돌려주고, 파일이 막고 있거나 이름이 틀린 폴더만 실패한다")
         void answersEachFolderOnItsOwn() {
             File existing = folder("/", "사진");
-            given(findFilePort.findActiveByNamespaceIdAndPathAndName(any(), eq("/"), eq("사진"))).willReturn(Optional.of(existing));
-            given(findFilePort.findActiveByNamespaceIdAndPathAndName(any(), eq("/"), eq("a.bin"))).willReturn(Optional.of(
+            given(findFilePort.lockActiveByNamespaceIdAndPathAndName(any(), eq("/"), eq("사진"))).willReturn(Optional.of(existing));
+            given(findFilePort.lockActiveByNamespaceIdAndPathAndName(any(), eq("/"), eq("a.bin"))).willReturn(Optional.of(
                     File.withId(new FileId(UUID.randomUUID()), new FileNamespaceId(namespace.getId()), new FileName("a.bin"),
                             new FilePath("/"), new FileOwnerId(ownerId), null, null, FileStatus.UPLOADED,
                             new FileIsDirectory(false))));

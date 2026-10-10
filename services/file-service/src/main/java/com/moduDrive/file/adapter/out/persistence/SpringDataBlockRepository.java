@@ -42,8 +42,8 @@ interface SpringDataBlockRepository extends JpaRepository<BlockJpaEntity, BlockJ
             + "unreferenced_at = case when ref_count - :count <= 0 then :now else unreferenced_at end "
             + "where owner_id = :ownerId and hash = :hash",
             nativeQuery = true)
-    void release(@Param("ownerId") UUID ownerId, @Param("hash") String hash,
-                 @Param("count") int count, @Param("now") LocalDateTime now);
+    int release(@Param("ownerId") UUID ownerId, @Param("hash") String hash,
+                @Param("count") int count, @Param("now") LocalDateTime now);
 
     // SKIP LOCKED: a row a commit is holding is about to be referenced again, so it is left for a
     // later sweep instead of waited on.

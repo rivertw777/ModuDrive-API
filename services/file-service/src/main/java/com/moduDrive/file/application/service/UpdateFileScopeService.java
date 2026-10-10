@@ -84,7 +84,7 @@ class UpdateFileScopeService implements UpdateFileScopeUseCase {
      * single file — and lands on exactly the same end state.
      * <p>
      * Doesn't re-check ownership on each ancestor before saving it — safe only because a
-     * namespace has exactly one owner today (see {@code UploadFileMetadataService}), so every
+     * namespace has exactly one owner today (see {@code CommitFileUploadService}), so every
      * ancestor here is already the caller's own. A "shared folder someone else can upload into"
      * feature would break that assumption and need an explicit check here. */
     private void restrictLinkedAncestors(File file) {

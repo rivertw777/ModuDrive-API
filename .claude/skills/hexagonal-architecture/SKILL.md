@@ -196,7 +196,7 @@ controller only when they run the same use case (e.g. storage-service's
 
 A controller calls a second use case only for a best-effort side effect that must run
 **outside** the first one's transaction — file-service's `RecordFileAccessUseCase` ("최근
-문서함") after `GetFile` / `UploadFileMetadata` / `GetLatestFileVersions`. Moving that call
+문서함") after `GetFile` / `GetLatestFileVersions`. Moving that call
 into the service would put its write inside the service's transaction: a `readOnly` one
 rejects the INSERT, and any failure marks the whole transaction rollback-only, turning a
 successful read or upload into a 500 (see `RecordFileAccessService`'s comment). Keep such

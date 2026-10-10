@@ -23,6 +23,7 @@ import com.moduDrive.file.domain.model.File.FileName;
 import com.moduDrive.file.domain.model.File.FileNamespaceId;
 import com.moduDrive.file.domain.model.File.FileOwnerId;
 import com.moduDrive.file.domain.model.File.FilePath;
+import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.FileVersion;
 import com.moduDrive.file.domain.model.FileVersion.FileVersionFileId;
 import com.moduDrive.file.domain.model.FileVersion.FileVersionOwnerId;
@@ -32,6 +33,8 @@ import com.moduDrive.file.domain.model.Namespace.NamespaceUserId;
 import com.moduDrive.file.exception.FileExceptionCase;
 import feign.FeignException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
@@ -135,8 +138,26 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
             try {
                 // Its own transaction: one file failing leaves the others committed.
                 results[i] = transactionTemplate.execute(status -> commitLocked(command, namespace, distinct, uploaded));
-            } catch (BusinessException e) {
-                results[i] = CommitResult.failed(e.getExceptionCase());
+            } catch (BusinessException | DataIntegrityViolationException e) {
+                // The same commit sent twice at once (a retry racing the original): the loser hits
+                // a unique slot — the file's, or the uploadId's — and answers with the winner's
+                // version, checked like any resend (alreadyDone).
+                try {
+                    CommitResult done = alreadyDone(command, ownerId);
+                    if (done != null) {
+                        results[i] = done;
+                    } else if (e instanceof BusinessException business) {
+                        results[i] = CommitResult.failed(business.getExceptionCase());
+                    } else {
+                        throw e;
+                    }
+                } catch (BusinessException mismatch) {
+                    results[i] = CommitResult.failed(mismatch.getExceptionCase());
+                }
+            } catch (PessimisticLockingFailureException e) {
+                // Postgres broke a lock cycle with another commit or a trash: only this file fails,
+                // and it can be sent again.
+                results[i] = CommitResult.failed(CircuitBreakerExceptionCase.SERVICE_UNAVAILABLE);
             }
         }
         return List.of(results);
@@ -181,7 +202,10 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
 
         Optional<FileVersion> done = findFileVersionsPort.findByUploadId(command.getUploadId().value());
         if (done.isPresent()) {
-            if (!done.get().getOwnerId().equals(ownerId)) {
+            // Only a resend of the very same commit gets it back; anything else reusing the id is a bug.
+            if (!done.get().getOwnerId().equals(ownerId)
+                    || !done.get().getHashes().equals(command.getBlocklist().value())
+                    || !done.get().getFileSize().equals(command.getFileSize().value())) {
                 throw new BusinessException(FileExceptionCase.INVALID_BLOCKLIST);
             }
             return CommitResult.committed(done.get());
@@ -219,6 +243,15 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
         String name = command.getName();
         NamespaceId namespaceId = new NamespaceId(namespace.getId());
         File file = fileAt(namespaceId, path, name, ownerId);
+        // The same content as the current version — a re-upload of an unchanged file — makes no new
+        // version; otherwise repeating it would pile up versions (and their block rows) forever.
+        Optional<FileVersion> current = file.getCurrentVersionId() == null ? Optional.empty()
+                : findFileVersionsPort.findAllByIds(List.of(file.getCurrentVersionId())).stream().findFirst();
+        if (file.getStatus() == FileStatus.UPLOADED && current.isPresent()
+                && current.get().getFileSize() == fileSize && current.get().getHashes().equals(blocklist)) {
+            saveFileAccessPort.recordAccesses(ownerId, List.of(file.getId()), LocalDateTime.now());
+            return CommitResult.committed(current.get());
+        }
 
         Map<String, Integer> countByHash = new HashMap<>();
         blocklist.forEach(hash -> countByHash.merge(hash, 1, Integer::sum));
@@ -240,7 +273,7 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
     /** The active file at {@code path}/{@code name} — a same-name upload is a new version of it —
      * or a new one, creating any folder above it that doesn't exist yet. */
     private File fileAt(NamespaceId namespaceId, String path, String name, UUID ownerId) {
-        Optional<File> existing = findFilePort.findActiveByNamespaceIdAndPathAndName(namespaceId, path, name);
+        Optional<File> existing = findFilePort.lockActiveByNamespaceIdAndPathAndName(namespaceId, path, name);
         if (existing.isPresent()) {
             if (existing.get().isDirectory()) {
                 throw new BusinessException(FileExceptionCase.FILE_ALREADY_EXISTS);
@@ -263,7 +296,9 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
         // the same missing folder at once would make the second fail on the unique slot
         // (400 FILE_ALREADY_EXISTS) for that file alone, and its retry finds the folder.
         for (String segment : "/".equals(path) ? new String[0] : path.substring(1).split("/")) {
-            Optional<File> found = findFilePort.findActiveByNamespaceIdAndPathAndName(namespaceId, parent, segment);
+            // Locked top-down, like a trash locks a subtree: the folder can't be trashed while a file
+            // goes in under it, and one trashed meanwhile isn't found — a new one is made instead.
+            Optional<File> found = findFilePort.lockActiveByNamespaceIdAndPathAndName(namespaceId, parent, segment);
             if (found.isPresent() && !found.get().isDirectory()) {
                 throw new BusinessException(FileExceptionCase.FILE_ALREADY_EXISTS);
             }

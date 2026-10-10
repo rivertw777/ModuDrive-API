@@ -25,6 +25,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ExtendWith(MockitoExtension.class)
 class FindUploadedBlocksControllerTest {
 
+    private static final String H1 = "1".repeat(64);
+    private static final String H2 = "2".repeat(64);
+
     private MockMvc mockMvc;
 
     @Mock private FindUploadedBlocksUseCase findUploadedBlocksUseCase;
@@ -40,12 +43,20 @@ class FindUploadedBlocksControllerTest {
     @Test
     void returnsTheUploadedSizesByHash() throws Exception {
         UUID ownerId = UUID.randomUUID();
-        given(findUploadedBlocksUseCase.findUploadedBlocks(ownerId, List.of("h1", "h2"))).willReturn(Map.of("h1", 4));
+        given(findUploadedBlocksUseCase.findUploadedBlocks(ownerId, List.of(H1, H2))).willReturn(Map.of(H1, 4));
 
         mockMvc.perform(post("/internal/storage/blocks/uploaded")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"ownerId\":\"" + ownerId + "\",\"hashes\":[\"h1\",\"h2\"]}"))
+                        .content("{\"ownerId\":\"" + ownerId + "\",\"hashes\":[\"" + H1 + "\",\"" + H2 + "\"]}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.h1").value(4));
+                .andExpect(jsonPath("$.data['" + H1 + "']").value(4));
+    }
+
+    @Test
+    void rejectsAMalformedHash() throws Exception {
+        mockMvc.perform(post("/internal/storage/blocks/uploaded")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"ownerId\":\"" + UUID.randomUUID() + "\",\"hashes\":[\"h1\"]}"))
+                .andExpect(status().isBadRequest());
     }
 }

@@ -66,7 +66,7 @@ class RevokeFileShareService implements RevokeFileShareUseCase {
      * any one of them left behind re-grants access on its own.
      * <p>
      * Doesn't re-check ownership on each ancestor row before deleting it — safe only because a
-     * namespace has exactly one owner today (see {@code UploadFileMetadataService}), so every
+     * namespace has exactly one owner today (see {@code CommitFileUploadService}), so every
      * ancestor here is already the caller's own. A "shared folder someone else can upload into"
      * feature would break that assumption and need an explicit check here. */
     private void revokeAncestorGrants(File file, FileShare revoked) {

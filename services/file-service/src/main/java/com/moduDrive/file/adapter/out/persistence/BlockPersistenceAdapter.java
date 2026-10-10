@@ -8,6 +8,8 @@ import com.moduDrive.file.application.port.out.ReferenceBlocksPort;
 import com.moduDrive.file.application.port.out.ReleaseBlocksPort;
 import com.moduDrive.file.domain.model.FileVersion;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
 import java.util.Collection;
@@ -25,6 +27,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 class BlockPersistenceAdapter implements LockCommittedBlocksPort, FindCommittedBlocksPort, ReferenceBlocksPort,
         ReleaseBlocksPort, ClaimUnreferencedBlocksPort {
+
+    private static final Logger logger = LoggerFactory.getLogger(BlockPersistenceAdapter.class);
 
     private final SpringDataBlockRepository blockRepository;
 
@@ -55,10 +59,20 @@ class BlockPersistenceAdapter implements LockCommittedBlocksPort, FindCommittedB
     @Override
     public void releaseBlocks(List<FileVersion> versions) {
         LocalDateTime now = LocalDateTime.now();
+        // All versions summed and in hash order, the same order a commit locks and references in —
+        // per version, two versions sharing blocks would release them out of order and could
+        // deadlock against a commit.
+        Map<UUID, Map<String, Integer>> countsByOwner = new TreeMap<>();
         for (FileVersion version : versions) {
-            countByHash(version.getHashes()).forEach((hash, count) ->
-                    blockRepository.release(version.getOwnerId(), hash, count, now));
+            Map<String, Integer> counts = countsByOwner.computeIfAbsent(version.getOwnerId(), owner -> new TreeMap<>());
+            version.getHashes().forEach(hash -> counts.merge(hash, 1, Integer::sum));
         }
+        countsByOwner.forEach((ownerId, counts) -> counts.forEach((hash, count) -> {
+            if (blockRepository.release(ownerId, hash, count, now) == 0) {
+                // A version pointing at a block with no row: references were lost somewhere.
+                logger.error("Released block {} of owner {} has no row", hash, ownerId);
+            }
+        }));
     }
 
     @Override
@@ -70,7 +84,4 @@ class BlockPersistenceAdapter implements LockCommittedBlocksPort, FindCommittedB
                 .toList();
     }
 
-    private static Map<String, Integer> countByHash(List<String> hashes) {
-        return hashes.stream().collect(Collectors.toMap(h -> h, h -> 1, Integer::sum, TreeMap::new));
-    }
 }

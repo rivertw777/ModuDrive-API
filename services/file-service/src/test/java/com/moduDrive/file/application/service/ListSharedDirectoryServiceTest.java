@@ -71,7 +71,7 @@ class ListSharedDirectoryServiceTest {
     }
 
     /** A child the caller owns — every file in a namespace shares one owner (see
-     * UploadFileMetadataService), so this is the "owner browsing their own folder through the
+     * CommitFileUploadService), so this is the "owner browsing their own folder through the
      * shared-directory route" shape {@link WhenAccessible#markFavoriteAppliesToAnOwnedChildToo}
      * needs. */
     private File ownEntry(String name, String path, boolean directory, FileStatus status) {
