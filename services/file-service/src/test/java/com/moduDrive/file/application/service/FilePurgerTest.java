@@ -1,6 +1,7 @@
 package com.moduDrive.file.application.service;
 
 import com.moduDrive.file.fixture.FileVersionTestFixture;
+import com.moduDrive.file.application.port.out.FindFilePort;
 import com.moduDrive.file.application.port.out.FindFileVersionsPort;
 import com.moduDrive.file.application.port.out.ReleaseBlocksPort;
 import com.moduDrive.file.application.port.out.SaveFilePort;
@@ -19,6 +20,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -34,6 +36,7 @@ class FilePurgerTest {
     @Mock private DirectoryCascader directoryCascader;
     @Mock private ReleaseBlocksPort releaseBlocksPort;
     @Mock private FindFileVersionsPort findFileVersionsPort;
+    @Mock private FindFilePort findFilePort;
     @InjectMocks private FilePurger filePurger;
 
     private final UUID ownerId = UUID.randomUUID();
@@ -56,6 +59,7 @@ class FilePurgerTest {
             FileId fileId = new FileId(file.getId());
             List<FileVersion> versions = List.of(FileVersionTestFixture.aVersion(UUID.randomUUID(), file.getId(), 10L));
             given(findFileVersionsPort.findAllByFileId(fileId)).willReturn(versions);
+            given(findFilePort.lockById(fileId)).willReturn(Optional.of(file));
 
             filePurger.purgeRoot(file, callerId);
 
@@ -75,12 +79,34 @@ class FilePurgerTest {
         @Test
         void cascadesPurgeInsteadOfPurgingItsOwnBlocks() {
             File directory = makeFile(new FileIsDirectory(true));
+            given(findFilePort.lockById(new FileId(directory.getId()))).willReturn(Optional.of(directory));
 
             filePurger.purgeRoot(directory, callerId);
 
             then(directoryCascader).should().purge(any(), eq(directory.fullPath()), any(), eq(callerId));
             then(releaseBlocksPort).shouldHaveNoInteractions();
             then(saveFilePort).should().purgeFile(new FileId(directory.getId()), callerId);
+        }
+    }
+
+    @Nested
+    @DisplayName("찾은 뒤 다시 읽어 보니 휴지통에 없을 때")
+    class WhenTheRootChangedSinceItWasFound {
+
+        @Test
+        @DisplayName("그사이 복원된 파일은 아무것도 지우지 않는다")
+        void skipsARootRestoredSince() {
+            File found = makeFile(new FileIsDirectory(false));
+            File restored = File.withId(new FileId(found.getId()), new FileNamespaceId(found.getNamespaceId()),
+                    new FileName("report.pdf"), new FilePath("/1"), new FileOwnerId(ownerId), null, null,
+                    FileStatus.UPLOADED, new FileIsDirectory(false));
+            given(findFilePort.lockById(new FileId(found.getId()))).willReturn(Optional.of(restored));
+
+            filePurger.purgeRoot(found, callerId);
+
+            then(releaseBlocksPort).shouldHaveNoInteractions();
+            then(saveFilePort).shouldHaveNoInteractions();
+            then(directoryCascader).shouldHaveNoInteractions();
         }
     }
 }

@@ -26,7 +26,8 @@ class RenameFileService implements RenameFileUseCase {
     @Transactional
     @Override
     public File renameFile(RenameFileCommand command) {
-        File file = findFilePort.findById(command.getFileId())
+        // Locked, like a trash: the two never interleave, so neither writes from a stale status.
+        File file = findFilePort.lockById(command.getFileId())
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_NOT_FOUND));
         // RENAME is enough for a folder too — a folder EDITOR may rename it, and the cascade
         // below rewrites the descendants' stored paths as part of that same rename.

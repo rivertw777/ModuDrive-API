@@ -1,16 +1,19 @@
 package com.moduDrive.file.application.service;
 
+import com.moduDrive.file.application.port.out.FindFilePort;
 import com.moduDrive.file.application.port.out.FindFileVersionsPort;
 import com.moduDrive.file.application.port.out.ReleaseBlocksPort;
 import com.moduDrive.file.application.port.out.SaveFilePort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.FileId;
+import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.Namespace.NamespaceId;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -33,9 +36,17 @@ class FilePurger {
     private final DirectoryCascader directoryCascader;
     private final ReleaseBlocksPort releaseBlocksPort;
     private final FindFileVersionsPort findFileVersionsPort;
+    private final FindFilePort findFilePort;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    void purgeRoot(File root, UUID deletedBy) {
+    void purgeRoot(File candidate, UUID deletedBy) {
+        // Callers find the roots outside this transaction; locked and read again here, so one
+        // restored (or re-trashed) since is skipped instead of losing a live file's blocks.
+        File root = findFilePort.lockById(new FileId(candidate.getId())).orElse(null);
+        if (root == null || root.getStatus() != FileStatus.TRASHED
+                || !Objects.equals(root.getTrashedAt(), candidate.getTrashedAt())) {
+            return;
+        }
         if (root.isDirectory()) {
             directoryCascader.purge(new NamespaceId(root.getNamespaceId()), root.fullPath(), root.getTrashedAt(), deletedBy);
         } else {

@@ -17,7 +17,6 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import java.util.function.Consumer;
 
 /**
  * `path` is a materialized path (a directory's own location is its parent's {@code path} +
@@ -39,11 +38,12 @@ class DirectoryCascader {
     void movePath(NamespaceId namespaceId, String oldPrefix, String newPrefix) {
         if (oldPrefix.equals(newPrefix)) return;
 
-        forEachDescendant(namespaceId, oldPrefix, descendant -> {
+        // Locked top-down like the other cascades, so two of them never wait on each other in a cycle.
+        for (File descendant : findFilePort.lockByNamespaceIdAndPathStartingWith(namespaceId, oldPrefix)) {
             String rest = descendant.getPath().substring(oldPrefix.length());
             descendant.move(new FilePath(newPrefix + rest));
             saveFilePort.saveFile(descendant);
-        });
+        }
     }
 
     /** Soft-deletes every descendant along with the directory being sent to trash. {@code trashedAt}
@@ -65,14 +65,15 @@ class DirectoryCascader {
      * before its parent folder was trashed comes back too — track trash provenance separately
      * if that distinction ever matters. */
     void restore(NamespaceId namespaceId, String directoryFullPath) {
-        forEachDescendant(namespaceId, directoryFullPath, descendant -> {
+        // Locked like softDelete: a purge of a descendant running now finishes first.
+        for (File descendant : findFilePort.lockByNamespaceIdAndPathStartingWith(namespaceId, directoryFullPath)) {
             // Only a still-trashed descendant is restorable — one purged individually before the
             // parent folder is restored is a tombstone (status DELETED): its content is gone,
             // restoring the row would resurrect an empty file.
-            if (descendant.getStatus() != FileStatus.TRASHED) return;
+            if (descendant.getStatus() != FileStatus.TRASHED) continue;
             descendant.restore();
             saveFilePort.saveFile(descendant);
-        });
+        }
     }
 
     /** Purges every descendant along with the directory being purged from trash (tombstones the
@@ -93,8 +94,8 @@ class DirectoryCascader {
      * {@code deletedBy} is null for a system-triggered purge (the retention sweep) — every
      * descendant's tombstone shares the same value as the root, same as {@code rootTrashedAt}. */
     void purge(NamespaceId namespaceId, String directoryFullPath, LocalDateTime rootTrashedAt, UUID deletedBy) {
-        List<File> purged = findFilePort.findByNamespaceIdAndPathStartingWith(namespaceId, directoryFullPath).stream()
-                .filter(descendant -> descendant.getStatus() == FileStatus.TRASHED)
+        // Locked like softDelete/restore, so a restore running now finishes first and is seen.
+        List<File> purged = findFilePort.lockTrashedByNamespaceIdAndPathStartingWith(namespaceId, directoryFullPath).stream()
                 .filter(descendant -> descendant.getTrashedAt() == null || rootTrashedAt == null
                         || !descendant.getTrashedAt().isAfter(rootTrashedAt))
                 .toList();
@@ -111,10 +112,5 @@ class DirectoryCascader {
             releaseBlocksPort.releaseBlocks(versions);
         }
         purged.forEach(descendant -> saveFilePort.purgeFile(new FileId(descendant.getId()), deletedBy));
-    }
-
-    private void forEachDescendant(NamespaceId namespaceId, String prefix, Consumer<File> action) {
-        List<File> descendants = findFilePort.findByNamespaceIdAndPathStartingWith(namespaceId, prefix);
-        descendants.forEach(action);
     }
 }

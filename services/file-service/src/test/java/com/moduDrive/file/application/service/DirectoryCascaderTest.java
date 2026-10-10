@@ -65,7 +65,7 @@ class DirectoryCascaderTest {
         @Test
         void rewritesDirectChildAndNestedGrandchild() {
             // A moved from "/A" to "/C/A": B lives directly in A, B2 lives two levels deep in A/Sub
-            given(findFilePort.findByNamespaceIdAndPathStartingWith(namespaceId, "/A"))
+            given(findFilePort.lockByNamespaceIdAndPathStartingWith(namespaceId, "/A"))
                     .willReturn(List.of(childAt("/A", "b.txt"), childAt("/A/Sub", "b2.txt")));
             given(saveFilePort.saveFile(any())).willAnswer(inv -> inv.getArgument(0));
 
@@ -110,7 +110,7 @@ class DirectoryCascaderTest {
     void restoreSkipsPurgedTombstoneDescendant() {
         File tombstone = childAt("/A", "b.txt", FileStatus.DELETED);
         tombstone.markDeletedAt(trashedAt.plusMinutes(5));
-        given(findFilePort.findByNamespaceIdAndPathStartingWith(namespaceId, "/A"))
+        given(findFilePort.lockByNamespaceIdAndPathStartingWith(namespaceId, "/A"))
                 .willReturn(List.of(tombstone));
 
         directoryCascader.restore(namespaceId, "/A");
@@ -124,7 +124,7 @@ class DirectoryCascaderTest {
     void restoreSkipsNonTrashedDescendant() {
         File trashed = childAt("/A", "b.txt", FileStatus.TRASHED);
         File active = childAt("/A", "c.txt", FileStatus.UPLOADED);
-        given(findFilePort.findByNamespaceIdAndPathStartingWith(namespaceId, "/A"))
+        given(findFilePort.lockByNamespaceIdAndPathStartingWith(namespaceId, "/A"))
                 .willReturn(List.of(trashed, active));
 
         directoryCascader.restore(namespaceId, "/A");
@@ -135,25 +135,6 @@ class DirectoryCascaderTest {
     }
 
     @Test
-    @DisplayName("영구 삭제할 때 휴지통에 있지 않은 하위 항목은 지우지 않는다")
-    void purgeSkipsNonTrashedDescendant() {
-        File trashed = childAt("/A", "b.txt", FileStatus.TRASHED);
-        File restoredEarly = childAt("/A", "c.txt", FileStatus.UPLOADED);
-        File alreadyPurged = childAt("/A", "d.txt", FileStatus.DELETED);
-        given(findFilePort.findByNamespaceIdAndPathStartingWith(namespaceId, "/A"))
-                .willReturn(List.of(trashed, restoredEarly, alreadyPurged));
-
-        directoryCascader.purge(namespaceId, "/A", trashedAt, deletedBy);
-
-        then(saveFilePort).should(times(1)).purgeFile(new FileId(trashed.getId()), deletedBy);
-        then(saveFilePort).should(times(0)).purgeFile(eq(new FileId(restoredEarly.getId())), any());
-        then(saveFilePort).should(times(0)).purgeFile(eq(new FileId(alreadyPurged.getId())), any());
-        then(findFileVersionsPort).should(times(1)).findAllByFileId(new FileId(trashed.getId()));
-        then(findFileVersionsPort).should(times(0)).findAllByFileId(new FileId(restoredEarly.getId()));
-        then(findFileVersionsPort).should(times(0)).findAllByFileId(new FileId(alreadyPurged.getId()));
-    }
-
-    @Test
     @DisplayName("영구 삭제할 때 삭제된 하위 디렉토리는 자신의 블록을 지우지 않는다")
     void purgeSkipsBlockDeletionForADirectoryDescendant() {
         File deletedDirectory = File.withId(new FileId(UUID.randomUUID()), new FileNamespaceId(namespaceId.value()),
@@ -161,7 +142,7 @@ class DirectoryCascaderTest {
                 new FileOwnerId(UUID.randomUUID()), null, null, FileStatus.TRASHED, new FileIsDirectory(true));
         deletedDirectory.markUpdatedAt(trashedAt);
         deletedDirectory.markTrashedAt(trashedAt);
-        given(findFilePort.findByNamespaceIdAndPathStartingWith(namespaceId, "/A"))
+        given(findFilePort.lockTrashedByNamespaceIdAndPathStartingWith(namespaceId, "/A"))
                 .willReturn(List.of(deletedDirectory));
 
         directoryCascader.purge(namespaceId, "/A", trashedAt, deletedBy);
@@ -177,7 +158,7 @@ class DirectoryCascaderTest {
         // path was created and trashed independently, later — its descendant must survive.
         File ownDescendant = childAt("/A", "b.txt", FileStatus.TRASHED, trashedAt);
         File unrelatedNamesakeDescendant = childAt("/A", "c.txt", FileStatus.TRASHED, trashedAt.plusDays(29));
-        given(findFilePort.findByNamespaceIdAndPathStartingWith(namespaceId, "/A"))
+        given(findFilePort.lockTrashedByNamespaceIdAndPathStartingWith(namespaceId, "/A"))
                 .willReturn(List.of(ownDescendant, unrelatedNamesakeDescendant));
 
         directoryCascader.purge(namespaceId, "/A", trashedAt, deletedBy);

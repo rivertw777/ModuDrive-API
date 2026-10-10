@@ -540,6 +540,7 @@ class FilePersistenceAdapterTest {
             UUID deletedBy = UUID.randomUUID();
 
             filePersistenceAdapter.purgeFile(new FileId(fileIdValue), deletedBy);
+            entityManager.flush(); // what the transaction's commit does
             entityManager.clear();
 
             FileJpaEntity tombstone = springDataFileRepository.findById(fileIdValue).orElseThrow();
@@ -550,6 +551,22 @@ class FilePersistenceAdapterTest {
                     fileIdValue, org.springframework.data.domain.PageRequest.of(0, 10))).isEmpty();
             assertThat(springDataFileShareRepository.findByFileId(fileIdValue)).isEmpty();
             assertThat(springDataFileFavoriteRepository.count()).isZero();
+        }
+
+        @Test
+        @DisplayName("그사이 복원돼 휴지통에 없는 파일은 purge가 버전/공유/즐겨찾기를 지우지 않는다")
+        void purgeLeavesAFileRestoredMeanwhileUntouched() {
+            UUID fileIdValue = springDataFileRepository.save(new FileJpaEntity(
+                    namespaceIdValue, "report.pdf", "/1", UUID.randomUUID(), FileStatus.UPLOADED, false)).getId();
+            springDataFileVersionRepository.save(version(fileIdValue, UUID.randomUUID(), List.of("h1")));
+
+            filePersistenceAdapter.purgeFile(new FileId(fileIdValue), UUID.randomUUID());
+            entityManager.flush();
+            entityManager.clear();
+
+            assertThat(springDataFileRepository.findById(fileIdValue).orElseThrow().getStatus()).isEqualTo(FileStatus.UPLOADED);
+            assertThat(springDataFileVersionRepository.findByFileIdOrderByCreatedAtDesc(
+                    fileIdValue, org.springframework.data.domain.PageRequest.of(0, 10))).hasSize(1);
         }
     }
 

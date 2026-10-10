@@ -25,7 +25,8 @@ class MoveFileService implements MoveFileUseCase {
     @Transactional
     @Override
     public File moveFile(MoveFileCommand command) {
-        File file = findFilePort.findById(command.getFileId())
+        // Locked, like a trash: the two never interleave, so neither writes from a stale status.
+        File file = findFilePort.lockById(command.getFileId())
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_NOT_FOUND));
         fileAccessGuard.requireOwner(file, command.getCallerId());
 
