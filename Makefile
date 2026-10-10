@@ -29,7 +29,7 @@ observability: network
 	@docker-compose -f $(OBSERVABILITY_COMPOSE_FILE) up -d --remove-orphans
 
 # AWS demo 스택을 내 PC의 Grafana(localhost:3002)에서 본다. AMP 주소는 demo 상태에서 읽는다 —
-# .infra가 demo backend로 init돼 있어야 한다(aws-migration.md 2-1). 자격 증명은 ~/.aws, AWS_PROFILE.
+# .infra가 demo backend로 init돼 있어야 한다(003-aws-migration.md 2-1). 자격 증명은 ~/.aws, AWS_PROFILE.
 demo:
 	@echo "$(GREEN)📈 Starting Grafana for the AWS demo stack...$(NC)"
 	@DEMO_AMP_URL=$${DEMO_AMP_URL:-$$(terraform -chdir=.infra output -raw amp_endpoint)} \

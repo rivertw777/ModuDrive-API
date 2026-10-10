@@ -95,7 +95,7 @@ Each service defines a `<Domain>ExceptionCase` enum implementing `ExceptionCase`
 
 ## Database Migrations (Flyway)
 
-JPA services' schema is managed by Flyway (`db/migration`, `ddl-auto: validate`). Read `.docs/db-migration.md` before changing any entity or migration.
+JPA services' schema is managed by Flyway (`db/migration`, `ddl-auto: validate`). Read `.docs/guide/001-db-migration.md` before changing any entity or migration.
 
 ## Git Convention
 

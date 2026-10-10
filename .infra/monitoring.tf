@@ -1,11 +1,11 @@
-# Monitoring (aws-migration.md 1-13). Storage and query are managed — AMP for metrics, X-Ray for traces,
+# Monitoring (003-aws-migration.md 1-13). Storage and query are managed — AMP for metrics, X-Ray for traces,
 # CloudWatch Logs for logs (awslogs, ecs.tf) — and the one thing this stack runs is the central ADOT
 # collector below. Alerts are the local Prometheus rules on AMP's ruler; they and the AWS-side alarms
 # all go to one SNS topic, which a small Lambda posts to Discord.
 
 # ---------------------------------------------------------------------------------------------------
 # Metrics: AMP. No customer key even when hardened — metric labels carry no user data (no userId or
-# fileId; aws-migration.md 1-13), and AMP's own key keeps the query side free of KMS grants.
+# fileId; 003-aws-migration.md 1-13), and AMP's own key keeps the query side free of KMS grants.
 resource "aws_prometheus_workspace" "main" {
   alias = var.project
 }

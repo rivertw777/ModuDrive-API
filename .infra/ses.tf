@@ -1,4 +1,4 @@
-# Mail (aws-migration.md 1-9). The configuration set and the Send-event pipeline exist regardless of the domain:
+# Mail (003-aws-migration.md 1-9). The configuration set and the Send-event pipeline exist regardless of the domain:
 # mail-service sends every message with ConfigurationSetName=mail-events, and without it SES rejects
 # the send (400 ConfigurationSetDoesNotExist) and every mail ends up in the DLQ.
 resource "aws_sesv2_configuration_set" "mail_events" {

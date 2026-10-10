@@ -66,7 +66,7 @@ flowchart LR
 역할 분리:
 
 - **init 스크립트** — "DB와 계정이 존재한다"까지. Postgres 볼륨이 비어 있을 때 한 번만 실행된다.
-  Flyway는 이미 있는 DB에 접속해서 테이블만 만들 수 있고 DB·로그인 계정은 못 만들기 때문에 여전히 필요하다(서비스 계정에 슈퍼유저 권한을 줄 순 없음). AWS에서도 같은 스크립트를 쓴다. RDS가 프라이빗이라 Terraform이 직접 못 만들어서, 인스턴스마다 일회성 ECS 태스크(db-init)로 한 번 돌린다([aws-migration.md 1-5](aws-migration.md#1-5-db)).
+  Flyway는 이미 있는 DB에 접속해서 테이블만 만들 수 있고 DB·로그인 계정은 못 만들기 때문에 여전히 필요하다(서비스 계정에 슈퍼유저 권한을 줄 순 없음). AWS에서도 같은 스크립트를 쓴다. RDS가 프라이빗이라 Terraform이 직접 못 만들어서, 인스턴스마다 일회성 ECS 태스크(db-init)로 한 번 돌린다([003-aws-migration.md 1-5](003-aws-migration.md#1-5-db)).
 - **Flyway** — "테이블이 이 모양이다"와 dev 시드 데이터.
 - **Hibernate** — 검증만.
 
