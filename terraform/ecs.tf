@@ -196,6 +196,9 @@ resource "aws_ecs_service" "service" {
   lifecycle {
     ignore_changes = [desired_count]
   }
+
+  # A new task pulls its image through the NAT, so the instance route must exist first (demo).
+  depends_on = [aws_route.private_nat_instance]
 }
 
 resource "aws_appautoscaling_target" "service" {

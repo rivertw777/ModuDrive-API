@@ -27,9 +27,17 @@ variable "image_tag" {
 # differs. No defaults: every plan names its whole set with -var-file, envs/demo.tfvars (what actually
 # runs) or envs/prod.tfvars (sized for the MAU 5M target), never a mix.
 
-# A NAT per AZ for the tasks' egress; without one, tasks sit in public subnets with a public IP.
+# How the tasks (always in private subnets) reach the internet — ECR, SSM, SQS, SES, Discord:
+#   "gateway"  — a managed NAT gateway per AZ (~$45/month each), nothing to run
+#   "instance" — one t4g.nano NAT instance (fck-nat, ~$8/month with its IP), a single point for
+#                outbound traffic only — inbound comes through the ALB either way
 variable "nat" {
-  type = bool
+  type = string
+
+  validation {
+    condition     = contains(["gateway", "instance"], var.nat)
+    error_message = "nat is \"gateway\" or \"instance\"."
+  }
 }
 
 # VPC interface endpoints for SQS, ECR, CloudWatch Logs, SSM, Secrets Manager.

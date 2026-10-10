@@ -1,12 +1,12 @@
-# demo — what actually runs, a trial stack: the whole system up for the least money (~$80–120/month
+# demo — what actually runs, a trial stack: the whole system up for the least money (~$108/month
 # in Seoul, before traffic). Cut whatever cost can be cut here; isolation and redundancy are shown in
 # prod.tfvars instead. terraform plan -var-file=envs/demo.tfvars
 #
-# Trade-offs: tasks sit in public subnets with a public IP instead of behind a NAT — still no inbound
-# except through their security groups, but isolation rests on those groups alone; Spot tasks can be
-# reclaimed and one task per service means a short gap on redeploy; no Multi-AZ anywhere.
+# Trade-offs: one NAT instance instead of a managed gateway per AZ — if it stops, running services keep
+# serving but events, mail and new tasks wait for it; Spot tasks can be reclaimed and one task per
+# service means a short gap on redeploy; no Multi-AZ anywhere.
 
-nat                 = false
+nat                 = "instance"
 interface_endpoints = false # ~$110/month for six endpoints in two AZs; traffic goes out the IGW
 fargate_spot        = true
 container_insights  = false

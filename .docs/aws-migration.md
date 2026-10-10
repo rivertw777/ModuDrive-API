@@ -194,7 +194,7 @@ ECS 태스크들 ──OTLP 트레이스──▶ ┌─────────
 
 ### 2-11. 네트워크 / 도메인 / 프론트
 - VPC: 퍼블릭 서브넷(ALB), 프라이빗 서브넷(ECS, RDS, ElastiCache).
-- NAT Gateway는 비싸다 — S3/ECR/SQS/Secrets Manager/CloudWatch는 **VPC 엔드포인트**로 돌리면 NAT 트래픽 절감. 둘 다 운영 프로필에서만 켠다(2-12) — 테스트 프로필은 NAT 없이 태스크를 퍼블릭 서브넷에 공인 IP로 두고, 무료인 S3 게이트웨이 엔드포인트만 쓴다.
+- NAT Gateway는 비싸다 — S3/ECR/SQS/Secrets Manager/CloudWatch는 **VPC 엔드포인트**로 돌리면 NAT 트래픽 절감. 둘 다 `prod`에서만 켠다(2-12). `demo`는 NAT 게이트웨이 대신 **NAT 인스턴스 1대**(t4g.nano, fck-nat — 공인 IP 포함 월 ~$8)를 두고 무료인 S3 게이트웨이 엔드포인트만 쓴다. 태스크는 어느 쪽이든 프라이빗 서브넷이고 공인 IP가 없다 — 태스크마다 공인 IPv4를 붙이면(7개 ~$26) NAT 인스턴스보다 비싸다.
 - Route 53(도메인) + ACM(인증서). ModuDrive-WEB은 **S3 + CloudFront** 정적 호스팅,
   `CLIENT_URL`/CORS/쿠키 도메인 재설정 필요.
 - WEB의 **CSP**는 CloudFront **응답 헤더 정책**으로 붙인다. 정책 문자열은 ModuDrive-WEB `vite.config.ts`의 `contentSecurityPolicy()`가 원본(`vite preview`가 같은 헤더를 보냄) — `connect-src`에 API 도메인을 넣고, 둘을 같이 고친다.
@@ -213,16 +213,16 @@ ECS 태스크들 ──OTLP 트레이스──▶ ┌─────────
 
   | | `demo` (실제 실행) | `prod` (MAU 500만 목표 설계) |
   |---|---|---|
-  | 태스크 위치 | 퍼블릭 서브넷 + 공인 IP (NAT 없음) | 프라이빗 서브넷 + AZ마다 NAT |
+  | 태스크 위치 | 프라이빗 서브넷 + **NAT 인스턴스 1대** (t4g.nano, `nat = "instance"`) | 프라이빗 서브넷 + AZ마다 NAT 게이트웨이 (`nat = "gateway"`) |
   | VPC 인터페이스 엔드포인트 | 없음 (S3 게이트웨이만) | SQS·ECR·logs·SSM·Secrets |
   | ECS | 서비스당 1개 고정(오토스케일 없음), 전부 0.25 vCPU/1 GB, **Fargate Spot** | 사용자 대면 서비스 최소 2개, gateway·auth·file·storage 1 vCPU/2 GB, 일반 Fargate |
   | RDS | 1대에 4개 DB — db.t4g.micro, 단일 AZ, 삭제 방지 끔 | **서비스마다 1대** — file·auth db.m7g.large, member·notification db.t4g.medium, 전부 **Multi-AZ**, 삭제 방지 |
   | Valkey | 1개(모든 서비스 공용), cache.t4g.micro 1노드 | 용도별 4개 — `auth` cache.m7g.large 2노드 + 자동 장애 조치, `member`·`mail` cache.t4g.small, `storage` cache.m7g.large ([006 2-4-6](spec/006-resilience-spec.md#2-4-6-redis-분리)) |
   | Container Insights | 끔 | 켬 |
-  | 대략 비용(서울, 트래픽 전) | 월 $80~120 | 최소 태스크 기준 월 $2,200 안팎 (RDS 4대·Valkey 4개 포함, 대략치) — 트래픽에 따라 오토스케일·NAT·로그 비용이 더해진다 |
+  | 대략 비용(서울, 트래픽 전) | 월 $108 안팎 — 태스크 7개 Spot ~$26, ALB ~$22 + 공인 IPv4 2개 ~$7, RDS ~$21, ElastiCache ~$18, NAT 인스턴스 ~$8(공인 IP 포함), 로그 등 ~$5 | 최소 태스크 기준 월 $2,200 안팎 (RDS 4대·Valkey 4개 포함, 대략치) — 트래픽에 따라 오토스케일·NAT·로그 비용이 더해진다 |
 
   - `demo`는 **시험용 — 줄일 수 있는 비용은 다 줄인다.** 격리·이중화는 `prod` 설계로 보여 준다.
-  - `demo`가 감수하는 것: 네트워크 격리가 보안 그룹에만 의존(인바운드는 여전히 막힘, RDS·Redis는 계속 프라이빗), Spot 회수·재배포 때 잠깐 끊김, Redis 재시작 시 전원 로그아웃.
+  - `demo`가 감수하는 것: 바깥으로 나가는 통신이 NAT 인스턴스 1대에 걸림(멈추면 화면·API는 그대로지만 이벤트·메일·새 태스크 기동이 복구될 때까지 기다림 — EC2 자동 복구), Spot 회수·재배포 때 잠깐 끊김, Redis 재시작 시 전원 로그아웃.
   - `prod` 숫자는 MAU 500만의 **출발점**이지 측정값이 아니다 — 부하 테스트와 오토스케일링 기록으로 맞춘다.
   - 바꾸면 ECS 서비스(Spot ↔ 일반)와 서브넷이 교체되고 RDS 클래스 변경은 재시작이 따른다 — 사용자가 없을 때 바꾼다.
 - 도메인은 `domain_name` 변수 — 비워 두면(기본 null) Route 53 영역·SES identity·DKIM/MAIL FROM 레코드를 만들지 않는다. 넣고 apply한 뒤 출력 `name_servers`를 도메인 등록 업체에 설정한다.
