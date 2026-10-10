@@ -24,7 +24,7 @@ ModuDrive is a cloud-drive microservices backend built with **Spring Boot 4.1.1*
 # Start infra only (Postgres, Redis, LocalStack — local SQS + S3 + SES)
 make infra
 
-# Start the observability stack only (otel-collector, Tempo, Loki, Promtail, Prometheus, Grafana)
+# Start the observability stack only (otel-collector, Tempo, Loki, Promtail, Prometheus, Alertmanager, Grafana)
 make observability
 
 # Wipe every data volume (infra + observability) and restart infra + observability + services
@@ -37,7 +37,7 @@ make service
 make member   # or: make gateway, make auth, make file, make storage, make mail
 ```
 
-Docker Compose files are at `.docker/docker-compose.service.yml` (services), `.docker/docker-compose.infra.yml` (Postgres, Redis, LocalStack — local SQS + S3 + SES, Mailpit — local inbox for SES mail at `localhost:8025`; needs `LOCALSTACK_AUTH_TOKEN` in `.docker/.env`), and `.docker/docker-compose.observability.yml` (Grafana/Tempo/Loki/Prometheus/OTel). All three attach to `modudrive_network` as an **external** network, created by the `network` Make target (a prerequisite of `infra`/`observability`; `start.sh` creates it inline). Postgres holds one database + login per service (`member_db`/`member_service`, `file_db`/`file_service`, `notification_db`/`notification_service`, `auth_db`/`auth_service`); each login can only connect to its own database. They are created by `.docker/postgres/postgres_init.sh`, which runs only on an empty volume — `make reset` after changing it. Tables come from Flyway, not this script — see [Database Migrations](#database-migrations-flyway). The shared `Dockerfile` lives at `.docker/Dockerfile`, referenced by every service's `build.gradle` via its `docker` task.
+Docker Compose files are at `.docker/docker-compose.service.yml` (services), `.docker/docker-compose.infra.yml` (Postgres, Redis, LocalStack — local SQS + S3 + SES, Mailpit — local inbox for SES mail at `localhost:8025`; needs `LOCALSTACK_AUTH_TOKEN` in `.docker/.env`), and `.docker/docker-compose.observability.yml` (Grafana/Tempo/Loki/Prometheus/Alertmanager/OTel — alerts go Prometheus rules → Alertmanager → LocalStack SNS → Lambda → Discord, the same path as AWS). All three attach to `modudrive_network` as an **external** network, created by the `network` Make target (a prerequisite of `infra`/`observability`; `start.sh` creates it inline). Postgres holds one database + login per service (`member_db`/`member_service`, `file_db`/`file_service`, `notification_db`/`notification_service`, `auth_db`/`auth_service`); each login can only connect to its own database. They are created by `.docker/postgres/postgres_init.sh`, which runs only on an empty volume — `make reset` after changing it. Tables come from Flyway, not this script — see [Database Migrations](#database-migrations-flyway). The shared `Dockerfile` lives at `.docker/Dockerfile`, referenced by every service's `build.gradle` via its `docker` task.
 
 The active Spring profile (`dev`) is injected via `SPRING_PROFILES_ACTIVE` in `docker-compose.service.yml`, not hardcoded in `application.yml`.
 

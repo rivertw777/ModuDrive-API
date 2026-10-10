@@ -31,31 +31,35 @@
 ## 1. 알림 발송 과정
 
 각 서비스는 자기 상태를 숫자로 내놓는다. 예를 들어 "아직 못 보낸 이벤트가 몇 초째 밀려 있다", "서킷이 열려 있다" 같은 것이다.
-이 숫자를 **지표**라고 부른다. Prometheus가 지표를 모아 두고, Grafana가 그걸 보다가 이상하면 디스코드로 보낸다.
+이 숫자를 **지표**라고 부른다. Prometheus가 지표를 모아 두고 규칙으로 검사하다가, 이상하면 Alertmanager → SNS → Lambda를 거쳐 디스코드로 보낸다.
+로컬과 AWS가 같은 길을 쓴다. 로컬은 SNS·Lambda가 LocalStack이고, AWS는 Prometheus·Alertmanager 자리에 AMP가 있다([aws-migration.md 1-13](../aws-migration.md#1-13-모니터링과-알림)).
 
 ```mermaid
 flowchart LR
     M["각 서비스<br/>지표를 내놓음"]
     P[("Prometheus<br/>지표 저장")]
-    R["Grafana 알림 규칙<br/>1분마다 검사"]
-    A["Grafana Alertmanager<br/>묶어서 보내기"]
+    R["알림 규칙<br/>1분마다 검사"]
+    A["Alertmanager<br/>묶어서 보내기"]
+    S["SNS 토픽<br/>modudrive-alerts"]
+    L["Lambda<br/>discord-forwarder"]
     D(["Discord<br/>#messaging · #service"])
 
     M -- "15초마다 수집" --> P
-    P -- "조회" --> R
+    P --> R
     R -- "문제가 일정 시간 계속되면" --> A
-    A -- "웹후크" --> D
+    A -- "채널 속성과 함께 발행" --> S
+    S --> L
+    L -- "웹후크" --> D
 ```
 
 | 단계 | 하는 일 |
 |---|---|
 | 각 서비스 | `:9464/actuator/prometheus` 주소에 지표를 내놓는다 |
 | Prometheus | 15초마다 모든 서비스의 지표를 가져가 저장한다 |
-| 알림 규칙 | 1분마다 "이 값이 기준을 넘었나"를 확인한다. 정해 둔 시간(`for`) 동안 계속 넘어야 알림을 보낸다 |
-| Alertmanager | 비슷한 알림을 한 메시지로 묶어 보낸다. 고칠 때까지 4시간마다 다시 보낸다 |
+| 알림 규칙 | Prometheus가 1분마다 "이 값이 기준을 넘었나"를 확인한다. 정해 둔 시간(`for`) 동안 계속 넘어야 알림을 보낸다 |
+| Alertmanager | 비슷한 알림을 한 메시지로 묶고 디스코드 문구로 만들어 SNS에 올린다. 고칠 때까지 4시간마다 다시 보낸다 |
+| SNS → Lambda | Lambda(`discord_forwarder.py`)가 메시지의 `channel` 속성으로 웹후크를 골라 디스코드에 보낸다. AWS에선 CloudWatch 경보·Budgets·GuardDuty도 같은 토픽으로 들어온다 |
 | Discord | 알림에 적힌 채널(`#messaging` 또는 `#service`)로 도착한다 |
-
-Alertmanager는 Grafana 안에 들어 있는 기능을 쓴다. 컨테이너를 따로 띄우지 않는다.
 
 ### 1-1. 알림이 오기까지 걸리는 시간
 
@@ -92,15 +96,22 @@ Alertmanager는 Grafana 안에 들어 있는 기능을 쓴다. 컨테이너를 �
 3. 무슨 내용을 보낼지 (메시지)
 4. 어떻게 묶어서 보낼지 (그룹핑)
 
-설정은 전부 `.docker/observability/grafana/alerting/alerts.yaml` 파일 하나에 있다.
-Grafana 화면에서 만든 알림은 데이터를 지우면 함께 사라지기 때문에, 파일로만 관리한다.
+| 파일 | 내용 | AWS 쪽 짝 |
+|---|---|---|
+| `.docker/observability/alert-rules.yaml` | 규칙 (2-1, 2-2) | `.infra/monitoring/alert-rules.yaml` |
+| `.infra/monitoring/discord.tmpl` | 메시지 양식 (2-3) | 같은 파일 |
+| `.docker/observability/alertmanager.yml` | 그룹핑·채널 (2-4, 3장) | `.infra/monitoring/alertmanager.yaml` |
+| `.infra/monitoring/discord_forwarder.py` | SNS → 디스코드 전달 | 같은 파일 |
+
+규칙 파일은 로컬과 AWS가 따로다. 쿼리와 기준값은 같고 확인 명령어(docker·Loki·Tempo ↔ CloudWatch·X-Ray)만 다르다. 규칙을 고치면 두 파일을 같이 고친다.
+로컬의 SNS 토픽·Lambda·웹후크 저장(SSM)은 `.docker/localstack/init-aws.sh`가 LocalStack이 뜰 때마다 만든다.
 
 ### 2-1. 지표
 
 서비스가 내놓는 지표 한 줄은 **이름, 라벨, 값**으로 되어 있다.
 
 ```
-modudrive_outbox_failed{instance="member-service",queue="mail-verification-requested",reason="QueueDoesNotExistException",detail="The specified queue does not exist."} 1
+modudrive_outbox_failed{service="member-service",queue="mail-verification-requested",reason="QueueDoesNotExistException",detail="The specified queue does not exist."} 1
 ```
 
 - 이름: `modudrive_outbox_failed` (전송에 실패한 이벤트 수)
@@ -110,7 +121,7 @@ modudrive_outbox_failed{instance="member-service",queue="mail-verification-reque
 규칙은 이 지표를 PromQL이라는 조회 문법으로 읽는다.
 
 ```
-max by (instance, queue, reason, detail) (modudrive_outbox_failed) > 0
+max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 ```
 
 지표나 규칙을 만들 때 지킬 것이 있다.
@@ -118,20 +129,19 @@ max by (instance, queue, reason, detail) (modudrive_outbox_failed) > 0
 - **`by (...)` 안에 적은 라벨만 알림 메시지에 쓸 수 있다.** 여기서 빠진 라벨은 조회 결과에 남지 않는다.
 - **라벨 값은 짧고 가짓수가 적어야 한다.** 라벨 값이 하나 달라질 때마다 Prometheus는 따로 저장하고, 알림도 따로 만든다.
   그래서 요청 ID나 바이트 수처럼 매번 바뀌는 값은 라벨에 넣지 않는다.
+- `service` 라벨은 서비스가 내놓는 게 아니라 Prometheus가 붙인다(로컬은 스크레이프 주소, AWS는 컨테이너 이름). 메시지의 "대상"은 이 라벨이나 게이트웨이 경로(`routeId`)다.
 - 라벨 조합이 사라지면 그 알림은 해제된다. 예를 들어 FAILED 행을 고쳐서 그 큐의 실패가 0건이 되면 해당 지표가 없어지고, 알림이 풀린다.
 
 ### 2-2. 규칙
 
-`alerts.yaml`의 `rules:` 아래 항목 하나가 알림 하나다.
+`alert-rules.yaml`의 `rules:` 아래 항목 하나가 알림 하나다.
 
 ```yaml
-- title: 이벤트 전송 실패                      # 알림 이름
-  for: 0m                                    # 이 시간 동안 계속 문제여야 보낸다
+- alert: OutboxFailed                        # 알림 이름 (영문 — AWS에선 SNS 제목이 된다)
+  expr: max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0   # 볼 지표와 기준 (2-1)
+  for: 0m                                    # 이 시간 동안 계속 문제여야 보낸다 (없으면 0m)
   labels: {channel: messaging}               # 보낼 채널 (3장)
-  annotations: {summary: ..., action: ..., query: ...}   # 메시지에 들어갈 문구 (2-3)
-  data:
-    - expr: max by (instance, queue, reason, detail) (modudrive_outbox_failed)   # 볼 지표 (2-1)
-    - conditions: [{evaluator: {type: gt, params: [0]}}]                 # 0보다 크면 문제
+  annotations: {title: 이벤트 전송 실패, summary: ..., action: ..., query: ...}   # 메시지에 들어갈 문구 (2-3)
 ```
 
 새 알림을 만들 때 가장 고민할 것은 `for`다.
@@ -139,40 +149,39 @@ max by (instance, queue, reason, detail) (modudrive_outbox_failed) > 0
 - **기다리면 저절로 풀릴 수 있는 문제**는 몇 분을 준다. 재배포나 잠깐의 네트워크 끊김까지 알리면, 정작 중요한 알림이 묻힌다.
 - **사람이 손대야만 풀리는 문제**는 `0m`으로 바로 보낸다. 기다려도 나아지지 않기 때문이다.
 
-조건이 다시 정상으로 돌아오면 같은 채널로 ✅ 해제 알림이 간다. 다만 Grafana는 숫자만 볼 뿐이라, 사람이 제대로 고쳤는지까지는 알지 못한다.
+조건이 다시 정상으로 돌아오면 같은 채널로 ✅ 해제 알림이 간다. 다만 규칙은 숫자만 볼 뿐이라, 사람이 제대로 고쳤는지까지는 알지 못한다.
 
 ### 2-3. 알림 메시지
 
-Grafana의 기본 메시지는 값을 전부 늘어놓아서 필요한 내용이 잘 안 보인다. 그래서 메시지 양식을 직접 만들었다.
+기본 메시지는 값을 전부 늘어놓아서 필요한 내용이 잘 안 보인다. 그래서 메시지 양식(`discord.tmpl`)을 직접 만들었다. 로컬과 AWS가 같은 파일을 쓴다.
 새벽에 휴대폰으로 봐도 바로 알아볼 수 있는 것이 기준이다.
 
 ```
 🚨 서킷 열림
 
-서비스: gateway-service
-서킷: `memberServiceCircuitBreaker`
+대상: gateway-service · `memberServiceCircuitBreaker`
+
 사유: 2분째 닫히지 않음 — 대상 서비스 호출이 계속 실패 중 (502·503·504 · 타임아웃 · 연결 실패)
 조치: 서킷이 부르는 서비스의 상태와 로그로 실패 원인 확인
 확인 명령어
-  docker logs <container> 2>&1 | grep "memberServiceCircuitBreaker"
-
-Grafana에서 보기 · 알림 일시 중지
+  docker logs modudrive-service-gateway-service-1 2>&1 | grep "memberServiceCircuitBreaker"
 ```
 
-메시지에 넣을 수 있는 내용은 세 가지다.
+메시지에 넣을 수 있는 내용은 두 가지다.
 
 | 내용 | 어디서 오나 |
 |---|---|
 | 서비스, 큐, 서킷 이름 | 지표의 라벨. `by (...)`에 넣은 것만 쓸 수 있다([2-1](#2-1-지표)) |
-| 사유, 조치, 확인 명령어, 조회·복구 SQL 등 | 규칙의 `annotations`에 적어 둔 문구 |
-| "Grafana에서 보기", "알림 일시 중지" 링크 | Grafana가 알림마다 만들어 준다 |
+| 제목, 사유, 조치, 확인 명령어, 조회·복구 SQL 등 | 규칙의 `annotations`에 적어 둔 문구 |
+
+본문 아래에는 Lambda가 제목 카드(embed)를 붙인다. 발생은 빨간색, 해제는 초록색이라 채널을 훑어볼 때 상태가 바로 보인다.
+링크는 넣지 않는다. AWS(AMP)에는 열어 볼 화면이 없어서 양식을 하나로 두려고 뺐다. 로컬에서 알림 상태와 일시 중지는 Alertmanager 화면(`http://localhost:9093`)에서 본다.
 
 양식을 고칠 때 알아 둘 것이 있다.
 
 - 같은 알림이 여러 건 동시에 생기면 한 메시지로 묶인다([2-4](#2-4-그룹핑과-재발송)). 이때는 위 예시처럼 다 쓰지 않고,
-  건마다 "서비스 · 큐 또는 서킷 — 사유"를 한 줄씩만 쓴다. 건마다 명령어와 링크까지 달면 몇 건만 모여도 디스코드 글자 수 제한(2000자)을 넘기 때문이다.
-  건별 명령어와 "알림 일시 중지"는 Grafana 링크로 들어가서 본다.
-- "알림 일시 중지" 링크는 그 알림 하나만 조용히 시킨다. 그래서 한 건일 때만 붙인다.
+  건마다 "대상 — 사유"를 한 줄씩만 쓴다. 건마다 명령어까지 달면 몇 건만 모여도 디스코드 글자 수 제한(2000자)을 넘기 때문이다.
+  Lambda도 2000자에서 자른다.
 - 디스코드는 줄바꿈 한 번을 같은 문단으로 이어 붙인다. 항목 사이는 빈 줄로 띄운다.
   단, 코드 블록 뒤에는 디스코드가 여백을 알아서 넣기 때문에 빈 줄을 넣지 않는다.
 - 명령어는 조치 문장 속에 섞지 않고 따로 코드 블록으로 뺀다. 휴대폰에서 길게 눌러 바로 복사할 수 있다.
@@ -184,11 +193,11 @@ Grafana에서 보기 · 알림 일시 중지
 | 설정 | 값 | 뜻 |
 |---|---|---|
 | `group_by` | `alertname` | 알림 이름이 같으면 한 메시지로 묶는다. 서비스 세 개가 동시에 죽으면 "서비스 응답 없음 (3건)" 한 통이 온다 |
-| `group_wait` | 30초 (Grafana 기본값) | 처음 보낼 때 같이 묶을 알림이 더 있는지 30초 기다린다 |
+| `group_wait` | 30초 (Alertmanager 기본값) | 처음 보낼 때 같이 묶을 알림이 더 있는지 30초 기다린다 |
 | `group_interval` | 1분 | 이미 보낸 묶음은 1분 간격으로만 다시 보낸다. 해제 알림도 이 간격을 따른다 |
 | `repeat_interval` | 4시간 | 고치지 않으면 4시간마다 다시 알린다 |
 
-알림 이름 단위로 묶는 이유가 있다. 예전에는 서비스·큐마다 따로 보냈는데, 여러 건이 한꺼번에 생기면 디스코드가
+알림 이름 단위로 묶는 이유가 있다. 예전(Grafana 알림 시절)에는 서비스·큐마다 따로 보냈는데, 여러 건이 한꺼번에 생기면 디스코드가
 "너무 자주 보낸다"(429)며 막았고 Grafana는 그 알림을 다시 보내지 않고 버렸다. 재배포로 서비스 일곱 개가 같이 내려갔을 때
 실제로 세 건이 사라졌다. 큰 장애일수록 알림이 많이 사라지는 구조라서 묶어 보내도록 바꿨다.
 
@@ -201,7 +210,10 @@ Grafana에서 보기 · 알림 일시 중지
 | `#messaging` | 이벤트가 제대로 오가는지: 전송 적체, 전송 실패, 처리 실패 | `DISCORD_MESSAGING_WEBHOOK_URL` |
 | `#service` | 서비스가 제대로 돌고 있는지: 응답 없음, 서킷 열림, 요청 실패율, 느린 요청 (나중에 CPU, 메모리) | `DISCORD_SERVICE_WEBHOOK_URL` |
 
-웹후크 주소는 `.docker/.env`에 넣는다. 레포에는 올리지 않는다.
+메시지는 SNS 속성 `channel`로 갈리고, Lambda가 그 채널의 웹후크 주소를 SSM에서 읽는다. 주소는 레포에 올리지 않는다.
+
+- 로컬: `.docker/.env`에 넣으면 LocalStack이 뜰 때 SSM(`/modudrive/DISCORD_*_WEBHOOK_URL`)에 들어간다. 바꾼 뒤엔 LocalStack을 다시 띄운다.
+- AWS: SSM에 손으로 한 번 넣는다([aws-migration.md 1-13](../aws-migration.md#1-13-모니터링과-알림)).
 
 ---
 
@@ -211,11 +223,11 @@ Grafana에서 보기 · 알림 일시 중지
 
 | 알림 | 채널 | 언제 울리나 | 조건 | 기다리는 시간 (`for`) |
 |---|---|---|---|---|
-| 이벤트 전송 적체 | `#messaging` | 이벤트가 SQS로 못 나가고 2분 넘게 밀려 있을 때 | `max by (instance, queue) (modudrive_outbox_lag_seconds) > 120` | 5분 |
-| 이벤트 전송 실패 | `#messaging` | SQS가 거절해서 사람이 직접 처리해야 할 이벤트가 생겼을 때 | `max by (instance, queue, reason, detail) (modudrive_outbox_failed) > 0` | 바로 |
-| 이벤트 처리 실패 | `#messaging` | 받는 쪽 서비스가 처리를 포기한 메시지가 DLQ에 있을 때 | `max by (instance, queue) (modudrive_dlq_messages) > 0` | 바로 |
-| 서비스 응답 없음 | `#service` | 서비스가 응답하지 않을 때 (프로세스가 죽음) | `min by (instance) (up{job="services"}) < 1` | 2분 |
-| 서킷 열림 | `#service` | 서비스는 떠 있지만, 그 서비스로 가는 호출이 계속 실패할 때 | `max by (instance, name) (resilience4j_circuitbreaker_state{state=~"open\|half_open"}) > 0` | 2분 |
+| 이벤트 전송 적체 | `#messaging` | 이벤트가 SQS로 못 나가고 2분 넘게 밀려 있을 때 | `max by (service, queue) (modudrive_outbox_lag_seconds) > 120` | 5분 |
+| 이벤트 전송 실패 | `#messaging` | SQS가 거절해서 사람이 직접 처리해야 할 이벤트가 생겼을 때 | `max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0` | 바로 |
+| 이벤트 처리 실패 | `#messaging` | 받는 쪽 서비스가 처리를 포기한 메시지가 DLQ에 있을 때 | `max by (service, queue) (modudrive_dlq_messages) > 0` | 바로 |
+| 서비스 응답 없음 | `#service` | 서비스가 응답하지 않을 때 (프로세스가 죽음) | `min by (service) (up{job="services"}) < 1` | 2분 |
+| 서킷 열림 | `#service` | 서비스는 떠 있지만, 그 서비스로 가는 호출이 계속 실패할 때 | `max by (service, name) (resilience4j_circuitbreaker_state{state=~"open\|half_open"}) > 0` | 2분 |
 | 요청 실패율 높음 | `#service` | 게이트웨이를 지난 요청이 5xx로 많이 실패할 때 | 5xx 비율 `> 5%` 이면서 5분간 5xx `>= 10`건 (`spring_cloud_gateway_requests_seconds_count`, 경로별) | 2분 |
 | 느린 요청 많음 | `#service` | 게이트웨이를 지난 요청이 에러 없이 느려졌을 때 | 1초 초과 비율 `> 5%` 이면서 5분간 1초 초과 `>= 10`건 (`spring_cloud_gateway_requests_seconds_bucket{le="1.0"}`, 경로별, storage-service 제외) | 2분 |
 
@@ -255,7 +267,7 @@ Prometheus가 15초마다 지표를 가져가는데, 2분 내내 응답이 없�
 500은 세지 않는다. 500은 대개 그 요청의 문제라 상대가 아픈 게 아니기 때문이다. 500은 [4-6](#4-6-요청-실패율-높음)이 잡는다.
 
 서킷은 10초 뒤 스스로 다시 시도해 보기 때문에, 한 번 열린 것만으로는 알리지 않는다. 2분 동안 계속 닫히지 않을 때 알린다.
-메시지의 "서비스"는 호출하는 쪽, "서킷"은 호출받는 쪽이다. 예를 들어 member-service가 아프면 gateway, auth, file의 서킷이 모두 열려, 한 메시지에 세 줄로 온다.
+메시지의 대상은 "호출하는 서비스 · 서킷 이름(호출받는 쪽)"이다. 예를 들어 member-service가 아프면 gateway, auth, file의 서킷이 모두 열려, 한 메시지에 세 줄로 온다.
 
 **받으면:** 서킷 이름에 적힌 서비스(호출받는 쪽)의 상태와 로그를 본다.
 상대가 살아난 뒤에도 요청이 없으면 서킷이 닫히지 않아 해제 알림이 늦게 올 수 있다.
@@ -267,7 +279,7 @@ DB나 Redis에 연결할 수 없을 때는 서비스가 503을 돌려주므로 �
 500은 서킷이 실패로 세지 않고 서비스도 떠 있으니 두 알림 모두 조용하다.
 
 그래서 게이트웨이를 지난 요청 중 5xx 비율을 경로(대상 서비스)별로 본다. 최근 5분 동안 5%를 넘고 5xx가 10건 이상인 상태가 2분 이어지면 알린다.
-건수 조건은 요청이 거의 없을 때 한두 건의 에러로 울리지 않게 하려고 넣었다. 메시지의 "서비스"는 에러를 낸 쪽이다.
+건수 조건은 요청이 거의 없을 때 한두 건의 에러로 울리지 않게 하려고 넣었다. 메시지의 대상은 에러를 낸 쪽이다.
 클라이언트 실수(잘못된 메서드 등)는 4xx로 답해야 이 알림이 잘못 울리지 않는다. 공통 예외 처리(`GlobalExceptionHandler`)에 없는 예외는 전부 500이 되므로, 클라이언트 실수인 예외는 거기에 따로 등록한다.
 
 **받으면:** 그 서비스의 에러 로그를 본다.
@@ -287,8 +299,6 @@ DB나 Redis에 연결할 수 없을 때는 서비스가 503을 돌려주므로 �
 **받으면:** 알림의 TraceQL을 Grafana → Explore → Tempo에 붙여 느린 trace를 열고, 가장 긴 span(DB 쿼리, 하위 서비스 호출, S3)을 본다.
 Explore에서 `spring_cloud_gateway_requests_seconds_bucket` 그래프를 띄우면 점(exemplar)이 찍혀 있어, 눌러서 그 시점의 trace로 바로 갈 수도 있다.
 
-AWS에선 같은 규칙이 AMP 알림 규칙으로 돈다(`.infra/monitoring/alert-rules.yaml`, [aws-migration.md 1-13](../aws-migration.md#1-13-모니터링과-알림)).
-쿼리와 기준값은 같고 서비스 라벨과 확인 명령어만 다르다. 규칙을 고치면 두 파일을 같이 고친다.
 
 ---
 
@@ -296,6 +306,6 @@ AWS에선 같은 규칙이 AMP 알림 규칙으로 돈다(`.infra/monitoring/ale
 
 - [ ] **DLQ 지표를 CloudWatch 경보로**: AWS에선 CloudWatch가 DLQ의 `ApproximateNumberOfMessagesVisible`을 이미 안다.
   DLQ마다 경보를 걸면 앱이 30초마다 세는 코드(`DeadLetterQueueMetrics`)를 없앨 수 있다.
-- [ ] **알림 시스템 자체가 죽었을 때**: Prometheus나 Grafana가 멈추면 알림이 하나도 오지 않는데, 이를 알려 줄 장치가 없다.
-  모든 규칙이 "데이터 없음·조회 실패는 정상으로 본다"(`noDataState: OK`, `execErrState: OK`)로 되어 있어서 조회가 실패해도 조용하다.
-  로컬에서는 감수하고, AWS로 옮길 때 바깥에서 알림 시스템이 살아 있는지 확인하는 방법(CloudWatch 등)을 위 항목과 함께 정한다.
+- [ ] **알림 시스템 자체가 죽었을 때**: Prometheus·Alertmanager·LocalStack이 멈추면 알림이 하나도 오지 않는데, 이를 알려 줄 장치가 없다.
+  지표가 아예 없으면 규칙은 조용하다(서비스가 죽은 것만 `up`으로 따로 본다). 로컬에서는 감수하고,
+  AWS에선 바깥에서 알림 시스템이 살아 있는지 확인하는 방법(CloudWatch 등)을 위 항목과 함께 정한다.

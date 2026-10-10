@@ -1,6 +1,6 @@
 # Monitoring (aws-migration.md 1-13). Storage and query are managed — AMP for metrics, X-Ray for traces,
 # CloudWatch Logs for logs (awslogs, ecs.tf) — and the one thing this stack runs is the central ADOT
-# collector below. Alerts are the local Grafana rules ported to AMP's ruler; they and the AWS-side alarms
+# collector below. Alerts are the local Prometheus rules on AMP's ruler; they and the AWS-side alarms
 # all go to one SNS topic, which a small Lambda posts to Discord.
 
 # ---------------------------------------------------------------------------------------------------
@@ -11,7 +11,7 @@ resource "aws_prometheus_workspace" "main" {
 }
 
 # The rules in monitoring/alert-rules.yaml — same queries and thresholds as
-# .docker/observability/grafana/alerting/alerts.yaml (spec 007), only labels and hints for AWS.
+# .docker/observability/alert-rules.yaml (spec 007), only hints for AWS.
 resource "aws_prometheus_rule_group_namespace" "alerts" {
   name         = "alerts"
   workspace_id = aws_prometheus_workspace.main.id
@@ -24,8 +24,9 @@ resource "aws_prometheus_rule_group_namespace" "alerts" {
 resource "aws_prometheus_alert_manager_definition" "alerts" {
   workspace_id = aws_prometheus_workspace.main.id
   definition = templatefile("${path.module}/monitoring/alertmanager.yaml", {
-    topic_arn = aws_sns_topic.alerts.arn
-    region    = var.region
+    topic_arn        = aws_sns_topic.alerts.arn
+    region           = var.region
+    discord_template = file("${path.module}/monitoring/discord.tmpl")
   })
 }
 
