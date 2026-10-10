@@ -28,7 +28,7 @@ data "aws_iam_policy_document" "execution_secrets" {
   # db-init reads the RDS admin passwords RDS keeps in Secrets Manager.
   statement {
     actions   = ["secretsmanager:GetSecretValue"]
-    resources = [for instance in aws_db_instance.postgres : instance.master_user_secret[0].secret_arn]
+    resources = values(local.db_master_secret_arn)
   }
 }
 

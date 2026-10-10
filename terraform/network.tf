@@ -3,7 +3,7 @@ data "aws_availability_zones" "available" {
 }
 
 locals {
-  azs = slice(data.aws_availability_zones.available.names, 0, 2)
+  azs = slice(data.aws_availability_zones.available.names, 0, var.az_count)
 }
 
 # Public subnets hold the ALB and the NAT (gateways in prod, one instance in demo); ECS tasks, RDS and
@@ -16,9 +16,10 @@ module "vpc" {
   cidr = "10.0.0.0/16"
   azs  = local.azs
 
-  public_subnets   = ["10.0.0.0/24", "10.0.1.0/24"]
-  private_subnets  = ["10.0.10.0/23", "10.0.12.0/23"]
-  database_subnets = ["10.0.20.0/24", "10.0.21.0/24"]
+  # One of each per AZ in use (var.az_count); the third goes unused at two.
+  public_subnets   = slice(["10.0.0.0/24", "10.0.1.0/24", "10.0.2.0/24"], 0, var.az_count)
+  private_subnets  = slice(["10.0.10.0/23", "10.0.12.0/23", "10.0.14.0/23"], 0, var.az_count)
+  database_subnets = slice(["10.0.20.0/24", "10.0.21.0/24", "10.0.22.0/24"], 0, var.az_count)
 
   # One per AZ, so an AZ outage doesn't cut the other AZ's egress (SES, Discord). ~$45/month each.
   # Without them the module still makes a private route table per AZ, routed below to the instance.

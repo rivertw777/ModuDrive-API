@@ -11,10 +11,12 @@ interface_endpoints = false # ~$110/month for six endpoints in two AZs; traffic 
 fargate_spot        = true
 container_insights  = false
 deletion_protection = false # a demo stack gets torn down
+az_count            = 2     # a third AZ would add an ALB public IPv4 and buys nothing for a trial
 
 # One instance for every service's database (each still its own database and login).
+db_engine = "rds"
 db_instances = {
-  file = { instance_class = "db.t4g.micro", multi_az = false, clients = ["member", "file", "notification", "auth"] }
+  file = { instance_class = "db.t4g.micro", nodes = 1, clients = ["member", "file", "notification", "auth"] }
 }
 
 # One cluster for everything, like local. Accepted for a demo: a burst of uploads shares memory with

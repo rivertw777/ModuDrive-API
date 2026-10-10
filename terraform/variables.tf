@@ -53,14 +53,42 @@ variable "container_insights" {
   type = bool
 }
 
-# RDS PostgreSQL instances, and the services whose database each one holds (rds.tf). Each service's
-# database (member_db, file_db ...) lives on exactly one instance.
+# Availability Zones the stack spreads over. prod uses three: a majority survives losing (or being cut
+# off from) any one — Aurora's storage quorum, Valkey replicas and ECS tasks all count on it.
+variable "az_count" {
+  type = number
+
+  validation {
+    condition     = contains([2, 3], var.az_count)
+    error_message = "az_count is 2 or 3."
+  }
+}
+
+# PostgreSQL as plain RDS instances ("rds": nodes = 1 single-AZ, 2 = Multi-AZ with a standby) or Aurora
+# clusters ("aurora": a writer and nodes - 1 readers, one per AZ, on storage replicated six ways across
+# three AZs; failover in about 30 seconds).
+variable "db_engine" {
+  type = string
+
+  validation {
+    condition     = contains(["rds", "aurora"], var.db_engine)
+    error_message = "db_engine is \"rds\" or \"aurora\"."
+  }
+}
+
+# PostgreSQL instances (or Aurora clusters), and the services whose database each one holds (rds.tf).
+# Each service's database (member_db, file_db ...) lives on exactly one.
 variable "db_instances" {
   type = map(object({
     instance_class = string
-    multi_az       = bool
+    nodes          = number
     clients        = list(string)
   }))
+
+  validation {
+    condition     = alltrue([for i in var.db_instances : i.nodes >= 1 && i.nodes <= (var.db_engine == "rds" ? 2 : 15)])
+    error_message = "nodes is 1–2 for rds (2 = Multi-AZ), 1–15 for aurora."
+  }
 
   validation {
     condition = (
