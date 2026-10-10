@@ -37,6 +37,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -430,7 +431,8 @@ class CommitFileUploadServiceTest {
                     new CommitFileUploadCommand(ownerId, "/새폴더", "a.bin", uploadId, 10L, List.of(HASH_A)));
 
             assertThat(result.needBlocks()).containsExactly(HASH_A);
-            then(findFilePort).shouldHaveNoInteractions();
+            // Only read for the quota — nothing locked, nothing made.
+            then(findFilePort).should(never()).lockActiveByNamespaceIdAndPathAndName(any(), any(), any());
             then(saveFilePort).shouldHaveNoInteractions();
         }
     }
@@ -562,6 +564,78 @@ class CommitFileUploadServiceTest {
     }
 
     @Nested
+    @DisplayName("드라이브 용량 한도에 걸릴 때")
+    class WhenTheQuotaIsReached {
+
+        private final long quota = namespace.getQuotaBytes();
+
+        @Test
+        @DisplayName("한도를 넘는 파일은 블록을 묻기 전에 QUOTA_EXCEEDED로 거절한다")
+        void rejectsAFileThatWontFitBeforeAskingForBlocks() {
+            givenNamespace();
+            given(findFileVersionsPort.findByUploadId(uploadId)).willReturn(Optional.empty());
+            given(findFilePort.sumFileSizeByNamespaceId(any())).willReturn(quota - 5);
+
+            assertThat(commitError(command(10L, List.of(HASH_A)))).isEqualTo(FileExceptionCase.QUOTA_EXCEEDED);
+            then(findCommittedBlocksPort).shouldHaveNoInteractions();
+            then(findUploadedBlocksPort).shouldHaveNoInteractions();
+        }
+
+        @Test
+        @DisplayName("대체 업로드는 늘어나는 만큼만 센다")
+        void countsOnlyTheGrowthOfAReplacement() {
+            fileExists();
+            file.markUploaded(UUID.randomUUID(), 8L);
+            given(findFilePort.findActiveByNamespaceIdAndPathAndName(any(), eq("/사진"), eq("a.bin"))).willReturn(Optional.of(file));
+            given(findFilePort.sumFileSizeByNamespaceId(any())).willReturn(quota - 5);
+            givenCommitted(Map.of());
+            given(findUploadedBlocksPort.findUploadedBlocks(eq(ownerId), anyCollection())).willReturn(Map.of());
+
+            // 8 → 10 bytes grows the drive by 2, which fits in the 5 left.
+            assertThat(commitOne(command(10L, List.of(HASH_A))).needBlocks()).containsExactly(HASH_A);
+        }
+
+        @Test
+        @DisplayName("줄어드는 대체 파일은 같은 묶음의 다른 파일에 용량을 내주지 않는다")
+        void aShrinkingReplacementFreesNothingForTheGroup() {
+            givenNamespace();
+            file.markUploaded(UUID.randomUUID(), 1_000L);
+            given(findFileVersionsPort.findByUploadId(any())).willReturn(Optional.empty());
+            given(findFilePort.findActiveByNamespaceIdAndPathAndName(any(), eq("/사진"), eq("a.bin"))).willReturn(Optional.of(file));
+            given(findFilePort.sumFileSizeByNamespaceId(any())).willReturn(quota);
+            givenCommitted(Map.of());
+            given(findUploadedBlocksPort.findUploadedBlocks(eq(ownerId), anyCollection())).willReturn(Map.of());
+
+            List<CommitResult> results = commitFileUploadService.commit(List.of(
+                    new CommitFileUploadCommand(ownerId, "/사진", "a.bin", UUID.randomUUID(), 1L, List.of(HASH_A)),
+                    new CommitFileUploadCommand(ownerId, "/사진", "b.bin", UUID.randomUUID(), 10L, List.of(HASH_B))));
+
+            // Already full: the shrink still goes through, the new file doesn't.
+            assertThat(results.get(0).needBlocks()).containsExactly(HASH_A);
+            assertThat(results.get(1).error()).isEqualTo(FileExceptionCase.QUOTA_EXCEEDED);
+        }
+
+        @Test
+        @DisplayName("묶음 안에서 앞 파일들이 남은 용량을 쓰면, 넘치는 파일만 실패한다")
+        void failsOnlyTheFilesPastTheQuotaWithinAGroup() {
+            givenNamespace();
+            given(findFileVersionsPort.findByUploadId(any())).willReturn(Optional.empty());
+            given(findFilePort.sumFileSizeByNamespaceId(any())).willReturn(quota - 15);
+            givenCommitted(Map.of());
+            given(findUploadedBlocksPort.findUploadedBlocks(eq(ownerId), anyCollection())).willReturn(Map.of());
+
+            List<CommitResult> results = commitFileUploadService.commit(List.of(
+                    new CommitFileUploadCommand(ownerId, "/사진", "a.bin", UUID.randomUUID(), 10L, List.of(HASH_A)),
+                    new CommitFileUploadCommand(ownerId, "/사진", "b.bin", UUID.randomUUID(), 10L, List.of(HASH_B)),
+                    new CommitFileUploadCommand(ownerId, "/사진", "c.bin", UUID.randomUUID(), 5L, List.of(HASH_C))));
+
+            assertThat(results.get(0).needBlocks()).containsExactly(HASH_A);
+            assertThat(results.get(1).error()).isEqualTo(FileExceptionCase.QUOTA_EXCEEDED);
+            assertThat(results.get(2).needBlocks()).containsExactly(HASH_C);
+        }
+    }
+
+    @Nested
     @DisplayName("빈 폴더를 commit할 때")
     class WhenDirectoriesAreCommitted {
 
@@ -613,6 +687,18 @@ class CommitFileUploadServiceTest {
                     List.of(new CommitDirectoryCommand(ownerId, "/", "사진")));
 
             assertThat(results).containsExactly(DirectoryResult.created(raced.getId()));
+        }
+
+        @Test
+        @DisplayName("잠금 교착으로 끊긴 폴더는 그 폴더만 503으로 실패한다")
+        void failsOnlyTheFolderWhoseLockCycleWasBroken() {
+            given(findFilePort.lockActiveByNamespaceIdAndPathAndName(any(), eq("/"), eq("사진")))
+                    .willThrow(new CannotAcquireLockException("deadlock detected"));
+
+            List<DirectoryResult> results = commitFileUploadService.commitDirectories(
+                    List.of(new CommitDirectoryCommand(ownerId, "/", "사진")));
+
+            assertThat(results).containsExactly(DirectoryResult.failed(CircuitBreakerExceptionCase.SERVICE_UNAVAILABLE));
         }
 
         @Test

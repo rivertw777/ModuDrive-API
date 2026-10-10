@@ -59,7 +59,7 @@ class UploadBatchService implements UploadBatchUseCase {
         Map<String, Node> nodes = parse(command.getItems());
 
         // Active entries only (the adapter drops TRASHED/DELETED), so a trashed same-name item is
-        // never a conflict — same rule as the single-file metadata upload.
+        // never a conflict — the commit only ever looks at active rows too.
         Map<String, File> existing = findFilePort.findByNamespaceIdAndPath(namespaceId, target).stream()
                 .collect(Collectors.toMap(File::getName, Function.identity(), (a, b) -> a));
         Set<String> taken = new HashSet<>(existing.keySet());
