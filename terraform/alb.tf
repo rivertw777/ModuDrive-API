@@ -9,6 +9,19 @@ resource "aws_lb" "main" {
   # client-sent X_USER_ID never reaches the gateway). Desync mitigation stays at its "defensive" default.
   drop_invalid_header_fields = true
   enable_deletion_protection = var.deletion_protection
+
+  # Every request with client IP, status and latency (prod: hardened) — the record WAF and the app
+  # logs don't have for requests that never reached the gateway.
+  dynamic "access_logs" {
+    for_each = var.hardened ? [1] : []
+    content {
+      bucket  = aws_s3_bucket.logs[0].id
+      prefix  = "alb"
+      enabled = true
+    }
+  }
+
+  depends_on = [aws_s3_bucket_policy.logs]
 }
 
 resource "aws_lb_target_group" "gateway" {
