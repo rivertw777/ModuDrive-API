@@ -285,7 +285,7 @@ for env in demo staging prod; do terraform test -var-file=envs/$env.tfvars; done
 
 앱 배포는 Terraform이 아니라 GitHub Actions가 한다(`.github/workflows/deploy.yml`).
 
-- `dev`에 푸시하면 demo, `prod`에 푸시하면 prod로 간다. staging과 다른 경우는 수동 실행(workflow_dispatch)으로 고른다.
+- `dev`에 푸시하면 demo, `prod`에 푸시하면 prod로 간다. staging과 다른 경우는 수동 실행(workflow_dispatch)으로 고른다. 그 환경에 `AWS_DEPLOY_ROLE_ARN`이 없으면(스택을 아직 안 띄웠으면) 아무것도 하지 않고 끝난다.
 - 테스트 → 이미지 7개 빌드(태그는 커밋 SHA) → ECR 푸시 → 서비스마다 태스크 정의의 최신 리비전에서 이미지만 바꾼 새 리비전을 등록 → 서비스를 그 리비전으로 바꾼다 → 안정될 때까지 기다리고, 배포 서킷 브레이커가 롤백했으면 실패로 끝난다.
 - AWS 인증은 OIDC다(`github.tf`). 저장소에 장기 키가 없고, 배포 역할은 그 GitHub environment에서 도는 job만 받는다. 할 수 있는 건 이미지 푸시와 태스크 정의 등록·서비스 갱신뿐이라 배포 권한으로 DB나 네트워크를 건드릴 수 없다.
 - Terraform은 서비스가 어느 리비전을 돌리는지 무시한다(`ignore_changes = [task_definition]`). 그래서 apply가 서비스를 옛 이미지로 되돌리지 않는다.

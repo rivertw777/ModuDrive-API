@@ -38,32 +38,50 @@ jobs:
     environment: ${{ inputs.environment || (github.ref_name == 'prod' && 'prod' || 'demo') }}
     timeout-minutes: 60
     steps:
+      # Until the environment's stack exists there's no role to deploy with — skip instead of failing
+      # every push to dev.
+      - id: ready
+        run: |
+          if [ -z "${{ vars.AWS_DEPLOY_ROLE_ARN }}" ]; then
+            echo "::notice::AWS_DEPLOY_ROLE_ARN is not set for this environment — nothing to deploy to yet"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.ready.outputs.ok == 'true'
 
       - uses: actions/setup-java@v4
+        if: steps.ready.outputs.ok == 'true'
         with:
           distribution: temurin
           java-version: 25
 
       - uses: gradle/actions/setup-gradle@v4
+        if: steps.ready.outputs.ok == 'true'
 
       # Persistence tests run on Testcontainers Postgres (Docker is on the runner); the SQS queue
       # test needs a LocalStack token.
       - name: Test and build
+        if: steps.ready.outputs.ok == 'true'
         run: ./gradlew build
         env:
           LOCALSTACK_AUTH_TOKEN: ${{ secrets.LOCALSTACK_AUTH_TOKEN }}
 
       - uses: aws-actions/configure-aws-credentials@v4
+        if: steps.ready.outputs.ok == 'true'
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - id: ecr
+        if: steps.ready.outputs.ok == 'true'
         uses: aws-actions/amazon-ecr-login@v2
 
       # Repositories are immutable: a SHA already pushed (a re-run) is skipped, not overwritten.
       - name: Push images
+        if: steps.ready.outputs.ok == 'true'
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
@@ -84,6 +102,7 @@ jobs:
       # since the last deploy rolls out with this one. Schema changes must suit the old and the new
       # code both: Flyway runs as the first new task starts, while old tasks still serve.
       - name: Roll out
+        if: steps.ready.outputs.ok == 'true'
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
