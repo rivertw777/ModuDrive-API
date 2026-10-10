@@ -1,9 +1,9 @@
 # Two jobs, in order (aws-migration.md 1-14):
-#   terraform — demo only: plan and apply terraform/ with envs/demo.tfvars, so a merge of dev into
+#   terraform — demo only: plan and apply .infra/ with envs/demo.tfvars, so a merge of dev into
 #               demo brings the infrastructure along with the code
 #   deploy    — ships the app: tests, builds the seven images tagged with the commit SHA, pushes them
 #               to ECR, registers a new revision of each task definition with the new image and rolls
-#               the service to it. Terraform never rolls a service back (terraform/ecs.tf ignores the
+#               the service to it. Terraform never rolls a service back (.infra/ecs.tf ignores the
 #               running revision).
 #
 # Which environment: push to demo → demo, push to prod → prod (app only), or run it by hand for any.
@@ -44,7 +44,7 @@ jobs:
     timeout-minutes: 60
     defaults:
       run:
-        working-directory: terraform
+        working-directory: .infra
     steps:
       - id: ready
         working-directory: .
@@ -141,7 +141,7 @@ jobs:
         if: steps.ready.outputs.ok == 'true'
 
       # Persistence tests run on Testcontainers Postgres (Docker is on the runner); the SQS queue
-      # test needs a LocalStack token.
+      # test needs a LocalStack token — a repository secret, the same for every environment.
       - name: Test and build
         if: steps.ready.outputs.ok == 'true'
         run: ./gradlew build
