@@ -10,9 +10,16 @@ nat                 = true
 interface_endpoints = true
 fargate_spot        = false
 container_insights  = true
-db_instance_class   = "db.m7g.large"
-db_multi_az         = true
 deletion_protection = true
+
+# One instance per service: file-service's load (uploads, outbox) never slows the login path, and each
+# is sized, failed over and upgraded on its own. All Multi-AZ.
+db_instances = {
+  file         = { instance_class = "db.m7g.large", multi_az = true, clients = ["file"] }
+  auth         = { instance_class = "db.m7g.large", multi_az = true, clients = ["auth"] }
+  member       = { instance_class = "db.t4g.medium", multi_az = true, clients = ["member"] }
+  notification = { instance_class = "db.t4g.medium", multi_az = true, clients = ["notification"] }
+}
 
 # One cluster per purpose: a load spike or a full memory in one never reaches the others. Only the
 # sessions get a replica — a lost member/mail/storage node costs a resent code, a possibly repeated

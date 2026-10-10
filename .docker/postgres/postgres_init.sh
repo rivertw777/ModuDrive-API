@@ -14,9 +14,12 @@ REVOKE ALL ON DATABASE $1 FROM PUBLIC;
 SQL
 }
 
-create_db member_db member_service "$MEMBER_DB_PASSWORD"
-create_db file_db file_service "$FILE_DB_PASSWORD"
-create_db notification_db notification_service "$NOTIFICATION_DB_PASSWORD"
-create_db auth_db auth_service "$AUTH_DB_PASSWORD"
+# DB_SERVICES picks which to make here — on AWS each RDS instance holds only some (terraform
+# var.db_instances); locally one Postgres holds them all.
+for service in ${DB_SERVICES:-member file notification auth}; do
+    password_var="$(echo "$service" | tr 'a-z' 'A-Z')_DB_PASSWORD"
+    eval "password=\${$password_var}"
+    create_db "${service}_db" "${service}_service" "$password"
+done
 
 # Tables and the dev test users come from each service's Flyway migrations (db/migration, db/seed).

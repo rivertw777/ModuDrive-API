@@ -21,7 +21,7 @@ locals {
         MANAGEMENT_TRACING_EXPORT_ENABLED = "false"
       },
       contains(keys(local.db_names), name) ? {
-        SPRING_DATASOURCE_URL      = "jdbc:postgresql://${aws_db_instance.postgres.address}:5432/${local.db_names[name]}"
+        SPRING_DATASOURCE_URL      = "jdbc:postgresql://${aws_db_instance.postgres[local.db_instance_of[name]].address}:5432/${local.db_names[name]}"
         SPRING_DATASOURCE_USERNAME = "${name}_service"
       } : {},
       contains(local.redis_clients, name) ? {
@@ -224,17 +224,24 @@ resource "aws_appautoscaling_policy" "cpu" {
   }
 }
 
-# Creates the four databases and their logins, once, after RDS exists and before the services first
-# start — RDS is private, so it runs inside the VPC as a one-off task (2-4), reusing the local script
-# as-is. The command is the db_init_run_task output. A second run fails (CREATE ROLE of an existing
-# role) — by design, it only ever runs once.
+# Creates each instance's databases and their logins, once, after RDS exists and before the services
+# first start — RDS is private, so it runs inside the VPC as a one-off task per instance (2-4), reusing
+# the local script with DB_SERVICES naming that instance's. The commands are the db_init_run_tasks
+# output. A second run fails (CREATE ROLE of an existing role) — by design, it only ever runs once.
 resource "aws_cloudwatch_log_group" "db_init" {
   name              = "/ecs/${var.project}/db-init"
   retention_in_days = 14
 }
 
+moved {
+  from = aws_ecs_task_definition.db_init
+  to   = aws_ecs_task_definition.db_init["file"]
+}
+
 resource "aws_ecs_task_definition" "db_init" {
-  family                   = "${var.project}-db-init"
+  for_each = var.db_instances
+
+  family                   = each.key == "file" ? "${var.project}-db-init" : "${var.project}-db-init-${each.key}"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
   cpu                      = 256
@@ -248,13 +255,14 @@ resource "aws_ecs_task_definition" "db_init" {
     command   = ["sh", "-c", file("${path.module}/../.docker/postgres/postgres_init.sh")]
 
     environment = [
-      { name = "PGHOST", value = aws_db_instance.postgres.address },
+      { name = "PGHOST", value = aws_db_instance.postgres[each.key].address },
       { name = "PGSSLMODE", value = "require" },
-      { name = "POSTGRES_USER", value = aws_db_instance.postgres.username },
+      { name = "POSTGRES_USER", value = aws_db_instance.postgres[each.key].username },
+      { name = "DB_SERVICES", value = join(" ", each.value.clients) },
     ]
     secrets = concat(
-      [{ name = "PGPASSWORD", valueFrom = "${aws_db_instance.postgres.master_user_secret[0].secret_arn}:password::" }],
-      [for key, param in aws_ssm_parameter.db_password : { name = local.db_logins[key], valueFrom = param.arn }],
+      [{ name = "PGPASSWORD", valueFrom = "${aws_db_instance.postgres[each.key].master_user_secret[0].secret_arn}:password::" }],
+      [for client in each.value.clients : { name = local.db_logins[client], valueFrom = aws_ssm_parameter.db_password[client].arn }],
     )
 
     logConfiguration = {
