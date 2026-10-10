@@ -14,6 +14,7 @@
 - [2. 파일 업로드](#2-파일-업로드)
   - [2-1. 이어 올리기](#2-1-이어-올리기)
   - [2-2. 폴더 업로드](#2-2-폴더-업로드)
+  - [2-3. 블록 정리](#2-3-블록-정리)
 
 ---
 
@@ -135,13 +136,20 @@ sequenceDiagram
 | 확인 | 실패 |
 |---|---|
 | `path`가 `/` 또는 정규형 절대 경로, `name`이 이름 규칙에 맞음, 둘 다 255자 이하 | 400 `INVALID_BATCH_ITEM` |
-| `uploadId`로 만든 버전이 있다면 호출자의 것 | 400 `INVALID_BLOCKLIST` |
+| `uploadId`로 만든 버전이 있다면 호출자의 것이고 `size`·`blocklist`도 같음 | 400 `INVALID_BLOCKLIST` |
 | `size` ≤ 5GB | 413 `FILE_TOO_LARGE` |
 | `blocklist` 길이 = `ceil(size / 4MB)` (빈 파일은 0) | 400 `INVALID_BLOCKLIST` |
 | 마지막을 뺀 블록은 모두 정확히 4MB, 마지막은 1바이트~4MB, 합 = `size` | 400 `INVALID_BLOCKLIST` — 크기는 `block` 행·Redis 표시에 저장된 실제 값 |
 | 그 자리에 폴더가 없음 (버전을 만들 때만) | 400 `FILE_ALREADY_EXISTS` |
 
-- **같은 `uploadId`로 이미 버전이 있으면** 그 버전을 그대로 돌려준다. 응답이 유실된 commit을 다시 보내도 버전이 둘 생기지 않는다 (`file_version.upload_id` unique).
+- **같은 `uploadId`로 이미 버전이 있으면** 그 버전을 그대로 돌려준다. 응답이 유실된 commit을 다시 보내도 버전이 둘 생기지 않는다 (`file_version.upload_id` unique). 같은 commit 두 개가 동시에 와서 진 쪽이 유니크 자리(파일 자리·`upload_id`)에 걸리면, 이긴 쪽 버전을 답한다.
+- **현재 버전과 내용(`size`·`blocklist`)이 같고 파일이 `UPLOADED`면** 새 버전을 만들지 않고 현재 버전을 답한다. 바뀌지 않은 파일을 다시 올려도 버전과 블록 참조가 쌓이지 않는다.
+- 버전을 만드는 트랜잭션은 상위 폴더부터 대상 파일까지 **위에서부터 잠근다**(`FOR UPDATE`). 휴지통 이동도 대상 행과 그 하위 전체를 같은 순서(경로·이름 순)로 잠그고 읽는다.
+  - 휴지통 이동은 진행 중인 commit을 기다린 뒤 그 결과(새 현재 버전, 새 파일)까지 휴지통으로 보낸다. 먼저 읽은 옛 현재 버전을 덮어쓰지 않고, 휴지통에 간 폴더 아래 활성 파일이 남지 않는다.
+  - commit이 휴지통 이동을 기다렸다면 그 행은 더 이상 활성이 아니므로, 같은 자리에 새 폴더·파일을 만든다.
+  - 그래서 영구 삭제가 읽은 버전 목록에서 빠진 버전(과 그 블록 참조)이 생기지 않는다.
+  - Postgres가 잠금 순환을 끊으면(교착 상태) 그 파일만 503으로 실패하고 다시 보내면 된다.
+- 폴더 영구 삭제는 하위 파일 전부의 버전을 모아 블록 해제를 **한 번** 한다 ([2-3](#2-3-블록-정리)).
 - 같은 해시를 다시 보내면 그냥 덮어쓴다. 내용이 같으므로 무해하다.
 - storage-service 메모리는 요청당 블록 합 8MB까지 쓴다 (multipart 한도 `STORAGE_MULTIPART_MAX_REQUEST_SIZE` 9MB).
 - 파일 하나가 실패해도 그 파일만 실패한다. 이미 commit된 다른 파일은 남는다.
@@ -240,3 +248,16 @@ sequenceDiagram
 - 올린 쪽에 없는 기존 항목은 지우지 않는다.
 - 최상위에서 폴더와 파일처럼 종류가 다르게 겹치면 묻지 않고 번호를 붙인다.
 - 파일 일부가 실패해도 이미 commit된 파일과 그 폴더들은 남는다.
+
+### 2-3. 블록 정리
+
+블록은 두 곳에서 지운다. 둘 다 1시간마다 돈다.
+
+| 정리 | 어디서 | 대상 | 규칙 |
+|---|---|---|---|
+| 참조 없는 블록 | file-service | `block.ref_count`가 0이 된 지 24시간 지난 행 | 버전을 영구 삭제하면 그 블록들의 `ref_count`를 빼고, 0이 되는 순간 `unreferenced_at`을 찍는다. 24시간 안에 같은 블록이 다시 commit되면 `ref_count`가 오르고 `unreferenced_at`이 지워져 살아난다(휴지통을 비운 직후 같은 파일을 다시 올리는 경우). 지나면 행을 지우고(`FOR UPDATE SKIP LOCKED`) 같은 트랜잭션에서 `storage-blocks-purge-requested`(outbox)를 기록한다 |
+| commit되지 않은 블록 | storage-service | 올라온 지 25시간 지난 `uploaded-blocks` 항목 | [2-1](#2-1-이어-올리기). file-service에 commit됐는지 물어 commit된 블록은 남긴다 |
+
+- storage-service는 S3 객체를 지울 때 결정 시각(`decidedAt`) 뒤에 다시 쓰인 블록은 남긴다. `HeadObject`의 `LastModified`(초 단위)를 결정 시각과 비교하고, `DeleteObject`에 `If-Match: <ETag>`를 붙여 그 사이 덮어쓰인 객체는 412로 남는다(LocalStack에서 412 확인).
+- 블록 해제는 모든 버전의 해시를 합쳐 **해시 순서로** 한다. commit이 블록 행을 잠그고 참조하는 순서와 같아서, 같은 블록을 쓰는 commit과 영구 삭제가 교착 상태에 빠지지 않는다. 행이 없는 블록을 해제하면 오류 로그를 남긴다(참조 수가 어긋났다는 뜻).
+

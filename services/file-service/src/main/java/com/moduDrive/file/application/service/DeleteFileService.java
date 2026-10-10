@@ -26,7 +26,8 @@ class DeleteFileService implements DeleteFileUseCase {
     @Transactional
     @Override
     public void deleteFile(DeleteFileCommand command) {
-        File file = findFilePort.findById(command.getFileId())
+        // Locked: a commit adding a version to it finishes first, and this writes back what it made.
+        File file = findFilePort.lockById(command.getFileId())
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_NOT_FOUND));
         fileAccessGuard.requireOwner(file, command.getCallerId());
 

@@ -1,8 +1,10 @@
 package com.moduDrive.file.adapter.out.persistence;
 
 import com.moduDrive.file.domain.model.FileStatus;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -21,6 +23,15 @@ interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID>, J
     Optional<FileJpaEntity> findByNamespaceIdAndPathAndNameAndStatusNotIn(
             UUID namespaceId, String path, String name, Collection<FileStatus> statuses);
 
+    // FOR UPDATE: Postgres re-checks the status after waiting on a concurrent trash, so a row trashed
+    // meanwhile comes back empty.
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select f from FileJpaEntity f where f.namespaceId = :namespaceId and f.path = :path "
+            + "and f.name = :name and f.status not in :statuses")
+    Optional<FileJpaEntity> lockByNamespaceIdAndPathAndNameAndStatusNotIn(
+            @Param("namespaceId") UUID namespaceId, @Param("path") String path, @Param("name") String name,
+            @Param("statuses") Collection<FileStatus> statuses);
+
     // Named to avoid Spring Data's "StartingWith" derived-query keyword — losing the @Query here
     // would silently fall back to an unescaped `like 'prefix%'` and reintroduce the prefix-collision
     // bug (e.g. "/foo" matching "/foo2") this hand-written JPQL exists to prevent.
@@ -32,6 +43,20 @@ interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID>, J
             @Param("namespaceId") UUID namespaceId,
             @Param("prefix") String prefix,
             @Param("escapedPrefix") String escapedPrefix);
+
+    // The same subtree, locked top-down (path, then name) — the order a commit locks the folders
+    // above the file it creates, so the two never wait on each other in a cycle.
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select f from FileJpaEntity f where f.namespaceId = :namespaceId " +
+            "and (f.path = :prefix or f.path like concat(:escapedPrefix, '/%') escape '\\') order by f.path, f.name")
+    List<FileJpaEntity> lockSubtreeByNamespaceIdAndPathPrefix(
+            @Param("namespaceId") UUID namespaceId,
+            @Param("prefix") String prefix,
+            @Param("escapedPrefix") String escapedPrefix);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select f from FileJpaEntity f where f.id = :id")
+    Optional<FileJpaEntity> lockById(@Param("id") UUID id);
 
     // Trash view: status alone is enough now — TRASHED never has deletedAt set (purge is the only
     // thing that sets it, and purge moves status to DELETED in the same update).

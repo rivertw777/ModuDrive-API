@@ -98,6 +98,23 @@ class BlockPersistenceAdapterTest {
     }
 
     @Nested
+    @DisplayName("여러 버전의 참조를 한 번에 풀 때")
+    class WhenReleasingSeveralVersions {
+
+        @Test
+        @DisplayName("버전들이 같이 쓰는 블록은 합쳐서 한 번에 빼고, 행이 없는 블록은 건너뛴다")
+        void sumsSharedBlocksAndSkipsMissingRows() {
+            adapter.referenceBlocks(owner, Map.of("h1", 4, "h2", 4), Map.of("h1", 2, "h2", 1));
+
+            adapter.releaseBlocks(List.of(versionOf(List.of("h2", "h1")), versionOf(List.of("h1", "gone"))));
+
+            assertThat(row("h1")).get().extracting(BlockJpaEntity::getRefCount).isEqualTo(0);
+            assertThat(row("h2")).get().extracting(BlockJpaEntity::getRefCount).isEqualTo(0);
+            assertThat(row("gone")).isEmpty();
+        }
+    }
+
+    @Nested
     @DisplayName("커밋된 블록을 찾을 때")
     class WhenFinding {
 

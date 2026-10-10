@@ -24,8 +24,8 @@ class RecordFileAccessService implements RecordFileAccessUseCase {
     // call into a 500. Losing an individual access record just means one action doesn't move
     // that file to the top of "recent"; harmless for this feature. Catching RuntimeException
     // broadly (not just DataAccessException) is what lets every caller add this as a single line
-    // with no try/catch of its own — see GetFileController, UploadFileMetadataController and
-    // GetLatestFileVersionsController (the storage-service preview path).
+    // with no try/catch of its own — see GetFileController and GetLatestFileVersionsController
+    // (the storage-service preview path).
     //
     // Deliberately NOT @Transactional: the adapter's saveAndFlush already runs in its own
     // Spring Data-managed transaction, and wrapping this method in another one means a

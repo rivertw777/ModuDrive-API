@@ -8,11 +8,13 @@ import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.FileId;
 import com.moduDrive.file.domain.model.File.FilePath;
 import com.moduDrive.file.domain.model.FileStatus;
+import com.moduDrive.file.domain.model.FileVersion;
 import com.moduDrive.file.domain.model.Namespace.NamespaceId;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -47,13 +49,15 @@ class DirectoryCascader {
     /** Soft-deletes every descendant along with the directory being sent to trash. {@code trashedAt}
      * is the directory's own — the whole cascade shares one instant (see {@link #purge}). */
     void softDelete(NamespaceId namespaceId, String directoryFullPath, LocalDateTime trashedAt) {
-        forEachDescendant(namespaceId, directoryFullPath, descendant -> {
+        // Locked, like the folder itself (DeleteFileService): a commit adding a version or a file
+        // under it finishes first, and its rows are trashed as they are after it.
+        for (File descendant : findFilePort.lockByNamespaceIdAndPathStartingWith(namespaceId, directoryFullPath)) {
             // Already trashed (individually, earlier) or already purged — leave its trashedAt
             // alone either way; see purge()'s javadoc for why that matters.
-            if (descendant.isRemoved()) return;
+            if (descendant.isRemoved()) continue;
             descendant.softDelete(trashedAt);
             saveFilePort.saveFile(descendant);
-        });
+        }
     }
 
     /** Restores every descendant along with the directory being restored from trash.
@@ -89,17 +93,24 @@ class DirectoryCascader {
      * {@code deletedBy} is null for a system-triggered purge (the retention sweep) — every
      * descendant's tombstone shares the same value as the root, same as {@code rootTrashedAt}. */
     void purge(NamespaceId namespaceId, String directoryFullPath, LocalDateTime rootTrashedAt, UUID deletedBy) {
-        forEachDescendant(namespaceId, directoryFullPath, descendant -> {
-            if (descendant.getStatus() != FileStatus.TRASHED) return;
-            if (descendant.getTrashedAt() != null && rootTrashedAt != null
-                    && descendant.getTrashedAt().isAfter(rootTrashedAt)) return;
-            // A nested subdirectory has no blocks of its own — only a real file does.
+        List<File> purged = findFilePort.findByNamespaceIdAndPathStartingWith(namespaceId, directoryFullPath).stream()
+                .filter(descendant -> descendant.getStatus() == FileStatus.TRASHED)
+                .filter(descendant -> descendant.getTrashedAt() == null || rootTrashedAt == null
+                        || !descendant.getTrashedAt().isAfter(rootTrashedAt))
+                .toList();
+        // Every file's versions in one release, before purgeFile deletes their rows (see FilePurger):
+        // one call keeps the whole subtree's blocks in hash order, the order a commit locks them in.
+        // A nested subdirectory has no blocks of its own — only a real file does.
+        List<FileVersion> versions = new ArrayList<>();
+        for (File descendant : purged) {
             if (!descendant.isDirectory()) {
-                // Before purgeFile deletes the version rows — see FilePurger.
-                releaseBlocksPort.releaseBlocks(findFileVersionsPort.findAllByFileId(new FileId(descendant.getId())));
+                versions.addAll(findFileVersionsPort.findAllByFileId(new FileId(descendant.getId())));
             }
-            saveFilePort.purgeFile(new FileId(descendant.getId()), deletedBy);
-        });
+        }
+        if (!versions.isEmpty()) {
+            releaseBlocksPort.releaseBlocks(versions);
+        }
+        purged.forEach(descendant -> saveFilePort.purgeFile(new FileId(descendant.getId()), deletedBy));
     }
 
     private void forEachDescendant(NamespaceId namespaceId, String prefix, Consumer<File> action) {

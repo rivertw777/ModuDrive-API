@@ -59,7 +59,7 @@ class DeleteFileServiceTest {
 
         @Test
         void softDeletesFileAndStampsTrashedAt() {
-            given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(makeFile(FileStatus.UPLOADED)));
+            given(findFilePort.lockById(command.getFileId())).willReturn(Optional.of(makeFile(FileStatus.UPLOADED)));
             given(saveFilePort.saveFile(any())).willAnswer(inv -> inv.getArgument(0));
 
             deleteFileService.deleteFile(command);
@@ -78,7 +78,7 @@ class DeleteFileServiceTest {
 
         @Test
         void cascadesSoftDeleteWithTheSameTrashedAtAsTheRoot() {
-            given(findFilePort.findById(command.getFileId()))
+            given(findFilePort.lockById(command.getFileId()))
                     .willReturn(Optional.of(makeFile(FileStatus.UPLOADED, new FileIsDirectory(true))));
             given(saveFilePort.saveFile(any())).willAnswer(inv -> inv.getArgument(0));
 
@@ -102,7 +102,7 @@ class DeleteFileServiceTest {
 
         @Test
         void throwsFileNotFound() {
-            given(findFilePort.findById(command.getFileId())).willReturn(Optional.empty());
+            given(findFilePort.lockById(command.getFileId())).willReturn(Optional.empty());
 
             Throwable thrown = catchThrowable(() -> deleteFileService.deleteFile(command));
 
@@ -119,7 +119,7 @@ class DeleteFileServiceTest {
         @Test
         @DisplayName("이미 휴지통에 있으면 (TRASHED) 다시 휴지통으로 보낼 수 없다")
         void throwsFileAlreadyDeletedWhenTrashed() {
-            given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(makeFile(FileStatus.TRASHED)));
+            given(findFilePort.lockById(command.getFileId())).willReturn(Optional.of(makeFile(FileStatus.TRASHED)));
 
             Throwable thrown = catchThrowable(() -> deleteFileService.deleteFile(command));
 
@@ -132,7 +132,7 @@ class DeleteFileServiceTest {
         @Test
         @DisplayName("이미 퍼지됐으면 (DELETED) 다시 휴지통으로 보낼 수 없다")
         void throwsFileAlreadyDeletedWhenPurged() {
-            given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(makeFile(FileStatus.DELETED)));
+            given(findFilePort.lockById(command.getFileId())).willReturn(Optional.of(makeFile(FileStatus.DELETED)));
 
             Throwable thrown = catchThrowable(() -> deleteFileService.deleteFile(command));
 
@@ -149,7 +149,7 @@ class DeleteFileServiceTest {
 
         @Test
         void throwsFileAccessDenied() {
-            given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(makeFile(FileStatus.UPLOADED)));
+            given(findFilePort.lockById(command.getFileId())).willReturn(Optional.of(makeFile(FileStatus.UPLOADED)));
             willThrow(new BusinessException(FileExceptionCase.FILE_ACCESS_DENIED))
                     .given(fileAccessGuard).requireOwner(any(File.class), eq(callerId));
 

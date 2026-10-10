@@ -43,7 +43,7 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
                     file.getNamespaceId(), file.getName(), file.getPath(),
                     file.getOwnerId(), file.getStatus(), file.isDirectory()
             );
-            // UploadFileMetadataService/CreateDirectoryService's own same-name pre-check (where
+            // CommitFileUploadService/CreateDirectoryService's own same-name pre-check (where
             // they have one) isn't atomic with this insert, so a concurrent request for the same
             // new name can still slip through between them.
             return fileMapper.mapFileToDomain(saveAndTranslateSlotConflict(entity));
@@ -197,6 +197,27 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
         return fileRepository
                 .findByNamespaceIdAndPathAndNameAndStatusNotIn(namespaceId.value(), path, name, FileStatus.REMOVED)
                 .map(fileMapper::mapFileToDomain);
+    }
+
+    @Override
+    public Optional<File> lockActiveByNamespaceIdAndPathAndName(NamespaceId namespaceId, String path, String name) {
+        return fileRepository
+                .lockByNamespaceIdAndPathAndNameAndStatusNotIn(namespaceId.value(), path, name, FileStatus.REMOVED)
+                .map(fileMapper::mapFileToDomain);
+    }
+
+    @Override
+    public Optional<File> lockById(FileId fileId) {
+        return fileRepository.lockById(fileId.value()).map(fileMapper::mapFileToDomain);
+    }
+
+    @Override
+    public List<File> lockByNamespaceIdAndPathStartingWith(NamespaceId namespaceId, String pathPrefix) {
+        return fileRepository
+                .lockSubtreeByNamespaceIdAndPathPrefix(namespaceId.value(), pathPrefix, escapeLikePattern(pathPrefix))
+                .stream()
+                .map(fileMapper::mapFileToDomain)
+                .toList();
     }
 
     @Override
