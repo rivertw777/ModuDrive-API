@@ -114,11 +114,12 @@ resource "aws_ecs_task_definition" "service" {
 
     # A task that's up but no longer answering gets replaced. busybox wget ships in the alpine image.
     healthCheck = {
-      command     = ["CMD-SHELL", "wget -qO- http://localhost:9464/actuator/health || exit 1"]
-      interval    = 30
-      timeout     = 5
-      retries     = 3
-      startPeriod = 120
+      command  = ["CMD-SHELL", "wget -qO- http://localhost:9464/actuator/health || exit 1"]
+      interval = 30
+      timeout  = 5
+      retries  = 3
+      # The most ECS allows: on demo's quarter vCPU, Spring Boot can take a couple of minutes to start.
+      startPeriod = 300
     }
 
     logConfiguration = {
@@ -158,7 +159,7 @@ resource "aws_ecs_service" "service" {
   }
 
   # Spring Boot takes a while to start — don't let the ALB kill gateway tasks before they're up.
-  health_check_grace_period_seconds = each.key == "gateway" ? 120 : null
+  health_check_grace_period_seconds = each.key == "gateway" ? 300 : null
 
   dynamic "load_balancer" {
     for_each = each.key == "gateway" ? [1] : []
