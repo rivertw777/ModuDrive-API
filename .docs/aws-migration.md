@@ -68,10 +68,15 @@
 ### 2-4. DB: RDS for PostgreSQL
 - 현재 서비스별 DB 4개 + 서비스별 로그인(#355 / PR #358): `member_db`/`member_service`, `file_db`/`file_service`,
   `notification_db`/`notification_service`, `auth_db`/`auth_service`. 로컬은 `.docker/postgres/postgres_init.sh`가 만든다 — **RDS에선 이 DB·로그인을 따로 만들어야 한다**.
-  RDS가 프라이빗이라 Terraform으로는 못 만들고, 같은 스크립트를 **일회성 ECS 태스크**(`modudrive-db-init`, 명령은 출력 `db_init_run_task`)로 한 번 실행한다.
+  RDS가 프라이빗이라 Terraform으로는 못 만들고, 같은 스크립트를 **인스턴스마다 일회성 ECS 태스크**(`modudrive-db-init[-<인스턴스>]`, 명령은 출력 `db_init_run_tasks`)로 한 번씩 실행한다. 태스크마다 `DB_SERVICES`로 그 인스턴스에 둘 DB만 만든다(로컬은 비워 둬서 4개 전부).
   RDS 관리자는 superuser가 아니라서 PostgreSQL 16부터 `CREATE DATABASE ... OWNER <로그인>`이 `must be able to SET ROLE`로 실패한다 — 스크립트가 만든 로그인을 관리자에게 `GRANT`해서 해결(로컬 superuser에도 그대로 동작).
 - 테이블은 각 서비스가 기동할 때 Flyway가 만든다(#359 / PR #360, `.docs/db-migration.md`) — 별도 작업 없음.
-- 크기·Multi-AZ는 규모 프로필(2-12)로 정한다 — `demo`는 db.t4g.micro 단일 AZ, `prod`는 db.m7g.large Multi-AZ. 자동 백업 7일. 그 이상은 Aurora 검토.
+- **인스턴스 구성**은 규모 프로필(2-12)의 `db_instances`로 정한다 — 어느 서비스의 DB를 어느 인스턴스에 둘지까지.
+  - `demo`: 인스턴스 1대(db.t4g.micro, 단일 AZ)에 4개 DB.
+  - `prod`: **서비스마다 1대** — file·auth db.m7g.large, member·notification db.t4g.medium, 전부 Multi-AZ. file-service의 부하(업로드 commit·outbox)가 로그인 경로를 늦추지 않고, 인스턴스마다 크기·장애 조치·업그레이드를 따로 한다.
+  - 어느 쪽이든 서비스마다 자기 DB·로그인만 쓴다(논리 분리는 같고, `prod`는 인스턴스까지 나눈다). 보안 그룹도 인스턴스마다 — 자기 DB가 있는 서비스와 db-init만 들어온다.
+  - 처음 만든 공용 인스턴스는 `file` 이름으로 이어받는다(`moved`, 식별자 `modudrive` 유지). `demo`로 운영하다 `prod`로 바꾸면 member·auth·notification DB를 새 인스턴스로 옮기는 데이터 이전이 필요하다.
+- 자동 백업 7일. 그 이상은 Aurora 검토.
 
 ### 2-5. Redis → ElastiCache for Valkey
 - 용도별 클러스터로 나눈다 (`terraform/redis.tf`, [006 2-4-6](spec/006-resilience-spec.md#2-4-6-redis-분리)). `prod`는 `auth`(세션, 복제본 포함)·`member`·`mail`·`storage` 4개, `demo`는 `auth`(auth·member·mail 공용)·`storage` 2개 — `envs/*.tfvars`의 `redis_clusters`.
@@ -210,10 +215,10 @@ ECS 태스크들 ──OTLP 트레이스──▶ ┌─────────
   | 태스크 위치 | 퍼블릭 서브넷 + 공인 IP (NAT 없음) | 프라이빗 서브넷 + AZ마다 NAT |
   | VPC 인터페이스 엔드포인트 | 없음 (S3 게이트웨이만) | SQS·ECR·logs·SSM·Secrets |
   | ECS | 서비스당 1개, 전부 0.5 vCPU/1 GB, **Fargate Spot** | 사용자 대면 서비스 최소 2개, gateway·auth·file·storage 1 vCPU/2 GB, 일반 Fargate |
-  | RDS | db.t4g.micro, 단일 AZ, 삭제 방지 끔 | db.m7g.large, **Multi-AZ**, 삭제 방지 |
+  | RDS | 1대에 4개 DB — db.t4g.micro, 단일 AZ, 삭제 방지 끔 | **서비스마다 1대** — file·auth db.m7g.large, member·notification db.t4g.medium, 전부 **Multi-AZ**, 삭제 방지 |
   | Valkey | 2개 — `auth`(auth·member·mail 공용)·`storage`, cache.t4g.micro 1노드씩 | 용도별 4개 — `auth` cache.m7g.large 2노드 + 자동 장애 조치, `member`·`mail` cache.t4g.small, `storage` cache.m7g.large ([006 2-4-6](spec/006-resilience-spec.md#2-4-6-redis-분리)) |
   | Container Insights | 끔 | 켬 |
-  | 대략 비용(서울, 트래픽 전) | 월 $100~150 | 최소 태스크 기준 월 $1,300 안팎 — 트래픽에 따라 오토스케일·NAT·로그 비용이 더해진다 |
+  | 대략 비용(서울, 트래픽 전) | 월 $100~150 | 최소 태스크 기준 월 $2,200 안팎 (RDS 4대·Valkey 4개 포함, 대략치) — 트래픽에 따라 오토스케일·NAT·로그 비용이 더해진다 |
 
   - `demo`가 감수하는 것: 네트워크 격리가 보안 그룹에만 의존(인바운드는 여전히 막힘, RDS·Redis는 계속 프라이빗), Spot 회수·재배포 때 잠깐 끊김, Redis 재시작 시 전원 로그아웃.
   - `prod` 숫자는 MAU 500만의 **출발점**이지 측정값이 아니다 — 부하 테스트와 오토스케일링 기록으로 맞춘다.
@@ -224,7 +229,7 @@ ECS 태스크들 ──OTLP 트레이스──▶ ┌─────────
   (아래 모든 명령에 `-var-file=envs/demo.tfvars` 또는 `-var-file=envs/prod.tfvars`)
   1. `terraform apply -target=aws_ecr_repository.service -var image_tag=init` — 저장소만 먼저
   2. 서비스 이미지 7개를 빌드해 같은 태그로 ECR에 푸시 (3장 3단계 CI/CD가 생기면 CI가 한다)
-  3. `terraform apply -target=aws_ecs_task_definition.db_init -var image_tag=<태그>` → 출력 `db_init_run_task` 명령 실행 (DB·로그인 생성, 한 번만)
+  3. `terraform apply -target=aws_ecs_task_definition.db_init -var image_tag=<태그>` → 출력 `db_init_run_tasks`의 명령을 인스턴스마다 실행 (DB·로그인 생성, 한 번만)
   4. `terraform apply -var image_tag=<태그>` — 나머지 전부. 이후 배포는 4번만 반복
 - 운영은 `SPRING_PROFILES_ACTIVE=prod` — `dev`는 테스트 계정 시드(`db/seed`)와 Swagger를 켠다.
 - 트레이스 export는 `MANAGEMENT_TRACING_EXPORT_ENABLED=false`로 꺼 둔다 — 모니터링 단계(2-10)에서 중앙 ADOT를 만들면 지우고 `OTEL_EXPORTER_OTLP_ENDPOINT`를 넣는다.
@@ -256,7 +261,7 @@ ECS 태스크들 ──OTLP 트레이스──▶ ┌─────────
 
 | 보안 그룹 | 허용할 출발지 | 포트 |
 |---|---|---|
-| `rds-sg` | `member-sg`, `file-sg`, `notification-sg`, `auth-sg` (각자 자기 DB 로그인만 가능 — 2-4) | 5432 |
+| `rds-sg` (인스턴스마다) | 그 인스턴스에 DB가 있는 서비스의 보안 그룹만 — `prod`는 서비스마다 자기 인스턴스에만 닿는다 (각자 자기 DB 로그인만 가능 — 2-4) | 5432 |
 | `redis-sg` | `auth-sg`, `member-sg`, `storage-sg`, `mail-sg` | 6379 |
 
 - 관리 포트(9464, actuator·Prometheus)는 중앙 ADOT collector의 보안 그룹에서만 연다 — 예외로 gateway의 9464는 ALB 헬스 체크용으로 `alb-sg`에도 연다. DB 생성 일회성 태스크는 전용 `db-init-sg`로 `rds-sg`에 들어간다. 반대로 ADOT의 `4318`(OTLP)은 서비스 보안 그룹들에서만 연다 (2-10).

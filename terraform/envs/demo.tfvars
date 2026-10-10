@@ -9,9 +9,12 @@ nat                 = false
 interface_endpoints = false # ~$110/month for six endpoints in two AZs; traffic goes out the IGW
 fargate_spot        = true
 container_insights  = false
-db_instance_class   = "db.t4g.micro"
-db_multi_az         = false
 deletion_protection = false # a demo stack gets torn down
+
+# One instance for every service's database (each still its own database and login).
+db_instances = {
+  file = { instance_class = "db.t4g.micro", multi_az = false, clients = ["member", "file", "notification", "auth"] }
+}
 
 # Two clusters: storage-service's uploads stay out of the sessions' memory, everything else shares one.
 redis_clusters = {

@@ -45,12 +45,22 @@ variable "container_insights" {
   type = bool
 }
 
-variable "db_instance_class" {
-  type = string
-}
+# RDS PostgreSQL instances, and the services whose database each one holds (rds.tf). Each service's
+# database (member_db, file_db ...) lives on exactly one instance.
+variable "db_instances" {
+  type = map(object({
+    instance_class = string
+    multi_az       = bool
+    clients        = list(string)
+  }))
 
-variable "db_multi_az" {
-  type = bool
+  validation {
+    condition = (
+      length(flatten([for i in var.db_instances : i.clients])) == length(distinct(flatten([for i in var.db_instances : i.clients])))
+      && toset(flatten([for i in var.db_instances : i.clients])) == toset(["member", "file", "notification", "auth"])
+    )
+    error_message = "member, file, notification and auth each belong to exactly one instance."
+  }
 }
 
 # RDS deletion protection, and a final snapshot when the database is destroyed anyway.

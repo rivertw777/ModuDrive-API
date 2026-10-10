@@ -30,8 +30,6 @@ locals {
     }
   ]...)
 
-  # Data stores: only the services that use them.
-  postgres_clients = ["member", "file", "notification", "auth"]
 }
 
 resource "aws_security_group" "alb" {
@@ -87,20 +85,57 @@ resource "aws_security_group" "db_init" {
   vpc_id      = module.vpc.vpc_id
 }
 
+# One per instance, open only to the services whose database it holds (and db-init): a service can't
+# even reach another's instance.
 resource "aws_security_group" "postgres" {
-  name        = "${var.project}-postgres"
-  description = "RDS PostgreSQL"
+  for_each = var.db_instances
+
+  name        = each.key == "file" ? "${var.project}-postgres" : "${var.project}-postgres-${each.key}"
+  description = "RDS PostgreSQL (${join(", ", each.value.clients)})"
   vpc_id      = module.vpc.vpc_id
 }
 
-resource "aws_vpc_security_group_ingress_rule" "postgres" {
-  for_each = merge(
-    { for name in local.postgres_clients : name => aws_security_group.service[name].id },
-    { db-init = aws_security_group.db_init.id },
-  )
+moved {
+  from = aws_security_group.postgres
+  to   = aws_security_group.postgres["file"]
+}
 
-  security_group_id            = aws_security_group.postgres.id
-  referenced_security_group_id = each.value
+# The rules of the stack's first, shared instance, kept under their new keys (no gap in access).
+moved {
+  from = aws_vpc_security_group_ingress_rule.postgres["member"]
+  to   = aws_vpc_security_group_ingress_rule.postgres["file/member"]
+}
+
+moved {
+  from = aws_vpc_security_group_ingress_rule.postgres["file"]
+  to   = aws_vpc_security_group_ingress_rule.postgres["file/file"]
+}
+
+moved {
+  from = aws_vpc_security_group_ingress_rule.postgres["notification"]
+  to   = aws_vpc_security_group_ingress_rule.postgres["file/notification"]
+}
+
+moved {
+  from = aws_vpc_security_group_ingress_rule.postgres["auth"]
+  to   = aws_vpc_security_group_ingress_rule.postgres["file/auth"]
+}
+
+moved {
+  from = aws_vpc_security_group_ingress_rule.postgres["db-init"]
+  to   = aws_vpc_security_group_ingress_rule.postgres["file/db-init"]
+}
+
+resource "aws_vpc_security_group_ingress_rule" "postgres" {
+  for_each = merge([
+    for instance, cfg in var.db_instances : merge(
+      { for client in cfg.clients : "${instance}/${client}" => { instance = instance, source = aws_security_group.service[client].id } },
+      { "${instance}/db-init" = { instance = instance, source = aws_security_group.db_init.id } },
+    )
+  ]...)
+
+  security_group_id            = aws_security_group.postgres[each.value.instance].id
+  referenced_security_group_id = each.value.source
   ip_protocol                  = "tcp"
   from_port                    = 5432
   to_port                      = 5432

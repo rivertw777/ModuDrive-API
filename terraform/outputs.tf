@@ -4,13 +4,14 @@ output "name_servers" {
   value       = var.domain_name == null ? [] : aws_route53_zone.main[0].name_servers
 }
 
-output "postgres_endpoint" {
-  value = aws_db_instance.postgres.address
+output "postgres_endpoints" {
+  description = "Each RDS instance's address, by instance name (var.db_instances)"
+  value       = { for name, instance in aws_db_instance.postgres : name => instance.address }
 }
 
-output "postgres_master_secret_arn" {
-  description = "Admin password (Secrets Manager, rotated by RDS) — for postgres_init.sh only"
-  value       = aws_db_instance.postgres.master_user_secret[0].secret_arn
+output "postgres_master_secret_arns" {
+  description = "Admin passwords (Secrets Manager, rotated by RDS) — for postgres_init.sh only"
+  value       = { for name, instance in aws_db_instance.postgres : name => instance.master_user_secret[0].secret_arn }
 }
 
 output "redis_hosts" {
@@ -45,11 +46,11 @@ output "ecr_repository_urls" {
   value       = { for name, repo in aws_ecr_repository.service : name => repo.repository_url }
 }
 
-output "db_init_run_task" {
-  description = "Run once after the first apply, before the services can start"
-  value = join(" ", [
+output "db_init_run_tasks" {
+  description = "Run each once after the first apply, before the services can start"
+  value = { for name, task in aws_ecs_task_definition.db_init : name => join(" ", [
     "aws ecs run-task --cluster ${aws_ecs_cluster.main.name} --launch-type FARGATE",
-    "--task-definition ${aws_ecs_task_definition.db_init.family}",
+    "--task-definition ${task.family}",
     "--network-configuration 'awsvpcConfiguration={subnets=[${local.task_subnets[0]}],securityGroups=[${aws_security_group.db_init.id}],assignPublicIp=${local.task_assign_public_ip ? "ENABLED" : "DISABLED"}}'",
-  ])
+  ]) }
 }

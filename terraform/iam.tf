@@ -25,10 +25,10 @@ data "aws_iam_policy_document" "execution_secrets" {
     actions   = ["ssm:GetParameters"]
     resources = ["arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/${var.project}/*"]
   }
-  # db-init reads the RDS admin password RDS keeps in Secrets Manager.
+  # db-init reads the RDS admin passwords RDS keeps in Secrets Manager.
   statement {
     actions   = ["secretsmanager:GetSecretValue"]
-    resources = [aws_db_instance.postgres.master_user_secret[0].secret_arn]
+    resources = [for instance in aws_db_instance.postgres : instance.master_user_secret[0].secret_arn]
   }
 }
 
