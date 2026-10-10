@@ -25,7 +25,9 @@ locals {
         SPRING_DATASOURCE_USERNAME = "${name}_service"
       } : {},
       contains(local.redis_clients, name) ? {
-        REDIS_HOST        = aws_elasticache_replication_group.redis.primary_endpoint_address
+        REDIS_HOST = (name == "storage"
+          ? aws_elasticache_replication_group.storage_redis.primary_endpoint_address
+        : aws_elasticache_replication_group.redis.primary_endpoint_address)
         REDIS_PORT        = "6379"
         REDIS_SSL_ENABLED = "true"
       } : {},
@@ -38,8 +40,8 @@ locals {
           STORAGE_S3_BUCKET                  = aws_s3_bucket.storage.bucket
           STORAGE_S3_REGION                  = var.region
           STORAGE_BLOCK_SIZE                 = "4194304"
-          STORAGE_MULTIPART_MAX_FILE_SIZE    = "25MB"
-          STORAGE_MULTIPART_MAX_REQUEST_SIZE = "25MB"
+          STORAGE_MULTIPART_MAX_FILE_SIZE    = "5MB"
+          STORAGE_MULTIPART_MAX_REQUEST_SIZE = "9MB"
         }
         mail = { CLIENT_URL = local.client_url, MAIL_FROM = local.mail_from }
       }, name, {}),

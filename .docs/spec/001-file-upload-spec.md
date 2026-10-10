@@ -1,450 +1,239 @@
 # 파일 업로드 스펙
 
-이 문서는 파일·폴더 업로드가 어떤 규칙으로 동작하는지 정의합니다.
+이 문서는 파일 업로드가 어떻게 동작하는지 정의합니다.
 
 ⚠️ 이 문서가 기준입니다. 코드가 이 문서와 다르면 코드를 고치고, 동작을 바꾸려면 이 문서를 먼저 고칩니다.
 
-> **구현 상태 (2026-09-23)**
-> - API: 배치 생성(3·4장)과 0바이트 수정(7장)은 rivertw777/ModuDrive-API#405에서 구현했습니다 (브랜치 `feature/405-batch-upload-api`). 나머지 장은 기존 소스 그대로입니다.
-> - WEB: 9장은 rivertw777/ModuDrive-WEB#207에서 구현했습니다 (브랜치 `feature/207-folder-upload`). 그 브랜치가 dev에 합쳐지기 전까지 WEB은 [부록 A](#부록-a-web-207-이전-동작)대로 동작합니다. 파일마다 `POST /api/v1/files/metadata`를 호출하고, 폴더 업로드는 지원하지 않습니다.
->
-> 기준 소스: API file-service `UploadBatchService`, `UpdateFileStatusService` / storage-service `SimpleUploadController`, `*ResumableUploadController`, `UploadChunkController`, `SimpleUploadService`, `*ResumableUpload*Service`, `UploadChunkService`, `InMemoryUploadSessionStore`, `S3StorageAdapter` · WEB `features/drive/api/upload-file.ts`, `hooks/use-file-upload.ts`, `components/upload-dropzone.tsx`, `upload-button.tsx`
+> 참고: [Dropbox — Streaming File Synchronization](https://dropbox.tech/infrastructure/streaming-file-synchronization).
 
 ---
 
 ## 목차
 
-- [1. 용어](#1-용어)
-- [2. 전체 흐름](#2-전체-흐름)
-- [   - 통과하면 **바로 패널에 줄을 추가**합니다. 앞서 고른 업로드가 아직 진행 중이면, 이번 선택은 그것이 끝난 뒤에 이어서 올라갑니다 (대기열). 선택 사이에도 바이트는 한 파일씩 보내고, 충돌 선택창도 한 번에 한 배치만 띄우기 위함입니다.
-3. 배치 생성](#3-배치-생성)
-- [4. 이름 충돌](#4-이름-충돌)
-- [5. 바이트 전송](#5-바이트-전송)
-- [6. 저장 방식](#6-저장-방식)
-- [7. 완료 콜백](#7-완료-콜백)
-- [8. 실패 처리](#8-실패-처리)
-- [9. WEB](#9-web)
-- [10. 제한값](#10-제한값)
-- [11. API 요약](#11-api-요약)
-- [12. 시나리오 검증](#12-시나리오-검증)
-- [13. 알려진 문제](#13-알려진-문제)
-- [14. TODO](#14-todo)
-- [부록 A. WEB #207 이전 동작](#부록-a-web-207-이전-동작)
+- [1. 구성 요소](#1-구성-요소)
+- [2. 파일 업로드](#2-파일-업로드)
+  - [2-1. 이어 올리기](#2-1-이어-올리기)
+  - [2-2. 폴더 업로드](#2-2-폴더-업로드)
 
 ---
 
-## 1. 용어
+## 1. 구성 요소
 
-| 용어 | 뜻 |
+| 구성 요소 | 역할 |
 |---|---|
-| **배치** | 사용자가 한 번에 고른 묶음. 파일 선택창에서 여러 개 고른 것, 폴더 하나를 고른 것, 드래그앤드롭으로 한 번에 놓은 것이 각각 배치 하나 |
-| **최상위 항목** | 배치에서 사용자가 직접 고른 파일·폴더. 폴더 안의 하위 항목은 최상위 항목이 아님 |
-| **배치 생성** | 배치의 폴더 트리와 파일 행을 file-service에 **요청 하나로** 만드는 것. 파일은 `PENDING`으로 생기고 `fileId`를 받음 |
-| **간단 업로드** | 20MB 이하 파일 — multipart 요청 1번으로 전송 |
-| **이어 올리기(resumable)** | 20MB 초과 파일 — 4MB 청크로 나눠 전송 후 complete 호출. 청크는 받는 즉시 S3에 저장되고, 끊기면 **받지 못한 청크만** 다시 보냄 (5장) |
-| **완료 콜백** | storage-service가 저장을 끝낸 뒤 file-service에 알려 `UPLOADED`로 바꾸는 서버 간 호출 |
+| **WEB** | 파일을 블록으로 나눠 서버에 없는 블록만 보낸다 |
+| **gateway-service** | 세션을 확인하고 요청을 서비스로 넘긴다 |
+| **file-service** | 파일·버전 메타데이터를 관리하고 업로드를 확정한다 |
+| **storage-service** | 블록을 S3에 저장한다 |
+| **S3** | 블록 저장 |
+| **Redis** | 아직 확정되지 않은 블록 기록 (세션과 다른 storage 전용 Redis, [006 2-4-6](006-resilience-spec.md#2-4-6-redis-분리)) |
+| **file_db** | 파일·버전·블록 메타데이터 저장 |
 
-## 2. 전체 흐름
+---
 
-원칙은 **"메타데이터는 한 번에, 바이트는 파일마다 따로"**입니다.
+## 2. 파일 업로드
 
-```
-① 배치 생성   POST /api/v1/files/batch   — 폴더 트리 + 파일 행을 한 트랜잭션으로 생성
-              └ 409 (파일 이름 충돌) → 사용자 선택을 담아 ① 재요청
-② 바이트 전송  파일마다 간단 업로드(≤20MB) / 이어 올리기(>20MB)  — 한 파일씩 순서대로
-③ 완료 콜백   storage-service → file-service  — 파일별 UPLOADED
-```
+파일은 **4MB 블록의 해시 목록(blocklist)** 이다. WEB이 해시 목록으로 commit하면 file-service가 서버에 없는 블록을 알려 주고, WEB은 그것만 보낸 뒤 다시 commit한다. 크기에 따른 업로드 방식 구분은 없다.
 
-```
-클라이언트                        file-service                 storage-service              S3
-   │ ① POST /files/batch     ──▶ 폴더 UPLOADED, 파일 PENDING 생성, fileId 목록 반환
-   │ ② 파일마다 바이트 전송 ─────────────────────────────────▶ 블록 분할·압축·암호화 ──▶ put
-   │                              ③ PUT /internal/files/{id}/uploaded ◀── 완료 콜백
-   │                                 file_version 생성, UPLOADED
-   │ ◀────────────────────────────────────────────────── ② 응답 (콜백까지 끝난 뒤)
-```
+파일 행은 **commit이 버전을 만들 때** 생긴다. 그 전의 batch는 이름 충돌만 조회하고 아무것도 만들지 않는다. 그래서 업로드가 끝나지 않은 파일(`PENDING`)이 목록에 남지 않는다. 폴더를 올릴 때는 [2-2](#2-2-폴더-업로드)를 따른다.
 
-- ①은 **모두 만들거나 하나도 만들지 않습니다.** 폴더 트리가 절반만 생기는 일은 없습니다.
-- ②·③에서 파일 하나가 실패하면 **그 파일만 실패**합니다. 폴더와 다른 파일은 남습니다 (부분 성공).
-- 파일 하나만 올려도 배치 생성을 씁니다 (업로드 경로를 하나로 통일).
-- 클라이언트는 완료를 위해 따로 호출하지 않습니다. ②의 응답이 오면 ③까지 끝난 것입니다.
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as 사용자 (WEB)
+    participant F as file-service
+    participant S as storage-service
+    participant R as Redis
+    participant S3 as S3
 
-## 3. 배치 생성
+    Note over U,S: WEB의 요청은 모두 gateway-service를 거친다 (세션 확인 후 X_USER_ID 붙임)
+    U->>U: 고르자마자 파일마다 4MB로 자르고 블록마다 SHA-256 (Worker 풀, 아래 요청과 동시에)
+    U->>F: POST /api/v1/files/batch
+    F->>F: 이름 충돌 조회 (행은 만들지 않음)
+    F-->>U: 항목마다 올라갈 경로·이름 (409면 충돌 선택 후 재요청)
 
-`POST /api/v1/files/batch` (file-service, 로그인 필요)
+    loop 파일 묶음마다 (최대 100개, 해시 합 1,280개, 256MB 넘는 파일은 혼자)
+        U->>F: POST /api/v1/files/commit {files: [{path, name, uploadId, size, blocklist}, …]}
+        F->>F: 묶음 전체의 block 행 조회 한 번 (잠그지 않음)
+        F->>S: POST /internal/storage/blocks/uploaded (block 행에 없는 해시만, 한 번)
+        S->>R: MGET uploaded-block:{ownerId}:{hash}
+        S-->>F: 올라온 블록의 크기
+        F->>F: 블록이 다 있는 파일마다 짧은 트랜잭션:<br/>block 행 잠금 후 다시 확인, 파일 행 생성,<br/>참조 수 +1, 버전 저장, 파일 UPLOADED
+        F-->>U: 200 {results: [파일마다 needBlocks 또는 fileId·versionId 또는 error]}
 
-### 요청
-
-```json
-{
-  "path": "/업무",
-  "items": [
-    { "relativePath": "사진",              "directory": true },
-    { "relativePath": "사진/빈폴더",        "directory": true },
-    { "relativePath": "사진/2024/a.jpg",   "directory": false, "size": 1200000 },
-    { "relativePath": "보고서.pdf",         "directory": false, "size": 31457280 }
-  ],
-  "resolutions": { "보고서.pdf": "REPLACE" }
-}
-```
-
-| 필드 | 설명 |
-|---|---|
-| `path` | 올릴 대상 폴더의 전체 경로. 루트는 `/` |
-| `items[].relativePath` | 대상 폴더 기준 상대 경로. `/`로 구분하며 앞뒤 `/`는 없음 |
-| `items[].directory` | 폴더 여부 |
-| `items[].size` | 파일 크기(바이트). 파일이면 필수, 폴더면 무시 |
-| `resolutions` | 선택. 충돌한 **최상위 파일 이름** → `REPLACE` / `KEEP_BOTH` / `SKIP` (4장) |
-
-### 검증
-
-아래 중 하나라도 걸리면 **아무것도 만들지 않습니다.**
-
-| 조건 | 에러 |
-|---|---|
-| 네임스페이스 없음 | `404 NAMESPACE_NOT_FOUND` |
-| `path`가 `/`가 아닌데 호출자 드라이브에 그 경로의 **활성 폴더**가 없음. 정규형이 아닌 표기(`//업무`, `/업무/`, `업무`)도 포함 — 그대로 저장되면 어느 목록에도 안 보이는 행이 생기므로 | `404 DIRECTORY_NOT_FOUND` |
-| `items`가 비었거나 **5,000개 초과** | `400` |
-| `relativePath`가 **255자 초과** (깊이 폭주 방지를 겸함) | `400` |
-| `relativePath`의 경로 조각 하나라도 이름 규칙 위반 (빈 조각, `/`·`\`, `.`, `..`) — `FileName`과 같은 규칙 | `400 INVALID_BATCH_ITEM` |
-| 같은 `relativePath`가 두 번 나옴 | `400 INVALID_BATCH_ITEM` |
-| 같은 경로가 파일이면서 다른 항목의 상위 폴더로도 쓰임 (`a.txt`와 `a.txt/b`) | `400 INVALID_BATCH_ITEM` |
-| 파일 `size`가 없거나, 0보다 작거나, **5GB 초과** | `400` / `400 INVALID_BATCH_ITEM` |
-| 만들어질 이름이나 부모 경로가 **255자 초과** (`name`·`path` 컬럼 길이). 번호가 붙어 넘는 경우 포함 | `400 INVALID_BATCH_ITEM` |
-| `resolutions` 값이 null이거나 모르는 값 | `400` |
-
-- 공유받은 폴더로는 올릴 수 없습니다. `path`는 항상 호출자 자신의 드라이브로 해석합니다.
-
-### 생성 규칙
-
-- **중간 폴더는 명시하지 않아도 만듭니다.** `사진/2024/a.jpg`만 보내도 `사진/`, `사진/2024/`가 생깁니다.
-- **빈 폴더**는 `directory: true` 항목으로 보내면 만듭니다.
-- 폴더는 `UPLOADED`로, 파일은 `PENDING`으로 만듭니다. 접근 범위는 `RESTRICTED`입니다.
-- 최상위 이름이 충돌로 바뀌면(4장) **하위 항목의 경로도 바뀐 이름을 따라갑니다.** 예: `사진`이 `사진 (1)`이 되면 `사진/2024/a.jpg`는 `/업무/사진 (1)/2024`에 생깁니다.
-- 새로 만들거나 대체한 **파일**은 최근 문서함에 기록합니다 (폴더는 기록하지 않음).
-  - 같은 트랜잭션 안에서 한 번에 기록합니다. 파일마다 따로 트랜잭션을 열면 5,000개에 약 70초가 걸렸습니다.
-  - 새로 만든 파일은 기록 행의 유니크 제약에 걸릴 수 없으므로, 이 기록 때문에 배치가 실패하는 일은 사실상 없습니다.
-- 새 행은 한 번에 insert합니다 (`saveNewFiles` + Hibernate JDBC 배치 100). 로컬에서 5,000개 배치가 약 2초 걸립니다.
-- 검증을 마친 뒤 생성하기 전에 다른 요청이 같은 이름을 먼저 차지하면, DB 유니크 제약이 걸려 `400 FILE_ALREADY_EXISTS`로 **전체 롤백**됩니다. 클라이언트가 같은 요청을 다시 보내면 409 충돌 목록을 받습니다.
-
-### 응답 (200)
-
-```json
-{
-  "items": [
-    { "relativePath": "사진",            "fileId": "…", "name": "사진 (1)",   "path": "/업무",             "directory": true,  "replaced": false },
-    { "relativePath": "사진/빈폴더",      "fileId": "…", "name": "빈폴더",     "path": "/업무/사진 (1)",     "directory": true,  "replaced": false },
-    { "relativePath": "사진/2024",       "fileId": "…", "name": "2024",      "path": "/업무/사진 (1)",     "directory": true,  "replaced": false },
-    { "relativePath": "사진/2024/a.jpg", "fileId": "…", "name": "a.jpg",     "path": "/업무/사진 (1)/2024", "directory": false, "replaced": false },
-    { "relativePath": "보고서.pdf",       "fileId": "…", "name": "보고서.pdf", "path": "/업무",             "directory": false, "replaced": true  }
-  ]
-}
+        opt needBlocks가 있는 파일이 있음
+            loop 묶음 전체의 needBlocks (중복 없이), 요청당 8MB·64개 이하
+                U->>S: POST /api/v1/storage/blocks (multipart: hash + block 여러 개)
+                S->>S: 블록마다 크기 ≤ 4MB, SHA-256(받은 바이트) == hash 확인
+                S->>R: 블록마다 ZADD uploaded-blocks (정리 대상)
+                S->>S3: PUT blocks/{ownerId}/{hash} (GZIP → AES-GCM)
+                S->>R: SET uploaded-block:{ownerId}:{hash} 크기 (24시간)
+            end
+            U->>F: POST /api/v1/files/commit (needBlocks가 있던 파일만, 같은 내용으로 다시)
+            F-->>U: 200 {results: [파일마다 fileId·versionId]}
+        end
+    end
 ```
 
-- **만들어진 모든 항목**을 부모부터 순서대로 돌려줍니다 (자동으로 만든 중간 폴더 포함).
-  - `relativePath`는 **요청에서 쓴 원래 경로**입니다. 클라이언트는 이 값으로 자기 File 객체와 `fileId`를 연결합니다.
-  - `name`·`path`는 실제로 생성된 위치입니다.
-- `SKIP`한 파일은 응답에 없습니다.
-- `replaced: true`는 기존 파일을 대체한 경우입니다. `fileId`는 기존 파일의 것이고, 새 버전으로 올라갑니다.
+1. **충돌 조회** — `POST /api/v1/files/batch`. 고른 항목 전체의 이름 충돌을 확인한다. **행은 만들지 않는다.**
+   - 선택하지 않은 충돌이 있으면 409 `FILE_BATCH_CONFLICT` + 충돌한 이름 목록. 사용자가 `REPLACE`/`KEEP_BOTH`/`SKIP`을 고르면 `resolutions`에 담아 다시 보낸다.
+   - 200이면 항목마다 실제로 올라갈 `path`·`name`(`KEEP_BOTH`면 번호 붙은 이름)과 `replaced`(같은 이름의 기존 파일을 대체하면 true, 그 파일의 `fileId`)를 돌려준다. `SKIP`한 항목은 빠진다.
+   - 조회일 뿐이라 그 사이 다른 업로드가 같은 이름을 차지할 수 있다. 그때는 commit이 그 자리의 파일에 새 버전을 올린다 (아래 3번).
+2. **해시 계산·묶기** — 파일마다 4MB씩 잘라(마지막 블록만 작음) 블록마다 SHA-256을 계산한다 (`crypto.subtle.digest`). 순서대로 늘어놓은 해시가 그 파일의 blocklist다.
+   - **파일을 고르자마자** 계산을 시작한다. 1번 batch 요청과 충돌 선택 대화상자를 기다리는 동안 해시가 돌아, 그 시간이 통째로 숨는다.
+   - 해시는 **Web Worker 풀**(코어 수만큼, 최대 8개)에서 계산한다. 블록 16개(64MB)씩 나눠 여러 Worker에 돌리므로 큰 파일도 코어 수만큼 빨라지고, 그동안 화면이 멈추지 않는다. Worker 하나는 블록 하나만 메모리에 둔다.
+   - 고른 순서대로 계산하므로, 앞 묶음을 보내는 동안 뒤 묶음의 해시가 계속 계산된다.
+   - WEB이 파일을 **묶음**(최대 100개, blocklist 길이 합 1,280개 이하)으로 나눈다. **256MB(블록 64개)를 넘는 파일은 혼자 한 묶음**이다. 묶음 안의 파일은 블록 전송이 다 끝나야 같이 완료되므로, 작은 파일이 큰 파일의 전송을 기다리지 않게 한다.
+   - 파일을 읽지 못하면(도중에 삭제됨, 권한 없음) **그 파일만** 실패하고 나머지는 그대로 올린다.
+3. **commit** — `POST /api/v1/files/commit`에 묶음의 파일 전부를 한 번에 보낸다. 파일마다 1번의 `path`·`name`, `uploadId`(이번 업로드 시도마다 새 UUID), `size`, `blocklist`.
+   - 블록 조회는 **묶음 전체에 한 번씩**만 한다. 이미 commit된 블록은 file_db `block` 테이블로, 올라왔지만 아직 commit되지 않은 블록은 storage-service에 묻는다 (Redis 표시).
+   - 이 조회는 **DB 트랜잭션 밖에서** 한다. storage-service가 느려도 file-service가 DB 커넥션·잠금을 잡고 기다리지 않는다 ([006 2-4](006-resilience-spec.md#2-4-s3-호출-storage-service)).
+   - storage-service에는 `block` 테이블에 없는 해시가 있을 때만 묻는다. 이미 있는 파일만 올리면 묻지 않는다.
+   - 그 조회가 실패하면(서킷 열림, 시간 초과) 요청 전체를 실패시키지 않는다. 이미 commit된 블록만으로 된 파일은 버전을 만들고, 나머지 파일만 그 503을 `error`로 답한다.
+   - 응답 `results`는 요청 순서 그대로, 파일마다 셋 중 하나다.
+     - `needBlocks`: 서버에 없는 블록. 이 파일은 **아무것도 만들지 않았다.**
+     - `fileId`·`versionId`: 버전을 만들었다. 블록이 다 있던 파일은 여기서 끝난다 (0바이트 전송).
+     - `error` (`status`·`message`): 이 파일만 실패했다 (아래 commit 검증). 다른 파일에는 영향이 없다.
+   - 버전은 **파일마다 따로 짧은 트랜잭션**으로 만든다. 그 안에서 `block` 행을 잠가(commit이 끝날 때까지 참조 없는 블록 정리가 지우지 못하게) 다시 확인한다. 그 사이 정리 작업이 블록을 지웠으면 그 블록을 `needBlocks`로 답한다.
+   - 버전을 만들 때 그 경로·이름에 파일이 있으면 그 파일의 새 버전이 된다 (대체). 없으면 파일 행을 새로 만든다. 만든·대체한 파일은 최근 문서함에 기록한다.
+4. **블록 전송** (needBlocks가 있을 때만) — WEB이 묶음 전체의 `needBlocks`를 **중복 없이** 모아(여러 파일에 같은 블록이 있어도 한 번), `POST /api/v1/storage/blocks` 한 번에 여러 개씩 보낸다 (요청당 합 8MB·64개 이하). multipart로 `hash`와 `block`을 같은 순서로 반복한다.
+   - storage-service는 블록마다 **정리 대상 등록(ZADD) → S3 PUT → 업로드 표시(SET)** 순서로 한다.
+     - 표시(SET)는 반드시 PUT이 성공한 뒤다. 먼저 하면 S3에 없는 블록으로 commit이 성공해 파일이 깨진다.
+     - 정리 대상 등록은 PUT보다 먼저다. PUT 뒤에 하면, PUT은 됐는데 Redis가 실패한 블록이 정리 대상에도 안 올라 S3에 영구히 남는다. 등록만 되고 PUT이 실패한 블록은 정리 작업이 없는 객체를 지우는 것으로 끝난다.
+   - 요청은 **동시에 3개까지** 보낸다. 요청마다 왕복 시간을 기다리지 않고, storage-service 업로드 자리([006 2-4-4](006-resilience-spec.md#2-4-4-벌크헤드))는 다른 사용자에게 남긴다.
+   - 요청 하나가 재시도까지 실패하면 새 요청은 시작하지 않는다. 그때 블록이 빠진 파일만 실패하고, 블록이 다 간 파일은 다시 commit한다.
+   - storage-service는 블록마다 받은 바이트의 해시를 **다시 계산**해 함께 온 해시와 다르면 거절한다. 클라이언트가 보낸 해시는 믿지 않는다.
+   - 요청 하나의 블록을 **전부 확인한 뒤에** 저장한다. 하나라도 잘못되면 아무것도 저장하지 않는다.
+   - 해시가 다르거나 빈 블록, `hash`와 `block` 개수가 다름: 400 `INVALID_BLOCK`
+   - 블록 하나가 4MB 초과: 413 `BLOCK_TOO_LARGE`. 요청 합이 8MB 초과이거나 64개 초과: 413 `BLOCK_BATCH_TOO_LARGE`
+   - S3 장애(서킷 열림)이거나 동시 업로드 자리가 가득 참: 503 `STORAGE_UNAVAILABLE` — 기다리지 않고 바로 답한다. WEB이 자동으로 다시 보낸다 ([006 2-4](006-resilience-spec.md#2-4-s3-호출-storage-service)). 요청 중간에 실패하면 일부 블록만 저장됐을 수 있지만, 다시 보내면 덮어쓰므로 무해하다
+   - 사용자당 24시간에 블록 25,600개(4MB 기준 100GB) 초과: 429 `UPLOAD_LIMIT_EXCEEDED` (`STORAGE_UPLOAD_BLOCKS_PER_WINDOW`). 블록 하나마다 센다. commit되지 않은 블록은 용량 한도에 잡히지 않으므로, 이 한도가 없으면 S3와 Redis를 무한히 채울 수 있다. WEB은 이 429를 **다시 보내지 않는다** — 업로드 경로의 429는 이것뿐이고, 24시간 창이라 몇 초 뒤 다시 보내도 같다
+5. **다시 commit** (needBlocks가 있던 파일만) — 그 파일들을 같은 내용으로 한 번에 다시 보낸다. 빠진 블록이 없으면 파일마다 버전을 만든다. 그래도 빠진 블록이 있거나(그 사이 24시간이 지난 경우) 블록 전송이 끝내 실패한 파일은 WEB이 실패로 표시한다.
+6. **응답** — commit 응답(`fileId`, `versionId`)이 곧 완료다. storage-service → file-service 완료 콜백은 없다.
 
-## 4. 이름 충돌
+**호출 수** (batch 1번 제외)
 
-사용자에게 묻는 충돌은 **최상위 항목에서만** 생깁니다.
-- 하위 항목은 새로 만드는 폴더 안에 들어가므로 충돌할 수 없습니다. 예외는 최상위 폴더에 `REPLACE`(병합)를 고른 경우로, 아래 [폴더 병합](#폴더-병합)을 따릅니다.
-- 충돌 기준은 **같은 네임스페이스·같은 경로·같은 이름의 활성 항목**입니다 (DB 유니크 `uk_file_namespace_path_active_name`). 휴지통 항목은 충돌로 보지 않습니다.
-
-| 최상위 항목 | 기존 항목 | 동작 |
+| 경우 | 파일마다 따로 | 묶음 |
 |---|---|---|
-| 파일 | 파일 | `resolutions`에 선택이 있으면 그대로 처리. 없으면 **409** |
-| 폴더 | 폴더 | 파일과 같음. 선택이 있으면 그대로 처리, 없으면 **409** |
-| 폴더 ↔ 파일 (종류가 다름) | | 묻지 않고 **번호 붙임** |
+| 새 작은 파일 1,000개 (각 10KB) | 약 3,000번 | commit 10 + 블록 2 + commit 10 = 약 22번 |
+| 새 30MB 파일 1개 | commit 2 + 블록 8 = 10번 | commit 2 + 블록 4 = 6번 |
+| 이미 있는 파일 100개 | commit 100번 | commit 1번 |
+| 빈 폴더 1,000개 | 폴더 생성 1,000번 | commit 1번 ([2-2](#2-2-폴더-업로드)) |
 
-### 409 응답
+**commit 검증** (file-service)
 
-선택이 없는 충돌이 **하나라도** 있으면 아무것도 만들지 않고, 충돌한 이름을 **전부 모아** 한 번에 돌려줍니다.
+요청 전체가 실패하는 경우:
 
-```
-409 FILE_BATCH_CONFLICT  "같은 이름의 항목이 이미 있습니다."
-data: { "conflicts": ["보고서.pdf", "a.txt"] }
-```
-
-### 선택
-
-| 값 | 동작 |
+| 확인 | 실패 |
 |---|---|
-| `REPLACE` | 파일: 소유자인지 확인한 뒤 기존 파일을 `PENDING`으로 되돌림(`restartUpload`) → 같은 `fileId`로 새 버전 업로드. 파일 ID·공유 설정·이전 버전 유지. 폴더: 소유자인지 확인한 뒤 기존 폴더에 **병합** (아래) |
-| `KEEP_BOTH` | 번호를 붙여 새 항목으로 만듦 |
-| `SKIP` | 그 항목(폴더면 하위 전체)을 배치에서 뺌 |
+| 네임스페이스 있음 | 404 `NAMESPACE_NOT_FOUND` |
+| 파일 0~100개, 폴더 0~1,000개, 합쳐 1개 이상, 해시 형식 (소문자 hex 64자), 파일 하나의 해시 1,280개 이하 | 400 (요청 검증) |
+| 묶음 전체의 해시 합 1,280개 이하 | 400 `COMMIT_TOO_LARGE` |
 
-- 충돌하지 않은 이름에 대한 `resolutions` 항목은 무시합니다.
-- 대체 중에는 `currentVersionId`·`fileSize`를 새 버전이 올라올 때까지 그대로 두므로, **이전 버전은 계속 열고 받을 수 있습니다.**
+파일 하나만 실패하는 경우 (`results[i].error`):
 
-### 폴더 병합
+| 확인 | 실패 |
+|---|---|
+| `path`가 `/` 또는 정규형 절대 경로, `name`이 이름 규칙에 맞음, 둘 다 255자 이하 | 400 `INVALID_BATCH_ITEM` |
+| `uploadId`로 만든 버전이 있다면 호출자의 것 | 400 `INVALID_BLOCKLIST` |
+| `size` ≤ 5GB | 413 `FILE_TOO_LARGE` |
+| `blocklist` 길이 = `ceil(size / 4MB)` (빈 파일은 0) | 400 `INVALID_BLOCKLIST` |
+| 마지막을 뺀 블록은 모두 정확히 4MB, 마지막은 1바이트~4MB, 합 = `size` | 400 `INVALID_BLOCKLIST` — 크기는 `block` 행·Redis 표시에 저장된 실제 값 |
+| 그 자리에 폴더가 없음 (버전을 만들 때만) | 400 `FILE_ALREADY_EXISTS` |
 
-구글 드라이브의 "기존 폴더 대체"와 같습니다. 기존 폴더를 지우고 새로 만드는 것이 **아니라**, 기존 폴더를 그대로 두고 그 안에 합칩니다. 그래서 폴더 ID·공유 설정이 바뀌지 않습니다.
+- **같은 `uploadId`로 이미 버전이 있으면** 그 버전을 그대로 돌려준다. 응답이 유실된 commit을 다시 보내도 버전이 둘 생기지 않는다 (`file_version.upload_id` unique).
+- 같은 해시를 다시 보내면 그냥 덮어쓴다. 내용이 같으므로 무해하다.
+- storage-service 메모리는 요청당 블록 합 8MB까지 쓴다 (multipart 한도 `STORAGE_MULTIPART_MAX_REQUEST_SIZE` 9MB).
+- 파일 하나가 실패해도 그 파일만 실패한다. 이미 commit된 다른 파일은 남는다.
+- commit은 호출자 자신의 드라이브에만 쓴다 (공유받은 폴더로는 올릴 수 없다).
+- 같은 파일을 다른 폴더에 또 올리면 `needBlocks`가 비어 **0바이트 전송**으로 끝난다. 블록은 소유자별로 저장하므로(`blocks/{ownerId}/{hash}`) 중복 제거도 같은 사용자 안에서만 된다.
+- 빈 파일은 블록 없이(`blocklist: []`) 한 번의 commit으로 끝난다.
+- **대체 업로드**도 같은 흐름이다. 이름 충돌에서 대체를 고르면 1번이 기존 파일의 `path`·`name`을 그대로 돌려주고, commit이 그 파일의 새 버전을 만든다.
+  - 이전 버전과 같은 블록은 이미 있으므로 **바뀐 블록만** `needBlocks`로 나온다. 내용이 같으면 0바이트 전송이다.
+  - 이전 버전은 그대로 남고 블록을 공유한다. 새 버전이 commit되기 전까지는 이전 버전이 열린다.
+  - 블록 경계가 고정 4MB라서 **앞쪽에 바이트를 끼워 넣으면** 뒤 블록이 전부 밀려 다 다시 올라간다. 덮어쓰기·뒤에 덧붙이기에서만 이득이 있다 (Dropbox도 같은 한계).
 
-병합되는 폴더 안의 각 항목은 이렇게 처리합니다 (하위 폴더로 재귀).
+### 2-1. 이어 올리기
+
+서버에 업로드 세션이 없다. **다시 commit하는 것이 곧 "어디까지 받았나" 조회**다.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as 사용자 (WEB)
+    participant F as file-service
+    participant S as storage-service
+
+    U->>F: commit [h1..h10]
+    F-->>U: needBlocks [h1..h10]
+    alt 블록 전송 중 끊김
+        U->>S: 블록 h1 ~ h6 ✅
+        U--xS: 블록 h7 ❌ 끊김
+        Note over U: 재시도 (자동 재시도, 또는 파일을 다시 골라 대체로 올림)
+        U->>F: commit [h1..h10]
+        F-->>U: needBlocks [h7..h10]
+        U->>S: 블록 h7 ~ h10
+        U->>F: commit [h1..h10]
+        F-->>U: 버전 생성
+    else 블록을 다 보낸 뒤 다시 commit에서 끊김
+        U->>S: 블록 h1 ~ h10 ✅
+        U--xF: commit [h1..h10] ❌ 끊김
+        Note over U: 재시도
+        U->>F: commit [h1..h10]
+        F-->>U: 버전 생성 (needBlocks 없음, 전송 없음)
+    end
+```
+
+- 블록 전송·commit이 네트워크 오류나 5xx로 실패하면 1초/2초/4초 간격으로 3번 다시 보낸다. 간격마다 0~50% 지터를 더해, S3가 복구되는 순간 모든 클라이언트가 같은 박자로 몰리지 않게 한다. 4xx(429 포함)는 다시 보내지 않는다.
+- 끝내 실패한 파일을 다시 고르면 해시를 다시 계산하고 commit한다. 이미 받은 블록은 건너뛰고, 블록을 다 받은 상태였다면 그 commit 한 번으로 버전이 생긴다. WEB이 `localStorage`에 기억할 것이 없다.
+- 올라온 블록은 **24시간** 안에 commit해야 한다. 그 뒤에는 Redis 표시가 사라져 `needBlocks`에 다시 나온다. commit되지 않은 채 남은 블록은 storage-service 정리 작업(1시간마다)이 올라온 지 25시간 뒤 지운다 — 그 사이 다른 업로드가 commit한 블록이면 file-service에 물어 보고 남긴다.
+- storage-service가 여러 대이거나 재시작돼도 상관없다. 상태가 S3·Redis·file_db에만 있다.
+
+### 2-2. 폴더 업로드
+
+폴더를 고르면(또는 끌어다 놓으면) 그 안의 파일 전체가 2장 흐름으로 올라간다. 파일을 commit할 때 없는 상위 폴더가 같이 생기고, 파일이 없는 폴더만 마지막 commit에 `directories`로 보낸다.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as 사용자 (WEB)
+    participant F as file-service
+
+    U->>F: POST /api/v1/files/batch {사진/, 사진/2024/a.jpg, 사진/빈폴더/}
+    F-->>U: 항목마다 path·name (중간 폴더 포함, 상위부터)
+    U->>F: POST /api/v1/files/commit {path: /사진/2024, name: a.jpg, …}
+    F->>F: 없는 /사진, /사진/2024 폴더를 위에서부터 만들고 a.jpg 버전 생성
+    F-->>U: fileId, versionId
+    Note over U: 파일을 다 올린 뒤
+    U->>F: POST /api/v1/files/commit {directories: [{path: /사진, name: 빈폴더}]}
+    F-->>U: directories: [{fileId}]
+```
+
+1. **충돌 조회** — batch에 폴더와 그 안의 파일을 상대 경로로 모두 보낸다 (최대 5,000개 — 넘으면 400이고, WEB은 보내기 전에 "한 번에 5,000개까지" 안내로 거절한다. 나눠 보내지 않는다). 응답에는 요청에 없던 **중간 폴더도 상위부터** 들어 있다. 충돌은 **최상위 항목만** 묻는다. 그 아래는 새로 만들 폴더 안이라 겹칠 수 없다.
+2. **파일 commit** — 2장 그대로다. 버전을 만들 때 `path`의 폴더가 없으면 **위에서부터** 만든다. 같은 묶음의 다음 파일은 그 폴더를 그대로 쓴다.
+   - 상위 경로 중간에 같은 이름의 **파일**이 있으면 400 `FILE_ALREADY_EXISTS` (그 파일만 실패).
+3. **남은 폴더** — 파일이 하나도 없는 폴더(빈 폴더)나 안의 파일이 전부 실패한 폴더는 파일 commit으로 생기지 않는다. WEB이 파일을 다 올린 뒤, 1번 응답의 폴더 중 아직 없는 것을 commit의 `directories`(`path`·`name`, 요청당 1,000개까지)로 한 번에 보낸다.
+   - 파일과 같은 규칙이다. 없는 상위 폴더를 **위에서부터** 만들고, 이미 있는 폴더면 그대로 그 `fileId`를 답한다. 그래서 순서도, 부모 생성 실패도 따로 신경 쓸 필요가 없다.
+   - 응답 `directories`는 요청 순서대로 폴더마다 `fileId` 또는 `error`. 경로·이름이 규칙에 어긋나면 400 `INVALID_BATCH_ITEM`, 그 자리나 상위 경로에 파일이 있으면 400 `FILE_ALREADY_EXISTS` — 그 폴더만 실패한다.
+   - `replaced: true`인 폴더(병합 대상)는 이미 있으므로 보내지 않는다.
+
+**최상위 폴더가 같은 이름의 폴더와 겹칠 때**
+
+| 선택 | 동작 |
+|---|---|
+| `REPLACE` (대체) | 기존 폴더에 **병합**한다. 기존 폴더를 지우지 않으므로 폴더 ID·공유 설정이 그대로다. 응답의 그 폴더는 `replaced: true`와 기존 `fileId` |
+| `KEEP_BOTH` | `사진 (1)`처럼 번호를 붙인 새 폴더로 올린다. 하위 항목의 경로도 바뀐 이름을 따라간다 |
+| `SKIP` | 그 폴더와 하위 전체를 뺀다 |
+
+병합되는 폴더 안의 항목 (하위 폴더로 재귀):
 
 | 올린 항목 | 그 폴더에 이미 있는 것 | 동작 |
 |---|---|---|
-| 파일 | 같은 이름 파일 | 묻지 않고 **새 버전** (`REPLACE`와 같음, 소유자 확인) |
+| 파일 | 같은 이름 파일 | 묻지 않고 **새 버전** (`replaced: true`) |
 | 폴더 | 같은 이름 폴더 | 묻지 않고 **다시 병합** |
 | 파일 ↔ 폴더 (종류가 다름) | | **번호 붙임** |
 | 무엇이든 | 없음 | 새로 만듦 |
 
-- 올린 쪽에 없는 기존 항목은 **그대로 둡니다** (지우지 않음).
-- 병합된 폴더와 새 버전을 받은 파일은 응답에 `replaced: true`로, 원래 `fileId`로 나옵니다.
-
-### 번호 규칙
-
-- 파일: `보고서 (1).pdf`. 확장자 앞에 번호를 붙입니다. 점으로 시작하는 파일(`.env`)은 `.env (1)`처럼 끝에 붙입니다.
-- 폴더: `사진 (1)`. 이름에 점이 있어도 끝에 붙입니다 (`v1.2` → `v1.2 (1)`).
-- N은 1부터, 대상 폴더의 활성 이름과 **이 배치의 최상위 이름 전부**(원래 이름 + 이미 붙인 번호 이름)와 겹치지 않는 가장 작은 수입니다.
-  - 사용자가 고른 이름이 번호에 밀려나지 않게 하기 위함입니다. 예: 기존 `사진`이 있을 때 배치 `사진`, `사진 (1)` → `사진 (2)`, `사진 (1)`.
-- 번호는 **서버가 정합니다.**
-
-## 5. 바이트 전송
-
-> ⚠️ 5~8장(간단 업로드·이어 올리기 세션·완료 콜백)은 해시 블록 방식으로 바뀌었습니다. 지금 동작은 [008](008-file-upload-spec.md)이 기준입니다.
-
-| 파일 크기 | 방식 | 요청 |
-|---|---|---|
-| 5GB 초과 | 배치에서 빠짐 (클라이언트가 거르고, 서버도 400) | — |
-| 20MB 초과 | 이어 올리기 | (저장된 세션이 있으면 조회) → 세션 생성 → 청크(4MB)를 **0번부터 순서대로 하나씩** PUT → complete |
-| 20MB 이하 | 간단 업로드 | `POST /api/v1/storage/upload?fileId=` multipart `file` 1번 |
-
-- 파일끼리도, 한 파일의 청크끼리도 **동시에 보내지 않습니다** (전부 순차).
-- 이어 올리기 세션 생성 시 `{ fileId, totalChunks, fileSize }`를 보냅니다. 서버가 거절하는 경우:
-  - 선언한 `fileSize`가 5GB 초과 (`413 FILE_TOO_LARGE`)
-  - `totalChunks`가 `ceil(fileSize / 4MB)`와 다름 (`400 INVALID_TOTAL_CHUNKS`) — 청크 하나가 4MB 이하이므로, 이걸로 세션 하나가 S3에 쓸 수 있는 양이 `fileSize + 4MB`로 묶입니다
-- 청크 PUT마다 서버가 확인하는 것:
-  - 세션 존재 (`404 SESSION_NOT_FOUND`)
-  - 세션 소유자 = 호출자 (`403 SESSION_OWNER_MISMATCH`)
-  - `chunkIndex < totalChunks` (`400 INVALID_CHUNK_INDEX`)
-  - 청크 크기 ≤ 블록 크기 4MB (`413 CHUNK_TOO_LARGE`)
-- 확인이 끝나면 청크를 **바로 블록 하나로 S3에 저장**하고, 세션에 "몇 번 청크가 몇 바이트로 도착"을 기록합니다 (6장).
-- 같은 `chunkIndex`를 다시 보내면 블록을 덮어씁니다. 실패한 청크를 다시 보내는 방법이 이것입니다.
-- **받은 청크 조회** `GET /api/v1/storage/upload/resumable/{sessionId}` → `{ sessionId, totalChunks, receivedChunks: [0, 1, 3] }`. 소유자만 조회할 수 있습니다.
-- complete는 모든 청크가 있어야 합니다 (`400 CHUNKS_INCOMPLETE`). **실제로 받은 합계**로 5GB를 다시 검사합니다 (선언값을 낮게 속이는 경우 대비). 블록은 이미 S3에 있으므로 complete는 완료 콜백만 보냅니다.
-- 끝난 세션(complete 성공)은 지워지므로, 이후 그 세션으로 오는 요청은 전부 `404 SESSION_NOT_FOUND`입니다.
-- 간단 업로드는 서버에서 5GB 검사를 하지 않고, multipart 한도(`STORAGE_MULTIPART_MAX_FILE_SIZE`, 기본 25MB)가 사실상 상한입니다.
-- 간단 업로드 요청의 `fileId`가 호출자 소유인지는 storage-service가 아니라 **완료 콜백에서** file-service가 확인합니다 (7장).
-
-## 6. 저장 방식
-
-- **간단 업로드**: 받은 바이트 전체를 메모리에 올린 뒤 **4MB 블록**으로 나눕니다.
-- **이어 올리기**: 청크 하나가 곧 블록 하나입니다. 청크를 받는 즉시 `files/{fileId}/{sessionId}/block_{chunkIndex}`에 저장하므로, storage-service 메모리는 **요청당 청크 하나(4MB)**만 씁니다. 세션 ID가 그대로 버전의 저장 경로가 되어 complete 때 복사할 것이 없습니다.
-- 블록마다 **GZIP 압축 → AES-GCM 암호화** 후 S3에 put 합니다.
-  - 업로드마다 새 UUID 경로를 쓰므로(간단 업로드는 랜덤 UUID, 이어 올리기는 세션 ID) 대체 업로드가 이전 버전 블록을 덮어쓰지 않습니다.
-  - 빈 파일(0바이트)은 빈 블록 1개로 저장됩니다.
-- 간단 업로드는 블록 저장 중 하나라도 실패하면 **이미 올린 블록을 지우려 시도**하고(실패해도 무시) `500 STORAGE_ERROR`를 반환합니다. 이어 올리기 청크는 실패해도 지우지 않습니다 — 클라이언트가 같은 번호로 다시 보내 덮어쓰고, 끝내 완료되지 않으면 아래 정리 작업이 지웁니다.
-
-### 이어 올리기 세션 (Redis)
-
-| 키 | 타입 | 내용 | 만료 |
-|---|---|---|---|
-| `upload-session:{sessionId}` | hash | `fileId`, `ownerId`, `totalChunks`, 받은 청크마다 `c{index}` = 바이트 수 | 생성 후 **24시간** (`UploadSession.TTL` 상수) |
-| `upload-sessions` | sorted set | `{sessionId}:{fileId}:{totalChunks}`, 점수 = 생성 시각 | 없음 (정리 작업이 뺌) |
-
-- Redis에 있으므로 storage-service 인스턴스가 여러 개여도, 재시작해도 세션이 유지됩니다.
-- 만료된 세션에 청크가 오면 세션을 다시 만들지 않고 `404 SESSION_NOT_FOUND`로 답합니다 (Lua로 존재 확인 후 기록).
-- **정리 작업** (1시간마다): 생성 후 **25시간**(유효 기간 + 1시간)이 지난 `upload-sessions` 항목을 원자적으로 꺼내 그 블록을 지웁니다. 이때 세션 hash는 이미 만료됐으므로 그 블록으로 complete가 일어날 수 없습니다. 인스턴스 여러 개가 동시에 돌아도 같은 항목을 두 번 꺼내지 않습니다.
-- complete는 **완료 콜백을 보내기 전에** `upload-sessions`에서 자기 항목을 뺍니다. file-service가 버전을 만들었을 수 있는 블록은 정리 작업이 절대 지우지 않습니다. 콜백이 성공하면 세션 hash도 지웁니다.
-
-## 7. 완료 콜백
-
-블록 저장이 끝나면 storage-service가 Feign으로 `PUT /internal/files/{fileId}/uploaded?userId=`를 호출합니다 (`userId` = 업로드한 사용자). 내부 경로라 내부 토큰이 있어야 하고, 게이트웨이는 이 경로를 라우팅하지 않으므로 사용자가 직접 부를 수 없습니다 (#440).
-
-```json
-{ "fileSize": 31457280, "blockCount": 6, "s3Path": "files/{fileId}/{uuid}" }
-```
-
-file-service는 한 트랜잭션에서 다음을 처리합니다.
-
-1. 파일 조회 (`FILE_NOT_FOUND`)
-2. **호출자가 소유자인지 확인** — 남의 `fileId`로 올린 경우 여기서 거절
-3. `s3Path`가 `files/{fileId}/`로 시작하는지 확인 (`FILE_ACCESS_DENIED`) — 다른 파일의 저장 위치를 가리키지 못하게
-4. 같은 `s3Path`의 버전이 이미 있으면 재시도된 콜백이므로 아무것도 바꾸지 않고 파일을 그대로 돌려줌
-5. `file_version` 행 생성 (크기, 블록 수, 경로)
-6. 파일을 `UPLOADED`로 바꾸고 `currentVersionId`·`fileSize`를 새 버전으로 갱신
-
-- 요청 검증: `fileSize ≥ 0`(빈 파일도 정상 파일 — 폴더의 `.gitkeep` 등), `1 ≤ blockCount ≤ 100,000`, `s3Path` 필수.
-- `s3Path`는 업로드마다 새 UUID라 업로드 하나를 가리키는 멱등키입니다. `file_version.s3_path`에 unique 제약(`uk_file_version_s3_path`)이 있어, 동시에 두 번 와도 버전은 하나만 생깁니다. 그래서 storage-service는 이 콜백을 재시도합니다 ([006 2-3-2](006-resilience-spec.md#2-3-2-재시도)).
-- 콜백이 실패하면 storage-service 요청도 실패로 응답합니다. 이미 저장한 블록은 **지우지 않습니다** (13장).
-- 업로드 완료 알림(notification)이나 이벤트는 발행하지 않습니다.
-
-## 8. 실패 처리
-
-- **이어 올리기만 자동 재시도합니다.** 세션 생성·청크 PUT·complete가 네트워크 오류, 429, 5xx로 실패하면 1초/2초/4초 간격으로 3번 다시 보냅니다. 그 밖의 4xx는 바로 실패입니다. 간단 업로드는 재시도하지 않습니다.
-- 이어 올리기가 끝내 실패하면 WEB이 세션 ID를 `localStorage`(`upload-session:{fileId}:{size}:{lastModified}`)에 남겨 둡니다. 같은 파일을 **대체**로 다시 올리면(같은 `fileId`) 받은 청크를 조회해 **나머지만** 보냅니다. 세션이 만료(24시간)됐으면 처음부터 올립니다.
-- 배치 생성 이후의 실패는 **파일 단위로 격리**됩니다. 실패한 파일만 실패로 표시하고 다음 파일로 넘어갑니다.
-- **[재시도] 버튼은 없습니다.** 다시 올리려면 파일을 다시 선택합니다. 이때 앞선 시도가 남긴 같은 이름의 `PENDING` 파일과 충돌하므로 대체/둘 다 유지를 묻게 됩니다.
-
-실패 시점별로 남는 상태:
-
-| 실패 시점 | 파일 행 | S3 |
-|---|---|---|
-| 배치 생성 | 없음 (전체 롤백) | 없음 |
-| 바이트 전송 중 (새 파일) | `PENDING`으로 남음 | 간단 업로드: 없음. 이어 올리기: 받은 청크가 남음 — 24시간 안에 이어 올리지 않으면 25시간 뒤 정리 작업이 삭제 |
-| 바이트 전송 중 (대체) | `PENDING`으로 남음. 이전 버전은 그대로 열람 가능 | 새 파일과 같음 |
-| 블록 저장 중 | `PENDING` | 간단 업로드: 부분 블록 삭제 시도. 이어 올리기: 그 청크만 실패 (재시도 대상) |
-| 완료 콜백 | `PENDING` | **블록이 남음**. 이어 올리기는 세션이 남아 complete를 다시 부를 수 있음 |
-
-- `PENDING` 파일을 정리하는 스케줄러는 **없습니다.** 사용자가 직접 삭제해야 합니다.
-- 업로드 취소 기능과 탭 닫기 경고(`beforeunload`)는 없습니다.
-
-## 9. WEB
-
-### 시작 방법
-
-| 방법 | 구현 | 빈 폴더 |
-|---|---|---|
-| [업로드] → **파일 업로드** | `<input type="file" multiple>` | — |
-| [업로드] → **폴더 업로드** | `<input type="file" webkitdirectory>`. 상대 경로는 `file.webkitRelativePath` | **빠짐** (브라우저가 알려주지 않음) |
-| 드래그앤드롭 | `event.dataTransfer.items`의 `webkitGetAsEntry()`로 폴더를 재귀로 읽음. 파일과 폴더를 섞어 놓을 수 있음 | 포함 |
-
-드래그앤드롭 구현 시 주의할 점:
-- `DirectoryReader.readEntries()`는 한 번에 최대 100개만 돌려줍니다. **빈 배열이 올 때까지 반복해서** 호출해야 합니다.
-- `dataTransfer.items`는 drop 이벤트 핸들러가 동기적으로 끝나면 비워집니다. **await 전에** 모든 entry를 먼저 꺼내 둬야 합니다.
-- `webkitGetAsEntry`가 없는 환경에서는 `dataTransfer.files`만 씁니다 (파일만 올라감).
-- 드롭한 폴더를 읽지 못하면 (OS가 막은 하위 폴더, 드래그 중 지워진 파일 등) 아무것도 올리지 않고 에러 메시지를 띄웁니다: `놓은 폴더를 읽지 못했습니다. 다시 시도해 주세요.`
-
-### 흐름
-
-1. 고른 항목을 `items`로 바꿉니다.
-   - 파일마다 `{ relativePath, directory: false, size }`
-   - 알고 있는 폴더마다 `{ relativePath, directory: true }`
-2. 사전 검사
-   - **5GB 초과 파일은 `items`에서 빼고**, 패널에 실패로 표시합니다. 파일 줄에는 `5GB 초과`, 폴더 줄에는 `N개 실패 (5GB 초과)`로 보입니다. 폴더 줄의 파일 수에는 들어가지만 바이트 합계에서는 빠지므로 퍼센트는 100%까지 갑니다. 나머지는 계속 진행합니다.
-   - 항목이 **5,000개를 넘으면** 아무것도 올리지 않고 에러 메시지를 띄웁니다 (`한 번에 5,000개까지 올릴 수 있습니다.`).
-3. 배치 생성
-   - **409**이면 `conflicts`의 파일마다 충돌 선택창을 **하나씩** 띄웁니다 (대체 / 둘 다 유지 / 취소=건너뛰기). 선택을 `resolutions`에 담아 다시 요청합니다.
-   - 재요청이 또 409이면 (그 사이 다른 곳에서 같은 이름을 만든 경우) **새로 생긴 이름만** 다시 묻습니다.
-   - 성공하면 대상 폴더 목록을 새로고침합니다. 파일은 전송 전부터 목록에 보입니다.
-4. 응답의 파일 항목을 `relativePath`로 File과 연결하고, **한 파일씩 순서대로** 전송합니다 (5장).
-   - 파일 하나가 실패하면 그 파일만 실패로 표시하고 다음 파일로 넘어갑니다.
-5. 끝나면 목록과 사용량을 새로고침합니다.
-
-### 업로드 패널
-
-- **최상위 항목 하나당 한 줄**입니다. 폴더를 올리면 폴더가 한 줄로 보입니다.
-
-| 줄 | 퍼센트 | 보조 문구 | 상태 |
-|---|---|---|---|
-| 파일 | 간단 업로드: 보낸 바이트 기준 (`onUploadProgress`) / 이어 올리기: 끝난 청크 수 기준 | — | 업로드 중 / 완료 / 실패 |
-| 폴더 | 하위 파일들의 **보낸 바이트 합 / 전체 바이트 합** | `12/40개 파일` | 업로드 중 / 완료 / 일부 실패 (`3개 실패`) |
-| 빈 폴더 (또는 5GB 초과 파일뿐인 폴더) | — | — | 배치 생성 성공 즉시 완료 (또는 실패) — 다른 파일 전송을 기다리지 않음 |
-
-- 헤더 문구: `항목 N개 업로드 중` → 모두 끝나면 `N개 항목 업로드 완료` 또는 `N개 완료, M개 실패`. N은 최상위 항목 수이고, 일부 실패한 폴더는 실패로 셉니다.
-- 배치 생성 자체가 실패하면(409 이외) 이번에 고른 줄 전체를 실패로 표시하고 에러 메시지를 띄웁니다.
-- 폴더 줄의 이름은 **실제로 만들어진 이름**입니다. 충돌로 `사진 (1)`이 되면 줄 이름도 바뀝니다.
-- 목록에서 `PENDING` 파일은 일반 파일과 똑같이 보입니다 (별도 표시 없음).
-  - 한 번도 완료되지 않은 파일을 열거나 받으면 `404 FILE_NOT_FOUND_IN_STORAGE`.
-  - 대체 중인 파일은 이전 버전이 열립니다.
-- 사용량 합계에서 `PENDING` 파일은 빠집니다.
-
-## 10. 제한값
-
-| 항목 | 값 | 위치 |
-|---|---|---|
-| 파일 최대 크기 | 5GB | API `MODUDRIVE_STORAGE_MAX_FILE_SIZE_BYTES`(storage), `UploadBatchService.MAX_FILE_SIZE_BYTES`(file), WEB `MAX_FILE_SIZE` — 셋을 함께 바꿔야 함 |
-| 배치 항목 수 | 5,000개 | API `UploadBatchRequest` |
-| 상대 경로 / 이름 / 부모 경로 길이 | 255자 | API `UploadBatchRequest`, `UploadBatchService.MAX_COLUMN_LENGTH` (`file.name`·`file.path` 컬럼) |
-| 간단 업로드 ↔ 이어 올리기 경계 | 20MB | WEB `RESUMABLE_THRESHOLD` |
-| 청크 크기 | 4MB — 블록 크기와 같아야 함 (서버가 더 큰 청크를 거절) | WEB `CHUNK_SIZE`, API `STORAGE_BLOCK_SIZE` |
-| multipart 한도 | 25MB | API `STORAGE_MULTIPART_MAX_FILE_SIZE` / `_REQUEST_SIZE` |
-| 블록 크기 | 4MB | API `STORAGE_BLOCK_SIZE` |
-| 블록 수 상한 | 100,000 | API `UpdateFileStatusRequest`, `S3StorageAdapter` (함께 바꿔야 함) |
-| 이어 올리기 세션 유효 기간 | 24시간 (Redis TTL). 남은 블록은 25시간 뒤 정리 (1시간마다) | API `UploadSession.TTL` (상수) |
-| 이어 올리기 자동 재시도 | 3번 (1초/2초/4초) | WEB `RETRY_DELAYS_MS` |
-| 사용자별 용량 한도 | **검사 안 함** (`quota_bytes`는 사용량 화면 표시에만 쓰임) | — |
-
-## 11. API 요약
-
-| 메서드 · 경로 | 서비스 | 호출자 | 용도 |
-|---|---|---|---|
-| `POST /api/v1/files/batch` | file | 클라이언트 | 배치 생성 — 폴더 트리 + 파일 행, 충돌 시 409 + 충돌 목록 |
-| `POST /api/v1/files/metadata` | file | 클라이언트 (WEB #207 전까지) | 파일 하나 생성(`PENDING`) 또는 대체 시작 — [부록 A](#부록-a-web-207-이전-동작). WEB이 배치로 옮긴 뒤 제거 여부를 따로 판단 |
-| `POST /api/v1/storage/upload?fileId=` | storage | 클라이언트 | 간단 업로드 (multipart `file`) |
-| `POST /api/v1/storage/upload/resumable` | storage | 클라이언트 | 이어 올리기 세션 생성 → `sessionId` |
-| `GET /api/v1/storage/upload/resumable/{sessionId}` | storage | 클라이언트 | 받은 청크 조회 (이어 올리기 재개) |
-| `PUT /api/v1/storage/upload/resumable/{sessionId}?chunkIndex=` | storage | 클라이언트 | 청크 전송 (multipart `chunk`) → 바로 S3에 블록으로 저장 |
-| `POST /api/v1/storage/upload/resumable/{sessionId}/complete` | storage | 클라이언트 | 청크가 다 왔는지·크기 확인 → 완료 콜백 |
-| `PUT /internal/files/{fileId}/uploaded?userId=` | file | storage-service | 완료 콜백 — 버전 생성, `UPLOADED` (내부 토큰) |
-
-## 12. 시나리오 검증
-
-| # | 시나리오 | 기대 결과 |
-|---|---|---|
-| 1 | 1MB 파일 10개 선택 | 배치 생성 1번 + 간단 업로드 10번(순차). 패널 10줄 모두 완료 |
-| 2 | [폴더 업로드]로 `사진/`(하위 폴더 3개, 파일 200개) | 배치 생성 1번으로 폴더 4개 + 파일 200개 `PENDING`. 패널은 `사진` 한 줄, 끝나면 `200/200개 파일` 완료 |
-| 3 | 같은 `사진/`을 드래그앤드롭, 안에 빈 폴더 `빈폴더/` 있음 | #2와 같고 `사진/빈폴더`도 생김 |
-| 4 | `사진/`이 이미 있는 곳에 #2 | 묻지 않고 `사진 (1)/`로 생성, 하위 항목도 `사진 (1)/` 아래 |
-| 5 | `보고서.pdf`, `a.txt` 업로드, `보고서.pdf`만 이미 있음 | 409 `conflicts: ["보고서.pdf"]`, 아무것도 안 생김 → "대체" 선택 → 재요청 → `보고서.pdf`는 같은 fileId로 새 버전, `a.txt`는 새 파일 |
-| 6 | #5에서 "둘 다 유지", `보고서 (1).pdf`도 이미 있음 | 서버가 `보고서 (2).pdf`로 생성 |
-| 7 | #5에서 "취소" | `보고서.pdf`는 응답에 없고 패널에서도 빠짐, `a.txt`만 올라감 |
-| 8 | 같은 이름의 폴더 `자료`가 있는 곳에 파일 `자료`(확장자 없음) 업로드 | 묻지 않고 `자료 (1)` 파일로 생성 |
-| 9 | 30MB 파일 1개 | 세션 생성 → 청크 8개(4MB×7 + 2MB) 순차 PUT → complete. 청크마다 받는 즉시 S3에 블록 1개 |
-| 10 | 파일 100개 중 30번째가 5xx | 30번째만 실패, 나머지 99개 완료. 헤더 `N개 완료, 1개 실패` (폴더 안이면 그 폴더 줄이 `1개 실패`). 30번째는 `PENDING`으로 목록에 남음 |
-| 11 | #10 후 그 파일을 다시 업로드 | 남아 있는 `PENDING` 파일과 충돌 → 대체를 고르면 그 행을 이어서 완료 |
-| 12 | 폴더 안에 0바이트 `.gitkeep` | 정상 완료 (`fileSize: 0`, `UPLOADED`) |
-| 13 | 폴더 안에 6GB 파일 1개 + 작은 파일들 | 6GB 파일은 배치에서 빠지고 실패 표시, 나머지는 업로드 |
-| 14 | 6,000개 파일 폴더 | 아무것도 올리지 않고 에러 메시지 |
-| 15 | 목록 화면을 연 사이 대상 폴더가 다른 탭에서 휴지통으로 감 | `404 DIRECTORY_NOT_FOUND`, 아무것도 안 생김 |
-| 16 | `relativePath`에 `../x.txt`를 넣어 직접 호출 | `400`, 아무것도 안 생김 |
-| 17 | 이어 올리기 중 네트워크가 잠깐 끊김 / storage-service 재시작 | 실패한 청크만 자동 재시도(최대 3번) 후 이어서 진행. 세션은 Redis에 있어 재시작과 무관 |
-| 18 | #17이 재시도로도 안 됨 → 그 파일 실패 → 같은 파일을 다시 골라 "대체" | 저장된 세션으로 받은 청크를 조회해 나머지만 전송 |
-| 19 | 이어 올리기를 시작하고 탭을 닫은 채 하루가 지남 | 세션은 24시간에 만료, 받은 블록은 25시간 뒤 정리 작업이 삭제. 파일 행은 `PENDING`으로 남음 (13장 4번) |
-
-## 13. 알려진 문제
-
-소스를 읽으며 확인한 것들입니다. 고칠지는 이슈로 따로 정합니다.
-
-| # | 문제 | 영향 |
-|---|---|---|
-| 1 | ~~이어 올리기 청크를 storage-service 힙에 모음~~ | **해결**: 청크를 받는 즉시 S3에 저장, 세션은 Redis (5·6장) |
-| 2 | ~~끊긴 지점부터 다시 올리는 기능 없음~~ | **해결**: 청크 자동 재시도 + 받은 청크 조회로 나머지만 전송 (8장) |
-| 3 | 완료 콜백이 실패해도 저장한 블록을 지우지 않음 | S3에 참조 없는 블록이 쌓임 |
-| 4 | `PENDING` 파일 정리 스케줄러 없음 | 실패·이탈한 업로드가 목록에 영원히 남음. 열면 404 |
-| 5 | 간단 업로드는 storage-service에서 5GB 검사를 하지 않음 | multipart 25MB 한도가 막아주므로 현재는 문제없음. 한도를 올리면 구멍이 됨 |
-| 6 | ~~이어 올리기 블록이 5MB~~ | **해결**: 청크 = 블록 = 4MB, 서버가 더 큰 청크를 거절 |
-| 8 | complete가 서버에서는 성공했는데 응답만 유실되면, WEB의 재시도가 `404 SESSION_NOT_FOUND`를 받음 | 파일은 실제로 `UPLOADED`인데 패널에는 실패로 보임. 목록을 새로고침하면 정상 |
-| 7 | 한글 이름의 유니코드 정규화(NFC/NFD)를 맞추지 않음 | macOS에서 올린 NFD 이름이 기존 NFC 이름과 충돌로 잡히지 않아, 화면상 같은 이름이 둘 생길 수 있음 |
-
-## 14. TODO
-
-- **동시 전송** (여러 파일 병렬)
-- **간단 업로드 자동 재시도** + 파일별 [재시도] 버튼 (이어 올리기는 자동 재시도 완료)
-- **업로드 취소** (`DELETE /api/v1/files/{fileId}/upload`) + `beforeunload` 경고 + **24시간 지난 `PENDING` 자동 삭제** (13장 4번)
-- **완료 콜백 실패 시 저장한 블록 삭제** (13장 3번) — S3에 참조 없는 블록이 쌓이지 않게
-- **사용자별 용량 한도**: 배치 생성 단계에서 `items`의 `size` 합으로 검사 — 지금은 `quota_bytes`가 사용량 표시에만 쓰여, 5GB 파일을 반복해 올리면 스토리지를 고갈시킬 수 있음
-- **파일 내용 검사**: 확장자와 실제 내용(매직 넘버)이 맞는지 확인 + 악성 코드 검사. 지금은 확장자 위장을 "브라우저에서 실행되지 않게"(HTML·SVG는 다운로드만, `nosniff`, CSP)로만 막음
-- **공유받은 폴더(편집자)로 업로드**
-- **`POST /api/v1/files/metadata` 제거**: WEB #207 이후 쓰는 곳이 없으면
-
----
-
-## 부록 A. WEB #207 이전 동작
-
-WEB이 배치 생성으로 옮기기 전까지의 동작입니다. WEB #207이 dev에 합쳐지면 이 부록을 지웁니다.
-
-- 파일마다 `POST /api/v1/files/metadata` → 바이트 전송 → 완료 콜백을 **한 파일씩** 반복합니다.
-  ```json
-  { "name": "보고서.pdf", "path": "/업무", "directory": false, "replaceExisting": false }
-  ```
-- 폴더 업로드는 없습니다. 드롭한 폴더의 하위 항목도 읽지 않습니다.
-- 이름 충돌:
-
-  | 상황 | 서버 동작 |
-  |---|---|
-  | 같은 이름의 **파일**이 있고 `replaceExisting=true` | 기존 파일을 `PENDING`으로 되돌림 (대체) |
-  | 같은 이름이 있고 `replaceExisting`이 없거나 false | `400 FILE_ALREADY_EXISTS` |
-  | 종류가 다른 항목과 충돌 | `replaceExisting`과 상관없이 `400 FILE_ALREADY_EXISTS` |
-
-  - WEB은 **일단 원래 이름으로 올려보고**, 400이 나면 그 파일에서 멈춰 대체 / 둘 다 유지 / 취소를 묻습니다.
-  - "둘 다 유지"는 WEB이 `보고서 (1).pdf`, `(2)`…로 이름을 바꿔가며 최대 50번 재시도합니다.
-  - WEB은 메타데이터 요청의 **모든 400을 이름 충돌로 봅니다**. 검증 오류 같은 다른 400에도 충돌 선택창이 뜹니다.
-- 경로가 실제로 존재하는 폴더인지는 확인하지 않습니다.
-- 충돌 이외의 실패가 나면 **배치의 나머지 파일도 멈춥니다.** 실패한 파일과 아직 시작하지 않은 파일이 모두 실패로 표시됩니다.
-- 5GB 초과 파일은 클라이언트가 거절하고, 메타데이터도 만들지 않습니다.
-- 업로드 패널은 **파일 하나당 한 줄**입니다.
+- 올린 쪽에 없는 기존 항목은 지우지 않는다.
+- 최상위에서 폴더와 파일처럼 종류가 다르게 겹치면 묻지 않고 번호를 붙인다.
+- 파일 일부가 실패해도 이미 commit된 파일과 그 폴더들은 남는다.

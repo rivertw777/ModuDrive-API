@@ -8,14 +8,8 @@ import com.moduDrive.file.application.port.in.command.UploadBatchCommand.Item;
 import com.moduDrive.file.application.port.in.usecase.UploadBatchUseCase;
 import com.moduDrive.file.application.port.out.FindFilePort;
 import com.moduDrive.file.application.port.out.FindNamespacePort;
-import com.moduDrive.file.application.port.out.SaveFileAccessPort;
-import com.moduDrive.file.application.port.out.SaveFilePort;
 import com.moduDrive.file.domain.model.File;
-import com.moduDrive.file.domain.model.File.FileIsDirectory;
 import com.moduDrive.file.domain.model.File.FileName;
-import com.moduDrive.file.domain.model.File.FileNamespaceId;
-import com.moduDrive.file.domain.model.File.FileOwnerId;
-import com.moduDrive.file.domain.model.File.FilePath;
 import com.moduDrive.file.domain.model.Namespace;
 import com.moduDrive.file.domain.model.Namespace.NamespaceId;
 import com.moduDrive.file.domain.model.Namespace.NamespaceUserId;
@@ -23,7 +17,6 @@ import com.moduDrive.file.exception.FileExceptionCase;
 import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -32,13 +25,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-/** Registers a whole upload selection in one transaction — see .docs/spec/001-file-upload-spec.md.
- * Only top-level entries are asked about; a folder the user chose to replace is merged into, so
- * its contents then reuse or sit beside what's already there. */
+/** Checks a whole upload selection for name conflicts and answers where each entry will land —
+ * see .docs/spec/001-file-upload-spec.md. Creates nothing: the commit makes the rows once a file's
+ * blocks are all stored. Only top-level entries are asked about; a folder the user chose to replace
+ * is merged into, so its contents then reuse or sit beside what's already there. */
 @UseCase
 @RequiredArgsConstructor
 class UploadBatchService implements UploadBatchUseCase {
@@ -52,11 +45,9 @@ class UploadBatchService implements UploadBatchUseCase {
 
     private final FindNamespacePort findNamespacePort;
     private final FindFilePort findFilePort;
-    private final SaveFilePort saveFilePort;
-    private final SaveFileAccessPort saveFileAccessPort;
     private final FileAccessGuard fileAccessGuard;
 
-    @Transactional
+    @Transactional(readOnly = true)
     @Override
     public List<UploadedItem> uploadBatch(UploadBatchCommand command) {
         Namespace namespace = findNamespacePort.findByUserId(new NamespaceUserId(command.getUserId()))
@@ -110,13 +101,7 @@ class UploadBatchService implements UploadBatchUseCase {
             throw new BusinessException(FileExceptionCase.FILE_BATCH_CONFLICT, Map.of("conflicts", conflicts));
         }
 
-        FileNamespaceId fileNamespaceId = new FileNamespaceId(namespace.getId());
-        FileOwnerId ownerId = new FileOwnerId(command.getUserId());
-        List<String> order = new ArrayList<>(nodes.size());
-        Map<String, File> saved = new HashMap<>();
-        Set<String> replacedPaths = new HashSet<>();
-        List<String> newPaths = new ArrayList<>();
-        List<File> newFiles = new ArrayList<>();
+        List<UploadedItem> planned = new ArrayList<>(nodes.size());
         // Where each batch folder lives in the drive, and which of those are existing folders a
         // REPLACE merges into (Google Drive's "기존 폴더 대체"): inside one, a same-kind name reuses
         // the existing entry — a folder merges again, a file gets a new version — and a clash of
@@ -163,54 +148,23 @@ class UploadBatchService implements UploadBatchUseCase {
                     }
                 }
             }
-            order.add(node.relativePath());
             if (node.directory()) {
                 folderPaths.put(node.relativePath(), child(parent, name));
             }
             if (reused != null) {
                 if (reused.isDirectory()) {
                     mergedFolderPaths.add(child(parent, name));
-                    saved.put(node.relativePath(), reused);
-                } else {
-                    reused.restartUpload();
-                    saved.put(node.relativePath(), saveFilePort.saveFile(reused));
                 }
-                replacedPaths.add(node.relativePath());
+                planned.add(new UploadedItem(node.relativePath(), reused.getId(), name, parent, node.directory(), true));
                 continue;
             }
             // After renaming, so a " (1)" suffix that tips a name over the limit is caught too.
             if (name.length() > MAX_COLUMN_LENGTH || parent.length() > MAX_COLUMN_LENGTH) {
                 throw invalidItem();
             }
-            newPaths.add(node.relativePath());
-            newFiles.add(node.directory()
-                    ? File.createDirectory(fileNamespaceId, new FileName(name), new FilePath(parent), ownerId)
-                    : File.create(fileNamespaceId, new FileName(name), new FilePath(parent), ownerId,
-                            new FileIsDirectory(false)));
+            planned.add(new UploadedItem(node.relativePath(), null, name, parent, node.directory(), false));
         }
-        if (!newFiles.isEmpty()) {
-            List<File> inserted = saveFilePort.saveNewFiles(newFiles);
-            for (int i = 0; i < inserted.size(); i++) {
-                saved.put(newPaths.get(i), inserted.get(i));
-            }
-        }
-
-        List<UploadedItem> uploaded = order.stream()
-                .map(path -> new UploadedItem(path, saved.get(path), replacedPaths.contains(path)))
-                .toList();
-        // An uploaded file counts as "opened" for 최근 문서함, a folder doesn't — same rule as the
-        // single-file metadata upload. Done here, in one pass, rather than one transaction per file
-        // from the controller (that took ~70s for 5,000 files). Brand-new files can't collide on
-        // uk_file_access_user_file, so this can only fail the batch in the vanishingly rare race of
-        // a replaced file being first-opened by the same user at this exact moment.
-        List<UUID> fileIds = uploaded.stream()
-                .filter(item -> !item.file().isDirectory())
-                .map(item -> item.file().getId())
-                .toList();
-        if (!fileIds.isEmpty()) {
-            saveFileAccessPort.recordAccesses(command.getUserId(), fileIds, LocalDateTime.now());
-        }
-        return uploaded;
+        return planned;
     }
 
     /** "/" always exists; anything else has to be an active folder in the caller's own drive —
@@ -280,7 +234,7 @@ class UploadBatchService implements UploadBatchUseCase {
         }
     }
 
-    private static boolean isValidName(String segment) {
+    static boolean isValidName(String segment) {
         try {
             new FileName(segment);
             return true;
@@ -303,7 +257,7 @@ class UploadBatchService implements UploadBatchUseCase {
         }
     }
 
-    private static String child(String parent, String name) {
+    static String child(String parent, String name) {
         return "/".equals(parent) ? "/" + name : parent + "/" + name;
     }
 

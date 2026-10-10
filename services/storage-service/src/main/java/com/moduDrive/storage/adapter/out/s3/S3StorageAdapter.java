@@ -7,6 +7,12 @@ import com.moduDrive.storage.application.port.out.RetrieveBlocksPort;
 import com.moduDrive.storage.application.port.out.StoreBlocksPort;
 import com.moduDrive.storage.config.StorageProperties;
 import com.moduDrive.storage.exception.StorageExceptionCase;
+import io.github.resilience4j.bulkhead.Bulkhead;
+import io.github.resilience4j.bulkhead.BulkheadFullException;
+import io.github.resilience4j.bulkhead.BulkheadRegistry;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.core.sync.RequestBody;
@@ -34,6 +40,7 @@ import java.util.Base64;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.function.Supplier;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
@@ -51,25 +58,48 @@ class S3StorageAdapter implements StoreBlocksPort, RetrieveBlocksPort, DeleteBlo
     private final S3Client s3Client;
     private final StorageProperties properties;
     private final SecretKeySpec key;
+    private final CircuitBreaker circuitBreaker;
+    private final Bulkhead writeBulkhead;
+    private final Bulkhead readBulkhead;
+    private final Bulkhead deleteBulkhead;
 
-    S3StorageAdapter(S3Client s3Client, StorageProperties properties) {
+    S3StorageAdapter(S3Client s3Client, StorageProperties properties,
+                     CircuitBreakerRegistry circuitBreakerRegistry, BulkheadRegistry bulkheadRegistry) {
         this.s3Client = s3Client;
         this.properties = properties;
         this.key = new SecretKeySpec(Base64.getDecoder().decode(properties.getEncryptionKey()), "AES");
+        this.circuitBreaker = circuitBreakerRegistry.circuitBreaker("s3CircuitBreaker");
+        this.writeBulkhead = bulkheadRegistry.bulkhead("s3Write");
+        this.readBulkhead = bulkheadRegistry.bulkhead("s3Read");
+        this.deleteBulkhead = bulkheadRegistry.bulkhead("s3Delete");
+    }
+
+    /** Spec 006 2-4: every S3 call takes a seat in its bulkhead, then goes through the circuit. A
+     * full bulkhead or an open circuit answers at once instead of tying up a request thread. */
+    private <T> T callS3(Bulkhead bulkhead, Supplier<T> call) {
+        try {
+            return Bulkhead.decorateSupplier(bulkhead, CircuitBreaker.decorateSupplier(circuitBreaker, call)).get();
+        } catch (CallNotPermittedException | BulkheadFullException e) {
+            logger.warn("S3 call refused: {}", e.getMessage());
+            throw new BusinessException(StorageExceptionCase.STORAGE_UNAVAILABLE);
+        }
     }
 
     /** No cleanup on failure: the client retries the same block, and a block that is never
      * committed is deleted by the uncommitted-upload sweep. */
     @Override
     public void storeBlock(String key, byte[] rawBlock) {
+        byte[] sealed = encrypt(compress(rawBlock), key);
         try {
-            s3Client.putObject(
+            callS3(writeBulkhead, () -> s3Client.putObject(
                     PutObjectRequest.builder()
                             .bucket(properties.getS3().getBucket())
                             .key(key)
                             .build(),
-                    RequestBody.fromBytes(encrypt(compress(rawBlock), key))
-            );
+                    RequestBody.fromBytes(sealed)
+            ));
+        } catch (BusinessException e) {
+            throw e;
         } catch (RuntimeException e) {
             logger.error("Failed to store block {}", key, e);
             throw new BusinessException(StorageExceptionCase.STORAGE_ERROR);
@@ -85,7 +115,9 @@ class S3StorageAdapter implements StoreBlocksPort, RetrieveBlocksPort, DeleteBlo
         String bucket = properties.getS3().getBucket();
         HeadObjectResponse head;
         try {
-            head = s3Client.headObject(HeadObjectRequest.builder().bucket(bucket).key(key).build());
+            head = callS3(deleteBulkhead, () -> s3Client.headObject(HeadObjectRequest.builder().bucket(bucket).key(key).build()));
+        } catch (BusinessException e) {
+            throw e;
         } catch (S3Exception e) {
             // NoSuchKeyException, or a bare 404 — HEAD has no body to carry an error code.
             if (e.statusCode() == 404) {
@@ -103,11 +135,13 @@ class S3StorageAdapter implements StoreBlocksPort, RetrieveBlocksPort, DeleteBlo
             return;
         }
         try {
-            s3Client.deleteObject(DeleteObjectRequest.builder()
+            callS3(deleteBulkhead, () -> s3Client.deleteObject(DeleteObjectRequest.builder()
                     .bucket(bucket)
                     .key(key)
                     .ifMatch(head.eTag())
-                    .build());
+                    .build()));
+        } catch (BusinessException e) {
+            throw e;
         } catch (S3Exception e) {
             if (e.statusCode() == 412) {
                 return; // rewritten after the HEAD — the new upload keeps it
@@ -172,13 +206,15 @@ class S3StorageAdapter implements StoreBlocksPort, RetrieveBlocksPort, DeleteBlo
         }
     }
 
+    /** The read seat is held only while this one block comes back from S3 — not while a slow
+     * client takes the bytes. */
     private byte[] fetchBlock(String key) {
-        byte[] encrypted = s3Client.getObjectAsBytes(
+        byte[] encrypted = callS3(readBulkhead, () -> s3Client.getObjectAsBytes(
                 GetObjectRequest.builder()
                         .bucket(properties.getS3().getBucket())
                         .key(key)
                         .build()
-        ).asByteArray();
+        ).asByteArray());
         return decompress(decrypt(encrypted, key));
     }
 

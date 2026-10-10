@@ -11,5 +11,9 @@ public interface ClaimStaleUploadsPort {
      * it back out of reach. */
     List<UploadedBlock> claimStale(Instant cutoff, int limit);
 
+    /** Puts claimed blocks back on the schedule as uploaded at {@code uploadedAt}, so a later sweep
+     * claims them again — unless one was uploaded again since, which keeps its later time. */
+    void release(List<UploadedBlock> blocks, Instant uploadedAt);
+
     record UploadedBlock(UUID ownerId, String hash) {}
 }

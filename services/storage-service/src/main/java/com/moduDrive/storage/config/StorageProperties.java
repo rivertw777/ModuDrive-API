@@ -28,5 +28,9 @@ public class StorageProperties {
         private String accessKey;
         private String secretKey;
         private String region = "ap-northeast-2";
+        /** One attempt, and the whole call with its retry (spec 006 2-4-1). The SDK has neither by
+         * default, so a hung S3 would hold a request thread forever. */
+        private Duration apiCallAttemptTimeout = Duration.ofSeconds(5);
+        private Duration apiCallTimeout = Duration.ofSeconds(15);
     }
 }

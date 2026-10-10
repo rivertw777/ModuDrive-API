@@ -1,6 +1,6 @@
 # 장애 대응 (Resilience) 스펙
 
-이 문서는 다른 서비스 장애에 대비한 **서킷 브레이커·재시도·시간 제한** 규칙을 정한 문서입니다.
+이 문서는 다른 서비스·S3 장애에 대비한 **서킷 브레이커·재시도·시간 제한·벌크헤드** 규칙을 정한 문서입니다.
 
 ⚠️ 이 문서가 기준입니다. 코드가 이 문서와 다르면 코드를 고치고, 동작을 바꾸려면 이 문서를 먼저 고칩니다.
 
@@ -12,10 +12,12 @@
   - [1-1. 서킷 브레이커](#1-1-서킷-브레이커)
   - [1-2. 재시도](#1-2-재시도)
   - [1-3. 시간 제한](#1-3-시간-제한)
+  - [1-4. 벌크헤드](#1-4-벌크헤드)
 - [2. 적용 위치](#2-적용-위치)
   - [2-1. 게이트웨이 라우트](#2-1-게이트웨이-라우트)
   - [2-2. 게이트웨이 세션 확인](#2-2-게이트웨이-세션-확인)
   - [2-3. 서비스 간 호출 (Feign)](#2-3-서비스-간-호출-feign)
+  - [2-4. S3 호출 (storage-service)](#2-4-s3-호출-storage-service)
 - [3. 로그](#3-로그)
 - [4. 알림](#4-알림)
 
@@ -124,6 +126,16 @@ Resilience4j 기본 순서대로 재시도가 바깥, 서킷 브레이커가 안
 | `timeoutDuration` | 1초 | 이 시간 안에 응답이 없으면 `TimeoutException`으로 실패시킨다 |
 | `cancelRunningFuture` | `true` | 시간을 넘긴 호출을 실제로 취소한다 |
 
+### 1-4. 벌크헤드
+
+한 종류의 호출이 동시에 쓸 수 있는 자리 수를 정한다. 자리가 다 차면 기다리지 않고 바로 `BulkheadFullException`으로 거절한다.
+느린 의존 대상 하나가 요청 스레드를 전부 붙잡아, 그 대상과 무관한 요청까지 멈추는 일을 막는다.
+
+| 항목 | 뜻 |
+|---|---|
+| `maxConcurrentCalls` | 동시에 들어갈 수 있는 호출 수 |
+| `maxWaitDuration` | 자리가 날 때까지 기다리는 시간. 0이면 바로 거절 |
+
 ---
 
 ## 2. 적용 위치
@@ -133,6 +145,7 @@ Resilience4j 기본 순서대로 재시도가 바깥, 서킷 브레이커가 안
 | 게이트웨이 라우트 | 게이트웨이 `circuitBreaker` 필터 | 서비스마다 하나 | [2-1](#2-1-게이트웨이-라우트) |
 | 게이트웨이 세션 확인 | `WebClient` + Resilience4j Reactor 연산자 | auth 라우트와 같은 것을 같이 씀 | [2-2](#2-2-게이트웨이-세션-확인) |
 | 서비스 간 호출 | OpenFeign + `@CircuitBreaker` · `@Retry` | 호출 대상마다 하나 | [2-3](#2-3-서비스-간-호출-feign) |
+| storage-service → S3 | SDK 시간 제한 + Resilience4j 서킷 브레이커·벌크헤드 (코드로 감쌈) | `s3CircuitBreaker` 하나 | [2-4](#2-4-s3-호출-storage-service) |
 
 서비스 간 비동기 메시지(SQS — 파일 영구 삭제 시 블록 삭제 요청 등)는 서킷 브레이커 대신 재시도·DLQ로 버틴다 ([005-messaging-spec.md 4-2](005-messaging-spec.md#4-2-처리-실패)).
 
@@ -314,6 +327,85 @@ ApiResponse<AuthenticateMemberResponse> authenticateMember(AuthenticateMemberReq
 | 연결 거부·호스트를 못 찾음 (`RetryableException`) | 503 `SERVICE_UNAVAILABLE` | 서비스가 연결 불가능합니다. 잠시 후 다시 시도해 주세요. |
 | 서비스가 돌려준 HTTP 응답 504 (`FeignException.GatewayTimeout`) | 504 `CONNECTION_TIMEOUT` | 서비스 요청 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요. |
 | 서비스가 돌려준 HTTP 응답 502 · 503 (`FeignException.BadGateway` · `ServiceUnavailable`) | 503 `SERVICE_UNAVAILABLE` | 서비스가 연결 불가능합니다. 잠시 후 다시 시도해 주세요. |
+
+### 2-4. S3 호출 (storage-service)
+
+S3가 느려지거나 멈춰도 **S3를 쓰지 않는 요청은 그대로 돌아가야 한다.** 특히 file-service의 commit이 부르는 `/internal/storage/blocks/uploaded`(Redis만 봄)가 S3 때문에 느려지면, file-service까지 장애가 번진다.
+
+```mermaid
+flowchart LR
+    U["블록 업로드<br/>POST /storage/blocks"] --> W["s3Write 벌크헤드 (40)"]
+    D["다운로드 · zip · 미리보기"] --> R["s3Read 벌크헤드 (40)"]
+    P["블록 삭제 (SQS · 정리 작업)"] --> X["s3Delete 벌크헤드 (5)"]
+    W --> C["s3CircuitBreaker"]
+    R --> C
+    X --> C
+    C --> S3[("S3")]
+    I["/internal/storage/blocks/uploaded"] --> Redis[("Redis")]
+```
+
+- S3 호출 하나하나(`PutObject`, `GetObject`, `HeadObject`, `DeleteObject`)를 **벌크헤드 → 서킷 브레이커** 순으로 감싼다 (`S3StorageAdapter`). 다운로드 하나가 블록을 여러 개 읽어도 자리는 블록을 읽는 동안만 잡는다. 느린 클라이언트가 응답을 받는 동안에는 자리를 잡지 않는다.
+- 업로드·다운로드·삭제의 자리를 나눠, 한쪽이 몰리거나 느려져도 다른 쪽 자리는 남는다. 세 벌크헤드 합(85)이 Tomcat 요청 스레드(200)보다 작아서, S3가 완전히 멈춰도 S3를 쓰지 않는 요청을 받을 스레드가 남는다.
+- 서킷은 하나다. 업로드든 다운로드든 S3 자체가 아프면 같이 막는다.
+- `/internal/storage/blocks/uploaded`는 어느 벌크헤드도 거치지 않는다. S3 쪽 자리가 다 차도 이 조회는 남은 요청 스레드로 바로 답한다.
+- file-service는 S3를 직접 부르지 않는다. commit은 storage-service의 Redis 조회만 쓰고, 그 조회를 **DB 트랜잭션 밖에서** 한다 ([001 2장](001-file-upload-spec.md#2-파일-업로드)). 그래서 S3 장애가 file-service DB 잠금으로 번지지 않는다.
+- storage-service 자체가 죽어 그 조회가 실패해도 commit 요청 전체가 실패하지 않는다. 이미 commit된 블록만으로 된 파일은 버전을 만들고, 나머지 파일만 그 503으로 답한다.
+
+#### 2-4-1. 시간 제한
+
+| 제한 | 값 | 위치 |
+|---|---|---|
+| 시도 한 번 | 5초 | `storage.s3.api-call-attempt-timeout` (`S3Config`의 `apiCallAttemptTimeout`) |
+| 재시도 포함 전체 | 15초 | `storage.s3.api-call-timeout` (`apiCallTimeout`) |
+
+SDK 기본값에는 시간 제한이 없어서, 멈춘 S3에 요청 스레드가 무한정 묶일 수 있다.
+
+#### 2-4-2. 재시도
+
+SDK 표준 재시도에 맡기고, 최대 시도는 **2번**(처음 1 + 재시도 1)으로 줄인다. 연결 실패·5xx·스로틀링만 재시도하고, 시간 제한 15초 안에서만 한다.
+그 위에 Resilience4j 재시도는 걸지 않는다. 업로드는 WEB이, 삭제는 SQS가 다시 보낸다.
+
+#### 2-4-3. 서킷에 실패로 기록되는 경우
+
+| 결과 | 기록하나 |
+|---|---|
+| 시간 초과·연결 실패 (`SdkClientException`) | 기록 |
+| S3가 돌려준 5xx (`S3Exception`, 500 · 503 SlowDown) | 기록 |
+| S3가 돌려준 그 밖의 응답 (404 없는 객체, 412 조건 불일치 등) | 기록 안 함 |
+
+설정값은 `default`를 그대로 쓴다 ([1-1-2](#1-1-2-설정값)). 판정은 `S3Unavailable`(`record-failure-predicate`)이 한다.
+
+#### 2-4-4. 벌크헤드
+
+| 벌크헤드 | 자리 | 기다림 | 감싸는 호출 |
+|---|---|---|---|
+| `s3Write` | 40 | 0 (바로 거절) | 블록 업로드 `PutObject` |
+| `s3Read` | 40 | 0 | 다운로드·zip·미리보기 `GetObject` |
+| `s3Delete` | 5 | 1초 | 블록 삭제 `HeadObject` + `DeleteObject` |
+
+삭제는 사용자가 기다리는 요청이 아니라 SQS 소비·정리 작업이라, 자리가 날 때까지 조금 기다린다.
+
+#### 2-4-5. 응답
+
+| 원인 | HTTP | 메시지 |
+|---|---|---|
+| 서킷이 열려 있음 (`CallNotPermittedException`) | 503 `STORAGE_UNAVAILABLE` | 저장소에 일시적으로 연결할 수 없습니다. 잠시 후 다시 시도해 주세요. |
+| 벌크헤드가 가득 참 (`BulkheadFullException`) | 503 `STORAGE_UNAVAILABLE` | (같음) |
+| 시간 초과·연결 실패·5xx | 500 `STORAGE_ERROR` | 스토리지 오류가 발생했습니다. |
+
+- 503은 WEB 업로드가 자동으로 다시 보내는 응답이다 (1·2·4초에 0~50% 지터 — S3가 돌아오는 순간 모든 클라이언트가 같은 박자로 몰리지 않게). 그래도 실패하면 그 파일만 실패하고, 나중에 다시 올리면 commit이 이어 올리기로 받은 블록을 건너뛴다.
+- 미확정 블록 정리 작업은 실패하면 꺼낸 블록을 다시 정리 대상에 넣고 그 회차를 멈춘다. 다음 회차(1시간 뒤)에 다시 한다.
+
+#### 2-4-6. Redis 분리
+
+storage-service는 세션과 다른 Redis를 쓴다 (`terraform/redis.tf`의 `storage_redis`). 업로드 기록은 사용자당 하루 최대 25,600개 키라, 같은 Redis에 두면 대량 업로드가 메모리를 채워 세션까지 위협한다.
+
+| Redis | 쓰는 서비스 | 메모리가 차면 |
+|---|---|---|
+| `redis` | auth(세션·로그인 제한), member(인증 코드), mail(멱등성) | `noeviction` — 쓰기가 실패한다. 기본값(`volatile-lru`)이면 TTL이 있는 세션이 소리 없이 밀려나 로그아웃된다 |
+| `storage_redis` | storage(업로드 기록·업로드 수·다운로드 한도·zip 토큰) | `noeviction` — 업로드가 실패한다. 밀어내면 다운로드 한도가 풀리고 zip 토큰이 사라지므로 밀어내지 않는다. 세션은 다른 Redis라 영향이 없다 |
+
+로컬(compose)은 둘 다 같은 Redis 컨테이너를 쓴다.
 
 ---
 

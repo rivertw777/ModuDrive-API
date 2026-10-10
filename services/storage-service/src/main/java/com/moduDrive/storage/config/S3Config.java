@@ -8,6 +8,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.util.StringUtils;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.awscore.retry.AwsRetryStrategy;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.S3ClientBuilder;
@@ -30,8 +31,12 @@ public class S3Config {
 
         S3ClientBuilder builder = S3Client.builder()
                 .region(Region.of(s3.getRegion()))
-                .overrideConfiguration(c -> c.addExecutionInterceptor(
-                        AwsSdkTelemetry.create(openTelemetry).createExecutionInterceptor()));
+                .overrideConfiguration(c -> c
+                        .addExecutionInterceptor(AwsSdkTelemetry.create(openTelemetry).createExecutionInterceptor())
+                        // Spec 006 2-4: bounded time, one retry — the WEB and SQS retry on top.
+                        .apiCallAttemptTimeout(s3.getApiCallAttemptTimeout())
+                        .apiCallTimeout(s3.getApiCallTimeout())
+                        .retryStrategy(AwsRetryStrategy.standardRetryStrategy().toBuilder().maxAttempts(2).build()));
         if (customEndpoint) {
             builder.endpointOverride(URI.create(s3.getEndpoint())).forcePathStyle(true);
         }
