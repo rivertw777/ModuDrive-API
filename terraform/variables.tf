@@ -152,3 +152,10 @@ variable "services" {
     max    = number
   }))
 }
+
+# The security extras that cost money (prod): a customer-managed KMS key for data at rest, S3
+# versioning, and — in later steps — WAF, Service Connect TLS and audit logging. Free hardening
+# (non-root read-only containers, TLS-only S3) applies everywhere regardless.
+variable "hardened" {
+  type = bool
+}

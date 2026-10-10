@@ -70,10 +70,21 @@ locals {
 resource "aws_ecs_cluster" "main" {
   name = var.project
 
+  depends_on = [aws_cloudwatch_log_group.container_insights]
+
   setting {
     name  = "containerInsights"
     value = var.container_insights ? "enabled" : "disabled"
   }
+}
+
+# Same reason as the Aurora log groups (rds.tf): declared so the CMK covers it.
+resource "aws_cloudwatch_log_group" "container_insights" {
+  count = var.container_insights ? 1 : 0
+
+  name              = "/aws/ecs/containerinsights/${var.project}/performance"
+  kms_key_id        = local.kms_key_arn
+  retention_in_days = 14
 }
 
 resource "aws_ecs_cluster_capacity_providers" "main" {
@@ -88,7 +99,8 @@ resource "aws_service_discovery_http_namespace" "main" {
 resource "aws_cloudwatch_log_group" "service" {
   for_each = local.service_ports
 
-  name = "/ecs/${var.project}/${each.key}-service"
+  name       = "/ecs/${var.project}/${each.key}-service"
+  kms_key_id = local.kms_key_arn
   # Logs are the bulk of the monitoring bill at this scale — keep them short (2-10).
   retention_in_days = 14
 }
@@ -256,6 +268,7 @@ resource "aws_appautoscaling_policy" "cpu" {
 resource "aws_cloudwatch_log_group" "db_init" {
   name              = "/ecs/${var.project}/db-init"
   retention_in_days = 14
+  kms_key_id        = local.kms_key_arn
 }
 
 moved {
