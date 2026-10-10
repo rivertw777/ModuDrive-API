@@ -3,7 +3,9 @@ package com.moduDrive.gateway.security;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.moduDrive.common.core.web.ApiResponse;
+import com.moduDrive.common.core.web.GlobalExceptionHandler;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.server.reactive.ServerHttpResponse;
@@ -30,6 +32,9 @@ class CustomAuthenticationEntryPoint implements ServerAuthenticationEntryPoint {
         ServerHttpResponse response = exchange.getResponse();
         response.setStatusCode(status);
         response.getHeaders().setContentType(MediaType.APPLICATION_JSON);
+        if (status == HttpStatus.SERVICE_UNAVAILABLE) {
+            response.getHeaders().set(HttpHeaders.RETRY_AFTER, GlobalExceptionHandler.RETRY_AFTER_SECONDS);
+        }
         try {
             byte[] body = objectMapper.writeValueAsBytes(ApiResponse.error(status, authError.getT2()));
             return response.writeWith(Mono.just(response.bufferFactory().wrap(body)));

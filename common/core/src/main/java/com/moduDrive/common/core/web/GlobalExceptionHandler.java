@@ -34,9 +34,10 @@ public class GlobalExceptionHandler {
 
     private static final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
-    /** Sent with every 503: how long a circuit stays open (waitDurationInOpenState), so a client
-     * that waits this long tries again just as the circuit lets a probe through. */
-    static final String RETRY_AFTER_SECONDS = "10";
+    /** Sent with every 503 — the gateway's own too: how long a circuit stays open
+     * (waitDurationInOpenState), so a client that waits this long tries again just as the circuit
+     * lets a probe through. */
+    public static final String RETRY_AFTER_SECONDS = "10";
 
     private final ObjectMapper objectMapper;
 
