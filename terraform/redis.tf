@@ -22,8 +22,9 @@ moved {
   to   = aws_elasticache_replication_group.redis["storage"]
 }
 
+# demo: ElastiCache for Valkey.
 resource "aws_elasticache_replication_group" "redis" {
-  for_each = var.redis_clusters
+  for_each = var.redis_engine == "elasticache" ? var.redis_clusters : {}
 
   # "auth" keeps the stack's first id — changing it would replace the cluster that holds the sessions.
   replication_group_id = each.key == "auth" ? var.project : "${var.project}-${each.key}"
@@ -68,7 +69,81 @@ locals {
   ]...)
   redis_host = merge([
     for name, cluster in var.redis_clusters : {
-      for client in cluster.clients : client => aws_elasticache_replication_group.redis[name].primary_endpoint_address
+      for client in cluster.clients : client => (var.redis_engine == "memorydb"
+        ? aws_memorydb_cluster.redis[name].cluster_endpoint[0].address
+      : aws_elasticache_replication_group.redis[name].primary_endpoint_address)
     }
   ]...)
+}
+
+# prod: MemoryDB for Valkey. A write is acknowledged only once it's in the Multi-AZ transaction log,
+# so a primary lost (or cut off) and replaced by a replica loses nothing: the sessions, verification
+# codes, upload records and quotas here stay exactly as written. Cluster mode — the app keeps keys
+# used together in one hash slot (spec 006 2-4-6) and follows topology changes (application-redis.yml).
+resource "aws_memorydb_cluster" "redis" {
+  for_each = var.redis_engine == "memorydb" ? var.redis_clusters : {}
+
+  name                   = "${var.project}-${each.key}"
+  description            = "Valkey for ${join(", ", each.value.clients)}"
+  engine                 = "valkey"
+  engine_version         = "7.3"
+  node_type              = each.value.node_type
+  num_shards             = each.value.shards
+  num_replicas_per_shard = each.value.nodes - 1
+  # Never evict, like ElastiCache above.
+  parameter_group_name = aws_memorydb_parameter_group.noeviction[0].name
+
+  acl_name           = aws_memorydb_acl.redis[each.key].name
+  subnet_group_name  = aws_memorydb_subnet_group.redis[0].name
+  security_group_ids = [aws_security_group.redis[each.key].id]
+  tls_enabled        = true
+
+  snapshot_retention_limit   = 35
+  snapshot_window            = "17:00-18:00"         # 02:00–03:00 KST
+  maintenance_window         = "sun:20:30-sun:21:30" # after Aurora's
+  auto_minor_version_upgrade = true
+
+  lifecycle {
+    ignore_changes = [engine_version]
+  }
+}
+
+resource "aws_memorydb_subnet_group" "redis" {
+  count = var.redis_engine == "memorydb" ? 1 : 0
+
+  name       = var.project
+  subnet_ids = module.vpc.private_subnets
+}
+
+resource "aws_memorydb_parameter_group" "noeviction" {
+  count = var.redis_engine == "memorydb" ? 1 : 0
+
+  name   = "${var.project}-noeviction"
+  family = "memorydb_valkey7"
+
+  parameter {
+    name  = "maxmemory-policy"
+    value = "noeviction"
+  }
+}
+
+# One ACL user per cluster, with that cluster's token as its password — like ElastiCache's AUTH
+# token, a service holds only its own cluster's (secrets.tf).
+resource "aws_memorydb_user" "redis" {
+  for_each = var.redis_engine == "memorydb" ? var.redis_clusters : {}
+
+  user_name     = "${var.project}-${each.key}"
+  access_string = "on ~* &* +@all"
+
+  authentication_mode {
+    type      = "password"
+    passwords = [random_password.redis[each.key].result]
+  }
+}
+
+resource "aws_memorydb_acl" "redis" {
+  for_each = var.redis_engine == "memorydb" ? var.redis_clusters : {}
+
+  name       = "${var.project}-${each.key}"
+  user_names = [aws_memorydb_user.redis[each.key].user_name]
 }

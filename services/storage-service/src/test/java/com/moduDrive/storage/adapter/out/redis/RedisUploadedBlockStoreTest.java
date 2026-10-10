@@ -1,5 +1,6 @@
 package com.moduDrive.storage.adapter.out.redis;
 
+import io.lettuce.core.cluster.SlotHash;
 import com.moduDrive.common.infrastructure.redis.RedisRepository;
 import com.moduDrive.storage.application.port.out.ClaimStaleUploadsPort.UploadedBlock;
 import com.moduDrive.storage.domain.model.Blocks;
@@ -66,7 +67,7 @@ class RedisUploadedBlockStoreTest {
 
             assertThat(store.findUploaded(owner, List.of("h1", "h2"))).containsExactly(java.util.Map.entry("h1", 4));
             assertThat(store.findUploaded(UUID.randomUUID(), List.of("h1"))).isEmpty();
-            long ttl = redisTemplate.getExpire("uploaded-block:" + owner + ":h1", TimeUnit.MILLISECONDS);
+            long ttl = redisTemplate.getExpire(RedisUploadedBlockStore.key(owner, "h1"), TimeUnit.MILLISECONDS);
             assertThat(ttl).isBetween(Blocks.UPLOAD_TTL.toMillis() - 5_000, Blocks.UPLOAD_TTL.toMillis());
         }
     }
@@ -138,5 +139,12 @@ class RedisUploadedBlockStoreTest {
 
             assertThat(store.claimStale(cutoff, 10)).isEmpty();
         }
+    }
+
+    @Test
+    @DisplayName("한 소유자의 블록 기록은 한 클러스터 슬롯에 있어, MemoryDB에서도 한 번에 조회된다")
+    void anOwnersRecordsShareAClusterSlot() {
+        assertThat(SlotHash.getSlot(RedisUploadedBlockStore.key(owner, "h1")))
+                .isEqualTo(SlotHash.getSlot(RedisUploadedBlockStore.key(owner, "h2")));
     }
 }

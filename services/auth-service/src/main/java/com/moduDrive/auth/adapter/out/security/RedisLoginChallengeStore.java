@@ -80,7 +80,7 @@ class RedisLoginChallengeStore implements LoginChallengePort {
     @Override
     public CodeRequest requestCode(MemberEmail memberEmail) {
         Long requests = redisRepository.executeScript(COUNT_REQUEST_SCRIPT,
-                List.of(REQUESTS_PREFIX + memberEmail.normalized(), cooldownKey(memberEmail)),
+                List.of(requestsKey(memberEmail), cooldownKey(memberEmail)),
                 String.valueOf(REQUEST_WINDOW.toMillis()), String.valueOf(RESEND_COOLDOWN.toMillis()));
         if (requests == null || requests == 0) {
             return CodeRequest.TOO_SOON;
@@ -126,8 +126,19 @@ class RedisLoginChallengeStore implements LoginChallengePort {
     }
 
     /** Keyed like the request count, so a differently-cased address can't dodge the cooldown. */
-    private static String cooldownKey(MemberEmail memberEmail) {
-        return COOLDOWN_PREFIX + memberEmail.normalized();
+    static String cooldownKey(MemberEmail memberEmail) {
+        return COOLDOWN_PREFIX + tag(memberEmail);
+    }
+
+    static String requestsKey(MemberEmail memberEmail) {
+        return REQUESTS_PREFIX + tag(memberEmail);
+    }
+
+    /** The request count and cooldown share a Redis Cluster hash slot: the script that counts a request
+     * touches both, which MemoryDB (prod) only allows within one slot. The address is hashed — it may
+     * contain braces itself ("}a@x.com" is valid), which would end the tag early. */
+    private static String tag(MemberEmail memberEmail) {
+        return "{" + SecureTokens.sha256Hex(memberEmail.normalized()) + "}";
     }
 
     private static List<String> parseRoles(String roles) {

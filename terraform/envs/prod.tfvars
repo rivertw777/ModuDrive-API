@@ -24,14 +24,15 @@ db_instances = {
   notification = { instance_class = "db.r7g.large", nodes = 3, clients = ["notification"] }
 }
 
-# One cluster per purpose: a load spike or a full memory in one never reaches the others. Only the
-# sessions get a replica — a lost member/mail/storage node costs a resent code, a possibly repeated
-# mail, or uploads in flight sending their blocks again; nobody is logged out.
+# MemoryDB, one cluster per purpose: a load spike or a full memory in one never reaches the others,
+# and no write is lost on a failover (Multi-AZ transaction log). A primary and two replicas per shard,
+# one per AZ; storage's upload records (up to 25,600 keys per user a day) spread over two shards.
+redis_engine = "memorydb"
 redis_clusters = {
-  auth    = { node_type = "cache.m7g.large", nodes = 2, clients = ["auth"] }
-  member  = { node_type = "cache.t4g.small", nodes = 1, clients = ["member"] }
-  mail    = { node_type = "cache.t4g.small", nodes = 1, clients = ["mail"] }
-  storage = { node_type = "cache.m7g.large", nodes = 1, clients = ["storage"] }
+  auth    = { node_type = "db.r7g.large", nodes = 3, clients = ["auth"] }
+  member  = { node_type = "db.r7g.large", nodes = 3, clients = ["member"] }
+  mail    = { node_type = "db.r7g.large", nodes = 3, clients = ["mail"] }
+  storage = { node_type = "db.r7g.xlarge", nodes = 3, shards = 2, clients = ["storage"] }
 }
 
 services = {

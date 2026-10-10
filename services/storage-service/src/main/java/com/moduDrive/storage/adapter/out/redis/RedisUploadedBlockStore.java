@@ -18,10 +18,14 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Uploaded blocks waiting to be committed (spec 001). {@code uploaded-block:{ownerId}:{hash}} holds
+ * Uploaded blocks waiting to be committed (spec 001). {@code uploaded-block:{<ownerId>}:<hash>} holds
  * the raw size and expires after {@link Blocks#UPLOAD_TTL}; {@code uploaded-blocks} is a sorted set
  * of {@code ownerId:hash} by upload time, so the sweep can still find a block whose record has
  * already expired.
+ *
+ * <p>Every command and script here touches a single key, or (the commit's lookup) one owner's keys,
+ * which share a Redis Cluster hash slot through {@code {<ownerId>}} — so it runs unchanged on MemoryDB
+ * (prod, cluster mode), where a multi-key command across slots fails with CROSSSLOT.
  */
 @Component
 @RequiredArgsConstructor
@@ -31,8 +35,6 @@ class RedisUploadedBlockStore implements RecordUploadedBlockPort, FindUploadedBl
     private static final String INDEX_KEY = "uploaded-blocks";
     private static final String COUNT_KEY_PREFIX = "upload-count:";
 
-    private static final RedisScript<Long> RECORD_SCRIPT =
-            RedisRepository.loadScript("scripts/uploaded-block-record.lua", Long.class);
     private static final RedisScript<Long> RELEASE_SCRIPT =
             RedisRepository.loadScript("scripts/uploaded-block-release.lua", Long.class);
     private static final RedisScript<Long> COUNT_SCRIPT =
@@ -45,11 +47,11 @@ class RedisUploadedBlockStore implements RecordUploadedBlockPort, FindUploadedBl
 
     @Override
     public void recordUploaded(UUID ownerId, String hash, int size) {
-        redisRepository.executeScript(RECORD_SCRIPT, List.of(key(ownerId, hash), INDEX_KEY),
-                String.valueOf(size),
-                String.valueOf(Blocks.UPLOAD_TTL.toMillis()),
-                String.valueOf(Instant.now().toEpochMilli()),
-                ownerId + ":" + hash);
+        redisRepository.set(key(ownerId, hash), String.valueOf(size), Blocks.UPLOAD_TTL);
+        // Moves it to now on the schedule: a block uploaded again is not stale. Two steps, not one
+        // script (record and index are in different slots), and the order needs none: scheduleSweep
+        // put the entry there before the block went to S3, and the sweep only claims what's a day old.
+        redisRepository.addToSortedSet(INDEX_KEY, ownerId + ":" + hash, Instant.now().toEpochMilli());
     }
 
     @Override
@@ -105,7 +107,7 @@ class RedisUploadedBlockStore implements RecordUploadedBlockPort, FindUploadedBl
         redisRepository.executeScript(RELEASE_SCRIPT, List.of(INDEX_KEY), args.toArray(String[]::new));
     }
 
-    private static String key(UUID ownerId, String hash) {
-        return KEY_PREFIX + ownerId + ":" + hash;
+    static String key(UUID ownerId, String hash) {
+        return KEY_PREFIX + "{" + ownerId + "}:" + hash;
     }
 }

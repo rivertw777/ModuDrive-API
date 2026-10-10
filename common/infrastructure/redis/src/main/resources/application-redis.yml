@@ -8,3 +8,12 @@ spring:
       # the JVM's default trust store verifies it — no bundle needed. Local Redis has no TLS.
       ssl:
         enabled: ${REDIS_SSL_ENABLED:false}
+      # Cluster mode (MemoryDB, prod) is switched on by the environment alone: SPRING_DATA_REDIS_CLUSTER_NODES
+      # (the cluster endpoint) and SPRING_DATA_REDIS_USERNAME (its ACL user) — absent everywhere else,
+      # which keeps the standalone host above. When it is on, follow the topology through a failover:
+      # refresh on MOVED/ASK and reconnect errors, and every 30s regardless.
+      lettuce:
+        cluster:
+          refresh:
+            adaptive: true
+            period: 30s

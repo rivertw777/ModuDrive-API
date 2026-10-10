@@ -1,5 +1,6 @@
 package com.moduDrive.member.adapter.out.security;
 
+import io.lettuce.core.cluster.SlotHash;
 import com.moduDrive.common.infrastructure.redis.RedisRepository;
 import com.moduDrive.member.application.port.out.EmailVerificationTokenPort.CodeConfirmation;
 import com.moduDrive.member.application.port.out.EmailVerificationTokenPort.CodeRequest;
@@ -29,9 +30,9 @@ class RedisEmailVerificationTokenStoreTest {
 
     private static final String CODE = "042917";
     private static final String EMAIL = "river@modudrive.com";
-    private static final String CODE_KEY = "email-verify-code:river@modudrive.com";
-    private static final String ATTEMPTS_KEY = "email-verify-attempts:river@modudrive.com";
-    private static final String COOLDOWN_KEY = "email-verify-cooldown:river@modudrive.com";
+    private static final String CODE_KEY = RedisEmailVerificationTokenStore.codeKey("river@modudrive.com");
+    private static final String ATTEMPTS_KEY = RedisEmailVerificationTokenStore.attemptsKey("river@modudrive.com");
+    private static final String COOLDOWN_KEY = RedisEmailVerificationTokenStore.cooldownKey("river@modudrive.com");
 
     private static LettuceConnectionFactory connectionFactory;
     private static StringRedisTemplate redisTemplate;
@@ -73,7 +74,7 @@ class RedisEmailVerificationTokenStoreTest {
 
             assertThat(store.requestCode(EMAIL)).isEqualTo(CodeRequest.TOO_MANY);
             assertThat(store.requestCode("other@modudrive.com")).isEqualTo(CodeRequest.ALLOWED);
-            assertThat(redisTemplate.getExpire("email-verify-requests:river@modudrive.com")).isPositive();
+            assertThat(redisTemplate.getExpire(RedisEmailVerificationTokenStore.requestsKey("river@modudrive.com"))).isPositive();
         }
 
         @Test
@@ -82,7 +83,7 @@ class RedisEmailVerificationTokenStoreTest {
             assertThat(store.requestCode(EMAIL)).isEqualTo(CodeRequest.ALLOWED);
 
             assertThat(store.requestCode(" River@ModuDrive.com")).isEqualTo(CodeRequest.TOO_SOON);
-            assertThat(redisTemplate.opsForValue().get("email-verify-requests:river@modudrive.com")).isEqualTo("1");
+            assertThat(redisTemplate.opsForValue().get(RedisEmailVerificationTokenStore.requestsKey("river@modudrive.com"))).isEqualTo("1");
             assertThat(redisTemplate.getExpire(COOLDOWN_KEY)).isBetween(1L, 30L);
 
             redisTemplate.delete(COOLDOWN_KEY);
@@ -190,5 +191,25 @@ class RedisEmailVerificationTokenStoreTest {
             assertThat(store.consumeVerified(EMAIL)).isTrue();
             assertThat(store.consumeVerified(EMAIL)).isFalse();
         }
+    }
+
+    @Test
+    @DisplayName("한 주소의 키는 대소문자와 상관없이 한 클러스터 슬롯에 있어, 여러 키를 쓰는 스크립트가 MemoryDB에서도 돈다")
+    void oneAddressesKeysShareAClusterSlot() {
+        int slot = SlotHash.getSlot(RedisEmailVerificationTokenStore.requestsKey("A@x.com"));
+
+        assertThat(List.of(
+                RedisEmailVerificationTokenStore.cooldownKey("a@x.com"),
+                RedisEmailVerificationTokenStore.codeKey(" a@X.com"),
+                RedisEmailVerificationTokenStore.attemptsKey("a@x.com")))
+                .allSatisfy(key -> assertThat(SlotHash.getSlot(key)).isEqualTo(slot));
+    }
+
+    @Test
+    @DisplayName("중괄호가 든 주소도 키들이 한 슬롯에 있다 — 주소를 태그에 그대로 넣지 않는다")
+    void anAddressWithBracesStillSharesOneSlot() {
+        assertThat(SlotHash.getSlot(RedisEmailVerificationTokenStore.requestsKey("}a@x.com")))
+                .isEqualTo(SlotHash.getSlot(RedisEmailVerificationTokenStore.cooldownKey("}a@x.com")));
+        assertThat(RedisEmailVerificationTokenStore.requestsKey("}a@x.com")).doesNotContain("a@x.com");
     }
 }

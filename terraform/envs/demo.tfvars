@@ -21,6 +21,7 @@ db_instances = {
 
 # One cluster for everything, like local. Accepted for a demo: a burst of uploads shares memory with
 # the sessions, and a full Redis (noeviction) fails logins too. prod splits it by purpose.
+redis_engine = "elasticache"
 redis_clusters = {
   auth = { node_type = "cache.t4g.micro", nodes = 1, clients = ["auth", "member", "mail", "storage"] }
 }

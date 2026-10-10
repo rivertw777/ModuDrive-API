@@ -30,6 +30,11 @@ locals {
         REDIS_PORT        = "6379"
         REDIS_SSL_ENABLED = "true"
       } : {},
+      # MemoryDB is cluster mode with ACL users: these two switch the client over (application-redis.yml).
+      contains(local.redis_clients, name) && var.redis_engine == "memorydb" ? {
+        SPRING_DATA_REDIS_CLUSTER_NODES = "${local.redis_host[name]}:6379"
+        SPRING_DATA_REDIS_USERNAME      = aws_memorydb_user.redis[local.redis_cluster_of[name]].user_name
+      } : {},
       # Endpoint and keys unset: the SDK falls back to the task role (005 1-2).
       contains(local.sqs_clients, name) ? { SPRING_CLOUD_AWS_REGION_STATIC = var.region } : {},
       lookup({
