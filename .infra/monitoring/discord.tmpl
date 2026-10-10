@@ -1,0 +1,64 @@
+{{/* Discord 메시지 — AWS(alertmanager.yaml → AMP)와 로컬(.docker/observability/alertmanager.yml)이 같이 쓴다. */}}
+{{ define "discord.target" }}{{ or .Labels.routeId .Labels.service }}{{ if .Labels.queue }} · `{{ .Labels.queue }}`{{ end }}{{ if .Labels.name }} · `{{ .Labels.name }}`{{ end }}{{ end }}
+{{ define "discord.message" }}
+{{- if eq (len .Alerts) 1 }}{{ range .Alerts }}
+{{- if eq .Status "resolved" }}✅  **{{ .Annotations.title }} (해제)**
+
+**대상**: {{ template "discord.target" . }}
+{{- else }}🚨  **{{ .Annotations.title }}**
+
+**대상**: {{ template "discord.target" . }}
+
+**사유**: {{ .Annotations.summary }}
+
+**조치**: {{ .Annotations.action }}
+{{- if .Annotations.inspect }}
+
+**확인 명령어**
+```
+{{ .Annotations.inspect }}
+```
+{{- end }}
+{{- if .Annotations.redrive }}
+**SQS 리드라이브 명령어**
+```
+{{ .Annotations.redrive }}
+```
+{{- end }}
+{{- if .Annotations.logs }}
+
+**relay 로그**
+```
+{{ .Annotations.logs }}
+```
+{{- end }}
+{{- if .Annotations.query }}
+
+**이벤트 조회 쿼리**
+```sql
+{{ .Annotations.query }}
+```
+{{- end }}
+{{- if .Annotations.recovery }}
+**이벤트 복구 쿼리**
+```sql
+{{ .Annotations.recovery }}
+```
+{{- end }}
+{{- end }}
+{{- end }}
+{{- else }}
+{{- if .Alerts.Firing }}🚨  **{{ .CommonAnnotations.title }}** ({{ len .Alerts.Firing }}건)
+{{ range .Alerts.Firing }}
+- {{ template "discord.target" . }} — {{ .Annotations.summary }}
+{{- end }}
+
+**조치**: {{ (index .Alerts.Firing 0).Annotations.action }}
+{{ end }}
+{{- if .Alerts.Resolved }}✅  **{{ .CommonAnnotations.title }} (해제)** ({{ len .Alerts.Resolved }}건)
+{{ range .Alerts.Resolved }}
+- {{ template "discord.target" . }}
+{{- end }}
+{{ end }}
+{{- end }}
+{{- end }}

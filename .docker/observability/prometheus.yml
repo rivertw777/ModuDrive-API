@@ -1,5 +1,15 @@
 global:
   scrape_interval: 15s
+  evaluation_interval: 1m
+
+# 알림: 규칙은 여기서 평가하고 Alertmanager → LocalStack SNS → Lambda → Discord로 나간다(AWS와 같은 길).
+rule_files:
+  - /etc/modudrive/alert-rules.yaml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: [alertmanager:9093]
 
 # 액추에이터는 management.server.port(9464)로 앱 포트와 분리되어 있다 — gateway의 Spring Security
 # 체인은 애플리케이션 포트에만 걸려 있으므로, 여기서 인증 우회 없이 그대로 스크레이프된다.
@@ -15,3 +25,9 @@ scrape_configs:
           - storage-service:9464
           - mail-service:9464
           - notification-service:9464
+    # 알림 규칙과 메시지는 service 라벨로 서비스를 가리킨다 — AWS(otel-collector.yaml)가 컨테이너 이름으로
+    # 붙이는 것과 같은 값이다. instance(호스트:포트)는 AWS에선 태스크 IP라 쓰지 않는다.
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: '(.+):\d+'
+        target_label: service

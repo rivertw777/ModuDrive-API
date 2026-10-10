@@ -29,7 +29,11 @@
                          │                                                  │                 │ OTLP gRPC :4317
                          │                                                  │                 ▼
                          └──────────────────────▶  Grafana  ◀───────────────┴────────────── Tempo
-                                                (localhost:3001)
+                         │                      (localhost:3001)
+                         │ 알림 규칙 (1m)
+                         ▼
+                    Alertmanager ──▶ LocalStack SNS ──▶ Lambda ──▶ Discord
+                  (localhost:9093)   (modudrive-alerts)  (discord-forwarder)
 ```
 
 | 신호 | 수집 | 저장 | 보는 곳 |
@@ -47,7 +51,9 @@
 | `.docker/docker-compose.observability.yml` | 스택 전체 (compose 프로젝트명 `modudrive-observability`) |
 | `.docker/observability/*.yaml` | 각 컴포넌트 설정 — 디렉터리째 `/etc/modudrive`로 마운트 |
 | `.docker/observability/grafana/datasources/datasources.yaml` | Grafana 데이터소스 프로비저닝 (Prometheus/Tempo/Loki + 상호 링크) |
-| `.docker/observability/grafana/alerting/alerts.yaml` | 알림 규칙 7개(outbox 2 + DLQ + 서비스 다운 + 서킷 열림 + 요청 실패율 + 느린 요청) + Discord 수신처 ([007-discord-alert-spec.md](spec/007-discord-alert-spec.md)) |
+| `.docker/observability/alert-rules.yaml` | 알림 규칙 7개(outbox 2 + DLQ + 서비스 다운 + 서킷 열림 + 요청 실패율 + 느린 요청), Prometheus가 평가 ([007-discord-alert-spec.md](spec/007-discord-alert-spec.md)) |
+| `.docker/observability/alertmanager.yml` | 묶음·재발송·채널 → LocalStack SNS. 메시지 양식은 AWS와 같은 `.infra/monitoring/discord.tmpl` |
+| `.docker/localstack/init-aws.sh` | SNS 토픽 `modudrive-alerts` + Lambda(`.infra/monitoring/discord_forwarder.py`) + 웹후크 SSM 파라미터 |
 | `common/infrastructure/observability` | 앱 쪽 공통 모듈 — 의존성 + `application-observability.yml` + `UserIdObservationFilter`(6장) |
 
 앱 쪽 공통 모듈은 모든 서비스가 의존하고, 각 서비스 `application.yml`의
@@ -108,9 +114,15 @@
   - **Loki → Tempo**: 로그 JSON의 `"traceId":"<32hex>"`를 정규식으로 뽑아 TraceID 링크 생성
   - **Tempo → Loki**: trace에서 해당 traceId 로그로 점프 (`tracesToLogsV2`)
 - 대시보드는 프로비저닝 안 함 — Explore에서 직접 조회.
-- 알림은 Grafana 내장 기능으로 처리 — Alertmanager 컨테이너 없음. 규칙·수신처·정책 모두
-  `provisioning/alerting`의 파일이라 UI에서 고칠 수 없고 `make reset`에도 살아남는다.
-  규칙·문구·수신처는 [007-discord-alert-spec.md](spec/007-discord-alert-spec.md)가 기준.
+- 알림은 Grafana가 아니라 AWS와 같은 길로 나간다: Prometheus 규칙 → Alertmanager → SNS → Lambda → Discord (아래).
+
+### Alertmanager (`prom/alertmanager`, `127.0.0.1:9093`)
+- AWS의 AMP alertmanager 자리. Prometheus가 넘긴 알림을 `alertname`으로 묶어 LocalStack SNS(`modudrive-alerts`)에 올리고,
+  SNS가 Lambda(`modudrive-discord-forwarder`)를 불러 디스코드로 보낸다. 웹후크 URL은 Lambda가 LocalStack SSM에서 읽는다.
+- 지금 울리는 알림과 일시 중지(silence)는 `localhost:9093`, 규칙 상태는 `localhost:9090/alerts`.
+- LocalStack이 내려가 있으면 SNS 발행이 실패하고 Alertmanager가 재시도한다. LocalStack은 Lambda를 컨테이너로 띄우므로
+  docker socket을 마운트하고, 처음 뜰 때 Lambda 런타임 이미지를 받느라 init이 30초쯤 더 걸린다.
+- 규칙·문구·채널은 [007-discord-alert-spec.md](spec/007-discord-alert-spec.md)가 기준.
 
 ---
 
@@ -186,7 +198,7 @@ gateway → 서비스(WebClient/Netty)와 SQS(outbox 헤더 저장 → relay Obs
 | **S3 호출 span** | storage-service `S3Config` (`opentelemetry-aws-sdk-2.2`, Boot BOM의 OTel API 1.62에 맞춘 2.28.1) | 업로드 trace에 `S3.PutObject` span |
 | **userId** — 서버 span 태그 `user.id`, 로그 필드 `userId` (메트릭 레이블엔 안 넣음) | `UserIdObservationFilter`(`common:infrastructure:observability`, 서블릿 서비스만) | Tempo `{ span.user.id = "<uuid>" }`, Loki `{service="file-service"} \| json \| userId="<uuid>"` |
 | **exemplar** — 요청 지표를 히스토그램(100ms·300ms·1s·3s·10s)으로, 버킷마다 trace_id | `application-observability.yml` `slo`, Prometheus `--enable-feature=exemplar-storage`, Grafana Prometheus 데이터소스 `exemplarTraceIdDestinations` | Explore에서 `spring_cloud_gateway_requests_seconds_bucket` 그래프에 점 → 클릭하면 Tempo |
-| **느린 요청 알림** — 1초 넘는 요청 비율, storage-service 제외 | `alerts.yaml` `route-slow-rate`, [007 4-7](spec/007-discord-alert-spec.md#4-7-느린-요청-많음) | Grafana 알림 규칙 목록에 "느린 요청 많음" |
+| **느린 요청 알림** — 1초 넘는 요청 비율, storage-service 제외 | `alert-rules.yaml` `RouteSlowRate`, [007 4-7](spec/007-discord-alert-spec.md#4-7-느린-요청-많음) | `localhost:9090/alerts`에 `RouteSlowRate` |
 
 - exemplar는 **샘플링에 남은 trace만 열린다** — 정상 요청은 tail sampling에서 95%가 버려지므로 빠른 버킷의 점은 "trace not found"가 흔하다. 1초 넘는 버킷은 collector가 전부 남기므로 장애 분석에 쓰는 점은 열린다.
 - JDBC metrics(`db.client.operation.duration`)도 같이 생긴다 — 레이블이 쿼리 요약(`SELECT file` 수준)이라 시계열이 쿼리 모양 수만큼 는다. 많아지면 `jdbc.opentelemetry.metrics.enabled: false`.

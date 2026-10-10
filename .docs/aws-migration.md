@@ -53,7 +53,7 @@
 | 메일 | LocalStack SES → Mailpit(`localhost:8025`) | SES |
 | 시크릿 | `.docker/.env` | SSM Parameter Store, RDS 관리자 비밀번호만 Secrets Manager |
 | 모니터링 | Prometheus·Promtail·Loki·otel-collector·Tempo·Grafana | AMP·CloudWatch Logs·X-Ray·Managed Grafana(prod), 중앙 ADOT collector |
-| 알림 | Grafana → Discord | AMP 알림 규칙·CloudWatch 경보·Budgets → SNS → Lambda → Discord |
+| 알림 | Prometheus 규칙 → Alertmanager → LocalStack SNS → Lambda → Discord | AMP 알림 규칙·CloudWatch 경보·Budgets → SNS → Lambda → Discord |
 | 인프라 정의 | `.docker/*.yml`, `.docker/localstack/init-aws.sh` | `.infra/`, 환경마다 AWS 계정 하나 |
 | 배포 | `make service` | GitHub Actions (OIDC) → ECR → ECS 새 리비전 |
 
@@ -203,7 +203,7 @@ ECS 태스크들 ──OTLP 트레이스──▶ ┌─────────
 | 메트릭 | Prometheus | Amazon Managed Prometheus (AMP) | collector의 `ecs_observer`가 태스크를 찾아 `:9464` 수집 → remote write |
 | 트레이스 | otel-collector → Tempo | X-Ray | 앱 OTLP → collector(tail sampling) → X-Ray |
 | 로그 | Promtail → Loki | CloudWatch Logs (보존 14일) | `awslogs` 드라이버. Promtail은 docker socket 기반이라 Fargate에서 못 쓴다 |
-| 알림 | Grafana 알림 → Discord | AMP 알림 규칙 → SNS → Lambda → Discord | |
+| 알림 | Prometheus 규칙 → Alertmanager → SNS → Lambda → Discord (SNS·Lambda는 LocalStack) | AMP 알림 규칙 → SNS → Lambda → Discord | |
 | 대시보드 | Grafana | Amazon Managed Grafana (`grafana = true`일 때) | AMP·X-Ray·CloudWatch 데이터소스 |
 
 앱 설정은 바뀌지 않는다. collector의 Service Connect 이름이 compose와 같은 `otel-collector:4318`이라 앱 기본값(`application-observability.yml`)이 그대로 맞는다. 그래서 mail도 Service Connect에 클라이언트로 들어간다.
@@ -218,8 +218,10 @@ ECS 태스크들 ──OTLP 트레이스──▶ ┌─────────
 
 #### 알림
 
-- 로컬 `alerts.yaml`의 규칙을 Prometheus 형식으로 옮겼다(`monitoring/alert-rules.yaml`). 쿼리·기준값·대기 시간은 같다. 바뀐 건 서비스 라벨, 확인 명령어(`docker logs` → `aws logs tail`, TraceQL → X-Ray 필터), 그리고 규칙 하나가 늘었다 — ECS에선 죽은 태스크가 `up = 0`이 아니라 대상 목록에서 사라지므로 `ServiceNoTasks`가 `absent(up{service=...})`로 그걸 본다.
-- 묶음(`group_by: [alertname]`)·재알림(4시간)·채널 두 개(messaging·service)도 로컬과 같다(`monitoring/alertmanager.yaml`). Discord 문구는 로컬 템플릿에서 Grafana 링크만 뺐다.
+- 알림 경로는 로컬과 같다. 로컬은 Prometheus + Alertmanager 컨테이너가 LocalStack의 SNS·Lambda로 보내고, AWS는 그 자리에 AMP가 있다. Lambda 코드(`monitoring/discord_forwarder.py`)와 Discord 문구(`monitoring/discord.tmpl`)는 두 환경이 같은 파일을 쓴다.
+- 규칙(`monitoring/alert-rules.yaml`)은 로컬 `.docker/observability/alert-rules.yaml`과 쿼리·기준값·대기 시간이 같다. 다른 건 확인 명령어(`docker logs` → `aws logs tail`, TraceQL → X-Ray 필터)와 규칙 하나 — ECS에선 죽은 태스크가 `up = 0`이 아니라 대상 목록에서 사라지므로 `ServiceNoTasks`가 `absent(up{service=...})`로 그걸 본다.
+- 묶음(`group_by: [alertname]`)·재알림(4시간)·채널 두 개(messaging·service)도 로컬과 같다(`monitoring/alertmanager.yaml`).
+- CloudWatch 경보·Budgets·GuardDuty는 로컬에 없다. 볼 대상(ALB, NAT, 요금, 계정 위협)이 로컬에 없어서다.
 - Managed Grafana의 알림이 아니라 AMP 알림 규칙을 쓰는 이유: Managed Grafana의 규칙은 로컬처럼 파일로 둘 수 없고, Terraform grafana provider로 관리하려면 최대 30일짜리 서비스 계정 토큰이 필요하다. AMP 규칙은 Terraform 리소스 하나라 리뷰·재현이 된다. 대신 AMP 알림은 SNS로만 나가므로 Discord로 넘기는 Lambda(`monitoring/discord_forwarder.py`)를 둔다. Lambda는 VPC 밖에 있어 NAT가 멈춰도 알림은 간다.
 - AWS 쪽 경보(CloudWatch)도 같은 SNS 토픽으로 보낸다. 앱 지표로는 안 보이는 것들이다.
 
