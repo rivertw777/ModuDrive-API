@@ -50,7 +50,7 @@ locals {
   secrets = {
     for name, port in local.service_ports : name => merge(
       contains(keys(local.db_names), name) ? { SPRING_DATASOURCE_PASSWORD = aws_ssm_parameter.db_password[name].arn } : {},
-      contains(local.redis_clients, name) ? { REDIS_PASSWORD = aws_ssm_parameter.redis_password.arn } : {},
+      contains(local.redis_clients, name) ? { REDIS_PASSWORD = aws_ssm_parameter.redis_password[local.redis_cluster_of[name]].arn } : {},
       name == "storage" ? { STORAGE_ENCRYPTION_KEY = aws_ssm_parameter.storage_encryption_key.arn } : {},
     )
   }

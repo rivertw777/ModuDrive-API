@@ -29,8 +29,8 @@ output "ssm_parameter_arns" {
   value = merge(
     { for key, param in aws_ssm_parameter.db_password : local.db_logins[key] => param.arn },
     { for name, param in aws_ssm_parameter.discord_webhook : name => param.arn },
+    { for name, param in aws_ssm_parameter.redis_password : "REDIS_PASSWORD (${name} cluster)" => param.arn },
     {
-      REDIS_PASSWORD         = aws_ssm_parameter.redis_password.arn
       STORAGE_ENCRYPTION_KEY = aws_ssm_parameter.storage_encryption_key.arn
     },
   )

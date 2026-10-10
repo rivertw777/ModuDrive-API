@@ -40,11 +40,14 @@ resource "aws_elasticache_replication_group" "redis" {
   multi_az_enabled           = each.value.nodes > 1
 
   subnet_group_name  = aws_elasticache_subnet_group.redis.name
-  security_group_ids = [aws_security_group.redis.id]
+  security_group_ids = [aws_security_group.redis[each.key].id]
 
   transit_encryption_enabled = true
   at_rest_encryption_enabled = true
-  auth_token                 = random_password.redis.result
+  auth_token                 = random_password.redis[each.key].result
+  # A changed token (storage's, when it got its own) is rotated in: old and new both work until the
+  # tasks restart with the new one, then the old one is dropped on the next change.
+  auth_token_update_strategy = "ROTATE"
 }
 
 resource "aws_elasticache_parameter_group" "noeviction" {
@@ -60,6 +63,9 @@ resource "aws_elasticache_parameter_group" "noeviction" {
 locals {
   # The services that use Redis, and the cluster each one talks to.
   redis_clients = flatten([for cluster in var.redis_clusters : cluster.clients])
+  redis_cluster_of = merge([
+    for name, cluster in var.redis_clusters : { for client in cluster.clients : client => name }
+  ]...)
   redis_host = merge([
     for name, cluster in var.redis_clusters : {
       for client in cluster.clients : client => aws_elasticache_replication_group.redis[name].primary_endpoint_address

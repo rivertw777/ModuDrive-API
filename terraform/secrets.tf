@@ -25,16 +25,31 @@ resource "aws_ssm_parameter" "db_password" {
   value = random_password.db[each.key].result
 }
 
-# ElastiCache AUTH token: 16–128 chars, no @ " / or spaces.
+# ElastiCache AUTH token, one per cluster: 16–128 chars, no @ " / or spaces.
 resource "random_password" "redis" {
+  for_each = var.redis_clusters
+
   length  = 64
   special = false
 }
 
+moved {
+  from = random_password.redis
+  to   = random_password.redis["auth"]
+}
+
+# auth keeps the stack's first name; each service gets its cluster's as REDIS_PASSWORD (ecs.tf).
 resource "aws_ssm_parameter" "redis_password" {
-  name  = "/${var.project}/REDIS_PASSWORD"
+  for_each = var.redis_clusters
+
+  name  = each.key == "auth" ? "/${var.project}/REDIS_PASSWORD" : "/${var.project}/REDIS_PASSWORD_${upper(each.key)}"
   type  = "SecureString"
-  value = random_password.redis.result
+  value = random_password.redis[each.key].result
+}
+
+moved {
+  from = aws_ssm_parameter.redis_password
+  to   = aws_ssm_parameter.redis_password["auth"]
 }
 
 # AES-256 key for file blocks, Base64 as storage-service decodes it (S3StorageAdapter).
