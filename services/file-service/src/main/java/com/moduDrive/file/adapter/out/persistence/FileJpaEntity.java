@@ -4,6 +4,7 @@ import com.moduDrive.common.infrastructure.jpa.audit.BaseTimeEntity;
 import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.Role;
 import com.moduDrive.file.domain.model.ShareScope;
+import org.hibernate.annotations.DynamicUpdate;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -31,6 +32,10 @@ import java.util.UUID;
         @Index(name = "ix_file_status_trashed_at", columnList = "status, trashed_at")
 })
 @Entity
+// Only the columns a save actually changed are written: saveFile copies every field over, and a
+// full-row UPDATE would let a rename/move/share change put back the current version a commit set
+// after this row was read.
+@DynamicUpdate
 class FileJpaEntity extends BaseTimeEntity {
 
     @Id

@@ -2,6 +2,8 @@ package com.moduDrive.file.adapter.out.persistence;
 
 import com.moduDrive.common.infrastructure.jpa.config.AuditingConfig;
 import com.moduDrive.file.domain.model.File;
+import com.moduDrive.file.domain.model.File.FileId;
+import com.moduDrive.file.domain.model.File.FileName;
 import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.Namespace.NamespaceId;
 import jakarta.persistence.EntityManager;
@@ -12,10 +14,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -100,6 +104,47 @@ class FileRowLockTest {
         trash.get(10, TimeUnit.SECONDS);
 
         assertThat(commit.get(10, TimeUnit.SECONDS)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("이름을 바꾸는 저장은 그사이 commit이 바꾼 현재 버전을 되돌리지 않는다")
+    void aSaveWritesOnlyTheColumnsItChanged() {
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+        UUID id = tx.execute(status -> fileRepository.save(
+                new FileJpaEntity(namespaceId, "a.bin", "/", UUID.randomUUID(), FileStatus.UPLOADED, false)).getId());
+        UUID committedVersion = UUID.randomUUID();
+
+        tx.executeWithoutResult(status -> {
+            File read = adapter.findById(new FileId(id)).orElseThrow();
+            // A commit lands between this read and the save below.
+            TransactionTemplate commit = new TransactionTemplate(transactionManager);
+            commit.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+            commit.executeWithoutResult(inner ->
+                    entityManager.createNativeQuery("update file set current_version_id = :version where id = :id")
+                            .setParameter("version", committedVersion).setParameter("id", id).executeUpdate());
+            read.rename(new FileName("b.bin"));
+            adapter.saveFile(read);
+        });
+
+        FileJpaEntity after = tx.execute(status -> fileRepository.findById(id).orElseThrow());
+        assertThat(after.getName()).isEqualTo("b.bin");
+        assertThat(after.getCurrentVersionId()).isEqualTo(committedVersion);
+    }
+
+    @Test
+    @DisplayName("영구 삭제의 하위 잠금은 휴지통에 있는 행만 잠그고 돌려준다")
+    void thePurgeLocksOnlyTheTrashedRowsOfTheSubtree() {
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+        tx.executeWithoutResult(status -> {
+            fileRepository.save(new FileJpaEntity(namespaceId, "old.bin", "/D", UUID.randomUUID(), FileStatus.TRASHED, false));
+            fileRepository.save(new FileJpaEntity(namespaceId, "live.bin", "/D", UUID.randomUUID(), FileStatus.UPLOADED, false));
+            fileRepository.save(new FileJpaEntity(namespaceId, "x.bin", "/D2", UUID.randomUUID(), FileStatus.TRASHED, false));
+        });
+
+        List<File> locked = tx.execute(status ->
+                adapter.lockTrashedByNamespaceIdAndPathStartingWith(new NamespaceId(namespaceId), "/D"));
+
+        assertThat(locked).extracting(File::getName).containsExactly("old.bin");
     }
 
     private static void await(CountDownLatch latch) {

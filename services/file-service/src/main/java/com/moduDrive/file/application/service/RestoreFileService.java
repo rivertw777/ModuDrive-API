@@ -26,7 +26,8 @@ class RestoreFileService implements RestoreFileUseCase {
     @Transactional
     @Override
     public File restoreFile(RestoreFileCommand command) {
-        File file = findFilePort.findById(command.getFileId())
+        // Locked, so a purge running now finishes first and this sees the tombstone, not TRASHED.
+        File file = findFilePort.lockById(command.getFileId())
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_NOT_FOUND));
         fileAccessGuard.requireOwner(file, command.getCallerId());
 

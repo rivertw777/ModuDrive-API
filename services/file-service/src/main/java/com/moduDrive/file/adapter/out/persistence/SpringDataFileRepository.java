@@ -54,6 +54,16 @@ interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID>, J
             @Param("prefix") String prefix,
             @Param("escapedPrefix") String escapedPrefix);
 
+    // Only the subtree's TRASHED rows: a purge locks these and then releases blocks, while a commit
+    // locks blocks and then active rows — locking a live folder reusing the path would close a cycle.
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select f from FileJpaEntity f where f.namespaceId = :namespaceId and f.status = 'TRASHED' " +
+            "and (f.path = :prefix or f.path like concat(:escapedPrefix, '/%') escape '\\') order by f.path, f.name")
+    List<FileJpaEntity> lockTrashedSubtreeByNamespaceIdAndPathPrefix(
+            @Param("namespaceId") UUID namespaceId,
+            @Param("prefix") String prefix,
+            @Param("escapedPrefix") String escapedPrefix);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select f from FileJpaEntity f where f.id = :id")
     Optional<FileJpaEntity> lockById(@Param("id") UUID id);
@@ -74,7 +84,7 @@ interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID>, J
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("update FileJpaEntity f set f.deletedAt = :now, f.isDeleted = true, f.status = 'DELETED', "
             + "f.deletedBy = :deletedBy where f.id = :id and f.status = 'TRASHED'")
-    void markPurged(@Param("id") UUID id, @Param("now") LocalDateTime now, @Param("deletedBy") UUID deletedBy);
+    int markPurged(@Param("id") UUID id, @Param("now") LocalDateTime now, @Param("deletedBy") UUID deletedBy);
 
     List<FileJpaEntity> findByNamespaceIdAndNameContainingIgnoreCaseAndStatusNotIn(
             UUID namespaceId, String name, Collection<FileStatus> statuses);

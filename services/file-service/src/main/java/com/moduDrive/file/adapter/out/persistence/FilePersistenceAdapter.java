@@ -122,8 +122,11 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
         // deletedAt stamped. markPurged is a plain UPDATE (not a JPA save) so it doesn't bump
         // updatedAt — DirectoryCascader.purge's sibling check relies on trash-time timestamps
         // staying put.
-        cascadeDeleteAttachments(fileId);
-        fileRepository.markPurged(fileId.value(), LocalDateTime.now(), deletedBy);
+        // Tombstone first, and drop the rest only if it was still TRASHED — a file restored meanwhile
+        // keeps its versions, shares and favorites.
+        if (fileRepository.markPurged(fileId.value(), LocalDateTime.now(), deletedBy) == 1) {
+            cascadeDeleteAttachments(fileId);
+        }
     }
 
     // The file's versions would otherwise dangle forever, holding block references that
@@ -215,6 +218,15 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
     public List<File> lockByNamespaceIdAndPathStartingWith(NamespaceId namespaceId, String pathPrefix) {
         return fileRepository
                 .lockSubtreeByNamespaceIdAndPathPrefix(namespaceId.value(), pathPrefix, escapeLikePattern(pathPrefix))
+                .stream()
+                .map(fileMapper::mapFileToDomain)
+                .toList();
+    }
+
+    @Override
+    public List<File> lockTrashedByNamespaceIdAndPathStartingWith(NamespaceId namespaceId, String pathPrefix) {
+        return fileRepository
+                .lockTrashedSubtreeByNamespaceIdAndPathPrefix(namespaceId.value(), pathPrefix, escapeLikePattern(pathPrefix))
                 .stream()
                 .map(fileMapper::mapFileToDomain)
                 .toList();

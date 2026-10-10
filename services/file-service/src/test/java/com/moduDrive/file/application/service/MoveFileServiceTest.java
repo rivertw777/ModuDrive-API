@@ -67,7 +67,7 @@ class MoveFileServiceTest {
 
         @Test
         void movesAndSavesFile() {
-            given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(makeFile(FileStatus.UPLOADED)));
+            given(findFilePort.lockById(command.getFileId())).willReturn(Optional.of(makeFile(FileStatus.UPLOADED)));
             given(saveFilePort.saveFile(any())).willAnswer(inv -> inv.getArgument(0));
 
             File result = moveFileService.moveFile(command);
@@ -84,7 +84,7 @@ class MoveFileServiceTest {
 
         @Test
         void cascadesDescendantPaths() {
-            given(findFilePort.findById(command.getFileId()))
+            given(findFilePort.lockById(command.getFileId()))
                     .willReturn(Optional.of(makeFile(FileStatus.UPLOADED, new FileIsDirectory(true))));
             given(saveFilePort.saveFile(any())).willAnswer(inv -> inv.getArgument(0));
 
@@ -98,7 +98,7 @@ class MoveFileServiceTest {
         @Test
         void rejectsMovingIntoOwnSubtree() {
             MoveFileCommand selfMove = new MoveFileCommand(fileId, callerId, "/1/docs/report.pdf/nested");
-            given(findFilePort.findById(selfMove.getFileId()))
+            given(findFilePort.lockById(selfMove.getFileId()))
                     .willReturn(Optional.of(makeFile(FileStatus.UPLOADED, new FileIsDirectory(true))));
 
             Throwable thrown = catchThrowable(() -> moveFileService.moveFile(selfMove));
@@ -117,7 +117,7 @@ class MoveFileServiceTest {
 
         @Test
         void throwsFileNotFound() {
-            given(findFilePort.findById(command.getFileId())).willReturn(Optional.empty());
+            given(findFilePort.lockById(command.getFileId())).willReturn(Optional.empty());
 
             Throwable thrown = catchThrowable(() -> moveFileService.moveFile(command));
 
@@ -134,7 +134,7 @@ class MoveFileServiceTest {
 
         @Test
         void throwsFileAlreadyDeleted() {
-            given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(makeFile(FileStatus.TRASHED)));
+            given(findFilePort.lockById(command.getFileId())).willReturn(Optional.of(makeFile(FileStatus.TRASHED)));
 
             Throwable thrown = catchThrowable(() -> moveFileService.moveFile(command));
 
@@ -151,7 +151,7 @@ class MoveFileServiceTest {
 
         @Test
         void throwsFileAccessDenied() {
-            given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(makeFile(FileStatus.UPLOADED)));
+            given(findFilePort.lockById(command.getFileId())).willReturn(Optional.of(makeFile(FileStatus.UPLOADED)));
             willThrow(new BusinessException(FileExceptionCase.FILE_ACCESS_DENIED))
                     .given(fileAccessGuard).requireOwner(any(File.class), eq(callerId));
 

@@ -39,6 +39,10 @@ public interface FindFilePort {
      * for the same reason as {@link #lockById}. */
     List<File> lockByNamespaceIdAndPathStartingWith(NamespaceId namespaceId, String pathPrefix);
 
+    /** {@link #lockByNamespaceIdAndPathStartingWith}, TRASHED rows only — a purge, which must not lock
+     * live rows a commit may be waiting on while holding the blocks the purge releases next. */
+    List<File> lockTrashedByNamespaceIdAndPathStartingWith(NamespaceId namespaceId, String pathPrefix);
+
     /** Entries whose {@code path} is {@code pathPrefix} or nested under it — i.e. every
      * descendant of the directory whose full path is {@code pathPrefix}. */
     List<File> findByNamespaceIdAndPathStartingWith(NamespaceId namespaceId, String pathPrefix);

@@ -67,7 +67,7 @@ class RestoreFileServiceTest {
 
         @Test
         void restoresFile() {
-            given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(makeFile(FileStatus.TRASHED)));
+            given(findFilePort.lockById(command.getFileId())).willReturn(Optional.of(makeFile(FileStatus.TRASHED)));
             given(saveFilePort.saveFile(any())).willAnswer(inv -> inv.getArgument(0));
 
             File result = restoreFileService.restoreFile(command);
@@ -85,7 +85,7 @@ class RestoreFileServiceTest {
 
         @Test
         void cascadesRestoreToDescendants() {
-            given(findFilePort.findById(command.getFileId()))
+            given(findFilePort.lockById(command.getFileId()))
                     .willReturn(Optional.of(makeFile(FileStatus.TRASHED, new FileIsDirectory(true))));
             given(saveFilePort.saveFile(any())).willAnswer(inv -> inv.getArgument(0));
 
@@ -101,7 +101,7 @@ class RestoreFileServiceTest {
 
         @Test
         void throwsFileNotFound() {
-            given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(makeFile(FileStatus.DELETED)));
+            given(findFilePort.lockById(command.getFileId())).willReturn(Optional.of(makeFile(FileStatus.DELETED)));
 
             Throwable thrown = catchThrowable(() -> restoreFileService.restoreFile(command));
 
@@ -118,7 +118,7 @@ class RestoreFileServiceTest {
 
         @Test
         void throwsFileNotFound() {
-            given(findFilePort.findById(command.getFileId())).willReturn(Optional.empty());
+            given(findFilePort.lockById(command.getFileId())).willReturn(Optional.empty());
 
             Throwable thrown = catchThrowable(() -> restoreFileService.restoreFile(command));
 
@@ -135,7 +135,7 @@ class RestoreFileServiceTest {
 
         @Test
         void throwsFileNotDeleted() {
-            given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(makeFile(FileStatus.UPLOADED)));
+            given(findFilePort.lockById(command.getFileId())).willReturn(Optional.of(makeFile(FileStatus.UPLOADED)));
 
             Throwable thrown = catchThrowable(() -> restoreFileService.restoreFile(command));
 
@@ -152,7 +152,7 @@ class RestoreFileServiceTest {
 
         @Test
         void throwsFileAccessDenied() {
-            given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(makeFile(FileStatus.DELETED)));
+            given(findFilePort.lockById(command.getFileId())).willReturn(Optional.of(makeFile(FileStatus.DELETED)));
             willThrow(new BusinessException(FileExceptionCase.FILE_ACCESS_DENIED))
                     .given(fileAccessGuard).requireOwner(any(File.class), eq(callerId));
 
