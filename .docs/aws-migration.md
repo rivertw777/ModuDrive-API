@@ -71,13 +71,12 @@
   RDS가 프라이빗이라 Terraform으로는 못 만들고, 같은 스크립트를 **일회성 ECS 태스크**(`modudrive-db-init`, 명령은 출력 `db_init_run_task`)로 한 번 실행한다.
   RDS 관리자는 superuser가 아니라서 PostgreSQL 16부터 `CREATE DATABASE ... OWNER <로그인>`이 `must be able to SET ROLE`로 실패한다 — 스크립트가 만든 로그인을 관리자에게 `GRANT`해서 해결(로컬 superuser에도 그대로 동작).
 - 테이블은 각 서비스가 기동할 때 Flyway가 만든다(#359 / PR #360, `.docs/db-migration.md`) — 별도 작업 없음.
-- 크기·Multi-AZ는 규모 프로필(2-12)로 정한다 — 테스트는 db.t4g.micro 단일 AZ, 운영은 db.m7g.large Multi-AZ. 자동 백업 7일. 그 이상은 Aurora 검토.
+- 크기·Multi-AZ는 규모 프로필(2-12)로 정한다 — `demo`는 db.t4g.micro 단일 AZ, `prod`는 db.m7g.large Multi-AZ. 자동 백업 7일. 그 이상은 Aurora 검토.
 
 ### 2-5. Redis → ElastiCache for Valkey
-- 두 개로 나눈다 (`terraform/redis.tf`, [006 2-4-6](spec/006-resilience-spec.md#2-4-6-redis-분리)).
-  - `redis`: auth(세션·로그인 제한), member(인증 코드), mail(메시지 중복 처리 방지).
-  - `storage_redis`: storage(업로드 기록·업로드 수·다운로드 한도·zip 토큰) — 대량 업로드가 세션 메모리를 채우지 못하게.
-  - 둘 다 `maxmemory-policy noeviction` 파라미터 그룹(`valkey8`, 엔진 8.1 고정). 기존 클러스터에 적용하면 엔진 버전을 먼저 확인한다.
+- 용도별 클러스터로 나눈다 (`terraform/redis.tf`, [006 2-4-6](spec/006-resilience-spec.md#2-4-6-redis-분리)). `prod`는 `auth`(세션, 복제본 포함)·`member`·`mail`·`storage` 4개, `demo`는 `auth`(auth·member·mail 공용)·`storage` 2개 — `envs/*.tfvars`의 `redis_clusters`.
+  - 모두 `maxmemory-policy noeviction` 파라미터 그룹(`valkey8`, 엔진 8.1 고정). 기존 클러스터에 적용하면 엔진 버전을 먼저 확인한다.
+  - 예전 이름(`redis`, `storage_redis`)의 클러스터는 `moved` 블록으로 `redis["auth"]`·`redis["storage"]`가 이어받는다 — 재생성(전원 로그아웃) 없음. `auth`는 클러스터 ID도 예전 그대로(`modudrive`).
 - Valkey는 Redis 호환. **전송 암호화(TLS)를 켠다** — 켜면 TLS 연결만 받는다.
   앱은 `application-redis.yml`의 `ssl.enabled`가 `REDIS_SSL_ENABLED`(기본 false)를 읽으므로, ECS 태스크 정의에 `REDIS_SSL_ENABLED=true`만 넣으면 된다.
   인증서는 Amazon 발급이라 JVM 기본 trust store로 검증된다(SSL bundle 불필요). `REDIS_PASSWORD`는 ElastiCache AUTH 토큰 — AUTH는 TLS가 켜져 있어야 쓸 수 있다.
@@ -201,28 +200,28 @@ ECS 태스크들 ──OTLP 트레이스──▶ ┌─────────
 - 상태는 S3 백엔드(`use_lockfile`로 S3 자체 잠금, DynamoDB 불필요). 상태 버킷은 Terraform이 자기 자신을 관리할 수 없으니 **한 번만 손으로** 만든다(버전 관리 켬).
   ```bash
   cp terraform/backend.hcl.example terraform/backend.hcl   # 버킷 이름 채우기
-  cd terraform && terraform init -backend-config=backend.hcl && terraform plan
+  cd terraform && terraform init -backend-config=backend.hcl && terraform plan -var-file=envs/demo.tfvars
   # 계정 없이 문법만: terraform init -backend=false && terraform validate
   ```
-- **규모 프로필** — `scale` 변수 하나로 고른다(기본 `test`). 아키텍처(서비스·보안 그룹·큐·IAM)는 같고, 돈이 드는 것과 이중화만 다르다. 값은 전부 `terraform/scale.tf` 한 곳에 — 섞어 쓰지 않는다.
+- **규모 프로필** — 값 파일 하나로 고른다: `terraform/envs/demo.tfvars`(실제로 띄우는 포트폴리오 데모) 또는 `terraform/envs/prod.tfvars`(MAU 500만 목표의 운영 설계). 아키텍처(서비스·보안 그룹·큐·IAM)는 같고, 돈이 드는 것과 이중화만 다르다. 크기 변수(`variables.tf`)에는 기본값이 없어서 `-var-file` 없이는 plan이 안 된다 — 두 파일을 섞어 쓰지 않는다. 상태는 하나라 둘을 동시에 띄우지 않는다.
 
-  | | `test` (운영 테스트) | `production` (MAU 500만 목표) |
+  | | `demo` (실제 실행) | `prod` (MAU 500만 목표 설계) |
   |---|---|---|
   | 태스크 위치 | 퍼블릭 서브넷 + 공인 IP (NAT 없음) | 프라이빗 서브넷 + AZ마다 NAT |
   | VPC 인터페이스 엔드포인트 | 없음 (S3 게이트웨이만) | SQS·ECR·logs·SSM·Secrets |
   | ECS | 서비스당 1개, 전부 0.5 vCPU/1 GB, **Fargate Spot** | 사용자 대면 서비스 최소 2개, gateway·auth·file·storage 1 vCPU/2 GB, 일반 Fargate |
   | RDS | db.t4g.micro, 단일 AZ, 삭제 방지 끔 | db.m7g.large, **Multi-AZ**, 삭제 방지 |
-  | Valkey | cache.t4g.micro 1노드 | cache.m7g.large 2노드 + 자동 장애 조치 |
+  | Valkey | 2개 — `auth`(auth·member·mail 공용)·`storage`, cache.t4g.micro 1노드씩 | 용도별 4개 — `auth` cache.m7g.large 2노드 + 자동 장애 조치, `member`·`mail` cache.t4g.small, `storage` cache.m7g.large ([006 2-4-6](spec/006-resilience-spec.md#2-4-6-redis-분리)) |
   | Container Insights | 끔 | 켬 |
   | 대략 비용(서울, 트래픽 전) | 월 $100~150 | 최소 태스크 기준 월 $1,300 안팎 — 트래픽에 따라 오토스케일·NAT·로그 비용이 더해진다 |
 
-  - `test`가 감수하는 것: 네트워크 격리가 보안 그룹에만 의존(인바운드는 여전히 막힘, RDS·Redis는 계속 프라이빗), Spot 회수·재배포 때 잠깐 끊김, Redis 재시작 시 전원 로그아웃.
-  - `production` 숫자는 MAU 500만의 **출발점**이지 측정값이 아니다 — 부하 테스트와 오토스케일링 기록으로 맞춘다.
+  - `demo`가 감수하는 것: 네트워크 격리가 보안 그룹에만 의존(인바운드는 여전히 막힘, RDS·Redis는 계속 프라이빗), Spot 회수·재배포 때 잠깐 끊김, Redis 재시작 시 전원 로그아웃.
+  - `prod` 숫자는 MAU 500만의 **출발점**이지 측정값이 아니다 — 부하 테스트와 오토스케일링 기록으로 맞춘다.
   - 바꾸면 ECS 서비스(Spot ↔ 일반)와 서브넷이 교체되고 RDS 클래스 변경은 재시작이 따른다 — 사용자가 없을 때 바꾼다.
 - 도메인은 `domain_name` 변수 — 비워 두면(기본 null) Route 53 영역·SES identity·DKIM/MAIL FROM 레코드를 만들지 않는다. 넣고 apply한 뒤 출력 `name_servers`를 도메인 등록 업체에 설정한다.
 - 상태 파일에 `random_password`로 만든 비밀번호가 평문으로 들어간다 — 상태 버킷은 암호화 + 접근을 배포 역할로만 제한한다.
 - **첫 apply 순서** — 서비스는 ECR 이미지와 DB가 있어야 뜬다:
-  (아래 모든 명령에 `-var scale=test` 또는 `-var scale=production`, 생략하면 `test`)
+  (아래 모든 명령에 `-var-file=envs/demo.tfvars` 또는 `-var-file=envs/prod.tfvars`)
   1. `terraform apply -target=aws_ecr_repository.service -var image_tag=init` — 저장소만 먼저
   2. 서비스 이미지 7개를 빌드해 같은 태그로 ECR에 푸시 (3장 3단계 CI/CD가 생기면 CI가 한다)
   3. `terraform apply -target=aws_ecs_task_definition.db_init -var image_tag=<태그>` → 출력 `db_init_run_task` 명령 실행 (DB·로그인 생성, 한 번만)

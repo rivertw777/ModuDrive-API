@@ -23,15 +23,65 @@ variable "image_tag" {
   type = string
 }
 
-# Which size to run: "test" (smallest that runs the whole system, for trying the stack out) or
-# "production" (sized and made redundant for the MAU 5M target). Every value that differs between the
-# two lives in scale.tf — switch the whole set at once, never piecemeal.
-variable "scale" {
-  type    = string
-  default = "test"
+# Sizing — the same architecture at either size; only what costs money and what buys redundancy
+# differs. No defaults: every plan names its whole set with -var-file, envs/demo.tfvars (what actually
+# runs) or envs/prod.tfvars (sized for the MAU 5M target), never a mix.
+
+# A NAT per AZ for the tasks' egress; without one, tasks sit in public subnets with a public IP.
+variable "nat" {
+  type = bool
+}
+
+# VPC interface endpoints for SQS, ECR, CloudWatch Logs, SSM, Secrets Manager.
+variable "interface_endpoints" {
+  type = bool
+}
+
+variable "fargate_spot" {
+  type = bool
+}
+
+variable "container_insights" {
+  type = bool
+}
+
+variable "db_instance_class" {
+  type = string
+}
+
+variable "db_multi_az" {
+  type = bool
+}
+
+# RDS deletion protection, and a final snapshot when the database is destroyed anyway.
+variable "deletion_protection" {
+  type = bool
+}
+
+# Valkey clusters by purpose, and the services that use each (redis.tf, spec 006 2-4-6). Every service
+# that uses Redis must be a client of exactly one cluster.
+variable "redis_clusters" {
+  type = map(object({
+    node_type = string
+    nodes     = number
+    clients   = list(string)
+  }))
 
   validation {
-    condition     = contains(["test", "production"], var.scale)
-    error_message = "scale is \"test\" or \"production\"."
+    condition = (
+      length(flatten([for c in var.redis_clusters : c.clients])) == length(distinct(flatten([for c in var.redis_clusters : c.clients])))
+      && toset(flatten([for c in var.redis_clusters : c.clients])) == toset(["auth", "member", "mail", "storage"])
+    )
+    error_message = "auth, member, mail and storage each belong to exactly one cluster."
   }
+}
+
+# Every service's task size and autoscaling bounds.
+variable "services" {
+  type = map(object({
+    cpu    = number
+    memory = number
+    min    = number
+    max    = number
+  }))
 }

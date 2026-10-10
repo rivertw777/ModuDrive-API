@@ -32,7 +32,6 @@ locals {
 
   # Data stores: only the services that use them.
   postgres_clients = ["member", "file", "notification", "auth"]
-  redis_clients    = ["auth", "member", "storage", "mail"]
 }
 
 resource "aws_security_group" "alb" {

@@ -399,14 +399,18 @@ SDK 표준 재시도에 맡기고, 최대 시도는 **2번**(처음 1 + 재시�
 
 #### 2-4-6. Redis 분리
 
-storage-service는 세션과 다른 Redis를 쓴다 (`terraform/redis.tf`의 `storage_redis`). 업로드 기록은 사용자당 하루 최대 25,600개 키라, 같은 Redis에 두면 대량 업로드가 메모리를 채워 세션까지 위협한다.
+Redis를 용도별 클러스터로 나눈다 (`terraform/redis.tf`, 어느 서비스가 어느 클러스터를 쓰는지는 `terraform/envs/*.tfvars`의 `redis_clusters`). 한 용도의 부하나 메모리 부족이 다른 용도로 번지지 않게 한다 — 예를 들어 업로드 기록은 사용자당 하루 최대 25,600개 키라, 세션과 같은 Redis에 두면 대량 업로드가 메모리를 채워 로그인까지 위협한다.
 
-| Redis | 쓰는 서비스 | 메모리가 차면 |
-|---|---|---|
-| `redis` | auth(세션·로그인 제한), member(인증 코드), mail(멱등성) | `noeviction` — 쓰기가 실패한다. 기본값(`volatile-lru`)이면 TTL이 있는 세션이 소리 없이 밀려나 로그아웃된다 |
-| `storage_redis` | storage(업로드 기록·업로드 수·다운로드 한도·zip 토큰) | `noeviction` — 업로드가 실패한다. 밀어내면 다운로드 한도가 풀리고 zip 토큰이 사라지므로 밀어내지 않는다. 세션은 다른 Redis라 영향이 없다 |
+| 클러스터 | 쓰는 서비스 · 키 | `prod` | `demo` |
+|---|---|---|---|
+| `auth` | auth — 세션, 로그인 시도 제한, 새 기기 인증 코드 | 전용, 노드 2개(다른 AZ 복제본, 자동 전환) | auth·member·mail 공용, 노드 1개 |
+| `member` | member — 회원가입 이메일 인증 코드 | 전용, 노드 1개 | (`auth`에) |
+| `mail` | mail — SQS 소비 멱등성(`processed:*`) | 전용, 노드 1개 | (`auth`에) |
+| `storage` | storage — 업로드 기록·업로드 수·다운로드 한도·zip 토큰 | 전용, 노드 1개 | 전용, 노드 1개 |
 
-로컬(compose)은 둘 다 같은 Redis 컨테이너를 쓴다.
+- 모두 `maxmemory-policy noeviction`이다. 메모리가 차면 쓰기가 실패한다. 기본값(`volatile-lru`)이면 TTL이 있는 키 — 세션, 인증 코드, 다운로드 한도, zip 토큰 — 가 소리 없이 밀려난다.
+- 복제본은 세션(`auth`)에만 둔다. 다른 클러스터의 노드를 잃으면 인증 코드를 다시 받거나, 메일이 한 번 더 갈 수 있거나, 업로드 중인 블록을 다시 보내면 된다. 로그아웃되는 사람은 없다.
+- 로컬(compose)은 모두 같은 Redis 컨테이너 하나를 쓴다.
 
 ---
 
