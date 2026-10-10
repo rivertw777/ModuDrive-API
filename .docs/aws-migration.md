@@ -283,6 +283,16 @@ ECS 태스크들 ──OTLP 트레이스──▶ ┌─────────
 
 ---
 
+### 2-14. 컨테이너 강화 (모든 환경)
+
+비용이 들지 않으니 `demo`·`prod`·로컬 모두 같다.
+
+- 이미지(`.docker/Dockerfile`)는 **JRE**(`eclipse-temurin:25-jre-alpine`) — 실행 중인 서비스에는 컴파일러·`jcmd`가 필요 없다.
+- **비루트 사용자**(`app`)로 실행한다. 프로세스가 뚫려도 이미지 파일을 바꾸거나 낮은 포트를 열 수 없다.
+- ECS 태스크(`ecs.tf`): **루트 파일시스템 읽기 전용**(`readonlyRootFilesystem`), `/tmp`만 태스크 임시 저장소 볼륨으로 쓰기 가능(Tomcat multipart 임시 파일·JVM), **Linux capability 전부 제거**(`drop = ["ALL"]`).
+- Fargate는 이름만 있는 볼륨을 **root 소유 `0755`**로 마운트한다 — 그대로면 비루트 사용자가 `/tmp`에 못 써 Tomcat이 뜨지 못한다. 이미지가 `/tmp`를 `VOLUME`으로 선언하고 `1777`로 두면 Fargate가 그 권한을 볼륨에 복사한다. 로컬 compose에서는 컨테이너마다 익명 볼륨이 생기므로 `docker compose down -v`로 함께 지운다.
+- 로컬에서 Fargate와 같은 조건(`--read-only -v /tmp --cap-drop ALL --security-opt no-new-privileges`)으로 7개 서비스를 띄워 기동·헬스 체크·storage 블록 업로드(multipart 3 MB)를 확인했다. (`--tmpfs /tmp`는 누구나 쓸 수 있는 tmpfs라 위 권한 문제를 가리므로 쓰지 않는다.)
+
 ## 3. 진행 순서와 현황
 
 1. **이식성 작업** (로컬에서 검증 가능한 것들) — ✅ 완료
