@@ -54,3 +54,18 @@ output "db_init_run_tasks" {
     "--network-configuration 'awsvpcConfiguration={subnets=[${local.task_subnets[0]}],securityGroups=[${aws_security_group.db_init.id}],assignPublicIp=${local.task_assign_public_ip ? "ENABLED" : "DISABLED"}}'",
   ]) }
 }
+
+output "github_deploy_role_arn" {
+  description = "AWS_DEPLOY_ROLE_ARN in this environment's GitHub environment"
+  value       = aws_iam_role.github_deploy.arn
+}
+
+output "amp_endpoint" {
+  description = "AMP workspace — the Prometheus data source URL in Grafana"
+  value       = aws_prometheus_workspace.main.prometheus_endpoint
+}
+
+output "grafana_url" {
+  description = "Amazon Managed Grafana (assign IAM Identity Center users to it first)"
+  value       = var.grafana ? "https://${aws_grafana_workspace.main[0].endpoint}" : null
+}

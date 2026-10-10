@@ -1,0 +1,82 @@
+# Central ADOT collector (monitoring.tf) — the AWS twin of .docker/observability/otel-collector-config.yaml
+# plus the metrics side Prometheus does locally. Rendered by Terraform (templatefile): $${...} is Terraform's.
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  sigv4auth:
+    region: ${region}
+    service: aps
+  # Finds every task in the cluster whose container carries ECS_PROMETHEUS_EXPORTER_PORT (ecs.tf) and
+  # writes them as Prometheus file_sd targets — task IPs change on every deploy, so no static list.
+  ecs_observer:
+    cluster_name: ${cluster}
+    cluster_region: ${region}
+    result_file: /tmp/ecs_sd_targets.yaml
+    refresh_interval: 30s
+    docker_labels:
+      - port_label: ECS_PROMETHEUS_EXPORTER_PORT
+        metrics_path_label: ECS_PROMETHEUS_METRICS_PATH
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+  prometheus:
+    config:
+      global:
+        scrape_interval: ${scrape_interval}
+      scrape_configs:
+        - job_name: services
+          file_sd_configs:
+            - files: [/tmp/ecs_sd_targets.yaml]
+          relabel_configs:
+            # "member-service" ... — what the alert rules and messages name a service by (instance is a task IP).
+            - source_labels: [__meta_ecs_container_name]
+              target_label: service
+          # AMP bills per sample: keep what the alerts and the usual dashboards read, drop the rest.
+          # Alerting on a new metric → add it here first, or the rule sees nothing.
+          metric_relabel_configs:
+            - source_labels: [__name__]
+              regex: 'modudrive_.*|resilience4j_circuitbreaker_state|spring_cloud_gateway_requests_seconds_.*|http_server_requests_seconds_.*|jvm_memory_used_bytes|jvm_memory_max_bytes|jvm_gc_pause_seconds_.*|jvm_threads_live_threads|process_cpu_usage|hikaricp_connections_.*'
+              action: keep
+
+processors:
+  batch: {}
+  # Same policies as local: errors, over 1s, and 5% of the rest. decision_wait outlasts the gateway's
+  # 15s time limiter so a slow request's late spans arrive before the decision.
+  tail_sampling:
+    decision_wait: 30s
+    policies:
+      - name: errors
+        type: status_code
+        status_code:
+          status_codes: [ERROR]
+      - name: slow-requests
+        type: latency
+        latency:
+          threshold_ms: 1000
+      - name: baseline-sample
+        type: probabilistic
+        probabilistic:
+          sampling_percentage: 5
+
+exporters:
+  awsxray:
+    region: ${region}
+  prometheusremotewrite:
+    endpoint: ${amp_endpoint}api/v1/remote_write
+    auth:
+      authenticator: sigv4auth
+
+service:
+  extensions: [health_check, sigv4auth, ecs_observer]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [tail_sampling, batch]
+      exporters: [awsxray]
+    metrics:
+      receivers: [prometheus]
+      processors: [batch]
+      exporters: [prometheusremotewrite]

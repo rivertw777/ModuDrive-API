@@ -287,15 +287,15 @@ DB나 Redis에 연결할 수 없을 때는 서비스가 503을 돌려주므로 �
 **받으면:** 알림의 TraceQL을 Grafana → Explore → Tempo에 붙여 느린 trace를 열고, 가장 긴 span(DB 쿼리, 하위 서비스 호출, S3)을 본다.
 Explore에서 `spring_cloud_gateway_requests_seconds_bucket` 그래프를 띄우면 점(exemplar)이 찍혀 있어, 눌러서 그 시점의 trace로 바로 갈 수도 있다.
 
+AWS에선 같은 규칙이 AMP 알림 규칙으로 돈다(`terraform/monitoring/alert-rules.yaml`, [aws-migration.md 1-13](../aws-migration.md#1-13-모니터링과-알림)).
+쿼리와 기준값은 같고 서비스 라벨과 확인 명령어만 다르다. 규칙을 고치면 두 파일을 같이 고친다.
+
 ---
 
 ## 5. TODO
 
-- [ ] **AWS로 옮기면**: 규칙 7개를 Amazon Managed Grafana로 옮긴다. 지표는 중앙 ADOT collector가 수집해 Amazon Managed Prometheus에 넣으므로
-  PromQL은 그대로 쓴다. 바뀌는 것은 둘이다. 메시지의 "서비스"를 뽑는 `instance` 라벨이 태스크 IP가 되므로 서비스 이름 라벨로 바꾸고,
-  `inspect` 문구(`docker logs`, TraceQL)를 CloudWatch Logs Insights·X-Ray 검색으로 바꾼다 ([aws-migration.md 2-10](../aws-migration.md#2-10--모니터링--알림)).
-  DLQ 메시지 수는 예외다. CloudWatch가 `ApproximateNumberOfMessagesVisible`로 이미 알고 있으므로,
-  Terraform으로 큐를 만들 때 CloudWatch Alarm을 같이 걸면 앱이 30초마다 세는 코드를 없앨 수 있다.
+- [ ] **DLQ 지표를 CloudWatch 경보로**: AWS에선 CloudWatch가 DLQ의 `ApproximateNumberOfMessagesVisible`을 이미 안다.
+  DLQ마다 경보를 걸면 앱이 30초마다 세는 코드(`DeadLetterQueueMetrics`)를 없앨 수 있다.
 - [ ] **알림 시스템 자체가 죽었을 때**: Prometheus나 Grafana가 멈추면 알림이 하나도 오지 않는데, 이를 알려 줄 장치가 없다.
   모든 규칙이 "데이터 없음·조회 실패는 정상으로 본다"(`noDataState: OK`, `execErrState: OK`)로 되어 있어서 조회가 실패해도 조용하다.
   로컬에서는 감수하고, AWS로 옮길 때 바깥에서 알림 시스템이 살아 있는지 확인하는 방법(CloudWatch 등)을 위 항목과 함께 정한다.

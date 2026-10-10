@@ -1,5 +1,5 @@
 # File blocks (storage-service). The service encrypts blocks itself (STORAGE_ENCRYPTION_KEY); the
-# bucket encrypts again on top — with the customer KMS key when hardened (prod), SSE-S3 otherwise. Its task role gets object access only — no CreateBucket (2-7).
+# bucket encrypts again on top — with the customer KMS key when hardened (prod), SSE-S3 otherwise. Its task role gets object access only — no CreateBucket (aws-migration.md 1-8).
 resource "aws_s3_bucket" "storage" {
   bucket = "${var.project}-storage-${data.aws_caller_identity.current.account_id}"
 

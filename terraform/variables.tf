@@ -8,24 +8,46 @@ variable "project" {
   default = "modudrive"
 }
 
+# Which stack this is — demo, staging or prod. Each lives in its own AWS account with its own state
+# bucket (envs/<env>.backend.hcl), so nothing here is named per environment; it only tags resources
+# and names the GitHub environment the deploy role trusts (github.tf).
+variable "environment" {
+  type = string
+
+  validation {
+    condition     = contains(["demo", "staging", "prod"], var.environment)
+    error_message = "environment is demo, staging or prod."
+  }
+}
+
+# The AWS account this environment lives in. Set, the provider refuses any other account's
+# credentials — prod.tfvars can't be planned against the demo account by mistake.
+variable "account_id" {
+  type    = string
+  default = null
+}
+
 # WEB and API must share one registrable domain (app.<domain> / api.<domain>): the session cookie is
 # SameSite=Strict + host-only, and *.cloudfront.net / *.elb.amazonaws.com are each their own site
-# (aws-migration.md 2-11). Null until a domain is bought — everything domain-bound (Route 53 zone,
+# (aws-migration.md 1-11). Null until a domain is bought — everything domain-bound (Route 53 zone,
 # SES identity) is skipped until then.
 variable "domain_name" {
   type    = string
   default = null
 }
 
-# The image every service runs — CI passes the commit SHA (terraform apply -var image_tag=<sha>), so a
-# deploy is a plan you can read. Repositories are immutable: a tag always means the same image.
+# The image the task definitions Terraform registers point at. Only the first apply needs a real one:
+# after that the deploy workflow (.github/workflows/deploy.yml) registers new revisions with the
+# commit's image and the services ignore Terraform's (ecs.tf). A later apply that changes a task
+# definition (an env var, a size) registers a revision the services don't run yet — the next deploy
+# starts from that revision, so pass the tag that's deployed now and run the workflow to roll it out.
 variable "image_tag" {
   type = string
 }
 
-# Sizing — the same architecture at either size; only what costs money and what buys redundancy
-# differs. No defaults: every plan names its whole set with -var-file, envs/demo.tfvars (what actually
-# runs) or envs/prod.tfvars (sized for the MAU 5M target), never a mix.
+# Sizing — the same architecture at every size; only what costs money and what buys redundancy
+# differs. No defaults: every plan names its whole set with -var-file — envs/demo.tfvars (the trial
+# stack), envs/staging.tfvars (prod's shape at the smallest size) or envs/prod.tfvars — never a mix.
 
 # How the tasks (always in private subnets) reach the internet — ECR, SSM, SQS, SES, Discord:
 #   "gateway"  — a managed NAT gateway per AZ (~$45/month each), nothing to run
@@ -158,4 +180,58 @@ variable "services" {
 # (non-root read-only containers, TLS-only S3) applies everywhere regardless.
 variable "hardened" {
   type = bool
+}
+
+# Monthly AWS budget in USD for this account. Forecast past it or actual past 80% → the alerts topic
+# (monitoring.tf), and alert_email if set.
+variable "monthly_budget_usd" {
+  type = number
+}
+
+# Gets the budget alerts by mail too — they still reach Discord without it, but a budget alert is the
+# one that must not depend on the stack it's warning about.
+variable "alert_email" {
+  type    = string
+  default = null
+}
+
+# Central ADOT collector (monitoring.tf): one task, never more — tail sampling needs every span of a
+# trace in one process. scrape_interval is how often it reads each task's /actuator/prometheus.
+variable "otel_collector" {
+  type = object({
+    cpu             = number
+    memory          = number
+    scrape_interval = string
+  })
+}
+
+# Amazon Managed Grafana. Needs IAM Identity Center enabled in the account first (its users log in
+# through it). Alerts don't depend on it — they're AMP rules (monitoring.tf).
+variable "grafana" {
+  type = bool
+}
+
+# Copies off this account (backup.tf). Both null = backups stay in this account only.
+#   backup_copy_vault_arn — an AWS Backup vault in the backup account: the Aurora snapshots go there
+#   backup_bucket_arn     — an S3 bucket in the backup account: the storage blocks replicate there,
+#                           with backup_bucket_kms_key_arn its encryption key
+variable "backup_copy_vault_arn" {
+  type    = string
+  default = null
+}
+
+variable "backup_bucket_arn" {
+  type    = string
+  default = null
+}
+
+variable "backup_bucket_kms_key_arn" {
+  type    = string
+  default = null
+}
+
+# The repository whose deploy workflow may assume the deploy role (github.tf).
+variable "github_repository" {
+  type    = string
+  default = "rivertw777/ModuDrive-API"
 }

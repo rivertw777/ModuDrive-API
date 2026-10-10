@@ -1,5 +1,5 @@
 # Everything a task needs that isn't in its image, as SSM SecureString parameters — free, unlike
-# Secrets Manager, which is kept for the RDS master password it rotates (rds.tf, 2-9).
+# Secrets Manager, which is kept for the RDS master password it rotates (rds.tf, aws-migration.md 1-10).
 # ECS hands them to tasks as the env vars the app already reads (${MEMBER_DB_PASSWORD} ...).
 locals {
   db_logins = {
