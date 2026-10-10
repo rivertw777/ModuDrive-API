@@ -1,4 +1,4 @@
-.PHONY: service infra observability network reset \
+.PHONY: service infra observability network reset demo \
        gateway member auth file storage mail notification
 
 BLUE := \033[0;34m
@@ -10,6 +10,7 @@ NC := \033[0m
 SERVICE_COMPOSE_FILE := .docker/docker-compose.service.yml
 INFRA_COMPOSE_FILE := .docker/docker-compose.infra.yml
 OBSERVABILITY_COMPOSE_FILE := .docker/docker-compose.observability.yml
+DEMO_COMPOSE_FILE := .docker/docker-compose.demo.yml
 
 service:
 	@echo "$(BLUE)🚀 Starting all services...$(NC)"
@@ -26,6 +27,14 @@ infra: network
 observability: network
 	@echo "$(GREEN)📊 Starting observability stack...$(NC)"
 	@docker-compose -f $(OBSERVABILITY_COMPOSE_FILE) up -d --remove-orphans
+
+# AWS demo 스택을 내 PC의 Grafana(localhost:3002)에서 본다. AMP 주소는 demo 상태에서 읽는다 —
+# .infra가 demo backend로 init돼 있어야 한다(aws-migration.md 2-1). 자격 증명은 ~/.aws, AWS_PROFILE.
+demo:
+	@echo "$(GREEN)📈 Starting Grafana for the AWS demo stack...$(NC)"
+	@DEMO_AMP_URL=$${DEMO_AMP_URL:-$$(terraform -chdir=.infra output -raw amp_endpoint)} \
+		docker-compose -f $(DEMO_COMPOSE_FILE) up -d
+	@echo "  → http://localhost:3002"
 
 reset:
 	@echo "$(RED)🧨 Wiping all data volumes (infra + observability) and restarting everything...$(NC)"

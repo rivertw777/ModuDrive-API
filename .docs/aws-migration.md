@@ -204,7 +204,7 @@ ECS 태스크들 ──OTLP 트레이스──▶ ┌─────────
 | 트레이스 | otel-collector → Tempo | X-Ray | 앱 OTLP → collector(tail sampling) → X-Ray |
 | 로그 | Promtail → Loki | CloudWatch Logs (보존 14일) | `awslogs` 드라이버. Promtail은 docker socket 기반이라 Fargate에서 못 쓴다 |
 | 알림 | Prometheus 규칙 → Alertmanager → SNS → Lambda → Discord (SNS·Lambda는 LocalStack) | AMP 알림 규칙 → SNS → Lambda → Discord | |
-| 대시보드 | Grafana | Amazon Managed Grafana (`grafana = true`일 때) | AMP·X-Ray·CloudWatch 데이터소스 |
+| 대시보드 | Grafana | Amazon Managed Grafana (`grafana = true`일 때), demo는 내 PC의 Grafana(`make demo`, 3-2) | AMP·X-Ray·CloudWatch 데이터소스 |
 
 앱 설정은 바뀌지 않는다. collector의 Service Connect 이름이 compose와 같은 `otel-collector:4318`이라 앱 기본값(`application-observability.yml`)이 그대로 맞는다. 그래서 mail도 Service Connect에 클라이언트로 들어간다.
 
@@ -379,7 +379,10 @@ GitHub Actions가 한다(`.github/workflows/deploy.yml`). job이 둘이고 순�
 - 태스크는 JVM이 뜨는 가장 작은 크기(0.25 vCPU / 1 GB)에 하나씩, 오토스케일 없음. 트래픽이 몰리면 비용이 오르는 대신 느려진다. 기동도 느려서 헬스 체크 유예 시간을 길게 잡는다(`ecs.tf` `startPeriod`).
 - DB는 인스턴스 1대에 4개를 모은다. 서비스마다 DB·로그인이 따로인 논리 분리는 `prod`와 같다.
 - Redis는 로컬처럼 하나를 같이 쓴다.
-- Managed Grafana 없음. 사용자당 월 $9에 IAM Identity Center 설정이 필요하다. 시험용으로는 AMP·X-Ray·CloudWatch 콘솔로 충분하다. 알림은 Grafana와 무관하게 온다.
+- Managed Grafana 없음. 사용자당 월 $9에 IAM Identity Center 설정이 필요하다. 알림은 Grafana와 무관하게 온다.
+  - 트레이스는 X-Ray 콘솔, 로그는 CloudWatch Logs Insights로 볼 수 있지만 AMP는 쿼리 화면이 없다. 그래서 볼 땐 내 PC에서 Grafana를 띄워 demo에 붙인다: `make demo` → `localhost:3002`, 끌 땐 `docker stop modudrive-demo-grafana-1`.
+  - AMP·X-Ray·CloudWatch 데이터소스가 미리 들어 있고(`.docker/demo/grafana/`), 접속은 내 `~/.aws` 자격 증명(`AWS_PROFILE`)으로 한다. AWS에 만들 것은 없고 비용은 조회한 만큼(AMP 쿼리, Logs Insights 스캔)이다.
+  - 로컬 개발 스택과는 네트워크(`modudrive-demo`)·포트·컨테이너가 따로다. AMP 주소는 demo 상태의 출력 `amp_endpoint`에서 읽으므로 `.infra`가 demo backend로 init돼 있어야 한다(2-1).
 
 #### 감수하는 것
 
