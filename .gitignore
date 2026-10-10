@@ -44,12 +44,12 @@ out/
 
 .temp
 ### Terraform ###
-terraform/.terraform/
+.infra/.terraform/
 *.tfstate
 *.tfstate.*
 *.tfvars
 !*.tfvars.example
 # Sizing only, no secrets — committed: envs/{demo,staging,prod}.tfvars.
-!terraform/envs/*.tfvars
-terraform/backend.hcl
-terraform/envs/*.backend.hcl
+!.infra/envs/*.tfvars
+.infra/backend.hcl
+.infra/envs/*.backend.hcl

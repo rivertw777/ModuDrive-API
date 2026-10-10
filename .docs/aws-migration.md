@@ -1,7 +1,7 @@
 # AWS 구성
 
 로컬 docker compose 구성이 AWS에서 무엇으로 바뀌는지, 그리고 AWS 구성을 `demo`·`prod` 두 규모로 어떻게 나눴는지 정리한 문서입니다.
-코드가 기준이다. AWS 쪽은 `terraform/`, 로컬 쪽은 `.docker/`를 같이 보면서 읽는다.
+코드가 기준이다. AWS 쪽은 `.infra/`, 로컬 쪽은 `.docker/`를 같이 보면서 읽는다.
 
 ---
 
@@ -52,7 +52,7 @@
 | 시크릿 | `.docker/.env` | SSM Parameter Store, RDS 관리자 비밀번호만 Secrets Manager |
 | 모니터링 | Prometheus·Promtail·Loki·otel-collector·Tempo·Grafana | AMP·CloudWatch Logs·X-Ray·Managed Grafana(prod), 중앙 ADOT collector |
 | 알림 | Grafana → Discord | AMP 알림 규칙·CloudWatch 경보·Budgets → SNS → Lambda → Discord |
-| 인프라 정의 | `.docker/*.yml`, `.docker/localstack/init-aws.sh` | `terraform/`, 환경마다 AWS 계정 하나 |
+| 인프라 정의 | `.docker/*.yml`, `.docker/localstack/init-aws.sh` | `.infra/`, 환경마다 AWS 계정 하나 |
 | 배포 | `make service` | GitHub Actions (OIDC) → ECR → ECS 새 리비전 |
 
 앱 코드는 두 환경에서 같다. 달라지는 건 환경 변수와 인증 방식뿐이다 — 로컬은 endpoint·access key를 넣어 LocalStack을 쓰고, AWS는 둘 다 비워 두면 SDK 기본 체인으로 task role을 쓴다.
@@ -106,7 +106,7 @@
 
 ### 1-7. 메시징
 
-- SQS 표준 큐. 로컬 `.docker/localstack/init-aws.sh`와 `terraform/sqs.tf`가 같은 큐를 만든다 — 큐를 추가하면 둘 다 고친다.
+- SQS 표준 큐. 로컬 `.docker/localstack/init-aws.sh`와 `.infra/sqs.tf`가 같은 큐를 만든다 — 큐를 추가하면 둘 다 고친다.
 - 큐마다 `-dlq`가 있고 visibility 10초, `maxReceiveCount` 4(1번 + 재시도 3번)다.
 - task role은 서비스마다 보내는 큐에 `SendMessage`, 받는 큐에 수신·삭제와 자기 DLQ로의 `SendMessage`만 받는다.
 - SQS를 고른 이유(Kafka·RabbitMQ 비교)와 큐 목록은 [005 메시징](spec/005-messaging-spec.md) 1장·7장.
@@ -161,7 +161,7 @@
 - 예를 들어 gateway가 뚫려도 member·file·storage의 `/internal`에는 닿지 않는다. gateway는 그 서비스들의 공개 API로만 라우팅하고, 그 요청은 세션 확인을 거친다.
 - Service Connect를 써도 그대로 적용된다. 호출은 호출하는 태스크의 네트워크 인터페이스에서 출발하므로 받는 쪽 보안 그룹이 출발지 보안 그룹으로 거른다.
 
-`terraform/security_groups.tf`와 같은 내용이다.
+`.infra/security_groups.tf`와 같은 내용이다.
 
 | 보안 그룹 | 허용할 출발지 | 포트 | 이유 |
 |---|---|---|---|
@@ -261,8 +261,8 @@ collector:
 - `random_password`로 만든 값은 상태 파일에 평문으로 들어간다. 상태 버킷은 암호화하고 접근을 배포하는 사람의 역할로만 제한한다.
 
 ```bash
-cp terraform/envs/backend.hcl.example terraform/envs/demo.backend.hcl   # 그 계정의 버킷 이름
-cd terraform
+cp .infra/envs/backend.hcl.example .infra/envs/demo.backend.hcl   # 그 계정의 버킷 이름
+cd .infra
 terraform init -reconfigure -backend-config=envs/demo.backend.hcl
 terraform plan -var-file=envs/demo.tfvars -var image_tag=<지금 배포된 커밋>
 # 계정 없이 문법만: terraform init -backend=false && terraform validate
@@ -281,7 +281,11 @@ for env in demo staging prod; do terraform test -var-file=envs/$env.tfvars; done
 2. 서비스 이미지 7개를 빌드해 같은 태그로 ECR에 푸시
 3. `terraform apply -target=aws_ecs_task_definition.db_init -var image_tag=<태그>` → 출력 `db_init_run_tasks`의 명령을 인스턴스마다 한 번 실행
 4. `terraform apply -var image_tag=<태그>` — 나머지 전부
-5. GitHub 저장소 Settings → Environments에 그 환경(`demo` 등)을 만들고 변수 `AWS_DEPLOY_ROLE_ARN`(출력 `github_deploy_role_arn`)과 시크릿 `LOCALSTACK_AUTH_TOKEN`을 넣는다. prod에는 승인자(required reviewers)를 건다. demo는 `demo-terraform` environment도 만들어 변수 `AWS_TERRAFORM_ROLE_ARN`(출력 `github_terraform_role_arn`)과 `TF_STATE_BUCKET`(상태 버킷 이름)을 넣고, 배포 브랜치를 `demo`로 제한한다. 계정에 GitHub OIDC provider가 이미 있으면 4번이 실패하니 `terraform import aws_iam_openid_connect_provider.github <ARN>`으로 가져온다.
+5. GitHub 저장소 Settings에 배포가 쓸 값을 넣는다.
+   - Environments → 그 환경(`demo` 등): 변수 `AWS_DEPLOY_ROLE_ARN`(출력 `github_deploy_role_arn`). 계정마다 역할이 달라서 환경마다 넣는다. prod에는 승인자(required reviewers)를 건다.
+   - Environments → `demo-terraform`(demo만): 변수 `AWS_TERRAFORM_ROLE_ARN`(출력 `github_terraform_role_arn`)과 `TF_STATE_BUCKET`(상태 버킷 이름). 배포 브랜치를 `demo`로 제한한다.
+   - Secrets and variables → Actions → Repository secrets: `LOCALSTACK_AUTH_TOKEN`. 배포 전 테스트 중 SQS 큐 설정 테스트가 LocalStack을 띄울 때 쓴다. AWS 환경과 무관하게 같은 값이라 저장소에 한 번만 넣는다.
+   - 계정에 GitHub OIDC provider가 이미 있으면 4번이 실패하니 `terraform import aws_iam_openid_connect_provider.github <ARN>`으로 가져온다.
 
 배포는 GitHub Actions가 한다(`.github/workflows/deploy.yml`). job이 둘이고 순서대로 돈다.
 
@@ -316,9 +320,9 @@ deploy job:
 
 같은 Terraform 코드를 값 파일 하나로 세 규모로 띄운다. 서비스·보안 그룹·큐·IAM·모니터링 같은 구조는 같고, 돈이 드는 것과 이중화만 다르다. 셋은 각자 다른 AWS 계정에 있다(1-14).
 
-- `terraform/envs/demo.tfvars` — 실제로 띄우는 시험용 스택
-- `terraform/envs/staging.tfvars` — prod의 구성(Aurora, MemoryDB, 보안 강화)을 가장 작은 크기로. prod에 넣기 전에 확인하는 곳
-- `terraform/envs/prod.tfvars` — MAU 500만을 목표로 한 운영 설계
+- `.infra/envs/demo.tfvars` — 실제로 띄우는 시험용 스택
+- `.infra/envs/staging.tfvars` — prod의 구성(Aurora, MemoryDB, 보안 강화)을 가장 작은 크기로. prod에 넣기 전에 확인하는 곳
+- `.infra/envs/prod.tfvars` — MAU 500만을 목표로 한 운영 설계
 
 크기 변수(`variables.tf`)에는 기본값이 없어서 `-var-file` 없이는 plan이 안 된다. 파일을 섞어 쓰지 않는다.
 

@@ -236,7 +236,7 @@ variable "github_repository" {
   default = "rivertw777/ModuDrive-API"
 }
 
-# CI applies terraform/ for this environment (github.tf, .github/workflows/deploy.yml): demo, on a
+# CI applies .infra/ for this environment (github.tf, .github/workflows/deploy.yml): demo, on a
 # merge into the demo branch. Elsewhere apply stays a person's job and no admin role trusts GitHub.
 variable "terraform_in_ci" {
   type = bool

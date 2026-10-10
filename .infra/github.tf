@@ -72,7 +72,7 @@ resource "aws_iam_role_policy" "github_deploy" {
 }
 
 # The role the deploy workflow's terraform job assumes (demo: a merge into the demo branch applies
-# terraform/). Terraform manages IAM, KMS and the network, so this one can do anything in the account —
+# .infra/). Terraform manages IAM, KMS and the network, so this one can do anything in the account —
 # which is why it exists only where var.terraform_in_ci says so, and trusts only the <env>-terraform
 # GitHub environment (limit that environment to its branch in GitHub).
 data "aws_iam_policy_document" "github_terraform_assume" {
