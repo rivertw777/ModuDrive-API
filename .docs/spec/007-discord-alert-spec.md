@@ -32,7 +32,7 @@
 
 각 서비스는 자기 상태를 숫자로 내놓는다. 예를 들어 "아직 못 보낸 이벤트가 몇 초째 밀려 있다", "서킷이 열려 있다" 같은 것이다.
 이 숫자를 **지표**라고 부른다. Prometheus가 지표를 모아 두고 규칙으로 검사하다가, 이상하면 Alertmanager → SNS → Lambda를 거쳐 디스코드로 보낸다.
-로컬과 AWS가 같은 길을 쓴다. 로컬은 SNS·Lambda가 LocalStack이고, AWS는 Prometheus·Alertmanager 자리에 AMP가 있다([aws-migration.md 1-13](../aws-migration.md#1-13-모니터링과-알림)).
+로컬과 AWS가 같은 길을 쓴다. 로컬은 SNS·Lambda가 LocalStack이고, AWS는 Prometheus·Alertmanager 자리에 AMP가 있다([003-aws-migration.md 1-13](../guide/003-aws-migration.md#1-13-모니터링과-알림)).
 
 ```mermaid
 flowchart LR
@@ -213,7 +213,7 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 메시지는 SNS 속성 `channel`로 갈리고, Lambda가 그 채널의 웹후크 주소를 SSM에서 읽는다. 주소는 레포에 올리지 않는다.
 
 - 로컬: `.docker/.env`에 넣으면 LocalStack이 뜰 때 SSM(`/modudrive/DISCORD_*_WEBHOOK_URL`)에 들어간다. 바꾼 뒤엔 LocalStack을 다시 띄운다.
-- AWS: SSM에 손으로 한 번 넣는다([aws-migration.md 1-13](../aws-migration.md#1-13-모니터링과-알림)).
+- AWS: SSM에 손으로 한 번 넣는다([003-aws-migration.md 1-13](../guide/003-aws-migration.md#1-13-모니터링과-알림)).
 
 ---
 

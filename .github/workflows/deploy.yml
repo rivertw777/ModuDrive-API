@@ -1,4 +1,4 @@
-# Two jobs, in order (aws-migration.md 2-3):
+# Two jobs, in order (003-aws-migration.md 2-3):
 #   terraform — demo only: plan and apply .infra/ with envs/demo.tfvars, so a merge of dev into
 #               demo brings the infrastructure along with the code
 #   deploy    — ships the app: tests, builds the seven images tagged with the commit SHA, pushes them
@@ -90,7 +90,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       # A merge must never take data with it: if the plan destroys or replaces anything that holds
-      # state, stop here — that change is made by hand, after a snapshot (aws-migration.md 2-4).
+      # state, stop here — that change is made by hand, after a snapshot (003-aws-migration.md 2-4).
       - name: Refuse to destroy data
         if: steps.ready.outputs.ok == 'true'
         run: |

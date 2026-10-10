@@ -29,7 +29,7 @@ variable "account_id" {
 
 # WEB and API must share one registrable domain (app.<domain> / api.<domain>): the session cookie is
 # SameSite=Strict + host-only, and *.cloudfront.net / *.elb.amazonaws.com are each their own site
-# (aws-migration.md 1-11). Null until a domain is bought — everything domain-bound (Route 53 zone,
+# (003-aws-migration.md 1-11). Null until a domain is bought — everything domain-bound (Route 53 zone,
 # SES identity) is skipped until then.
 variable "domain_name" {
   type    = string

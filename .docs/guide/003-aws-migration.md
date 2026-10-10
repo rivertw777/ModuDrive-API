@@ -121,7 +121,7 @@ AWS API Gateway로 바꾸지는 않는다. 세션 인증 필터, CSRF 가드, �
 
 RDS 관리자는 superuser가 아니다. PostgreSQL 16부터는 `CREATE DATABASE ... OWNER <로그인>`이 `must be able to SET ROLE` 오류로 실패한다. 그래서 스크립트가 새로 만든 로그인을 관리자에게 `GRANT`해 둔다. 로컬 superuser에서도 문제없이 돈다.
 
-- 테이블은 서비스가 뜰 때 Flyway가 만든다([db-migration.md](db-migration.md)).
+- 테이블은 서비스가 뜰 때 Flyway가 만든다([001-db-migration.md](001-db-migration.md)).
 - JDBC URL에는 `sslmode=require`를 붙인다.
 - 어느 DB를 어느 인스턴스에 둘지, 엔진과 크기는 환경이 정한다.
 
@@ -136,7 +136,7 @@ Valkey는 Redis와 호환되므로 앱 코드는 그대로다. AWS에서는 전�
 
 모든 클러스터는 `maxmemory-policy noeviction`이다. 메모리가 모자랄 때 세션이나 인증 토큰이 조용히 지워지는 대신 쓰기가 실패한다.
 
-보안 그룹과 비밀번호는 클러스터마다 따로다. 그 클러스터를 쓰는 서비스만 들어올 수 있고, 그 비밀번호만 받는다. 클러스터를 하나로 둘지 용도별로 나눌지는 환경이 정한다([006 2-4-6](spec/006-resilience-spec.md#2-4-6-redis-분리)).
+보안 그룹과 비밀번호는 클러스터마다 따로다. 그 클러스터를 쓰는 서비스만 들어올 수 있고, 그 비밀번호만 받는다. 클러스터를 하나로 둘지 용도별로 나눌지는 환경이 정한다([006 2-4-6](../spec/006-resilience-spec.md#2-4-6-redis-분리)).
 
 ### 1-7. 메시징
 
@@ -145,7 +145,7 @@ SQS 표준 큐를 쓴다. 로컬은 `.docker/localstack/init-aws.sh`가, AWS는 
 - 큐마다 `-dlq`가 있다. visibility는 10초, `maxReceiveCount`는 4(처음 1번 + 재시도 3번)다. DLQ는 최대 보존 기간인 14일 동안 둔다.
 - task role은 서비스마다 보내는 큐에 대한 `SendMessage`, 받는 큐에 대한 수신·삭제, 자기 DLQ로의 `SendMessage`만 받는다.
 
-SQS를 고른 이유(Kafka, RabbitMQ와 비교)와 큐 목록은 [005 메시징](spec/005-messaging-spec.md) 1장과 7장에 있다.
+SQS를 고른 이유(Kafka, RabbitMQ와 비교)와 큐 목록은 [005 메시징](../spec/005-messaging-spec.md) 1장과 7장에 있다.
 
 ### 1-8. 파일 저장
 
@@ -196,13 +196,13 @@ VPC는 세 층으로 나뉜다. 퍼블릭 서브넷에 ALB와 NAT, 프라이빗 
 
 도메인은 `domain_name` 변수로 넣는다. 비워 두면(기본값 null) Route 53 영역, ACM 인증서, HTTPS 리스너, SES identity를 만들지 않는다. 값을 넣고 apply한 뒤에는 출력 `name_servers`를 도메인 등록 업체에 설정한다.
 
-WEB과 API는 같은 등록 도메인 아래 있어야 한다. 예를 들면 `app.modudrive.com`과 `api.modudrive.com`이다. 세션 쿠키가 `SameSite=Strict`에 host-only라서([004 인증](spec/004-auth-spec.md) 1-1-2), 사이트가 다르면 로그인은 200으로 성공하는데 다음 요청부터 쿠키가 실리지 않아 전부 401이 난다. `*.cloudfront.net`과 `*.elb.amazonaws.com`은 Public Suffix List에 올라 있어 서로 다른 사이트로 취급되므로 커스텀 도메인이 꼭 있어야 한다. 도메인이 생기기 전까지 `CLIENT_URL`은 `https://app.example.com` 자리 표시자다.
+WEB과 API는 같은 등록 도메인 아래 있어야 한다. 예를 들면 `app.modudrive.com`과 `api.modudrive.com`이다. 세션 쿠키가 `SameSite=Strict`에 host-only라서([004 인증](../spec/004-auth-spec.md) 1-1-2), 사이트가 다르면 로그인은 200으로 성공하는데 다음 요청부터 쿠키가 실리지 않아 전부 401이 난다. `*.cloudfront.net`과 `*.elb.amazonaws.com`은 Public Suffix List에 올라 있어 서로 다른 사이트로 취급되므로 커스텀 도메인이 꼭 있어야 한다. 도메인이 생기기 전까지 `CLIENT_URL`은 `https://app.example.com` 자리 표시자다.
 
 ModuDrive-WEB은 S3 + CloudFront로 올릴 예정이고 아직 Terraform에는 없다. CSP는 CloudFront 응답 헤더 정책으로 붙이되, 정책 문자열은 WEB `vite.config.ts`의 `contentSecurityPolicy()`를 원본으로 삼는다. `connect-src`에 API 도메인을 넣고, 바꿀 땐 둘을 같이 고친다.
 
 ### 1-12. 서비스 간 접근 제어
 
-서비스끼리 부르는 `/internal/**`에는 앱 수준의 인증이 없다. gateway가 이 경로를 바깥에 열지 않는다는 것 하나에 기대고 있다([004 인증](spec/004-auth-spec.md)). 로컬 compose 네트워크는 전부 열려 있지만, AWS에서는 서비스마다 보안 그룹을 하나씩 두고 누가 누구를 부를 수 있는지를 네트워크에서 강제한다.
+서비스끼리 부르는 `/internal/**`에는 앱 수준의 인증이 없다. gateway가 이 경로를 바깥에 열지 않는다는 것 하나에 기대고 있다([004 인증](../spec/004-auth-spec.md)). 로컬 compose 네트워크는 전부 열려 있지만, AWS에서는 서비스마다 보안 그룹을 하나씩 두고 누가 누구를 부를 수 있는지를 네트워크에서 강제한다.
 
 - 인바운드는 호출하는 쪽의 보안 그룹에서 내 앱 포트로 오는 것만 연다. CIDR 대역으로 열면 같은 VPC의 모든 태스크가 닿기 때문에 그렇게 하지 않는다.
 - 그래서 gateway가 뚫려도 member, file, storage의 `/internal`에는 닿지 못한다. gateway는 그 서비스들의 공개 API로만 라우팅하고, 그 요청은 세션 확인을 거친다.
@@ -230,13 +230,28 @@ ModuDrive-WEB은 S3 + CloudFront로 올릴 예정이고 아직 Terraform에는 �
 
 ### 1-13. 모니터링과 알림
 
-로컬 스택은 [observability.md](observability.md)에 정리돼 있다. AWS에서는 저장소를 전부 관리형으로 두고, 직접 띄우는 건 중앙 ADOT collector ECS 서비스 하나뿐이다(`monitoring.tf`). 로컬에서 쓰던 PromQL 알림, tail sampling, OTLP를 그대로 가져가는 걸 기준으로 삼았다.
+로컬 스택과 운영 구성 요약은 [002-observability.md](002-observability.md)에 정리돼 있다. AWS에서는 저장소를 전부 관리형으로 두고, 직접 띄우는 건 중앙 ADOT collector ECS 서비스 하나뿐이다(`monitoring.tf`). 로컬에서 쓰던 PromQL 알림, tail sampling, OTLP를 그대로 가져가는 걸 기준으로 삼았다.
 
-```
-ECS 태스크들 ──OTLP 트레이스──▶ ┌─────────────────────┐ ──▶ X-Ray
-            ◀──:9464 수집─────  │ 중앙 ADOT collector │ ──▶ AMP ──(알림 규칙)──┐
-            ──stdout(awslogs)─▶ └─────────────────────┘                        ▼
-                 CloudWatch Logs        CloudWatch 경보·Budgets·GuardDuty ──▶ SNS ──▶ Lambda ──▶ Discord
+```mermaid
+flowchart LR
+    S["ECS 태스크<br/>서비스 7개"]
+    C["중앙 ADOT collector<br/>ECS 서비스 1개"]
+    AMP[("AMP")]
+    X[("X-Ray")]
+    CW[("CloudWatch Logs")]
+    ALM["CloudWatch 경보<br/>Budgets · GuardDuty"]
+    SNS["SNS<br/>modudrive-alerts"]
+    LA["Lambda<br/>discord-forwarder"]
+    D(["Discord"])
+
+    S -- "OTLP 트레이스" --> C
+    C -- ":9464 수집" --> S
+    C -- "remote write" --> AMP
+    C -- "tail sampling 뒤" --> X
+    S -- "stdout (awslogs)" --> CW
+    AMP -- "알림 규칙" --> SNS
+    ALM --> SNS
+    SNS --> LA --> D
 ```
 
 | 신호 | 로컬 | AWS | 수집 방식 |
@@ -383,7 +398,7 @@ demo는 `dev`를 `demo` 브랜치로 병합(PR)하면 인프라와 코드가 같
 - 최신 리비전에서 출발하기 때문에 Terraform이 바꿔 둔 태스크 정의(환경 변수, 크기)도 이때 같이 나간다.
 - 배포 역할(`github-deploy`)은 그 환경의 GitHub environment에서 도는 job만 받는다. 할 수 있는 건 이미지 푸시, 태스크 정의 등록, 서비스 갱신뿐이라 배포 권한으로 DB나 네트워크를 건드릴 수 없다.
 - Terraform은 서비스가 돌리는 리비전과 태스크 수를 무시한다(`ignore_changes = [desired_count, task_definition]`). 그래서 apply를 해도 서비스가 옛 이미지로 돌아가거나 오토스케일이 늘려 놓은 태스크가 줄지 않는다.
-- 스키마 변경은 이전 코드와 새 코드 둘 다에서 돌아가야 한다. 새 태스크가 뜨면서 Flyway가 도는 동안 이전 태스크가 아직 요청을 받고 있기 때문이다. 컬럼 삭제나 이름 변경은 배포 두 번으로 나눈다([db-migration.md](db-migration.md) 5장).
+- 스키마 변경은 이전 코드와 새 코드 둘 다에서 돌아가야 한다. 새 태스크가 뜨면서 Flyway가 도는 동안 이전 태스크가 아직 요청을 받고 있기 때문이다. 컬럼 삭제나 이름 변경은 배포 두 번으로 나눈다([001-db-migration.md](001-db-migration.md) 5장).
 - 롤백은 이전 커밋으로 워크플로를 수동 실행하면 된다. ECR에는 최근 이미지 30개가 남아 있다.
 
 ### 2-4. 크기·엔진 변경
@@ -535,7 +550,7 @@ ElastiCache는 복제가 비동기라 장애 조치 때 마지막 쓰기를 잃�
 
 - 스냅샷은 35일 보관한다.
 - 클러스터 모드라서 한 명령에서 함께 쓰는 키에는 해시 태그를 붙인다.
-- 용도별로 나눈 건 한 용도의 부하나 메모리 부족이 다른 용도로 번지지 않게 하려는 것이다. 클러스터별 내용은 [006 2-4-6](spec/006-resilience-spec.md#2-4-6-redis-분리)에 있다.
+- 용도별로 나눈 건 한 용도의 부하나 메모리 부족이 다른 용도로 번지지 않게 하려는 것이다. 클러스터별 내용은 [006 2-4-6](../spec/006-resilience-spec.md#2-4-6-redis-분리)에 있다.
 
 #### ECS와 네트워크
 
