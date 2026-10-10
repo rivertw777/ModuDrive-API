@@ -104,6 +104,11 @@ resource "aws_ecs_task_definition" "service" {
   execution_role_arn       = aws_iam_role.execution.arn
   task_role_arn            = aws_iam_role.task[each.key].arn
 
+  # Scratch space on the task's ephemeral storage — Fargate has no tmpfs.
+  volume {
+    name = "tmp"
+  }
+
   container_definitions = jsonencode([{
     name      = "${each.key}-service"
     image     = "${aws_ecr_repository.service[each.key].repository_url}:${var.image_tag}"
@@ -117,6 +122,16 @@ resource "aws_ecs_task_definition" "service" {
 
     environment = [for k, v in local.env[each.key] : { name = k, value = v }]
     secrets     = [for k, arn in local.secrets[each.key] : { name = k, valueFrom = arn }]
+
+    # Least privilege inside the container (the image already runs as a non-root user): the root
+    # filesystem is read-only, so a compromised process can't plant or change files, with only /tmp
+    # writable (Tomcat's multipart uploads, the JVM) on the task's own ephemeral storage; and every
+    # Linux capability is dropped — a Spring service needs none.
+    readonlyRootFilesystem = true
+    mountPoints            = [{ sourceVolume = "tmp", containerPath = "/tmp", readOnly = false }]
+    linuxParameters = {
+      capabilities = { drop = ["ALL"] }
+    }
 
     # A task that's up but no longer answering gets replaced. busybox wget ships in the alpine image.
     healthCheck = {
