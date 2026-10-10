@@ -281,16 +281,32 @@ for env in demo staging prod; do terraform test -var-file=envs/$env.tfvars; done
 2. 서비스 이미지 7개를 빌드해 같은 태그로 ECR에 푸시
 3. `terraform apply -target=aws_ecs_task_definition.db_init -var image_tag=<태그>` → 출력 `db_init_run_tasks`의 명령을 인스턴스마다 한 번 실행
 4. `terraform apply -var image_tag=<태그>` — 나머지 전부
-5. GitHub 저장소 Settings → Environments에 그 환경(`demo` 등)을 만들고 변수 `AWS_DEPLOY_ROLE_ARN`(출력 `github_deploy_role_arn`)과 시크릿 `LOCALSTACK_AUTH_TOKEN`을 넣는다. prod에는 승인자(required reviewers)를 건다. 계정에 GitHub OIDC provider가 이미 있으면 4번이 실패하니 `terraform import aws_iam_openid_connect_provider.github <ARN>`으로 가져온다.
+5. GitHub 저장소 Settings → Environments에 그 환경(`demo` 등)을 만들고 변수 `AWS_DEPLOY_ROLE_ARN`(출력 `github_deploy_role_arn`)과 시크릿 `LOCALSTACK_AUTH_TOKEN`을 넣는다. prod에는 승인자(required reviewers)를 건다. demo는 `demo-terraform` environment도 만들어 변수 `AWS_TERRAFORM_ROLE_ARN`(출력 `github_terraform_role_arn`)과 `TF_STATE_BUCKET`(상태 버킷 이름)을 넣고, 배포 브랜치를 `demo`로 제한한다. 계정에 GitHub OIDC provider가 이미 있으면 4번이 실패하니 `terraform import aws_iam_openid_connect_provider.github <ARN>`으로 가져온다.
 
-앱 배포는 Terraform이 아니라 GitHub Actions가 한다(`.github/workflows/deploy.yml`).
+배포는 GitHub Actions가 한다(`.github/workflows/deploy.yml`). job이 둘이고 순서대로 돈다.
 
-- `dev`에 푸시하면 demo, `prod`에 푸시하면 prod로 간다. staging과 다른 경우는 수동 실행(workflow_dispatch)으로 고른다. 그 환경에 `AWS_DEPLOY_ROLE_ARN`이 없으면(스택을 아직 안 띄웠으면) 아무것도 하지 않고 끝난다.
+| 브랜치 | terraform job | deploy job |
+|---|---|---|
+| `demo` (dev를 병합) | demo에 plan → apply | demo에 앱 배포 |
+| `prod` | 없음 (사람이 apply) | prod에 앱 배포 |
+| 수동 실행 | demo를 고르면 위와 같음 | 고른 환경 |
+
+- demo는 `dev`를 `demo` 브랜치로 병합(PR)하면 인프라와 코드가 같이 나간다. 새 환경 변수가 필요한 코드도 apply가 먼저라 순서가 맞는다. staging·prod는 apply를 사람이 하고, 새 환경 변수가 필요한 코드는 apply 뒤에 배포한다.
+- 환경에 역할 ARN이 없으면(스택을 아직 안 띄웠으면) 두 job 모두 아무것도 하지 않고 끝난다.
+
+terraform job:
+
+- `terraform plan -var-file=envs/demo.tfvars -var image_tag=template` → 계획 요약을 실행 요약(Summary)에 남기고 → apply.
+- 데이터를 가진 리소스(DB, Redis, S3 버킷, 큐, KMS 키, 비밀값)를 지우거나 교체하는 계획이면 apply하지 않고 실패한다. 그런 변경은 스냅샷을 뜬 뒤 사람이 한다(2-9).
+- 역할은 `github-terraform`(`github.tf`)이다. Terraform이 IAM·KMS·네트워크까지 다루므로 계정 관리자 권한이고, 그래서 `terraform_in_ci = true`인 demo에만 만든다. GitHub environment `demo-terraform`만 이 역할을 받는다 — 그 environment의 배포 브랜치를 `demo`로 제한한다.
+- `image_tag`가 `template`로 고정인 이유: 첫 배포 뒤로 Terraform의 태스크 정의 리비전은 deploy job이 복사하는 틀일 뿐이다. 커밋 SHA를 넣으면 push마다 태스크 정의 7개가 바뀌는 계획이 나와 진짜 변경이 묻힌다.
+
+deploy job:
+
 - 테스트 → 이미지 7개 빌드(태그는 커밋 SHA) → ECR 푸시 → 서비스마다 태스크 정의의 최신 리비전에서 이미지만 바꾼 새 리비전을 등록 → 서비스를 그 리비전으로 바꾼다 → 안정될 때까지 기다리고, 배포 서킷 브레이커가 롤백했으면 실패로 끝난다.
-- AWS 인증은 OIDC다(`github.tf`). 저장소에 장기 키가 없고, 배포 역할은 그 GitHub environment에서 도는 job만 받는다. 할 수 있는 건 이미지 푸시와 태스크 정의 등록·서비스 갱신뿐이라 배포 권한으로 DB나 네트워크를 건드릴 수 없다.
+- 최신 리비전에서 출발하므로 Terraform이 바꾼 태스크 정의(환경 변수, 크기)도 이때 함께 나간다.
+- 배포 역할(`github-deploy`)은 그 환경의 GitHub environment에서 도는 job만 받는다. 할 수 있는 건 이미지 푸시와 태스크 정의 등록·서비스 갱신뿐이라 배포 권한으로 DB나 네트워크를 건드릴 수 없다.
 - Terraform은 서비스가 어느 리비전을 돌리는지 무시한다(`ignore_changes = [task_definition]`). 그래서 apply가 서비스를 옛 이미지로 되돌리지 않는다.
-- 태스크 정의를 바꾸는 Terraform 변경(환경 변수, 크기)은 apply로 새 리비전만 등록되고, 다음 배포 때 그 리비전에서 출발해 함께 나간다. 바로 내보내려면 apply 뒤에 워크플로를 수동 실행한다. 이때 `image_tag`에는 지금 배포된 커밋을 넣는다.
-- 순서: 새 환경 변수가 필요한 코드는 Terraform apply가 먼저, 배포가 다음이다.
 - 스키마 변경은 이전 코드와 새 코드 모두에서 동작해야 한다. 새 태스크가 뜨면서 Flyway가 돌 때 이전 태스크가 아직 요청을 받고 있다. 컬럼 삭제·이름 변경은 두 번의 배포로 나눈다([db-migration.md](db-migration.md) 5장).
 - 롤백은 이전 커밋으로 워크플로를 수동 실행한다. ECR은 최근 30개 이미지를 남긴다.
 

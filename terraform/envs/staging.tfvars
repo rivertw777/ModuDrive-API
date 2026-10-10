@@ -42,3 +42,5 @@ alert_email        = null
 
 otel_collector = { cpu = 256, memory = 1024, scrape_interval = "60s" }
 grafana        = false
+
+terraform_in_ci = false # apply by hand

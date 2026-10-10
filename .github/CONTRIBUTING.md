@@ -26,6 +26,7 @@ Examples:
 ```
 prod                            # production-ready only
 dev                             # integration branch
+demo                            # merge dev here → terraform apply + deploy to the demo stack
 feature/<issue-number>-<slug>   # new feature
 fix/<issue-number>-<slug>       # bug fix
 refactor/<issue-number>-<slug>  # refactoring only
@@ -34,7 +35,7 @@ chore/<slug>                    # build, deps, config
 ```
 
 - slug: lowercase kebab-case (e.g. add-login-api)
-- No direct push to `prod` or `dev`, PR only
+- No direct push to `prod`, `dev` or `demo`, PR only
 
 ## 3. Commit
 
@@ -67,3 +68,4 @@ Scopes:
 - One PR = one purpose
 - dev → prod: Squash merge
 - feature → dev: Merge commit
+- dev → demo: Merge commit
