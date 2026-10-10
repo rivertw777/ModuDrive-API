@@ -1,16 +1,20 @@
-# Ships the app — not the infrastructure. Tests, builds the seven images tagged with the commit SHA,
-# pushes them to ECR, then registers a new revision of each task definition with the new image and
-# rolls the service to it. Terraform owns everything else (task sizes, env vars, roles) and never
-# rolls a service back (terraform/ecs.tf ignores the running revision). aws-migration.md 1-14.
+# Two jobs, in order (aws-migration.md 1-14):
+#   terraform — demo only: plan and apply .infra/ with envs/demo.tfvars, so a merge of dev into
+#               demo brings the infrastructure along with the code
+#   deploy    — ships the app: tests, builds the seven images tagged with the commit SHA, pushes them
+#               to ECR, registers a new revision of each task definition with the new image and rolls
+#               the service to it. Terraform never rolls a service back (.infra/ecs.tf ignores the
+#               running revision).
 #
-# Which environment: push to dev → demo, push to prod → prod, or run it by hand for any. Each
-# environment is a GitHub environment holding AWS_DEPLOY_ROLE_ARN (terraform output
-# github_deploy_role_arn); put required reviewers on prod there.
+# Which environment: push to demo → demo, push to prod → prod (app only), or run it by hand for any.
+# Each environment is a GitHub environment holding AWS_DEPLOY_ROLE_ARN (terraform output
+# github_deploy_role_arn); put required reviewers on prod there. The terraform job runs in a separate
+# one, demo-terraform, holding AWS_TERRAFORM_ROLE_ARN and TF_STATE_BUCKET — limit it to the demo branch.
 name: deploy
 
 on:
   push:
-    branches: [dev, prod]
+    branches: [demo, prod]
   workflow_dispatch:
     inputs:
       environment:
@@ -33,13 +37,88 @@ env:
   TAG: ${{ github.sha }}
 
 jobs:
+  terraform:
+    if: (inputs.environment || (github.ref_name == 'prod' && 'prod' || 'demo')) == 'demo'
+    runs-on: ubuntu-latest
+    environment: demo-terraform
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: .infra
+    steps:
+      - id: ready
+        working-directory: .
+        run: |
+          if [ -z "${{ vars.AWS_TERRAFORM_ROLE_ARN }}" ] || [ -z "${{ vars.TF_STATE_BUCKET }}" ]; then
+            echo "::notice::AWS_TERRAFORM_ROLE_ARN or TF_STATE_BUCKET is not set — no stack to apply to yet"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.ready.outputs.ok == 'true'
+
+      - uses: hashicorp/setup-terraform@v3
+        if: steps.ready.outputs.ok == 'true'
+        with:
+          terraform_version: 1.16.5
+          terraform_wrapper: false
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        if: steps.ready.outputs.ok == 'true'
+        with:
+          role-to-assume: ${{ vars.AWS_TERRAFORM_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Plan
+        if: steps.ready.outputs.ok == 'true'
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+        # image_tag=template: Terraform's task-definition revision is only the template the deploy job
+        # copies and fills with the commit's image, so its own tag stays fixed and a plan shows only
+        # real changes — a commit SHA here would replace all seven task definitions on every push.
+        run: |
+          terraform init -input=false -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=$AWS_REGION"
+          terraform plan -input=false -var-file=envs/demo.tfvars -var image_tag=template -out=tfplan
+          {
+            echo '### terraform plan (demo)'
+            echo '```'
+            # The summary gets each change's one-line header; the full plan is in the plan output above.
+            terraform show -no-color tfplan | grep -E '^\s+# |^Plan:|^No changes' | head -200 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # A merge must never take data with it: if the plan destroys or replaces anything that holds
+      # state, stop here — that change is made by hand, after a snapshot (aws-migration.md 2-9).
+      - name: Refuse to destroy data
+        if: steps.ready.outputs.ok == 'true'
+        run: |
+          terraform show -json tfplan | jq -r '
+            .resource_changes[]
+            | select(.change.actions | index("delete"))
+            | select(.type | test("^aws_(db_instance|rds_cluster|rds_cluster_instance|elasticache_replication_group|memorydb_cluster|s3_bucket|sqs_queue|kms_key|ssm_parameter|secretsmanager_secret)$|^random_(password|bytes)$"))
+            | .address' > destroys.txt
+          if [ -s destroys.txt ]; then
+            echo "::error::The plan deletes stateful resources — apply it by hand:"
+            cat destroys.txt
+            exit 1
+          fi
+
+      - name: Apply
+        if: steps.ready.outputs.ok == 'true'
+        run: terraform apply -input=false tfplan
+
   deploy:
+    needs: terraform
+    # Runs after a successful (or skipped: not demo) terraform job, never after a failed one.
+    if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment || (github.ref_name == 'prod' && 'prod' || 'demo') }}
     timeout-minutes: 60
     steps:
       # Until the environment's stack exists there's no role to deploy with — skip instead of failing
-      # every push to dev.
+      # every push.
       - id: ready
         run: |
           if [ -z "${{ vars.AWS_DEPLOY_ROLE_ARN }}" ]; then
@@ -62,7 +141,7 @@ jobs:
         if: steps.ready.outputs.ok == 'true'
 
       # Persistence tests run on Testcontainers Postgres (Docker is on the runner); the SQS queue
-      # test needs a LocalStack token.
+      # test needs a LocalStack token — a repository secret, the same for every environment.
       - name: Test and build
         if: steps.ready.outputs.ok == 'true'
         run: ./gradlew build

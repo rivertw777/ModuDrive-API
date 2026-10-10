@@ -287,7 +287,7 @@ DB나 Redis에 연결할 수 없을 때는 서비스가 503을 돌려주므로 �
 **받으면:** 알림의 TraceQL을 Grafana → Explore → Tempo에 붙여 느린 trace를 열고, 가장 긴 span(DB 쿼리, 하위 서비스 호출, S3)을 본다.
 Explore에서 `spring_cloud_gateway_requests_seconds_bucket` 그래프를 띄우면 점(exemplar)이 찍혀 있어, 눌러서 그 시점의 trace로 바로 갈 수도 있다.
 
-AWS에선 같은 규칙이 AMP 알림 규칙으로 돈다(`terraform/monitoring/alert-rules.yaml`, [aws-migration.md 1-13](../aws-migration.md#1-13-모니터링과-알림)).
+AWS에선 같은 규칙이 AMP 알림 규칙으로 돈다(`.infra/monitoring/alert-rules.yaml`, [aws-migration.md 1-13](../aws-migration.md#1-13-모니터링과-알림)).
 쿼리와 기준값은 같고 서비스 라벨과 확인 명령어만 다르다. 규칙을 고치면 두 파일을 같이 고친다.
 
 ---

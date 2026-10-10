@@ -70,3 +70,42 @@ resource "aws_iam_role_policy" "github_deploy" {
   role   = aws_iam_role.github_deploy.id
   policy = data.aws_iam_policy_document.github_deploy.json
 }
+
+# The role the deploy workflow's terraform job assumes (demo: a merge into the demo branch applies
+# .infra/). Terraform manages IAM, KMS and the network, so this one can do anything in the account —
+# which is why it exists only where var.terraform_in_ci says so, and trusts only the <env>-terraform
+# GitHub environment (limit that environment to its branch in GitHub).
+data "aws_iam_policy_document" "github_terraform_assume" {
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.github.arn]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = ["repo:${var.github_repository}:environment:${var.environment}-terraform"]
+    }
+  }
+}
+
+resource "aws_iam_role" "github_terraform" {
+  count = var.terraform_in_ci ? 1 : 0
+
+  name                 = "${var.project}-github-terraform"
+  assume_role_policy   = data.aws_iam_policy_document.github_terraform_assume.json
+  max_session_duration = 3600
+}
+
+resource "aws_iam_role_policy_attachment" "github_terraform" {
+  count = var.terraform_in_ci ? 1 : 0
+
+  role       = aws_iam_role.github_terraform[0].name
+  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
+}

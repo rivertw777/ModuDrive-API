@@ -69,3 +69,8 @@ output "grafana_url" {
   description = "Amazon Managed Grafana (assign IAM Identity Center users to it first)"
   value       = var.grafana ? "https://${aws_grafana_workspace.main[0].endpoint}" : null
 }
+
+output "github_terraform_role_arn" {
+  description = "AWS_TERRAFORM_ROLE_ARN in the <env>-terraform GitHub environment (terraform_in_ci only)"
+  value       = var.terraform_in_ci ? aws_iam_role.github_terraform[0].arn : null
+}

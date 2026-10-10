@@ -63,3 +63,5 @@ grafana        = true
 backup_copy_vault_arn     = null # arn:aws:backup:ap-northeast-2:<backup-account>:backup-vault:modudrive-prod
 backup_bucket_arn         = null # arn:aws:s3:::modudrive-prod-blocks-<backup-account>
 backup_bucket_kms_key_arn = null # arn:aws:kms:ap-northeast-2:<backup-account>:key/...
+
+terraform_in_ci = false # apply by hand — no admin role trusts GitHub here
