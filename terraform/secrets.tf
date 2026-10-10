@@ -20,9 +20,10 @@ resource "random_password" "db" {
 resource "aws_ssm_parameter" "db_password" {
   for_each = local.db_logins
 
-  name  = "/${var.project}/${each.value}"
-  type  = "SecureString"
-  value = random_password.db[each.key].result
+  name   = "/${var.project}/${each.value}"
+  type   = "SecureString"
+  key_id = local.kms_key_arn
+  value  = random_password.db[each.key].result
 }
 
 # ElastiCache AUTH token, one per cluster: 16–128 chars, no @ " / or spaces.
@@ -42,9 +43,10 @@ moved {
 resource "aws_ssm_parameter" "redis_password" {
   for_each = var.redis_clusters
 
-  name  = each.key == "auth" ? "/${var.project}/REDIS_PASSWORD" : "/${var.project}/REDIS_PASSWORD_${upper(each.key)}"
-  type  = "SecureString"
-  value = random_password.redis[each.key].result
+  name   = each.key == "auth" ? "/${var.project}/REDIS_PASSWORD" : "/${var.project}/REDIS_PASSWORD_${upper(each.key)}"
+  type   = "SecureString"
+  key_id = local.kms_key_arn
+  value  = random_password.redis[each.key].result
 }
 
 moved {
@@ -63,9 +65,10 @@ resource "random_bytes" "storage_encryption_key" {
 }
 
 resource "aws_ssm_parameter" "storage_encryption_key" {
-  name  = "/${var.project}/STORAGE_ENCRYPTION_KEY"
-  type  = "SecureString"
-  value = random_bytes.storage_encryption_key.base64
+  name   = "/${var.project}/STORAGE_ENCRYPTION_KEY"
+  type   = "SecureString"
+  key_id = local.kms_key_arn
+  value  = random_bytes.storage_encryption_key.base64
 
   lifecycle {
     prevent_destroy = true
@@ -77,9 +80,10 @@ resource "aws_ssm_parameter" "storage_encryption_key" {
 resource "aws_ssm_parameter" "discord_webhook" {
   for_each = toset(["DISCORD_MESSAGING_WEBHOOK_URL", "DISCORD_SERVICE_WEBHOOK_URL"])
 
-  name  = "/${var.project}/${each.key}"
-  type  = "SecureString"
-  value = "set-by-hand"
+  name   = "/${var.project}/${each.key}"
+  type   = "SecureString"
+  key_id = local.kms_key_arn
+  value  = "set-by-hand"
 
   lifecycle {
     ignore_changes = [value]

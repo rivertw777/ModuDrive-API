@@ -97,6 +97,7 @@ resource "aws_memorydb_cluster" "redis" {
   subnet_group_name  = aws_memorydb_subnet_group.redis[0].name
   security_group_ids = [aws_security_group.redis[each.key].id]
   tls_enabled        = true
+  kms_key_arn        = local.kms_key_arn
 
   snapshot_retention_limit   = 35
   snapshot_window            = "17:00-18:00"         # 02:00–03:00 KST

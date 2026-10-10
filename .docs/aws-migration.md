@@ -293,6 +293,15 @@ ECS 태스크들 ──OTLP 트레이스──▶ ┌─────────
 - Fargate는 이름만 있는 볼륨을 **root 소유 `0755`**로 마운트한다 — 그대로면 비루트 사용자가 `/tmp`에 못 써 Tomcat이 뜨지 못한다. 이미지가 `/tmp`를 `VOLUME`으로 선언하고 `1777`로 두면 Fargate가 그 권한을 볼륨에 복사한다. 로컬 compose에서는 컨테이너마다 익명 볼륨이 생기므로 `docker compose down -v`로 함께 지운다.
 - 로컬에서 Fargate와 같은 조건(`--read-only -v /tmp --cap-drop ALL --security-opt no-new-privileges`)으로 7개 서비스를 띄워 기동·헬스 체크·storage 블록 업로드(multipart 3 MB)를 확인했다. (`--tmpfs /tmp`는 누구나 쓸 수 있는 tmpfs라 위 권한 문제를 가리므로 쓰지 않는다.)
 
+### 2-15. 저장 데이터 암호화 (prod: `hardened = true`)
+
+- **KMS 고객 관리 키 하나**(`kms.tf`, 별칭 `alias/<project>-data`, 매년 자동 교체)로 암호화한다: Aurora 저장소·Performance Insights, RDS가 관리하는 관리자 비밀번호(Secrets Manager), MemoryDB, S3 블록(버킷 키로 KMS 호출을 줄임), SQS 큐·DLQ, SSM 비밀값, CloudWatch 로그 그룹(서비스·db-init과 함께 Aurora 쿼리 로그·Container Insights 그룹도 Terraform이 먼저 만들어 키를 건다 — RDS·ECS가 직접 만들면 암호화 없이 무기한 보존된다). AWS 관리 키와 달리 키 정책과 사용 기록(CloudTrail)을 직접 통제한다.
+  - 키 정책: 계정(IAM 정책으로 위임), CloudWatch Logs(이 리전 로그 그룹만), SNS(`mail-ses-events` 토픽이 큐로 암호화해 넣도록).
+  - IAM: 실행 역할은 SSM·Secrets Manager 복호화, 큐를 쓰는 서비스와 storage는 데이터 키 생성·복호화만.
+- **S3**: HTTPS가 아닌 요청은 버킷 정책으로 거절한다(모든 환경 — 비용 없음). `prod`는 **버전 관리**를 켜 지워지거나 덮어쓰인 블록을 30일 동안 복구할 수 있고, 그 뒤 이전 버전은 수명 주기 규칙이 지운다.
+- `demo`는 그대로 AWS 관리 암호화(SSE-S3, SSE-SQS, `aws/ssm` 등)를 쓴다.
+- ⚠️ 적용 전 확인: 버전 관리 버킷에서 블록 정리의 조건부 삭제(`DeleteObject` + `If-Match`)가 그대로 412·삭제 마커로 동작하는지 스테이징에서 본다.
+
 ## 3. 진행 순서와 현황
 
 1. **이식성 작업** (로컬에서 검증 가능한 것들) — ✅ 완료

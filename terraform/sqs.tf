@@ -16,7 +16,8 @@ locals {
 resource "aws_sqs_queue" "dlq" {
   for_each = local.queues
 
-  name = "${each.key}-dlq"
+  name              = "${each.key}-dlq"
+  kms_master_key_id = local.kms_key_arn
   # Max retention: a dead letter waits for a person, and a long weekend shouldn't lose it.
   message_retention_seconds = 1209600
 }
@@ -26,6 +27,9 @@ resource "aws_sqs_queue" "queue" {
 
   name                       = each.key
   visibility_timeout_seconds = 10
+  kms_master_key_id          = local.kms_key_arn
+  # Reuse a data key for 5 minutes instead of a KMS call per message (only with the customer key).
+  kms_data_key_reuse_period_seconds = var.hardened ? 300 : null
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.dlq[each.key].arn
     maxReceiveCount     = 4

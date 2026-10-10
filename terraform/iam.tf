@@ -30,6 +30,14 @@ data "aws_iam_policy_document" "execution_secrets" {
     actions   = ["secretsmanager:GetSecretValue"]
     resources = values(local.db_master_secret_arn)
   }
+  # Both are encrypted with the customer key when hardened.
+  dynamic "statement" {
+    for_each = var.hardened ? [1] : []
+    content {
+      actions   = ["kms:Decrypt"]
+      resources = [local.kms_key_arn]
+    }
+  }
 }
 
 resource "aws_iam_role_policy" "execution_secrets" {
@@ -101,6 +109,16 @@ data "aws_iam_policy_document" "task" {
     content {
       actions   = ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"]
       resources = ["${aws_s3_bucket.storage.arn}/*"]
+    }
+  }
+
+  # Queues and blocks are encrypted with the customer key when hardened: sending and moving to a DLQ
+  # needs a data key, receiving and reading need to decrypt.
+  dynamic "statement" {
+    for_each = var.hardened && (contains(keys(local.queue_producers), each.key) || contains(keys(local.queue_consumers), each.key) || each.key == "storage") ? [1] : []
+    content {
+      actions   = ["kms:GenerateDataKey", "kms:Decrypt"]
+      resources = [local.kms_key_arn]
     }
   }
 

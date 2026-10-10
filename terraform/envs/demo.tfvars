@@ -11,7 +11,8 @@ interface_endpoints = false # ~$110/month for six endpoints in two AZs; traffic 
 fargate_spot        = true
 container_insights  = false
 deletion_protection = false # a demo stack gets torn down
-az_count            = 2     # a third AZ would add an ALB public IPv4 and buys nothing for a trial
+hardened            = false
+az_count            = 2 # a third AZ would add an ALB public IPv4 and buys nothing for a trial
 
 # One instance for every service's database (each still its own database and login).
 db_engine = "rds"

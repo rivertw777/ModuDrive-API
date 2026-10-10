@@ -12,6 +12,7 @@ interface_endpoints = true
 fargate_spot        = false
 container_insights  = true
 deletion_protection = true
+hardened            = true
 az_count            = 3
 
 # One Aurora cluster per service: file-service's load (uploads, outbox) never slows the login path,

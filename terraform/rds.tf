@@ -28,10 +28,12 @@ resource "aws_db_instance" "postgres" {
   max_allocated_storage = 200
   storage_type          = "gp3"
   storage_encrypted     = true
+  kms_key_id            = local.kms_key_arn
 
   # postgres_init.sh connects as this admin. RDS keeps its password in Secrets Manager and rotates it.
-  username                    = "modudrive"
-  manage_master_user_password = true
+  username                      = "modudrive"
+  manage_master_user_password   = true
+  master_user_secret_kms_key_id = local.kms_key_arn
 
   db_subnet_group_name   = module.vpc.database_subnet_group_name
   vpc_security_group_ids = [aws_security_group.postgres[each.key].id]
@@ -58,13 +60,15 @@ resource "aws_rds_cluster" "postgres" {
   engine             = "aurora-postgresql"
   engine_version     = "18.4"
 
-  master_username             = "modudrive"
-  manage_master_user_password = true
+  master_username               = "modudrive"
+  manage_master_user_password   = true
+  master_user_secret_kms_key_id = local.kms_key_arn
 
   db_subnet_group_name            = module.vpc.database_subnet_group_name
   vpc_security_group_ids          = [aws_security_group.postgres[each.key].id]
   db_cluster_parameter_group_name = aws_rds_cluster_parameter_group.aurora[0].name
   storage_encrypted               = true
+  kms_key_id                      = local.kms_key_arn
 
   backup_retention_period         = 35
   preferred_backup_window         = "18:00-19:00"         # 03:00–04:00 KST
@@ -80,6 +84,17 @@ resource "aws_rds_cluster" "postgres" {
   lifecycle {
     ignore_changes = [engine_version]
   }
+
+  depends_on = [aws_cloudwatch_log_group.aurora]
+}
+
+# Declared here so the CMK covers it — left to RDS, the export creates it unencrypted and kept forever.
+resource "aws_cloudwatch_log_group" "aurora" {
+  for_each = var.db_engine == "aurora" ? var.db_instances : {}
+
+  name              = "/aws/rds/cluster/${var.project}-${each.key}/postgresql"
+  kms_key_id        = local.kms_key_arn
+  retention_in_days = 30
 }
 
 # The writer and its readers, one per AZ in turn. Which becomes the writer is whichever is ready
@@ -100,9 +115,10 @@ resource "aws_rds_cluster_instance" "postgres" {
   availability_zone  = local.azs[each.value.index % length(local.azs)]
   promotion_tier     = each.value.index
 
-  publicly_accessible          = false
-  auto_minor_version_upgrade   = true
-  performance_insights_enabled = true
+  publicly_accessible             = false
+  auto_minor_version_upgrade      = true
+  performance_insights_enabled    = true
+  performance_insights_kms_key_id = local.kms_key_arn
 }
 
 # Connections without TLS are refused.
