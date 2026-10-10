@@ -76,8 +76,9 @@ class SecurityConfig {
         config.setAllowedOrigins(List.of(clientUrl));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        // The client is another origin — without this its JS can't read the header (TraceIdResponseFilter).
-        config.setExposedHeaders(List.of("X-Trace-Id"));
+        // The client is another origin — without this its JS can't read these headers: the trace id
+        // (TraceIdResponseFilter) and how long to wait after a 503 (GlobalExceptionHandler).
+        config.setExposedHeaders(List.of("X-Trace-Id", "Retry-After"));
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
