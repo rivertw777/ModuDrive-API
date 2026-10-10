@@ -401,17 +401,22 @@ SDK 표준 재시도에 맡기고, 최대 시도는 **2번**(처음 1 + 재시�
 
 Redis를 용도별 클러스터로 나눈다 (`terraform/redis.tf`, 어느 서비스가 어느 클러스터를 쓰는지는 `terraform/envs/*.tfvars`의 `redis_clusters`). 한 용도의 부하나 메모리 부족이 다른 용도로 번지지 않게 한다 — 예를 들어 업로드 기록은 사용자당 하루 최대 25,600개 키라, 세션과 같은 Redis에 두면 대량 업로드가 메모리를 채워 로그인까지 위협한다.
 
-| 클러스터 | 쓰는 서비스 · 키 | `prod` | `demo` |
+| 클러스터 | 쓰는 서비스 · 키 | `prod` (MemoryDB) | `demo` (ElastiCache) |
 |---|---|---|---|
-| `auth` | auth — 세션, 로그인 시도 제한, 새 기기 인증 코드 | 전용, 노드 2개(다른 AZ 복제본, 자동 전환) | 모든 서비스 공용, 노드 1개 |
-| `member` | member — 회원가입 이메일 인증 코드 | 전용, 노드 1개 | (`auth`에) |
-| `mail` | mail — SQS 소비 멱등성(`processed:*`) | 전용, 노드 1개 | (`auth`에) |
-| `storage` | storage — 업로드 기록·업로드 수·다운로드 한도·zip 토큰 | 전용, 노드 1개 | (`auth`에) |
+| `auth` | auth — 세션, 로그인 시도 제한, 새 기기 인증 코드 | 전용, 샤드 1 × 노드 3(AZ마다) | 모든 서비스 공용, 노드 1개 |
+| `member` | member — 회원가입 이메일 인증 코드 | 전용, 샤드 1 × 노드 3 | (`auth`에) |
+| `mail` | mail — SQS 소비 멱등성(`processed:*`) | 전용, 샤드 1 × 노드 3 | (`auth`에) |
+| `storage` | storage — 업로드 기록·업로드 수·다운로드 한도·zip 토큰 | 전용, **샤드 2** × 노드 3 | (`auth`에) |
 
+- **`prod`는 MemoryDB for Valkey**(`redis_engine = "memorydb"`)다. 쓰기는 AZ 여러 곳에 걸친 트랜잭션 로그에 남은 뒤에야 확인되므로, 주 노드를 잃거나 그 노드와 끊겨 복제본이 넘겨받아도 **확인된 쓰기를 잃지 않는다** — 세션·인증 코드·업로드 기록·한도가 쓴 그대로다. ElastiCache는 복제가 비동기라 장애 조치 순간 직전 쓰기 몇 건이 사라질 수 있다(재로그인, 블록 재전송) — `demo`는 이걸 감수한다.
+- MemoryDB는 **클러스터 모드**다. 키 여러 개를 한 명령·스크립트에서 쓰려면 같은 해시 슬롯에 있어야 해서(아니면 `CROSSSLOT`), 함께 쓰는 키는 공통 부분을 `{}` 해시 태그로 감싼다 — 단일 Redis(로컬·`demo`)에서는 그냥 키 이름의 일부다.
+  - member `email-verify-*:{<sha256(주소)>}`, auth `login-code-requests:{<sha256(주소)>}`·`login-code-cooldown:{<sha256(주소)>}` — 정규화한 주소(소문자·공백 제거)의 SHA-256을 태그로 쓴다. 주소에 중괄호가 있어도(`}a@x.com`도 유효한 주소) 태그가 깨지지 않고, 키에 주소가 그대로 남지 않는다.
+  - storage `uploaded-block:{<ownerId>}:<hash>` — commit의 조회(MGET)가 한 소유자의 키를 한 번에 읽는다. 기록과 정리 대상 목록(`uploaded-blocks`)은 슬롯이 달라 스크립트 대신 두 명령으로 쓴다(순서는 상관없다 — 001 2장 4번).
+  - 그 밖의 스크립트·명령은 키 하나만 쓴다. 테스트가 함께 쓰는 키의 슬롯이 같은지 확인한다(`SlotHash`).
+  - 클라이언트는 환경 변수 두 개로 클러스터 모드가 된다: `SPRING_DATA_REDIS_CLUSTER_NODES`(클러스터 엔드포인트)·`SPRING_DATA_REDIS_USERNAME`(ACL 사용자). 장애 조치로 토폴로지가 바뀌면 MOVED·재연결 오류에 바로, 그 밖에는 30초마다 다시 읽는다(`application-redis.yml`).
 - 모두 `maxmemory-policy noeviction`이다. 메모리가 차면 쓰기가 실패한다. 기본값(`volatile-lru`)이면 TTL이 있는 키 — 세션, 인증 코드, 다운로드 한도, zip 토큰 — 가 소리 없이 밀려난다.
-- 클러스터마다 보안 그룹과 AUTH 토큰이 따로다 — 서비스는 자기 클러스터에만 닿고(네트워크), 다른 클러스터의 토큰도 모른다. 토큰은 SSM `/<project>/REDIS_PASSWORD`(`auth`)·`REDIS_PASSWORD_<클러스터>`이고, 서비스에는 늘 `REDIS_PASSWORD`로 들어간다.
-- 복제본은 세션(`auth`)에만 둔다. 다른 클러스터의 노드를 잃으면 인증 코드를 다시 받거나, 메일이 한 번 더 갈 수 있거나, 업로드 중인 블록을 다시 보내면 된다. 로그아웃되는 사람은 없다.
-- 로컬(compose)과 `demo`는 Redis 하나를 모두 같이 쓴다. 나눠서 얻는 격리는 `prod`의 설계로 보여 주고, 실제로 띄우는 쪽은 비용을 줄인다 — 대량 업로드가 세션과 메모리를 같이 쓰는 것은 감수한다.
+- 클러스터마다 보안 그룹과 비밀번호가 따로다 — 서비스는 자기 클러스터에만 닿고(네트워크), 다른 클러스터의 비밀번호도 모른다. 비밀번호는 SSM `/<project>/REDIS_PASSWORD`(`auth`)·`REDIS_PASSWORD_<클러스터>`이고, 서비스에는 늘 `REDIS_PASSWORD`로 들어간다(ElastiCache는 AUTH 토큰, MemoryDB는 그 클러스터 ACL 사용자의 비밀번호).
+- 로컬(compose)과 `demo`는 Redis 하나를 모두 같이 쓴다. 나눠서 얻는 격리와 일관성은 `prod`의 설계로 보여 주고, 실제로 띄우는 쪽은 비용을 줄인다.
 
 ---
 

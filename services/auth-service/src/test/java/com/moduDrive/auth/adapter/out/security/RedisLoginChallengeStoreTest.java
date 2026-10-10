@@ -1,5 +1,6 @@
 package com.moduDrive.auth.adapter.out.security;
 
+import io.lettuce.core.cluster.SlotHash;
 import com.moduDrive.auth.application.port.out.LoginChallengePort.CodeRequest;
 import com.moduDrive.auth.domain.model.LoginChallenge;
 import com.moduDrive.auth.domain.model.MemberAuthData;
@@ -144,11 +145,11 @@ class RedisLoginChallengeStoreTest {
         void allowsFiveRequestsPerWindow() {
             for (int i = 0; i < 5; i++) {
                 assertThat(store.requestCode(email)).isEqualTo(CodeRequest.ALLOWED);
-                redisTemplate.delete("login-code-cooldown:river@modudrive.com");
+                redisTemplate.delete(RedisLoginChallengeStore.cooldownKey(new MemberEmail("river@modudrive.com")));
             }
 
             assertThat(store.requestCode(email)).isEqualTo(CodeRequest.TOO_MANY);
-            assertThat(redisTemplate.getExpire("login-code-requests:river@modudrive.com", TimeUnit.MILLISECONDS))
+            assertThat(redisTemplate.getExpire(RedisLoginChallengeStore.requestsKey(new MemberEmail("river@modudrive.com")), TimeUnit.MILLISECONDS))
                     .isBetween(895_000L, 900_000L);
         }
 
@@ -232,5 +233,17 @@ class RedisLoginChallengeStoreTest {
                     AuthExceptionCase.LOGIN_VERIFICATION_EXPIRED);
             assertThat(redisTemplate.keys("login-challenge:*")).isEmpty();
         }
+    }
+
+    @Test
+    @DisplayName("한 주소의 발송 횟수와 쿨다운은 한 클러스터 슬롯에 있어, 함께 세는 스크립트가 MemoryDB에서도 돈다")
+    void requestCountAndCooldownShareAClusterSlot() {
+        MemberEmail email = new MemberEmail("A@x.com");
+
+        assertThat(SlotHash.getSlot(RedisLoginChallengeStore.requestsKey(email)))
+                .isEqualTo(SlotHash.getSlot(RedisLoginChallengeStore.cooldownKey(email)));
+        MemberEmail braces = new MemberEmail("}a@x.com");
+        assertThat(SlotHash.getSlot(RedisLoginChallengeStore.requestsKey(braces)))
+                .isEqualTo(SlotHash.getSlot(RedisLoginChallengeStore.cooldownKey(braces)));
     }
 }

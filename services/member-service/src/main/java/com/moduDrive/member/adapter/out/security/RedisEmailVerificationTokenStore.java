@@ -6,7 +6,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 
@@ -41,7 +45,7 @@ class RedisEmailVerificationTokenStore implements EmailVerificationTokenPort {
     public CodeRequest requestCode(String email) {
         // confirmCode lifts the cooldown early once the code is matched or out of attempts.
         Long requests = redisRepository.executeScript(COUNT_REQUEST_SCRIPT,
-                List.of(REQUESTS_PREFIX + normalize(email), cooldownKey(email)),
+                List.of(requestsKey(email), cooldownKey(email)),
                 String.valueOf(REQUEST_WINDOW.toMillis()), String.valueOf(RESEND_COOLDOWN.toMillis()));
         if (requests == null || requests == 0) {
             return CodeRequest.TOO_SOON;
@@ -85,21 +89,38 @@ class RedisEmailVerificationTokenStore implements EmailVerificationTokenPort {
         return verified;
     }
 
-    private String codeKey(String email) {
-        return CODE_PREFIX + email;
+    static String codeKey(String email) {
+        return CODE_PREFIX + tag(email);
     }
 
-    private String attemptsKey(String email) {
-        return ATTEMPTS_PREFIX + email;
+    static String attemptsKey(String email) {
+        return ATTEMPTS_PREFIX + tag(email);
     }
 
-    private String verifiedKey(String email) {
-        return VERIFIED_PREFIX + email;
+    private static String verifiedKey(String email) {
+        return VERIFIED_PREFIX + tag(email);
     }
 
     /** Keyed like the request count, so a differently-cased address can't dodge the cooldown. */
-    private String cooldownKey(String email) {
-        return COOLDOWN_PREFIX + normalize(email);
+    static String cooldownKey(String email) {
+        return COOLDOWN_PREFIX + tag(email);
+    }
+
+    static String requestsKey(String email) {
+        return REQUESTS_PREFIX + tag(email);
+    }
+
+    /** One address's keys share a Redis Cluster hash slot ({...}), so the scripts that touch several of
+     * them run on MemoryDB (prod) instead of failing with CROSSSLOT. Elsewhere it's just part of the name.
+     * The address is hashed: one may contain braces itself ("}a@x.com" is valid), which would end the
+     * tag early — and the key doesn't carry the address in the clear. */
+    private static String tag(String email) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(normalize(email).getBytes(StandardCharsets.UTF_8));
+            return "{" + HexFormat.of().formatHex(digest) + "}";
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is always available", e);
+        }
     }
 
     private static String normalize(String email) {

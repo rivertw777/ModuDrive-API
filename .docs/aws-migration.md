@@ -13,7 +13,7 @@
   - [2-2. 서비스 간 호출: 고정 URL → ECS Service Connect](#2-2-서비스-간-호출-고정-url--ecs-service-connect)
   - [2-3. 진입점: ALB → gateway-service](#2-3-진입점-alb--gateway-service)
   - [2-4. DB: RDS for PostgreSQL](#2-4-db-rds-for-postgresql)
-  - [2-5. Redis → ElastiCache for Valkey](#2-5-redis--elasticache-for-valkey)
+  - [2-5. Redis → MemoryDB(prod) / ElastiCache(demo) for Valkey](#2-5-redis--memorydbprod--elasticachedemo-for-valkey)
   - [2-6. 메시징: Amazon SQS (확정)](#2-6-메시징-amazon-sqs-확정)
   - [2-7. 파일 저장: Amazon S3](#2-7-파일-저장-amazon-s3)
   - [2-8. 메일 → SES](#2-8-메일--ses)
@@ -35,7 +35,7 @@
 | 서비스 간 호출: 고정 URL(`clients.<서비스>.url`, compose DNS) | **ECS Service Connect** | ✅ 완료 (#363) — URL 값만 |
 | gateway-service (Spring Cloud Gateway) | 그대로 유지 + 앞단 **ALB** | 필요 없음 |
 | Postgres 18 (서비스별 DB 3개, Flyway) | **RDS for PostgreSQL** | 필요 없음 (접속 정보만) |
-| Redis 7 | **ElastiCache for Valkey** | ✅ 완료 — `REDIS_SSL_ENABLED=true`만 |
+| Redis 7 | **MemoryDB for Valkey**(prod) / **ElastiCache for Valkey**(demo) | ✅ 완료 — TLS(`REDIS_SSL_ENABLED=true`), prod는 클러스터 모드 환경 변수 2개 |
 | LocalStack SQS | **Amazon SQS** 표준 큐 | ✅ 완료 (#365, #403) — 큐는 Terraform |
 | LocalStack S3 | **Amazon S3** | ✅ 완료 (#364) — 버킷은 Terraform |
 | LocalStack SES | **Amazon SES** (API, `SendRawEmail`) | ✅ 완료 — SMTP에서 SES API로 전환 |
@@ -79,9 +79,9 @@
 - 자동 백업: `demo` 7일, `prod` 35일(특정 시점 복구).
 - ⚠️ 상태가 있는 스택에서 `db_engine`을 바꾸면(`rds` ↔ `aurora`) 기존 DB는 **삭제되고** 새 DB가 빈 채로 생긴다 — 스냅샷 복원이나 덤프로 데이터를 옮긴 뒤 바꾼다.
 
-### 2-5. Redis → ElastiCache for Valkey
-- 용도별 클러스터로 나눈다 (`terraform/redis.tf`, [006 2-4-6](spec/006-resilience-spec.md#2-4-6-redis-분리)). `prod`는 `auth`(세션, 복제본 포함)·`member`·`mail`·`storage` 4개, `demo`는 로컬처럼 1개(모든 서비스 공용) — `envs/*.tfvars`의 `redis_clusters`. `demo`에 예전 `storage` 클러스터가 떠 있었다면 apply 때 없어진다 — commit되지 않은 업로드 기록·다운로드 한도·zip 토큰만 사라진다(업로드 중이던 블록은 다시 보내면 된다).
-  - 모두 `maxmemory-policy noeviction` 파라미터 그룹(`valkey8`, 엔진 8.1 고정). 기존 클러스터에 적용하면 엔진 버전을 먼저 확인한다.
+### 2-5. Redis → MemoryDB(prod) / ElastiCache(demo) for Valkey
+- 용도별 클러스터로 나눈다 (`terraform/redis.tf`, [006 2-4-6](spec/006-resilience-spec.md#2-4-6-redis-분리)). `prod`는 **MemoryDB**(`redis_engine = "memorydb"` — 쓰기가 Multi-AZ 트랜잭션 로그에 남아 장애 조치에도 유실 없음, 클러스터 모드라 함께 쓰는 키에 해시 태그) `auth`·`member`·`mail`·`storage` 4개(샤드마다 노드 3, `storage`는 샤드 2), `demo`는 로컬처럼 1개(모든 서비스 공용) — `envs/*.tfvars`의 `redis_clusters`. `demo`에 예전 `storage` 클러스터가 떠 있었다면 apply 때 없어진다 — commit되지 않은 업로드 기록·다운로드 한도·zip 토큰만 사라진다(업로드 중이던 블록은 다시 보내면 된다).
+  - 모두 `maxmemory-policy noeviction` 파라미터 그룹(ElastiCache `valkey8`·엔진 8.1, MemoryDB `memorydb_valkey7`·엔진 7.3에서 자동 마이너 업그레이드). 기존 클러스터에 적용하면 엔진 버전을 먼저 확인한다.
   - 클러스터마다 보안 그룹·AUTH 토큰(SSM `REDIS_PASSWORD`/`REDIS_PASSWORD_<클러스터>`)이 따로다 — 그 클러스터를 쓰는 서비스만 들어오고 그 토큰만 받는다. 예전 공용 보안 그룹·토큰은 `moved`로 `auth`가 이어받고, `storage`는 새 토큰으로 바뀐다(`auth_token_update_strategy = ROTATE` — 태스크가 새 토큰으로 다시 뜰 때까지 옛 토큰도 통한다).
   - 예전 이름(`redis`, `storage_redis`)의 클러스터는 `moved` 블록으로 `redis["auth"]`·`redis["storage"]`가 이어받는다 — 재생성(전원 로그아웃) 없음. `auth`는 클러스터 ID도 예전 그대로(`modudrive`).
 - Valkey는 Redis 호환. **전송 암호화(TLS)를 켠다** — 켜면 TLS 연결만 받는다.
@@ -219,7 +219,7 @@ ECS 태스크들 ──OTLP 트레이스──▶ ┌─────────
   | VPC 인터페이스 엔드포인트 | 없음 (S3 게이트웨이만) | SQS·ECR·logs·SSM·Secrets |
   | ECS | 서비스당 1개 고정(오토스케일 없음), 전부 0.25 vCPU/1 GB, **Fargate Spot** | **서비스마다 최소 3개**(AZ마다 1개), gateway·auth·file 1 vCPU/2 GB, storage 2 vCPU/4 GB, 일반 Fargate |
   | DB | RDS 1대에 4개 DB — db.t4g.micro, 단일 AZ, 삭제 방지 끔 | **서비스마다 Aurora PostgreSQL 클러스터** — 쓰기 1 + 읽기 2(AZ마다), file db.r7g.xlarge·나머지 db.r7g.large, TLS 강제, 백업 35일, 삭제 방지 |
-  | Valkey | 1개(모든 서비스 공용), cache.t4g.micro 1노드 | 용도별 4개 — `auth` cache.m7g.large 2노드 + 자동 장애 조치, `member`·`mail` cache.t4g.small, `storage` cache.m7g.large ([006 2-4-6](spec/006-resilience-spec.md#2-4-6-redis-분리)) |
+  | Redis | ElastiCache for Valkey 1개(모든 서비스 공용), cache.t4g.micro 1노드 | **MemoryDB for Valkey** 용도별 4개 — 샤드마다 노드 3(AZ마다), `storage`는 샤드 2, db.r7g.large(`storage` xlarge), 스냅샷 35일 ([006 2-4-6](spec/006-resilience-spec.md#2-4-6-redis-분리)) |
   | Container Insights | 끔 | 켬 |
   | 대략 비용(서울, 트래픽 전) | 월 $108 안팎 — 태스크 7개 Spot ~$26, ALB ~$22 + 공인 IPv4 2개 ~$7, RDS ~$21, ElastiCache ~$18, NAT 인스턴스 ~$8(공인 IP 포함), 로그 등 ~$5 | **비용은 설계 기준이 아니다** — 보안·일관성·가용성·분할 내성이 먼저. 참고로 최소 규모에서도 월 수천 달러(Aurora 노드 12대가 대부분) |
 

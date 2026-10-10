@@ -106,12 +106,33 @@ variable "deletion_protection" {
 
 # Valkey clusters by purpose, and the services that use each (redis.tf, spec 006 2-4-6). Every service
 # that uses Redis must be a client of exactly one cluster.
+# How the Redis clusters run (redis.tf):
+#   "elasticache" — ElastiCache for Valkey, one shard; replication to replicas is asynchronous, so a
+#                   failover can lose the last writes (a session to log in again, blocks to resend)
+#   "memorydb"    — MemoryDB for Valkey, cluster mode: every write is in a Multi-AZ transaction log
+#                   before it's acknowledged, so a failover loses nothing — strongly consistent
+variable "redis_engine" {
+  type = string
+
+  validation {
+    condition     = contains(["elasticache", "memorydb"], var.redis_engine)
+    error_message = "redis_engine is \"elasticache\" or \"memorydb\"."
+  }
+}
+
 variable "redis_clusters" {
   type = map(object({
     node_type = string
-    nodes     = number
-    clients   = list(string)
+    # Nodes per shard: a primary and nodes - 1 replicas, each in a different AZ.
+    nodes   = number
+    shards  = optional(number, 1)
+    clients = list(string)
   }))
+
+  validation {
+    condition     = var.redis_engine == "memorydb" || alltrue([for c in var.redis_clusters : c.shards == 1])
+    error_message = "ElastiCache clusters here have one shard; more shards need memorydb."
+  }
 
   validation {
     condition = (
