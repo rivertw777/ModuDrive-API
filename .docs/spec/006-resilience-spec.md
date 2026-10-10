@@ -409,6 +409,7 @@ Redis를 용도별 클러스터로 나눈다 (`terraform/redis.tf`, 어느 서�
 | `storage` | storage — 업로드 기록·업로드 수·다운로드 한도·zip 토큰 | 전용, 노드 1개 | 전용, 노드 1개 |
 
 - 모두 `maxmemory-policy noeviction`이다. 메모리가 차면 쓰기가 실패한다. 기본값(`volatile-lru`)이면 TTL이 있는 키 — 세션, 인증 코드, 다운로드 한도, zip 토큰 — 가 소리 없이 밀려난다.
+- 클러스터마다 보안 그룹과 AUTH 토큰이 따로다 — 서비스는 자기 클러스터에만 닿고(네트워크), 다른 클러스터의 토큰도 모른다. 토큰은 SSM `/<project>/REDIS_PASSWORD`(`auth`)·`REDIS_PASSWORD_<클러스터>`이고, 서비스에는 늘 `REDIS_PASSWORD`로 들어간다.
 - 복제본은 세션(`auth`)에만 둔다. 다른 클러스터의 노드를 잃으면 인증 코드를 다시 받거나, 메일이 한 번 더 갈 수 있거나, 업로드 중인 블록을 다시 보내면 된다. 로그아웃되는 사람은 없다.
 - 로컬(compose)은 모두 같은 Redis 컨테이너 하나를 쓴다.
 

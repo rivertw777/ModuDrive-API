@@ -81,6 +81,7 @@
 ### 2-5. Redis → ElastiCache for Valkey
 - 용도별 클러스터로 나눈다 (`terraform/redis.tf`, [006 2-4-6](spec/006-resilience-spec.md#2-4-6-redis-분리)). `prod`는 `auth`(세션, 복제본 포함)·`member`·`mail`·`storage` 4개, `demo`는 `auth`(auth·member·mail 공용)·`storage` 2개 — `envs/*.tfvars`의 `redis_clusters`.
   - 모두 `maxmemory-policy noeviction` 파라미터 그룹(`valkey8`, 엔진 8.1 고정). 기존 클러스터에 적용하면 엔진 버전을 먼저 확인한다.
+  - 클러스터마다 보안 그룹·AUTH 토큰(SSM `REDIS_PASSWORD`/`REDIS_PASSWORD_<클러스터>`)이 따로다 — 그 클러스터를 쓰는 서비스만 들어오고 그 토큰만 받는다. 예전 공용 보안 그룹·토큰은 `moved`로 `auth`가 이어받고, `storage`는 새 토큰으로 바뀐다(`auth_token_update_strategy = ROTATE` — 태스크가 새 토큰으로 다시 뜰 때까지 옛 토큰도 통한다).
   - 예전 이름(`redis`, `storage_redis`)의 클러스터는 `moved` 블록으로 `redis["auth"]`·`redis["storage"]`가 이어받는다 — 재생성(전원 로그아웃) 없음. `auth`는 클러스터 ID도 예전 그대로(`modudrive`).
 - Valkey는 Redis 호환. **전송 암호화(TLS)를 켠다** — 켜면 TLS 연결만 받는다.
   앱은 `application-redis.yml`의 `ssl.enabled`가 `REDIS_SSL_ENABLED`(기본 false)를 읽으므로, ECS 태스크 정의에 `REDIS_SSL_ENABLED=true`만 넣으면 된다.
@@ -262,7 +263,7 @@ ECS 태스크들 ──OTLP 트레이스──▶ ┌─────────
 | 보안 그룹 | 허용할 출발지 | 포트 |
 |---|---|---|
 | `rds-sg` (인스턴스마다) | 그 인스턴스에 DB가 있는 서비스의 보안 그룹만 — `prod`는 서비스마다 자기 인스턴스에만 닿는다 (각자 자기 DB 로그인만 가능 — 2-4) | 5432 |
-| `redis-sg` | `auth-sg`, `member-sg`, `storage-sg`, `mail-sg` | 6379 |
+| `redis-sg` (클러스터마다) | 그 클러스터를 쓰는 서비스의 보안 그룹만 — `prod`는 `auth-sg`→auth, `member-sg`→member, `mail-sg`→mail, `storage-sg`→storage 클러스터 ([006 2-4-6](spec/006-resilience-spec.md#2-4-6-redis-분리)) | 6379 |
 
 - 관리 포트(9464, actuator·Prometheus)는 중앙 ADOT collector의 보안 그룹에서만 연다 — 예외로 gateway의 9464는 ALB 헬스 체크용으로 `alb-sg`에도 연다. DB 생성 일회성 태스크는 전용 `db-init-sg`로 `rds-sg`에 들어간다. 반대로 ADOT의 `4318`(OTLP)은 서비스 보안 그룹들에서만 연다 (2-10).
 - 아웃바운드: SQS·S3·Secrets Manager·ECR·CloudWatch는 VPC 엔드포인트로 가고(2-11), SES(메일)와 외부 알림(디스코드)만 NAT로 나간다. 아웃바운드도 좁히려면 엔드포인트용 보안 그룹과 NAT 경로만 허용한다.

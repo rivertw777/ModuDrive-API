@@ -141,17 +141,52 @@ resource "aws_vpc_security_group_ingress_rule" "postgres" {
   to_port                      = 5432
 }
 
+# One per Valkey cluster, open only to the services that use it — like the Postgres groups, a service
+# can't even reach another purpose's cluster.
 resource "aws_security_group" "redis" {
-  name        = "${var.project}-redis"
-  description = "ElastiCache Valkey"
+  for_each = var.redis_clusters
+
+  name        = each.key == "auth" ? "${var.project}-redis" : "${var.project}-redis-${each.key}"
+  description = "ElastiCache Valkey (${join(", ", each.value.clients)})"
   vpc_id      = module.vpc.vpc_id
 }
 
-resource "aws_vpc_security_group_ingress_rule" "redis" {
-  for_each = toset(local.redis_clients)
+moved {
+  from = aws_security_group.redis
+  to   = aws_security_group.redis["auth"]
+}
 
-  security_group_id            = aws_security_group.redis.id
-  referenced_security_group_id = aws_security_group.service[each.key].id
+# The shared group's rules, kept under their new keys (no gap in access). storage's moves to its own
+# cluster's group, so that one rule is replaced.
+moved {
+  from = aws_vpc_security_group_ingress_rule.redis["auth"]
+  to   = aws_vpc_security_group_ingress_rule.redis["auth/auth"]
+}
+
+moved {
+  from = aws_vpc_security_group_ingress_rule.redis["member"]
+  to   = aws_vpc_security_group_ingress_rule.redis["auth/member"]
+}
+
+moved {
+  from = aws_vpc_security_group_ingress_rule.redis["mail"]
+  to   = aws_vpc_security_group_ingress_rule.redis["auth/mail"]
+}
+
+moved {
+  from = aws_vpc_security_group_ingress_rule.redis["storage"]
+  to   = aws_vpc_security_group_ingress_rule.redis["storage/storage"]
+}
+
+resource "aws_vpc_security_group_ingress_rule" "redis" {
+  for_each = merge([
+    for cluster, cfg in var.redis_clusters : {
+      for client in cfg.clients : "${cluster}/${client}" => { cluster = cluster, client = client }
+    }
+  ]...)
+
+  security_group_id            = aws_security_group.redis[each.value.cluster].id
+  referenced_security_group_id = aws_security_group.service[each.value.client].id
   ip_protocol                  = "tcp"
   from_port                    = 6379
   to_port                      = 6379
