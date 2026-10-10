@@ -73,10 +73,11 @@
 - 테이블은 각 서비스가 기동할 때 Flyway가 만든다(#359 / PR #360, `.docs/db-migration.md`) — 별도 작업 없음.
 - **인스턴스 구성**은 규모 프로필(2-12)의 `db_instances`로 정한다 — 어느 서비스의 DB를 어느 인스턴스에 둘지까지.
   - `demo`: 인스턴스 1대(db.t4g.micro, 단일 AZ)에 4개 DB.
-  - `prod`: **서비스마다 1대** — file·auth db.m7g.large, member·notification db.t4g.medium, 전부 Multi-AZ. file-service의 부하(업로드 commit·outbox)가 로그인 경로를 늦추지 않고, 인스턴스마다 크기·장애 조치·업그레이드를 따로 한다.
+  - `prod`: **서비스마다 Aurora PostgreSQL 18 클러스터 1개**(`db_engine = "aurora"`) — 쓰기 1대 + 읽기 2대를 AZ 3곳에 하나씩. 저장소는 AZ 3곳에 6벌, 4벌이 확인해야 커밋되므로 AZ 하나를 잃거나 그 AZ와 끊겨도 커밋된 쓰기를 잃지 않고 계속 쓴다. 장애 조치(읽기 노드 승격)는 30초 안팎. 서비스는 **쓰기 엔드포인트로만** 읽고 쓴다 — 읽기 노드의 복제 지연을 보지 않으므로 모든 읽기가 마지막 커밋을 본다. TLS 강제(`rds.force_ssl`, JDBC `sslmode=require`), 백업 35일, Performance Insights. file은 db.r7g.xlarge, 나머지는 db.r7g.large. file-service의 부하가 로그인 경로를 늦추지 않고, 클러스터마다 크기·장애 조치·업그레이드를 따로 한다.
   - 어느 쪽이든 서비스마다 자기 DB·로그인만 쓴다(논리 분리는 같고, `prod`는 인스턴스까지 나눈다). 보안 그룹도 인스턴스마다 — 자기 DB가 있는 서비스와 db-init만 들어온다.
   - 처음 만든 공용 인스턴스는 `file` 이름으로 이어받는다(`moved`, 식별자 `modudrive` 유지). `demo`로 운영하다 `prod`로 바꾸면 member·auth·notification DB를 새 인스턴스로 옮기는 데이터 이전이 필요하다.
-- 자동 백업 7일. 그 이상은 Aurora 검토.
+- 자동 백업: `demo` 7일, `prod` 35일(특정 시점 복구).
+- ⚠️ 상태가 있는 스택에서 `db_engine`을 바꾸면(`rds` ↔ `aurora`) 기존 DB는 **삭제되고** 새 DB가 빈 채로 생긴다 — 스냅샷 복원이나 덤프로 데이터를 옮긴 뒤 바꾼다.
 
 ### 2-5. Redis → ElastiCache for Valkey
 - 용도별 클러스터로 나눈다 (`terraform/redis.tf`, [006 2-4-6](spec/006-resilience-spec.md#2-4-6-redis-분리)). `prod`는 `auth`(세션, 복제본 포함)·`member`·`mail`·`storage` 4개, `demo`는 로컬처럼 1개(모든 서비스 공용) — `envs/*.tfvars`의 `redis_clusters`. `demo`에 예전 `storage` 클러스터가 떠 있었다면 apply 때 없어진다 — commit되지 않은 업로드 기록·다운로드 한도·zip 토큰만 사라진다(업로드 중이던 블록은 다시 보내면 된다).
@@ -213,13 +214,14 @@ ECS 태스크들 ──OTLP 트레이스──▶ ┌─────────
 
   | | `demo` (실제 실행) | `prod` (MAU 500만 목표 설계) |
   |---|---|---|
+  | AZ | 2개 (`az_count = 2` — 3번째는 ALB 공인 IP만 늘림) | **3개** — AZ 하나를 잃거나 끊겨도 과반이 남는다 |
   | 태스크 위치 | 프라이빗 서브넷 + **NAT 인스턴스 1대** (t4g.nano, `nat = "instance"`) | 프라이빗 서브넷 + AZ마다 NAT 게이트웨이 (`nat = "gateway"`) |
   | VPC 인터페이스 엔드포인트 | 없음 (S3 게이트웨이만) | SQS·ECR·logs·SSM·Secrets |
-  | ECS | 서비스당 1개 고정(오토스케일 없음), 전부 0.25 vCPU/1 GB, **Fargate Spot** | 사용자 대면 서비스 최소 2개, gateway·auth·file·storage 1 vCPU/2 GB, 일반 Fargate |
-  | RDS | 1대에 4개 DB — db.t4g.micro, 단일 AZ, 삭제 방지 끔 | **서비스마다 1대** — file·auth db.m7g.large, member·notification db.t4g.medium, 전부 **Multi-AZ**, 삭제 방지 |
+  | ECS | 서비스당 1개 고정(오토스케일 없음), 전부 0.25 vCPU/1 GB, **Fargate Spot** | **서비스마다 최소 3개**(AZ마다 1개), gateway·auth·file 1 vCPU/2 GB, storage 2 vCPU/4 GB, 일반 Fargate |
+  | DB | RDS 1대에 4개 DB — db.t4g.micro, 단일 AZ, 삭제 방지 끔 | **서비스마다 Aurora PostgreSQL 클러스터** — 쓰기 1 + 읽기 2(AZ마다), file db.r7g.xlarge·나머지 db.r7g.large, TLS 강제, 백업 35일, 삭제 방지 |
   | Valkey | 1개(모든 서비스 공용), cache.t4g.micro 1노드 | 용도별 4개 — `auth` cache.m7g.large 2노드 + 자동 장애 조치, `member`·`mail` cache.t4g.small, `storage` cache.m7g.large ([006 2-4-6](spec/006-resilience-spec.md#2-4-6-redis-분리)) |
   | Container Insights | 끔 | 켬 |
-  | 대략 비용(서울, 트래픽 전) | 월 $108 안팎 — 태스크 7개 Spot ~$26, ALB ~$22 + 공인 IPv4 2개 ~$7, RDS ~$21, ElastiCache ~$18, NAT 인스턴스 ~$8(공인 IP 포함), 로그 등 ~$5 | 최소 태스크 기준 월 $2,200 안팎 (RDS 4대·Valkey 4개 포함, 대략치) — 트래픽에 따라 오토스케일·NAT·로그 비용이 더해진다 |
+  | 대략 비용(서울, 트래픽 전) | 월 $108 안팎 — 태스크 7개 Spot ~$26, ALB ~$22 + 공인 IPv4 2개 ~$7, RDS ~$21, ElastiCache ~$18, NAT 인스턴스 ~$8(공인 IP 포함), 로그 등 ~$5 | **비용은 설계 기준이 아니다** — 보안·일관성·가용성·분할 내성이 먼저. 참고로 최소 규모에서도 월 수천 달러(Aurora 노드 12대가 대부분) |
 
   - `demo`는 **시험용 — 줄일 수 있는 비용은 다 줄인다.** 격리·이중화는 `prod` 설계로 보여 준다.
   - `demo`가 감수하는 것: 바깥으로 나가는 통신이 NAT 인스턴스 1대에 걸림(멈추면 화면·API는 그대로지만 이벤트·메일·새 태스크 기동이 복구될 때까지 기다림 — EC2 자동 복구), Spot 회수·재배포 때 잠깐 끊김, Redis 재시작 시 전원 로그아웃.

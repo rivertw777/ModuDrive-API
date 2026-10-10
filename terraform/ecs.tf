@@ -21,7 +21,8 @@ locals {
         MANAGEMENT_TRACING_EXPORT_ENABLED = "false"
       },
       contains(keys(local.db_names), name) ? {
-        SPRING_DATASOURCE_URL      = "jdbc:postgresql://${aws_db_instance.postgres[local.db_instance_of[name]].address}:5432/${local.db_names[name]}"
+        # TLS required (Aurora refuses plain connections: rds.force_ssl).
+        SPRING_DATASOURCE_URL      = "jdbc:postgresql://${local.db_address[local.db_instance_of[name]]}:5432/${local.db_names[name]}?sslmode=require"
         SPRING_DATASOURCE_USERNAME = "${name}_service"
       } : {},
       contains(local.redis_clients, name) ? {
@@ -259,13 +260,13 @@ resource "aws_ecs_task_definition" "db_init" {
     command   = ["sh", "-c", file("${path.module}/../.docker/postgres/postgres_init.sh")]
 
     environment = [
-      { name = "PGHOST", value = aws_db_instance.postgres[each.key].address },
+      { name = "PGHOST", value = local.db_address[each.key] },
       { name = "PGSSLMODE", value = "require" },
-      { name = "POSTGRES_USER", value = aws_db_instance.postgres[each.key].username },
+      { name = "POSTGRES_USER", value = local.db_master_username },
       { name = "DB_SERVICES", value = join(" ", each.value.clients) },
     ]
     secrets = concat(
-      [{ name = "PGPASSWORD", valueFrom = "${aws_db_instance.postgres[each.key].master_user_secret[0].secret_arn}:password::" }],
+      [{ name = "PGPASSWORD", valueFrom = "${local.db_master_secret_arn[each.key]}:password::" }],
       [for client in each.value.clients : { name = local.db_logins[client], valueFrom = aws_ssm_parameter.db_password[client].arn }],
     )
 

@@ -6,12 +6,12 @@ output "name_servers" {
 
 output "postgres_endpoints" {
   description = "Each RDS instance's address, by instance name (var.db_instances)"
-  value       = { for name, instance in aws_db_instance.postgres : name => instance.address }
+  value       = local.db_address
 }
 
 output "postgres_master_secret_arns" {
   description = "Admin passwords (Secrets Manager, rotated by RDS) — for postgres_init.sh only"
-  value       = { for name, instance in aws_db_instance.postgres : name => instance.master_user_secret[0].secret_arn }
+  value       = local.db_master_secret_arn
 }
 
 output "redis_hosts" {
