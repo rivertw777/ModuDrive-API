@@ -1,7 +1,7 @@
 # Plans the whole stack against mocked providers — no AWS account, no credentials. Catches what
 # validate can't: for_each over the real tfvars, cross-file references, preconditions.
 #   terraform init -backend=false
-#   for env in demo staging prod; do terraform test -var-file=envs/$env.tfvars; done
+#   for env in demo prod; do terraform test -var-file=envs/$env.tfvars; done
 # Mocked values are only what some expression parses (ARNs split on ":", lists sliced).
 mock_provider "aws" {
   mock_data "aws_availability_zones" {
