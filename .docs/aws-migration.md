@@ -316,6 +316,24 @@ ECS 태스크들 ──OTLP 트레이스──▶ ┌─────────
   - ⚠️ 켜고 처음 배포할 때 서버 서비스와 클라이언트 서비스가 새 설정으로 함께 바뀐다. 롤링 중에 평문 연결과 TLS 연결이 섞이지 않는지 스테이징에서 먼저 확인한다.
 - 남은 평문 구간: ALB → gateway(VPC 안쪽). TLS로 바꾸려면 gateway에 인증서를 두고 대상 그룹을 HTTPS로 바꿔야 한다.
 
+### 2-17. 감사와 위협 탐지 (prod: `hardened = true`)
+
+`audit.tf`. 기록은 로그 버킷(`<project>-logs-<계정>`) 하나에 모은다. 이 버킷은 TLS만 받고, 90일 뒤 Glacier Instant Retrieval로 옮겨 1년 뒤 지운다. Object Lock(GOVERNANCE, 365일)을 걸어 두므로 버킷 쓰기 권한을 얻은 침입자도 1년 안의 기록을 지우거나 덮어쓰지 못한다. Object Lock은 버킷을 만들 때만 켤 수 있다. ALB 접근 로그가 KMS 버킷에 쓰지 못하므로 버킷 기본 암호화는 SSE-S3이다. CloudTrail 파일만 데이터 키로 암호화한다.
+
+| 무엇 | 무엇을 남기나 | 비고 |
+|------|---------------|------|
+| CloudTrail | 계정의 모든 API 호출(전 리전), storage 버킷의 쓰기·삭제 | 로그 파일 검증(다이제스트)으로 사후 변조를 확인할 수 있다. 블록 읽기는 다운로드마다 생겨 양이 많고 앱 로그에 이미 남으므로 뺀다 |
+| VPC Flow Logs | VPC 안 모든 연결(허용·거부) | S3로 바로 보낸다(IAM 역할 불필요) |
+| ALB 접근 로그 | 요청마다 클라이언트 IP·상태·지연 | WAF에서 막혀 gateway까지 못 온 요청도 남는다 |
+| GuardDuty | CloudTrail·Flow·DNS 이상 징후 + S3 데이터 이벤트, RDS 로그인, Fargate 런타임(에이전트는 ECS가 사이드카로 주입) | S3 보호는 CloudTrail과 달리 블록 읽기까지 전부 분석하고 이벤트 수만큼 과금한다. 다운로드가 블록 수만큼 GET이므로 GuardDuty 비용 대부분이 여기서 나온다. 블록은 파일 조각이라 S3 악성코드 검사는 의미가 없어 켜지 않는다 |
+| Security Hub | AWS 기본 보안 모범 사례, CIS 3.0 기준 점수 | 대부분의 검사가 AWS Config 기록을 쓰므로 Config 레코더(전 리소스)도 함께 켠다. Fargate 태스크마다 바뀌는 ENI는 하루 한 번만 기록한다. 계정 기본 설정 중 무료 항목(S3 계정 퍼블릭 차단, IAM Access Analyzer, EBS 기본 암호화)도 함께 켠다 |
+
+- ⚠️ Config 서비스 연결 역할(`AWSServiceRoleForConfig`)이 계정에 이미 있으면 생성이 실패한다. 이때는 `terraform import`로 가져온다. GuardDuty와 Security Hub도 계정에 이미 켜져 있으면 마찬가지로 import한다.
+- ⚠️ Fargate 런타임 모니터링을 켜면 GuardDuty가 VPC에 `guardduty-data` 엔드포인트와 `GuardDutyManaged*` 보안 그룹을 직접 만든다(Terraform 밖). `terraform destroy`나 VPC 교체 전에 이 둘을 먼저 지워야 한다. 에이전트는 기능을 켠 뒤 새로 뜨는 태스크에만 붙으므로 첫 apply 후 서비스를 재배포한다.
+- ⚠️ apply 후 GuardDuty 콘솔에서 RDS 보호가 Aurora PostgreSQL 18을 실제로 커버하는지 확인한다(새 메이저는 지원이 늦을 수 있다). 다시 `plan`을 돌려 런타임 모니터링 설정에 diff가 남지 않는지도 본다.
+- 한계: CloudTrail은 전 리전을 기록하지만 GuardDuty·Config·Security Hub는 서울만 본다. 다른 리전에서 몰래 만든 리소스는 기록에는 남지만 탐지되지 않는다. 메울 때는 리전마다 provider alias를 둔다(또는 Organizations 위임 관리자).
+- 알림 연결(GuardDuty·Security Hub 발견 → EventBridge → Discord)은 모니터링 단계(2-10)에서 함께 한다.
+
 ## 3. 진행 순서와 현황
 
 1. **이식성 작업** (로컬에서 검증 가능한 것들) — ✅ 완료

@@ -1,5 +1,5 @@
 # One customer-managed key for data at rest (hardened, i.e. prod): Aurora, MemoryDB, the S3 blocks,
-# SQS, the SSM secrets, CloudWatch Logs and the RDS-managed admin passwords. Unlike the AWS-managed
+# SQS, the SSM secrets, CloudWatch Logs, CloudTrail and the RDS-managed admin passwords. Unlike the AWS-managed
 # keys, its policy and every use are ours to control and audit (CloudTrail), and it rotates yearly.
 # Without hardened everything stays on the AWS-managed/service-owned encryption it had.
 resource "aws_kms_key" "data" {
@@ -41,6 +41,35 @@ data "aws_iam_policy_document" "kms_data" {
       test     = "ArnLike"
       variable = "kms:EncryptionContext:aws:logs:arn"
       values   = ["arn:aws:logs:${var.region}:${data.aws_caller_identity.current.account_id}:log-group:*"]
+    }
+  }
+
+  # CloudTrail encrypts the trail's log files (audit.tf); reading them back is IAM's call.
+  statement {
+    actions   = ["kms:GenerateDataKey*"]
+    resources = ["*"]
+    principals {
+      type        = "Service"
+      identifiers = ["cloudtrail.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceArn"
+      values   = [local.trail_arn]
+    }
+    condition {
+      test     = "StringLike"
+      variable = "kms:EncryptionContext:aws:cloudtrail:arn"
+      values   = ["arn:aws:cloudtrail:*:${local.account_id}:trail/*"]
+    }
+  }
+
+  statement {
+    actions   = ["kms:DescribeKey"]
+    resources = ["*"]
+    principals {
+      type        = "Service"
+      identifiers = ["cloudtrail.amazonaws.com"]
     }
   }
 
