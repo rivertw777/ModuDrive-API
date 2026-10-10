@@ -1,0 +1,140 @@
+# Ships the app — not the infrastructure. Tests, builds the seven images tagged with the commit SHA,
+# pushes them to ECR, then registers a new revision of each task definition with the new image and
+# rolls the service to it. Terraform owns everything else (task sizes, env vars, roles) and never
+# rolls a service back (terraform/ecs.tf ignores the running revision). aws-migration.md 1-14.
+#
+# Which environment: push to dev → demo, push to prod → prod, or run it by hand for any. Each
+# environment is a GitHub environment holding AWS_DEPLOY_ROLE_ARN (terraform output
+# github_deploy_role_arn); put required reviewers on prod there.
+name: deploy
+
+on:
+  push:
+    branches: [dev, prod]
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: choice
+        options: [demo, staging, prod]
+
+# One deploy per environment at a time; a second waits instead of racing the first.
+concurrency:
+  group: deploy-${{ inputs.environment || (github.ref_name == 'prod' && 'prod' || 'demo') }}
+  cancel-in-progress: false
+
+permissions:
+  id-token: write # OIDC → AWS, no stored keys
+  contents: read
+
+env:
+  AWS_REGION: ap-northeast-2
+  PROJECT: modudrive
+  SERVICES: gateway member auth file storage mail notification
+  TAG: ${{ github.sha }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || (github.ref_name == 'prod' && 'prod' || 'demo') }}
+    timeout-minutes: 60
+    steps:
+      # Until the environment's stack exists there's no role to deploy with — skip instead of failing
+      # every push to dev.
+      - id: ready
+        run: |
+          if [ -z "${{ vars.AWS_DEPLOY_ROLE_ARN }}" ]; then
+            echo "::notice::AWS_DEPLOY_ROLE_ARN is not set for this environment — nothing to deploy to yet"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.ready.outputs.ok == 'true'
+
+      - uses: actions/setup-java@v4
+        if: steps.ready.outputs.ok == 'true'
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - uses: gradle/actions/setup-gradle@v4
+        if: steps.ready.outputs.ok == 'true'
+
+      # Persistence tests run on Testcontainers Postgres (Docker is on the runner); the SQS queue
+      # test needs a LocalStack token.
+      - name: Test and build
+        if: steps.ready.outputs.ok == 'true'
+        run: ./gradlew build
+        env:
+          LOCALSTACK_AUTH_TOKEN: ${{ secrets.LOCALSTACK_AUTH_TOKEN }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        if: steps.ready.outputs.ok == 'true'
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - id: ecr
+        if: steps.ready.outputs.ok == 'true'
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Repositories are immutable: a SHA already pushed (a re-run) is skipped, not overwritten.
+      - name: Push images
+        if: steps.ready.outputs.ok == 'true'
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          for svc in $SERVICES; do
+            repo="$PROJECT/$svc-service"
+            if aws ecr describe-images --repository-name "$repo" --image-ids imageTag="$TAG" >/dev/null 2>&1; then
+              echo "$repo:$TAG already pushed"
+              continue
+            fi
+            ./gradlew -q ":services:$svc-service:prepareDockerContext"
+            dir="services/$svc-service/build/docker"
+            jar=$(basename "$(ls "$dir"/*.jar)")
+            docker build --build-arg JAR_FILE="$jar" -t "$REGISTRY/$repo:$TAG" "$dir"
+            docker push "$REGISTRY/$repo:$TAG"
+          done
+
+      # Starts from the family's latest revision, so a task-definition change Terraform registered
+      # since the last deploy rolls out with this one. Schema changes must suit the old and the new
+      # code both: Flyway runs as the first new task starts, while old tasks still serve.
+      - name: Roll out
+        if: steps.ready.outputs.ok == 'true'
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          declare -A revision
+          for svc in $SERVICES; do
+            aws ecs describe-task-definition --task-definition "$PROJECT-$svc" --query taskDefinition > current.json
+            jq --arg image "$REGISTRY/$PROJECT/$svc-service:$TAG" '
+              .containerDefinitions[0].image = $image
+              | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)
+            ' current.json > next.json
+            revision[$svc]=$(aws ecs register-task-definition --cli-input-json file://next.json \
+              --query taskDefinition.taskDefinitionArn --output text)
+            aws ecs update-service --cluster "$PROJECT" --service "$svc-service" \
+              --task-definition "${revision[$svc]}" >/dev/null
+            echo "$svc-service → ${revision[$svc]}"
+          done
+
+          # services-stable gives up after 10 minutes; a slow start on demo's quarter vCPU can need more.
+          service_names=$(printf '%s-service ' $SERVICES)
+          for attempt in 1 2 3; do
+            aws ecs wait services-stable --cluster "$PROJECT" --services $service_names && break  # word-split on purpose
+            [ "$attempt" = 3 ] && { echo "services did not settle"; exit 1; }
+          done
+
+          # Stable can also mean the deployment circuit breaker rolled back to the old revision.
+          failed=0
+          for svc in $SERVICES; do
+            running=$(aws ecs describe-services --cluster "$PROJECT" --services "$svc-service" \
+              --query 'services[0].taskDefinition' --output text)
+            if [ "$running" != "${revision[$svc]}" ]; then
+              echo "::error::$svc-service rolled back to $running"
+              failed=1
+            fi
+          done
+          exit $failed

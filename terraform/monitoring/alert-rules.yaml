@@ -1,0 +1,113 @@
+# AMP alert rules — the local rules (.docker/observability/grafana/alerting/alerts.yaml, spec 007) in
+# Prometheus format: same queries, thresholds and waits. What differs on AWS:
+#   - a service is the `service` label (container name, otel-collector.yaml), not `instance` (a task IP)
+#   - hints point at CloudWatch Logs and X-Ray instead of docker logs, Loki and Tempo
+#   - a task that's gone is no `up` series at all rather than up = 0, hence ServiceNoTasks
+#   - the threshold sits inside the ratio's parentheses: `and` binds looser than `>`, so `A and B > x`
+#     would compare B (the request count), not the ratio
+# Alert names stay ASCII (they become the SNS subject); `title` is what the message shows.
+# Rendered by Terraform (templatefile): $${...} is Terraform's, {{ ... }} the alert template's.
+groups:
+  - name: outbox
+    rules:
+      - alert: OutboxLag
+        expr: max by (service, queue) (modudrive_outbox_lag_seconds) > 120
+        for: 5m
+        labels:
+          channel: messaging
+        annotations:
+          title: 이벤트 전송 적체
+          summary: '대기 중인 이벤트가 **{{ printf "%.0f" $value }}초**째 적체 중'
+          action: 로그로 원인 확인 후 SQS 복구
+          logs: 'aws logs tail /ecs/${project}/{{ $labels.service }} --since 15m --filter-pattern "Outbox send failed"'
+
+      - alert: OutboxFailed
+        expr: max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
+        labels:
+          channel: messaging
+        annotations:
+          title: 이벤트 전송 실패
+          summary: '`{{ $labels.reason }}{{ if $labels.detail }}: {{ $labels.detail }}{{ end }}` ({{ printf "%.0f" $value }}건)'
+          action: 이벤트 확인 후 수동 처리
+          query: "select id, failed_at, failure_reason from outbox_event where status = 'FAILED' and queue = '{{ $labels.queue }}';"
+          recovery: "update outbox_event set status = 'PENDING', failed_at = null, failure_reason = null where id = ?;"
+
+  - name: consumer
+    rules:
+      - alert: DlqMessages
+        expr: max by (service, queue) (modudrive_dlq_messages) > 0
+        labels:
+          channel: messaging
+        annotations:
+          title: 이벤트 처리 실패
+          summary: '`{{ $labels.queue }}`의 DLQ에 **{{ printf "%.0f" $value }}건** 쌓여 있음 (재시도 소진 · 재처리 불가)'
+          action: 메시지의 DeadLetterReason으로 원인 확인 후 수정 → 원래 큐로 리드라이브
+          inspect: 'aws sqs receive-message --queue-url $(aws sqs get-queue-url --queue-name {{ $labels.queue }}-dlq --query QueueUrl --output text) --message-attribute-names All'
+          redrive: 'aws sqs start-message-move-task --source-arn <{{ $labels.queue }}-dlq의 ARN>'
+
+  - name: services
+    rules:
+      - alert: ServiceDown
+        expr: min by (service, instance) (up{job="services"}) < 1
+        for: 2m
+        labels:
+          channel: service
+        annotations:
+          title: 서비스 응답 없음
+          summary: 스크레이프가 2분째 실패중 (프로세스 다운 · 액추에이터 응답 없음)
+          action: 태스크 상태와 앱 로그 확인
+          inspect: 'aws ecs describe-services --cluster ${project} --services {{ $labels.service }} / aws logs tail /ecs/${project}/{{ $labels.service }} --since 15m'
+
+      # ECS replaces a dead task, and until then its target is simply gone — no series to be < 1.
+      - alert: ServiceNoTasks
+        expr: ${join(" or ", [for s in services : "absent(up{job=\"services\",service=\"${s}-service\"})"])}
+        for: 2m
+        labels:
+          channel: service
+        annotations:
+          title: 서비스 태스크 없음
+          summary: 수집 대상 태스크가 2분째 하나도 없음 (기동 실패 · 배포 롤백 반복)
+          action: ECS 서비스 이벤트로 태스크가 뜨지 못하는 이유 확인
+          inspect: 'aws ecs describe-services --cluster ${project} --services {{ $labels.service }} --query "services[0].events[:5]"'
+
+      - alert: CircuitOpen
+        expr: max by (service, name) (resilience4j_circuitbreaker_state{state=~"open|half_open"}) > 0
+        for: 2m
+        labels:
+          channel: service
+        annotations:
+          title: 서킷 열림
+          summary: 2분째 닫히지 않음 — 대상 서비스 호출이 계속 실패 중 (502·503·504 · 타임아웃 · 연결 실패)
+          action: 서킷이 부르는 서비스의 상태와 로그로 실패 원인 확인
+          inspect: 'aws logs tail /ecs/${project}/{{ $labels.service }} --since 15m --filter-pattern "{{ $labels.name }}"'
+
+      - alert: RouteErrorRate
+        expr: >-
+          (sum by (routeId) (rate(spring_cloud_gateway_requests_seconds_count{outcome="SERVER_ERROR"}[5m]))
+          / sum by (routeId) (rate(spring_cloud_gateway_requests_seconds_count[5m])) > 0.05)
+          and on (routeId)
+          (sum by (routeId) (increase(spring_cloud_gateway_requests_seconds_count{outcome="SERVER_ERROR"}[5m])) >= 10)
+        for: 2m
+        labels:
+          channel: service
+        annotations:
+          title: 요청 실패율 높음
+          summary: '최근 5분 요청의 **{{ humanizePercentage $value }}**가 5xx로 실패 중'
+          action: 그 서비스의 에러 로그로 원인 확인
+          inspect: 'aws logs tail /ecs/${project}/{{ $labels.routeId }} --since 15m --filter-pattern ERROR'
+
+      - alert: RouteSlowRate
+        expr: >-
+          (1 - sum by (routeId) (rate(spring_cloud_gateway_requests_seconds_bucket{le="1.0", routeId!="storage-service"}[5m]))
+          / sum by (routeId) (rate(spring_cloud_gateway_requests_seconds_count{routeId!="storage-service"}[5m])) > 0.05)
+          and on (routeId)
+          ((sum by (routeId) (increase(spring_cloud_gateway_requests_seconds_count{routeId!="storage-service"}[5m]))
+          - sum by (routeId) (increase(spring_cloud_gateway_requests_seconds_bucket{le="1.0", routeId!="storage-service"}[5m]))) >= 10)
+        for: 2m
+        labels:
+          channel: service
+        annotations:
+          title: 느린 요청 많음
+          summary: '최근 5분 요청의 **{{ humanizePercentage $value }}**가 1초를 넘김'
+          action: X-Ray 콘솔 → 트레이스에서 아래 필터로 느린 trace를 열어 가장 긴 구간(DB 쿼리·하위 호출)을 확인
+          inspect: 'service("{{ $labels.routeId }}") { responsetime > 1 }'

@@ -66,7 +66,7 @@ flowchart LR
 역할 분리:
 
 - **init 스크립트** — "DB와 계정이 존재한다"까지. Postgres 볼륨이 비어 있을 때 한 번만 실행된다.
-  Flyway는 이미 있는 DB에 접속해서 테이블만 만들 수 있고 DB·로그인 계정은 못 만들기 때문에 여전히 필요하다(서비스 계정에 슈퍼유저 권한을 줄 순 없음). AWS 이관 후엔 RDS의 DB·계정을 Terraform이 만들고, 이 스크립트는 로컬 전용이 된다.
+  Flyway는 이미 있는 DB에 접속해서 테이블만 만들 수 있고 DB·로그인 계정은 못 만들기 때문에 여전히 필요하다(서비스 계정에 슈퍼유저 권한을 줄 순 없음). AWS에서도 같은 스크립트를 쓴다. RDS가 프라이빗이라 Terraform이 직접 못 만들어서, 인스턴스마다 일회성 ECS 태스크(db-init)로 한 번 돌린다([aws-migration.md 1-5](aws-migration.md#1-5-db)).
 - **Flyway** — "테이블이 이 모양이다"와 dev 시드 데이터.
 - **Hibernate** — 검증만.
 
@@ -172,5 +172,5 @@ alter table file add constraint file_status_check
 - **앱이 뜰 때 마이그레이션 실행** — 지금 규모에선 표준적인 방식. 규모가 커지거나 AWS(ECS)로 가면 보통 배포 파이프라인에서
   마이그레이션을 따로 실행(CI 단계나 ECS 일회성 태스크)하고 앱은 validate만 하게 바꾼다.
 - **DB 계정 분리 안 됨** — 서비스 계정이 테이블 소유자라 앱이 스키마 변경 권한까지 갖는다. 운영(RDS)에서는
-  마이그레이션 계정(DDL 가능)과 앱 계정(데이터 읽기·쓰기만)을 나누는 게 정석. `.docs/aws-migration.md` 단계에서 같이 처리 예정.
+  마이그레이션 계정(DDL 가능)과 앱 계정(데이터 읽기·쓰기만)을 나누는 게 정석.
 - **H2 테스트 제거로 Docker 필수** — CI를 만들 때 Docker를 쓸 수 있는 러너(GitHub Actions ubuntu 러너는 기본 지원)를 쓸 것.

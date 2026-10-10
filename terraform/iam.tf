@@ -103,7 +103,7 @@ data "aws_iam_policy_document" "task" {
     }
   }
 
-  # Blocks: put on upload, get on download, delete on purge. No bucket-level rights (no CreateBucket, 2-7).
+  # Blocks: put on upload, get on download, delete on purge. No bucket-level rights (no CreateBucket, aws-migration.md 1-8).
   dynamic "statement" {
     for_each = each.key == "storage" ? [1] : []
     content {

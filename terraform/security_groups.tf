@@ -1,5 +1,5 @@
 # One security group per service; inbound only from the callers that really call it
-# (aws-migration.md 2-13). /internal/** has no auth of its own — these rules are what keeps, say, a
+# (aws-migration.md 1-12). /internal/** has no auth of its own — these rules are what keeps, say, a
 # compromised gateway away from member's internal APIs. Add a Feign/WebClient call → add its caller
 # here, or it times out only on AWS (compose has everything open).
 locals {
@@ -201,7 +201,7 @@ resource "aws_security_group" "vpc_endpoints" {
 resource "aws_vpc_security_group_ingress_rule" "vpc_endpoints" {
   for_each = merge(
     { for name, sg in aws_security_group.service : name => sg.id },
-    { db-init = aws_security_group.db_init.id },
+    { db-init = aws_security_group.db_init.id, otel-collector = aws_security_group.otel_collector.id },
   )
 
   security_group_id            = aws_security_group.vpc_endpoints.id
@@ -212,11 +212,11 @@ resource "aws_vpc_security_group_ingress_rule" "vpc_endpoints" {
 }
 
 # ponytail: outbound open on every group — inbound rules carry the isolation. Narrow egress to the
-# endpoint group + NAT (SES, Discord) if outbound control is ever required (2-13).
+# endpoint group + NAT (SES, Discord) if outbound control is ever required (aws-migration.md 1-12).
 resource "aws_vpc_security_group_egress_rule" "all" {
   for_each = merge(
     { for name, sg in aws_security_group.service : name => sg.id },
-    { alb = aws_security_group.alb.id, db-init = aws_security_group.db_init.id },
+    { alb = aws_security_group.alb.id, db-init = aws_security_group.db_init.id, otel-collector = aws_security_group.otel_collector.id },
   )
 
   security_group_id = each.value

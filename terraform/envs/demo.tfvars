@@ -6,6 +6,9 @@
 # serving but events, mail and new tasks wait for it; Spot tasks can be reclaimed and one task per
 # service means a short gap on redeploy; no Multi-AZ anywhere.
 
+environment = "demo"
+account_id  = null # this environment's AWS account — set it and other accounts' credentials are refused
+
 nat                 = "instance"
 interface_endpoints = false # ~$110/month for six endpoints in two AZs; traffic goes out the IGW
 fargate_spot        = true
@@ -38,3 +41,11 @@ services = {
   mail         = { cpu = 256, memory = 1024, min = 1, max = 1 }
   notification = { cpu = 256, memory = 1024, min = 1, max = 1 }
 }
+
+# A trial account's first alarm. ~$108 of infrastructure + AMP/X-Ray/logs, with headroom.
+monthly_budget_usd = 150
+alert_email        = null
+
+# The smallest collector; scraping once a minute keeps AMP's per-sample bill near nothing.
+otel_collector = { cpu = 256, memory = 1024, scrape_interval = "60s" }
+grafana        = false # $9/user/month and IAM Identity Center — AMP, X-Ray and CloudWatch consoles do for a trial

@@ -8,7 +8,7 @@ resource "aws_kms_key" "data" {
   description             = "${var.project} data at rest: databases, Redis, S3 blocks, queues, secrets, logs"
   enable_key_rotation     = true
   deletion_window_in_days = 30
-  policy                  = data.aws_iam_policy_document.kms_data.json
+  policy                  = data.aws_iam_policy_document.kms_backup_account.json
 }
 
 resource "aws_kms_alias" "data" {
@@ -85,6 +85,25 @@ data "aws_iam_policy_document" "kms_data" {
       test     = "ArnEquals"
       variable = "aws:SourceArn"
       values   = [aws_sns_topic.mail_ses_events.arn]
+    }
+  }
+}
+
+# An Aurora snapshot under this key can be copied to the backup account (backup.tf) only if that
+# account may use the key to re-encrypt it under its own.
+data "aws_iam_policy_document" "kms_backup_account" {
+  source_policy_documents = [data.aws_iam_policy_document.kms_data.json]
+
+  dynamic "statement" {
+    for_each = local.backup_copy ? [1] : []
+    content {
+      sid       = "BackupAccountCopy"
+      actions   = ["kms:Decrypt", "kms:DescribeKey", "kms:CreateGrant", "kms:ReEncrypt*", "kms:GenerateDataKey*"]
+      resources = ["*"]
+      principals {
+        type        = "AWS"
+        identifiers = ["arn:aws:iam::${local.backup_account_id}:root"]
+      }
     }
   }
 }

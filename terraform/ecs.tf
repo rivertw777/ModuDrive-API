@@ -1,12 +1,12 @@
 # Seven ECS services on Fargate. They find each other through Service Connect under the same names
-# and ports as compose (http://member-service:10010 ...), so clients.<service>.url needs no change (2-2).
+# and ports as compose (http://member-service:10010 ...), so clients.<service>.url needs no change (aws-migration.md 1-3).
 locals {
   db_names     = { member = "member_db", file = "file_db", notification = "notification_db", auth = "auth_db" }
   sqs_clients  = ["member", "auth", "file", "storage", "mail", "notification"]
   domain_based = var.domain_name != null
 
-  # Called by another service → registered in Service Connect. mail calls nobody and is called by
-  # nobody, so it stays out (no proxy sidecar).
+  # Called by another service → registered in Service Connect. Every service is a client: they all
+  # send traces to otel-collector:4318 (monitoring.tf), mail included.
   service_connect_servers = ["member", "auth", "file", "storage", "notification"]
 
   env = {
@@ -16,9 +16,8 @@ locals {
         # Not "dev": that profile seeds the test users (db/seed) and opens Swagger.
         SPRING_PROFILES_ACTIVE = "prod"
         JAVA_TOOL_OPTIONS      = "-XX:MaxRAMPercentage=75"
-        # No collector until the monitoring step (2-10) — without this every export fails and logs it.
-        # Remove when the central ADOT collector exists and set OTEL_EXPORTER_OTLP_ENDPOINT to it.
-        MANAGEMENT_TRACING_EXPORT_ENABLED = "false"
+        # Traces go to the app's default, http://otel-collector:4318 — the collector's Service Connect
+        # name is the compose one (monitoring.tf).
       },
       contains(keys(local.db_names), name) ? {
         # TLS required (Aurora refuses plain connections: rds.force_ssl).
@@ -62,7 +61,7 @@ locals {
   }
 
   # ponytail: placeholders until a domain exists — CORS/CSRF and mail links point nowhere useful, and
-  # login can't work anyway without one (the __Host- cookie needs HTTPS on a shared site, 2-11).
+  # login can't work anyway without one (the __Host- cookie needs HTTPS on a shared site, aws-migration.md 1-11).
   client_url = local.domain_based ? "https://app.${var.domain_name}" : "https://app.example.com"
   mail_from  = local.domain_based ? "noreply@${var.domain_name}" : "noreply@example.com"
 }
@@ -101,7 +100,7 @@ resource "aws_cloudwatch_log_group" "service" {
 
   name       = "/ecs/${var.project}/${each.key}-service"
   kms_key_id = local.kms_key_arn
-  # Logs are the bulk of the monitoring bill at this scale — keep them short (2-10).
+  # Logs are the bulk of the monitoring bill at this scale — keep them short (aws-migration.md 1-13).
   retention_in_days = 14
 }
 
@@ -134,6 +133,12 @@ resource "aws_ecs_task_definition" "service" {
 
     environment = [for k, v in local.env[each.key] : { name = k, value = v }]
     secrets     = [for k, arn in local.secrets[each.key] : { name = k, valueFrom = arn }]
+
+    # The collector's ecs_observer scrapes every container carrying these (monitoring.tf).
+    dockerLabels = {
+      ECS_PROMETHEUS_EXPORTER_PORT = "9464"
+      ECS_PROMETHEUS_METRICS_PATH  = "/actuator/prometheus"
+    }
 
     # Least privilege inside the container (the image already runs as a non-root user): the root
     # filesystem is read-only, so a compromised process can't plant or change files, with only /tmp
@@ -203,42 +208,40 @@ resource "aws_ecs_service" "service" {
     }
   }
 
-  dynamic "service_connect_configuration" {
-    for_each = each.key == "mail" ? [] : [1]
-    content {
-      enabled   = true
-      namespace = aws_service_discovery_http_namespace.main.arn
+  service_connect_configuration {
+    enabled   = true
+    namespace = aws_service_discovery_http_namespace.main.arn
 
-      # Servers answer at <name>-service:<port>, exactly the URLs in application.yml. gateway is
-      # client-only: it calls the others, nobody calls it through Service Connect.
-      dynamic "service" {
-        for_each = contains(local.service_connect_servers, each.key) ? [1] : []
-        content {
-          port_name      = "http"
-          discovery_name = "${each.key}-service"
-          client_alias {
-            dns_name = "${each.key}-service"
-            port     = each.value
-          }
+    # Servers answer at <name>-service:<port>, exactly the URLs in application.yml. gateway is
+    # client-only: it calls the others, nobody calls it through Service Connect.
+    dynamic "service" {
+      for_each = contains(local.service_connect_servers, each.key) ? [1] : []
+      content {
+        port_name      = "http"
+        discovery_name = "${each.key}-service"
+        client_alias {
+          dns_name = "${each.key}-service"
+          port     = each.value
+        }
 
-          dynamic "tls" {
-            for_each = var.hardened ? [1] : []
-            content {
-              issuer_cert_authority {
-                aws_pca_authority_arn = aws_acmpca_certificate_authority_certificate.service_connect[0].certificate_authority_arn
-              }
-              role_arn = aws_iam_role.ecs_infrastructure[0].arn
-              kms_key  = local.kms_key_arn
+        dynamic "tls" {
+          for_each = var.hardened ? [1] : []
+          content {
+            issuer_cert_authority {
+              aws_pca_authority_arn = aws_acmpca_certificate_authority_certificate.service_connect[0].certificate_authority_arn
             }
+            role_arn = aws_iam_role.ecs_infrastructure[0].arn
+            kms_key  = local.kms_key_arn
           }
         }
       }
     }
   }
 
-  # Autoscaling owns the count after the first apply.
+  # After the first apply autoscaling owns the count, and the deploy workflow owns which revision runs
+  # (.github/workflows/deploy.yml) — an apply never rolls a service back to Terraform's image_tag.
   lifecycle {
-    ignore_changes = [desired_count]
+    ignore_changes = [desired_count, task_definition]
   }
 
   # A new task pulls its image through the NAT, so the instance route must exist first (demo).
@@ -273,7 +276,7 @@ resource "aws_appautoscaling_policy" "cpu" {
 }
 
 # Creates each instance's databases and their logins, once, after RDS exists and before the services
-# first start — RDS is private, so it runs inside the VPC as a one-off task per instance (2-4), reusing
+# first start — RDS is private, so it runs inside the VPC as a one-off task per instance (aws-migration.md 1-5), reusing
 # the local script with DB_SERVICES naming that instance's. The commands are the db_init_run_tasks
 # output. A second run fails (CREATE ROLE of an existing role) — by design, it only ever runs once.
 resource "aws_cloudwatch_log_group" "db_init" {

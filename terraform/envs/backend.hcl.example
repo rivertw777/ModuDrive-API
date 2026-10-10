@@ -1,0 +1,5 @@
+# Copy to envs/<env>.backend.hcl (git-ignored: it names one account's bucket) — one per environment,
+# each in that environment's account. Create the bucket once by hand, versioning on, then:
+#   terraform init -reconfigure -backend-config=envs/<env>.backend.hcl
+bucket = "modudrive-terraform-state-<account-id>"
+region = "ap-northeast-2"

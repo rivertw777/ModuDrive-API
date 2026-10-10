@@ -49,6 +49,7 @@ terraform/.terraform/
 *.tfstate.*
 *.tfvars
 !*.tfvars.example
-# Sizing only, no secrets — committed: envs/demo.tfvars runs, envs/prod.tfvars is the design.
+# Sizing only, no secrets — committed: envs/{demo,staging,prod}.tfvars.
 !terraform/envs/*.tfvars
 terraform/backend.hcl
+terraform/envs/*.backend.hcl
