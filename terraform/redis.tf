@@ -1,5 +1,5 @@
 # Valkey (Redis-compatible) clusters by purpose — var.redis_clusters says which, and which services use
-# each (006 2-4-6). demo runs two (storage-service apart from the rest), prod one per purpose:
+# each (006 2-4-6). demo runs one for everything (like local), prod one per purpose:
 #   auth    — sessions, login limits, new-device codes (auth-service)
 #   member  — sign-up verification codes (member-service)
 #   mail    — consumer idempotency (mail-service, no DB of its own)

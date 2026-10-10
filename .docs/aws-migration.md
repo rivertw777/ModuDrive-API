@@ -79,7 +79,7 @@
 - 자동 백업 7일. 그 이상은 Aurora 검토.
 
 ### 2-5. Redis → ElastiCache for Valkey
-- 용도별 클러스터로 나눈다 (`terraform/redis.tf`, [006 2-4-6](spec/006-resilience-spec.md#2-4-6-redis-분리)). `prod`는 `auth`(세션, 복제본 포함)·`member`·`mail`·`storage` 4개, `demo`는 `auth`(auth·member·mail 공용)·`storage` 2개 — `envs/*.tfvars`의 `redis_clusters`.
+- 용도별 클러스터로 나눈다 (`terraform/redis.tf`, [006 2-4-6](spec/006-resilience-spec.md#2-4-6-redis-분리)). `prod`는 `auth`(세션, 복제본 포함)·`member`·`mail`·`storage` 4개, `demo`는 로컬처럼 1개(모든 서비스 공용) — `envs/*.tfvars`의 `redis_clusters`. `demo`에 예전 `storage` 클러스터가 떠 있었다면 apply 때 없어진다 — commit되지 않은 업로드 기록·다운로드 한도·zip 토큰만 사라진다(업로드 중이던 블록은 다시 보내면 된다).
   - 모두 `maxmemory-policy noeviction` 파라미터 그룹(`valkey8`, 엔진 8.1 고정). 기존 클러스터에 적용하면 엔진 버전을 먼저 확인한다.
   - 클러스터마다 보안 그룹·AUTH 토큰(SSM `REDIS_PASSWORD`/`REDIS_PASSWORD_<클러스터>`)이 따로다 — 그 클러스터를 쓰는 서비스만 들어오고 그 토큰만 받는다. 예전 공용 보안 그룹·토큰은 `moved`로 `auth`가 이어받고, `storage`는 새 토큰으로 바뀐다(`auth_token_update_strategy = ROTATE` — 태스크가 새 토큰으로 다시 뜰 때까지 옛 토큰도 통한다).
   - 예전 이름(`redis`, `storage_redis`)의 클러스터는 `moved` 블록으로 `redis["auth"]`·`redis["storage"]`가 이어받는다 — 재생성(전원 로그아웃) 없음. `auth`는 클러스터 ID도 예전 그대로(`modudrive`).
@@ -215,12 +215,13 @@ ECS 태스크들 ──OTLP 트레이스──▶ ┌─────────
   |---|---|---|
   | 태스크 위치 | 퍼블릭 서브넷 + 공인 IP (NAT 없음) | 프라이빗 서브넷 + AZ마다 NAT |
   | VPC 인터페이스 엔드포인트 | 없음 (S3 게이트웨이만) | SQS·ECR·logs·SSM·Secrets |
-  | ECS | 서비스당 1개, 전부 0.5 vCPU/1 GB, **Fargate Spot** | 사용자 대면 서비스 최소 2개, gateway·auth·file·storage 1 vCPU/2 GB, 일반 Fargate |
+  | ECS | 서비스당 1개 고정(오토스케일 없음), 전부 0.25 vCPU/1 GB, **Fargate Spot** | 사용자 대면 서비스 최소 2개, gateway·auth·file·storage 1 vCPU/2 GB, 일반 Fargate |
   | RDS | 1대에 4개 DB — db.t4g.micro, 단일 AZ, 삭제 방지 끔 | **서비스마다 1대** — file·auth db.m7g.large, member·notification db.t4g.medium, 전부 **Multi-AZ**, 삭제 방지 |
-  | Valkey | 2개 — `auth`(auth·member·mail 공용)·`storage`, cache.t4g.micro 1노드씩 | 용도별 4개 — `auth` cache.m7g.large 2노드 + 자동 장애 조치, `member`·`mail` cache.t4g.small, `storage` cache.m7g.large ([006 2-4-6](spec/006-resilience-spec.md#2-4-6-redis-분리)) |
+  | Valkey | 1개(모든 서비스 공용), cache.t4g.micro 1노드 | 용도별 4개 — `auth` cache.m7g.large 2노드 + 자동 장애 조치, `member`·`mail` cache.t4g.small, `storage` cache.m7g.large ([006 2-4-6](spec/006-resilience-spec.md#2-4-6-redis-분리)) |
   | Container Insights | 끔 | 켬 |
-  | 대략 비용(서울, 트래픽 전) | 월 $100~150 | 최소 태스크 기준 월 $2,200 안팎 (RDS 4대·Valkey 4개 포함, 대략치) — 트래픽에 따라 오토스케일·NAT·로그 비용이 더해진다 |
+  | 대략 비용(서울, 트래픽 전) | 월 $80~120 | 최소 태스크 기준 월 $2,200 안팎 (RDS 4대·Valkey 4개 포함, 대략치) — 트래픽에 따라 오토스케일·NAT·로그 비용이 더해진다 |
 
+  - `demo`는 **시험용 — 줄일 수 있는 비용은 다 줄인다.** 격리·이중화는 `prod` 설계로 보여 준다.
   - `demo`가 감수하는 것: 네트워크 격리가 보안 그룹에만 의존(인바운드는 여전히 막힘, RDS·Redis는 계속 프라이빗), Spot 회수·재배포 때 잠깐 끊김, Redis 재시작 시 전원 로그아웃.
   - `prod` 숫자는 MAU 500만의 **출발점**이지 측정값이 아니다 — 부하 테스트와 오토스케일링 기록으로 맞춘다.
   - 바꾸면 ECS 서비스(Spot ↔ 일반)와 서브넷이 교체되고 RDS 클래스 변경은 재시작이 따른다 — 사용자가 없을 때 바꾼다.
