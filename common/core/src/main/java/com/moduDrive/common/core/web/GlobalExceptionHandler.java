@@ -12,6 +12,7 @@ import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -33,6 +34,10 @@ public class GlobalExceptionHandler {
 
     private static final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
+    /** Sent with every 503: how long a circuit stays open (waitDurationInOpenState), so a client
+     * that waits this long tries again just as the circuit lets a probe through. */
+    static final String RETRY_AFTER_SECONDS = "10";
+
     private final ObjectMapper objectMapper;
 
     @ExceptionHandler(BusinessException.class)
@@ -40,9 +45,7 @@ public class GlobalExceptionHandler {
         ApiResponse<Object> response = e.getData() != null
                 ? ApiResponse.error(e.getExceptionCase(), e.getData())
                 : ApiResponse.error(e.getExceptionCase());
-        return ResponseEntity
-                .status(response.getStatus())
-                .body(response);
+        return withRetryAfter(response);
     }
 
     @ExceptionHandler(value = MethodArgumentNotValidException.class)
@@ -110,9 +113,7 @@ public class GlobalExceptionHandler {
                 HttpStatus.SERVICE_UNAVAILABLE,
                 "일시적으로 서비스를 이용할 수 없습니다. 잠시 후 다시 시도해 주세요."
         );
-        return ResponseEntity
-                .status(response.getStatus())
-                .body(response);
+        return withRetryAfter(response);
     }
 
     @ExceptionHandler(Exception.class)
@@ -147,4 +148,12 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
     }
 
+
+    private static ResponseEntity<ApiResponse<Object>> withRetryAfter(ApiResponse<Object> response) {
+        ResponseEntity.BodyBuilder builder = ResponseEntity.status(response.getStatus());
+        if (response.getStatus() == HttpStatus.SERVICE_UNAVAILABLE) {
+            builder.header(HttpHeaders.RETRY_AFTER, RETRY_AFTER_SECONDS);
+        }
+        return builder.body(response);
+    }
 }

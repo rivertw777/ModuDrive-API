@@ -1,9 +1,12 @@
 package com.moduDrive.common.core.web;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.moduDrive.common.core.exception.BusinessException;
+import com.moduDrive.common.core.exception.ExceptionCase;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpInputMessage;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -52,6 +55,38 @@ class GlobalExceptionHandlerTest {
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
             assertThat(response.getBody().getMessage()).doesNotContain("postgres");
+            assertThat(response.getHeaders().getFirst(HttpHeaders.RETRY_AFTER)).isEqualTo("10");
+        }
+    }
+
+    @Nested
+    @DisplayName("BusinessException을 처리할 때")
+    class WhenABusinessExceptionIsThrown {
+
+        private BusinessException exception(HttpStatus status) {
+            return new BusinessException(new ExceptionCase() {
+                public HttpStatus getHttpStatus() { return status; }
+                public String getMessage() { return "x"; }
+            });
+        }
+
+        @Test
+        @DisplayName("503이면 서킷이 열려 있는 시간만큼 Retry-After를 붙인다")
+        void tellsHowLongToWaitOnA503() {
+            ResponseEntity<ApiResponse<Object>> response =
+                    handler.handleBusinessException(exception(HttpStatus.SERVICE_UNAVAILABLE));
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+            assertThat(response.getHeaders().getFirst(HttpHeaders.RETRY_AFTER)).isEqualTo("10");
+        }
+
+        @Test
+        @DisplayName("503이 아니면 Retry-After를 붙이지 않는다")
+        void sendsNoRetryAfterOtherwise() {
+            ResponseEntity<ApiResponse<Object>> response =
+                    handler.handleBusinessException(exception(HttpStatus.TOO_MANY_REQUESTS));
+
+            assertThat(response.getHeaders().containsHeader(HttpHeaders.RETRY_AFTER)).isFalse();
         }
     }
 
