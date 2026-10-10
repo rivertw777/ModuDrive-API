@@ -1,9 +1,9 @@
-# Copies off this account (aws-migration.md 3-7). Everything else here — Aurora's 35 days, S3 versions,
+# Copies off this account (aws-migration.md 4-7). Everything else here — Aurora's 35 days, S3 versions,
 # MemoryDB snapshots — lives in the same account and region as the data, so an account takeover or a
 # region-wide loss takes the backups with it. These two send a copy to a separate backup account:
 #   - Aurora/RDS: a daily AWS Backup snapshot, copied to a vault there (backup_copy_vault_arn)
 #   - storage blocks: S3 replication to a bucket there (backup_bucket_arn), Glacier IR
-# Both need the backup account set up first (aws-migration.md 3-7). MemoryDB isn't covered: AWS Backup
+# Both need the backup account set up first (aws-migration.md 4-7). MemoryDB isn't covered: AWS Backup
 # doesn't take it, and what it holds (sessions, codes, upload records) is re-creatable — a restore
 # logs everyone out. The block key, STORAGE_ENCRYPTION_KEY, is copied by hand once (same section).
 locals {

@@ -90,7 +90,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       # A merge must never take data with it: if the plan destroys or replaces anything that holds
-      # state, stop here — that change is made by hand, after a snapshot (aws-migration.md 3-8).
+      # state, stop here — that change is made by hand, after a snapshot (aws-migration.md 2-4).
       - name: Refuse to destroy data
         if: steps.ready.outputs.ok == 'true'
         run: |

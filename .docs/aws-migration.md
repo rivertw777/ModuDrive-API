@@ -1,7 +1,7 @@
 # AWS 마이그레이션
 
-로컬 docker compose 구성이 AWS에서 무엇으로 바뀌는지, 어떻게 배포하는지, 그리고 같은 구성을 `demo`·`prod` 두 규모로 어떻게 나눴는지 정리한 문서다.
-코드가 기준이다. AWS 쪽은 `.infra/`, 로컬 쪽은 `.docker/`를 같이 보면서 읽는다.
+로컬 docker compose 구성이 AWS에서 무엇으로 바뀌는지, 어떻게 배포하는지, demo와 prod를 각각 어떻게 꾸렸는지 정리한 문서다.
+코드가 기준이다. AWS 쪽은 `.infra/`, 로컬 쪽은 `.docker/`를 같이 열어 두고 읽으면 된다.
 
 ---
 
@@ -25,19 +25,26 @@
   - [2-1. 계정과 상태](#2-1-계정과-상태)
   - [2-2. 첫 배포](#2-2-첫-배포)
   - [2-3. 자동 배포](#2-3-자동-배포)
-- [3. 환경별 구성](#3-환경별-구성)
-  - [3-1. 환경 비교](#3-1-환경-비교)
-  - [3-2. demo](#3-2-demo)
-  - [3-3. prod 가용성과 비용](#3-3-prod-가용성과-비용)
-  - [3-4. 저장 데이터 암호화](#3-4-저장-데이터-암호화)
-  - [3-5. WAF와 서비스 간 TLS](#3-5-waf와-서비스-간-tls)
-  - [3-6. 감사와 위협 탐지](#3-6-감사와-위협-탐지)
-  - [3-7. 백업과 복구](#3-7-백업과-복구)
-  - [3-8. 크기·엔진 변경](#3-8-크기엔진-변경)
+  - [2-4. 크기·엔진 변경](#2-4-크기엔진-변경)
+- [3. demo](#3-demo)
+  - [3-1. 사양](#3-1-사양)
+  - [3-2. 비용](#3-2-비용)
+  - [3-3. 감수하는 것](#3-3-감수하는-것)
+  - [3-4. 지표·로그·트레이스 보기](#3-4-지표로그트레이스-보기)
+- [4. prod](#4-prod)
+  - [4-1. 사양](#4-1-사양)
+  - [4-2. 가용성](#4-2-가용성)
+  - [4-3. 비용](#4-3-비용)
+  - [4-4. 저장 데이터 암호화](#4-4-저장-데이터-암호화)
+  - [4-5. WAF와 서비스 간 TLS](#4-5-waf와-서비스-간-tls)
+  - [4-6. 감사와 위협 탐지](#4-6-감사와-위협-탐지)
+  - [4-7. 백업과 복구](#4-7-백업과-복구)
 
 ---
 
 ## 1. 로컬 구성과의 대응
+
+두 환경에 공통인 내용이다. demo와 prod에서 달라지는 크기와 이중화는 3장과 4장에 있다.
 
 ### 1-1. 요약
 
@@ -46,150 +53,184 @@
 | 실행 | docker compose, 이미지 로컬 빌드 | ECS Fargate, 이미지는 ECR |
 | 서비스 간 호출 | compose DNS (`http://member-service:10010`) | ECS Service Connect (같은 이름·포트) |
 | 진입점 | gateway `localhost:10001` | ALB(HTTPS) → gateway |
-| DB | Postgres 18 컨테이너 1개, 서비스별 DB·로그인 | RDS 또는 Aurora PostgreSQL |
-| Redis | Redis 7 컨테이너 1개 | ElastiCache 또는 MemoryDB for Valkey (TLS) |
+| DB | Postgres 18 컨테이너 1개, 서비스별 DB·로그인 | RDS(demo) 또는 Aurora PostgreSQL(prod) |
+| Redis | Redis 7 컨테이너 1개 | ElastiCache(demo) 또는 MemoryDB(prod), 둘 다 Valkey + TLS |
 | 메시징 | LocalStack SQS | SQS 표준 큐 |
 | 파일 저장 | LocalStack S3 | S3 |
 | 메일 | LocalStack SES → Mailpit(`localhost:8025`) | SES |
 | 시크릿 | `.docker/.env` | SSM Parameter Store, RDS 관리자 비밀번호만 Secrets Manager |
-| 모니터링 | Prometheus·Promtail·Loki·otel-collector·Tempo·Grafana | AMP·CloudWatch Logs·X-Ray·Managed Grafana(prod), 중앙 ADOT collector |
-| 알림 | Prometheus 규칙 → Alertmanager → LocalStack SNS → Lambda → Discord | AMP 알림 규칙·CloudWatch 경보·Budgets → SNS → Lambda → Discord |
+| 모니터링 | Prometheus, Promtail, Loki, otel-collector, Tempo, Grafana | AMP, CloudWatch Logs, X-Ray, 중앙 ADOT collector |
+| 알림 | Prometheus 규칙 → Alertmanager → SNS → Lambda → Discord (SNS·Lambda는 LocalStack) | AMP 알림 규칙, CloudWatch 경보, Budgets → SNS → Lambda → Discord |
 | 인프라 정의 | `.docker/*.yml`, `.docker/localstack/init-aws.sh` | `.infra/`, 환경마다 AWS 계정 하나 |
 | 배포 | `make service` | GitHub Actions (OIDC) → ECR → ECS 새 리비전 |
 
-앱 코드는 두 환경에서 같다. 달라지는 건 환경 변수와 인증 방식뿐이다 — 로컬은 endpoint·access key를 넣어 LocalStack을 쓰고, AWS는 둘 다 비워 두면 SDK 기본 체인으로 task role을 쓴다.
+앱 코드는 로컬과 AWS가 같다. 바뀌는 건 환경 변수와 인증 방식뿐이다. 로컬은 endpoint와 access key를 넣어 LocalStack에 붙고, AWS는 둘 다 비워 두면 SDK 기본 체인이 task role을 쓴다.
 
 ### 1-2. 컴퓨팅
 
-- 서비스 1개가 ECS 서비스 1개다. 이미지는 로컬과 같은 `.docker/Dockerfile`로 만들어 ECR에 올린다(서비스마다 저장소, 태그 덮어쓰기 금지, 최근 30개만 보관).
-- EKS가 아니라 ECS를 쓴 이유는 운영 부담이다. 컨트롤 플레인 비용·업그레이드가 없고 서비스 7개 규모엔 충분하다.
-- 배포가 실패하면 ECS 배포 서킷 브레이커가 이전 태스크 정의로 되돌린다. 오토스케일은 CPU 60% 목표 추적이다(최소·최대는 환경마다, 3장).
-- 프로필은 `SPRING_PROFILES_ACTIVE=prod`다. `dev`는 테스트 계정 시드(`db/seed`)와 Swagger를 켜므로 AWS에서 쓰지 않는다.
-- 컨테이너 강화는 비용이 없어서 모든 환경이 같다.
-  - 이미지는 JRE(`eclipse-temurin:25-jre-alpine`)이고 비루트 사용자(`app`)로 실행한다.
-  - ECS 태스크는 루트 파일시스템 읽기 전용, Linux capability 전부 제거(`drop = ["ALL"]`). 쓰기는 `/tmp` 볼륨만 된다(Tomcat multipart 임시 파일·JVM).
-  - Fargate는 이름만 있는 볼륨을 root 소유 `0755`로 마운트한다. 그대로면 비루트 사용자가 `/tmp`에 못 써서 Tomcat이 뜨지 않는다. 이미지가 `/tmp`를 `VOLUME`으로 선언하고 `1777`로 두면 Fargate가 그 권한을 볼륨에 복사한다.
-  - 로컬에서 같은 조건(`--read-only -v /tmp --cap-drop ALL --security-opt no-new-privileges`)으로 띄워 확인할 수 있다. `--tmpfs /tmp`는 누구나 쓸 수 있는 tmpfs라 위 권한 문제를 가리므로 쓰지 않는다.
+서비스 하나가 ECS 서비스 하나다. 이미지는 로컬과 같은 `.docker/Dockerfile`로 만들어 ECR에 올린다. 저장소는 서비스마다 따로 있고, 태그 덮어쓰기는 막혀 있으며, 최근 30개만 남긴다.
+
+EKS 대신 ECS를 고른 건 운영 부담 때문이다. 컨트롤 플레인 비용도 업그레이드도 없고, 서비스 7개 규모에는 이걸로 충분하다.
+
+- 배포가 실패하면 ECS 배포 서킷 브레이커가 이전 태스크 정의로 되돌린다.
+- 오토스케일은 CPU 60% 목표 추적이다. 최소·최대 개수는 환경마다 다르다.
+- 프로필은 `SPRING_PROFILES_ACTIVE=prod`다. `dev`는 테스트 계정 시드(`db/seed`)와 Swagger를 켜기 때문에 AWS에서는 쓰지 않는다.
+
+컨테이너 강화는 돈이 안 들어서 두 환경이 같다.
+
+- 이미지는 JRE(`eclipse-temurin:25-jre-alpine`)이고 비루트 사용자 `app`으로 돈다.
+- 태스크는 루트 파일시스템이 읽기 전용이고 Linux capability를 전부 뺐다(`drop = ["ALL"]`). 쓸 수 있는 곳은 `/tmp` 볼륨 하나다(Tomcat multipart 임시 파일, JVM).
+- Fargate는 이름만 있는 볼륨을 root 소유 `0755`로 마운트한다. 그대로 두면 `app` 사용자가 `/tmp`에 쓰지 못해 Tomcat이 안 뜬다. 이미지에서 `/tmp`를 `VOLUME`으로 선언하고 `1777`로 두면 Fargate가 그 권한을 볼륨에 그대로 옮긴다.
+- 로컬에서도 같은 조건으로 띄워 볼 수 있다: `--read-only -v /tmp --cap-drop ALL --security-opt no-new-privileges`. `--tmpfs /tmp`는 누구나 쓸 수 있는 tmpfs라 위 권한 문제가 가려지므로 쓰지 않는다.
 
 ### 1-3. 서비스 간 호출
 
-- 서비스 레지스트리가 없다. 호출하는 쪽은 `application.yml`의 `clients.<서비스>.url`만 읽는다.
-  - Feign: `@FeignClient(name = ..., url = "${clients.<서비스>.url}")`
-  - gateway: `RouteConfig`(라우트)와 `WebClientConfig`(auth 세션 확인)가 같은 값을 읽는다.
-- 로컬은 compose DNS, AWS는 Service Connect가 같은 이름·포트(`http://member-service:10010`)를 붙이므로 설정 값이 바뀌지 않는다.
-- Service Connect에 이름을 등록하는 건 누군가 부르는 서비스(member·auth·file·storage·notification)와 collector(`otel-collector`)다. gateway와 mail은 클라이언트로만 들어간다 — 트레이스를 collector로 보내야 해서 mail도 프록시 사이드카가 붙는다.
+서비스 레지스트리는 없다. 호출하는 쪽은 `application.yml`의 `clients.<서비스>.url`만 본다.
+
+- Feign: `@FeignClient(name = ..., url = "${clients.<서비스>.url}")`
+- gateway: `RouteConfig`(라우트)와 `WebClientConfig`(auth 세션 확인)가 같은 값을 읽는다.
+
+로컬은 compose DNS가, AWS는 Service Connect가 같은 이름과 포트(`http://member-service:10010`)를 붙여 주므로 설정 값을 바꿀 필요가 없다.
+
+Service Connect에 이름을 등록하는 건 다른 서비스가 부르는 member, auth, file, storage, notification과 collector(`otel-collector`)다. gateway와 mail은 클라이언트로만 들어간다. mail은 아무도 부르지 않지만 트레이스를 collector로 보내야 해서 프록시 사이드카가 붙는다.
 
 ### 1-4. 외부 진입점
 
-- 퍼블릭 ALB → gateway. 나머지 서비스는 전부 프라이빗 서브넷이다.
-  - 도메인이 있으면 443(TLS 1.2 이상, ACM 인증서)으로 받고 80은 443으로 리다이렉트한다.
-  - 도메인이 없으면(1-11) 80에서 평문 HTTP로 바로 넘긴다. 스택이 응답하는지만 볼 수 있고, `__Host-` 세션 쿠키가 HTTPS 전용이라 로그인은 안 된다.
-- AWS API Gateway로 바꾸지 않는다. 세션 인증 필터·CSRF 가드·라우팅을 다 옮겨야 하는데 얻는 게 없다.
-- ALB는 `drop_invalid_header_fields`로 이름이 `[A-Za-z0-9-]`가 아닌 헤더를 버린다. 요청 밀반입을 막고, 클라이언트가 보낸 `X_USER_ID`가 gateway까지 오지 못하게 한다.
-- ALB 헬스 체크는 gateway 관리 포트(9464)로 한다.
-- ALB → gateway 구간은 VPC 안의 평문 HTTP다.
+퍼블릭 ALB 뒤에 gateway가 있고, 나머지 서비스는 전부 프라이빗 서브넷에 있다.
+
+- 도메인이 있으면 443(TLS 1.2 이상, ACM 인증서)으로 받고 80은 443으로 돌린다.
+- 도메인이 없으면(1-11) 80에서 평문으로 바로 넘긴다. 스택이 응답하는지는 볼 수 있지만 `__Host-` 세션 쿠키가 HTTPS 전용이라 로그인은 안 된다.
+- ALB는 `drop_invalid_header_fields`로 이름이 `[A-Za-z0-9-]`가 아닌 헤더를 버린다. 요청 밀반입을 막고, 클라이언트가 직접 넣은 `X_USER_ID`가 gateway까지 오지 못하게 한다.
+- 헬스 체크는 gateway 관리 포트(9464)로 한다.
+- ALB에서 gateway까지는 VPC 안의 평문 HTTP다.
+
+AWS API Gateway로 바꾸지는 않는다. 세션 인증 필터, CSRF 가드, 라우팅을 전부 옮겨야 하는데 그만큼 얻는 게 없다.
 
 ### 1-5. DB
 
-- 서비스마다 DB와 로그인이 따로다: `member_db`/`member_service`, `file_db`/`file_service`, `notification_db`/`notification_service`, `auth_db`/`auth_service`. 각 로그인은 자기 DB에만 접속한다.
-- 로컬은 Postgres 볼륨이 비어 있을 때 `.docker/postgres/postgres_init.sh`가 만든다. RDS는 프라이빗이라 Terraform이 직접 못 만들어서, 같은 스크립트를 인스턴스마다 일회성 ECS 태스크(`modudrive-db-init[-<인스턴스>]`)로 한 번 돌린다. 명령은 출력 `db_init_run_tasks`에 있고, 태스크마다 `DB_SERVICES`로 그 인스턴스에 둘 DB만 만든다(로컬은 비워 둬서 4개 전부).
-- RDS 관리자는 superuser가 아니다. PostgreSQL 16부터 `CREATE DATABASE ... OWNER <로그인>`이 `must be able to SET ROLE`로 실패하므로, 스크립트가 만든 로그인을 관리자에게 `GRANT`한다. 로컬 superuser에서도 그대로 동작한다.
+서비스마다 DB와 로그인이 따로 있고, 각 로그인은 자기 DB에만 접속한다.
+
+| 서비스 | DB | 로그인 |
+|---|---|---|
+| member | `member_db` | `member_service` |
+| file | `file_db` | `file_service` |
+| notification | `notification_db` | `notification_service` |
+| auth | `auth_db` | `auth_service` |
+
+로컬은 Postgres 볼륨이 비어 있을 때 `.docker/postgres/postgres_init.sh`가 이걸 만든다. RDS는 프라이빗 서브넷에 있어서 Terraform이 직접 접속할 수 없다. 그래서 같은 스크립트를 인스턴스마다 일회성 ECS 태스크(`modudrive-db-init[-<인스턴스>]`)로 한 번 돌린다. 실행 명령은 출력 `db_init_run_tasks`에 있고, 태스크마다 `DB_SERVICES`로 그 인스턴스에 둘 DB만 만든다. 로컬은 이 값을 비워 둬서 4개를 다 만든다.
+
+RDS 관리자는 superuser가 아니다. PostgreSQL 16부터는 `CREATE DATABASE ... OWNER <로그인>`이 `must be able to SET ROLE` 오류로 실패한다. 그래서 스크립트가 새로 만든 로그인을 관리자에게 `GRANT`해 둔다. 로컬 superuser에서도 문제없이 돈다.
+
 - 테이블은 서비스가 뜰 때 Flyway가 만든다([db-migration.md](db-migration.md)).
-- JDBC URL에 `sslmode=require`를 붙인다.
-- 어느 DB를 어느 인스턴스에 둘지, 엔진(RDS·Aurora)과 크기는 환경이 정한다(3장).
+- JDBC URL에는 `sslmode=require`를 붙인다.
+- 어느 DB를 어느 인스턴스에 둘지, 엔진과 크기는 환경이 정한다.
 
 ### 1-6. Redis
 
-- Valkey는 Redis 호환이라 앱은 그대로다. AWS에선 전송 암호화(TLS)를 켜고, 켜면 TLS 연결만 받는다.
-  - 앱은 `application-redis.yml`의 `ssl.enabled`가 `REDIS_SSL_ENABLED`(기본 false)를 읽는다. ECS 태스크 정의에 `REDIS_SSL_ENABLED=true`를 넣는다.
-  - 인증서가 Amazon 발급이라 JVM 기본 trust store로 검증된다(SSL bundle 불필요).
-  - `REDIS_PASSWORD`는 ElastiCache에선 AUTH 토큰(TLS가 켜져 있어야 쓸 수 있다), MemoryDB에선 클러스터마다 하나인 ACL 사용자의 비밀번호다.
-  - MemoryDB는 클러스터 모드라 `SPRING_DATA_REDIS_CLUSTER_NODES`(클러스터 엔드포인트)와 `SPRING_DATA_REDIS_USERNAME`(ACL 사용자)을 더 넣는다. ElastiCache·로컬에선 둘 다 없다.
-- 모든 클러스터가 `maxmemory-policy noeviction`이다. 세션·인증 토큰이 메모리 압박으로 조용히 사라지지 않고, 가득 차면 쓰기가 실패한다.
-- 클러스터마다 보안 그룹과 비밀번호가 따로다. 그 클러스터를 쓰는 서비스만 들어오고 그 비밀번호만 받는다.
-- 로컬처럼 하나로 둘지, 용도별(`auth`·`member`·`mail`·`storage`)로 나눌지는 환경이 정한다(3장, [006 2-4-6](spec/006-resilience-spec.md#2-4-6-redis-분리)).
+Valkey는 Redis와 호환되므로 앱 코드는 그대로다. AWS에서는 전송 암호화(TLS)를 켜고, 켜면 TLS 연결만 받는다.
+
+- 앱은 `application-redis.yml`의 `ssl.enabled`에서 `REDIS_SSL_ENABLED`(기본 false)를 읽는다. ECS 태스크 정의에서 이 값을 true로 넣는다.
+- 인증서가 Amazon 발급이라 JVM 기본 trust store로 검증된다. SSL bundle은 따로 필요 없다.
+- `REDIS_PASSWORD`는 ElastiCache에서는 AUTH 토큰이고(TLS가 켜져 있어야 쓸 수 있다), MemoryDB에서는 클러스터마다 하나씩 있는 ACL 사용자의 비밀번호다.
+- MemoryDB는 클러스터 모드라서 `SPRING_DATA_REDIS_CLUSTER_NODES`(클러스터 엔드포인트)와 `SPRING_DATA_REDIS_USERNAME`(ACL 사용자)을 추가로 넣는다. ElastiCache와 로컬에는 둘 다 없다.
+
+모든 클러스터는 `maxmemory-policy noeviction`이다. 메모리가 모자랄 때 세션이나 인증 토큰이 조용히 지워지는 대신 쓰기가 실패한다.
+
+보안 그룹과 비밀번호는 클러스터마다 따로다. 그 클러스터를 쓰는 서비스만 들어올 수 있고, 그 비밀번호만 받는다. 클러스터를 하나로 둘지 용도별로 나눌지는 환경이 정한다([006 2-4-6](spec/006-resilience-spec.md#2-4-6-redis-분리)).
 
 ### 1-7. 메시징
 
-- SQS 표준 큐. 로컬 `.docker/localstack/init-aws.sh`와 `.infra/sqs.tf`가 같은 큐를 만든다 — 큐를 추가하면 둘 다 고친다.
-- 큐마다 `-dlq`가 있고 visibility 10초, `maxReceiveCount` 4(1번 + 재시도 3번)다. DLQ 보존은 최대치(14일)다.
-- task role은 서비스마다 보내는 큐에 `SendMessage`, 받는 큐에 수신·삭제와 자기 DLQ로의 `SendMessage`만 받는다.
-- SQS를 고른 이유(Kafka·RabbitMQ 비교)와 큐 목록은 [005 메시징](spec/005-messaging-spec.md) 1장·7장.
+SQS 표준 큐를 쓴다. 로컬은 `.docker/localstack/init-aws.sh`가, AWS는 `.infra/sqs.tf`가 같은 큐를 만드니 큐를 추가할 땐 둘 다 고친다.
+
+- 큐마다 `-dlq`가 있다. visibility는 10초, `maxReceiveCount`는 4(처음 1번 + 재시도 3번)다. DLQ는 최대 보존 기간인 14일 동안 둔다.
+- task role은 서비스마다 보내는 큐에 대한 `SendMessage`, 받는 큐에 대한 수신·삭제, 자기 DLQ로의 `SendMessage`만 받는다.
+
+SQS를 고른 이유(Kafka, RabbitMQ와 비교)와 큐 목록은 [005 메시징](spec/005-messaging-spec.md) 1장과 7장에 있다.
 
 ### 1-8. 파일 저장
 
-- `S3Config`가 환경에 따라 다르게 동작한다.
-  - endpoint가 있으면(로컬 LocalStack) `endpointOverride` + path-style, 기동 시 버킷이 없으면 만든다.
-  - access key가 없으면 SDK 기본 체인으로 task role을 쓴다.
-- AWS 버킷(`modudrive-storage-<계정>`)은 Terraform이 만든다. storage-service task role은 객체 읽기·쓰기·삭제만 받고 버킷 생성 권한은 없다.
-- 퍼블릭 액세스는 막고, HTTPS가 아닌 요청은 버킷 정책으로 거절한다. 블록은 앱이 이미 암호화해서 올리고, 버킷이 그 위에 한 번 더 암호화한다(키는 환경마다, 3-4).
-- 블록은 나이로 지우지 않고 앱이 지운다(`storage-blocks-purge-requested`). 수명 주기 규칙은 7일 넘게 끝나지 않은 multipart 업로드만 정리한다.
+`S3Config`는 환경에 따라 다르게 움직인다. endpoint가 있으면(로컬 LocalStack) `endpointOverride`와 path-style을 쓰고, 기동할 때 버킷이 없으면 만든다. access key가 없으면 SDK 기본 체인으로 task role을 쓴다.
+
+AWS 버킷(`modudrive-storage-<계정>`)은 Terraform이 만든다. storage-service의 task role은 객체 읽기·쓰기·삭제만 할 수 있고 버킷을 만들 권한은 없다.
+
+- 퍼블릭 액세스는 막혀 있고, HTTPS가 아닌 요청은 버킷 정책이 거절한다.
+- 블록은 앱이 암호화해서 올리고, 버킷이 그 위에 한 번 더 암호화한다. 버킷 쪽 키는 demo가 SSE-S3, prod가 KMS 고객 관리 키다.
+- 블록은 오래됐다고 지우지 않는다. 지우는 건 앱이다(`storage-blocks-purge-requested`). 수명 주기 규칙은 7일 넘게 끝나지 않은 multipart 업로드만 치운다.
 
 ### 1-9. 메일
 
-- SMTP가 아니라 SES API(`spring-cloud-aws-starter-ses`, `SendRawEmail`)로 보낸다. 로컬은 LocalStack SES가 받은 메일을 Mailpit으로 넘기고, AWS는 `SES_ENDPOINT`를 비우면 실제 SES로 간다. 인증은 task role(`ses:SendRawEmail`)이라 관리할 SMTP 비밀번호가 없다.
-- 로컬과 AWS 모두 같은 것이 있어야 한다. 하나라도 빠지면 서비스가 안 뜨거나 메일이 전부 DLQ로 간다.
-  - Configuration Set `mail-events` — 없으면 발송이 400(`ConfigurationSetDoesNotExist`)으로 실패한다.
-  - 이벤트 대상 `SEND` → SNS 토픽 `mail-ses-events` → SQS `mail-ses-events`(raw message delivery). 리스너는 SNS envelope 없는 SES 이벤트 JSON을 읽는다. 큐가 없으면 mail-service가 기동하지 않는다.
-  - `mail-ses-events` 큐 정책은 `sqs:SendMessage`를 SNS 서비스 + `aws:SourceArn` = 그 토픽으로만 허용한다. 누군가 위조한 Send 이벤트로 메일을 "보냄" 처리시키지 못하게 한다.
-- 도메인이 있어야 하는 것: SES 도메인 identity, DKIM, MAIL FROM 레코드. `domain_name`이 비어 있으면 만들지 않는다(1-11).
-- AWS 계정에서 따로 할 것: SES 샌드박스 해제 요청. 안 하면 인증된 주소로만 보낼 수 있다.
-- 실제 SES에 처음 보낼 때 `deliveryId` 태그(`<queue>_<outboxId>`)가 거절되지 않는지 본다. LocalStack은 태그 값을 검증하지 않는다.
+SMTP가 아니라 SES API(`spring-cloud-aws-starter-ses`, `SendRawEmail`)로 보낸다. 로컬은 LocalStack SES가 받은 메일을 Mailpit으로 넘기고, AWS는 `SES_ENDPOINT`를 비우면 실제 SES로 나간다. 인증은 task role(`ses:SendRawEmail`)이라 관리할 SMTP 비밀번호가 없다.
+
+로컬과 AWS 양쪽에 아래가 다 있어야 한다. 하나라도 빠지면 mail-service가 안 뜨거나 메일이 전부 DLQ로 간다.
+
+- Configuration Set `mail-events`. 없으면 발송이 400(`ConfigurationSetDoesNotExist`)으로 실패한다.
+- `SEND` 이벤트 → SNS 토픽 `mail-ses-events` → SQS 큐 `mail-ses-events`(raw message delivery). 리스너는 SNS envelope가 없는 SES 이벤트 JSON을 읽는다. 큐가 없으면 mail-service가 기동하지 않는다.
+- `mail-ses-events` 큐 정책은 그 SNS 토픽(`aws:SourceArn`)이 보내는 `sqs:SendMessage`만 허용한다. 누가 Send 이벤트를 위조해서 안 보낸 메일을 보낸 것처럼 만들지 못하게 하려는 것이다.
+
+도메인이 있어야 만들어지는 것도 있다. SES 도메인 identity, DKIM, MAIL FROM 레코드는 `domain_name`이 비어 있으면 만들지 않는다(1-11).
+
+AWS 계정에서 손으로 할 일이 하나 있다. SES 샌드박스 해제 요청이다. 안 하면 인증된 주소로만 보낼 수 있다. 그리고 실제 SES로 처음 보낼 때 `deliveryId` 태그(`<queue>_<outboxId>`)가 거절되지 않는지 확인한다. LocalStack은 태그 값을 검사하지 않아서 로컬에서는 알 수 없다.
 
 ### 1-10. 시크릿
 
 | 값 | 로컬 | AWS |
 |---|---|---|
-| 서비스별 DB 비밀번호 | `.env` `*_DB_PASSWORD` | SSM SecureString (`random_password`) |
-| DB 관리자 비밀번호 | `.env` `POSTGRES_PASSWORD` | RDS가 Secrets Manager에서 관리 |
+| 서비스별 DB 비밀번호 | `.env`의 `*_DB_PASSWORD` | SSM SecureString (`random_password`) |
+| DB 관리자 비밀번호 | `.env`의 `POSTGRES_PASSWORD` | RDS가 Secrets Manager에서 관리 |
 | `REDIS_PASSWORD` | `.env` | SSM, 클러스터마다 |
 | `STORAGE_ENCRYPTION_KEY` | `.env` | SSM (`random_bytes`, 삭제 방지) |
-| Discord 웹후크 2개 | `.env` | SSM (값은 손으로 넣음, 1-13) |
+| Discord 웹후크 2개 | `.env` (LocalStack SSM으로 들어감) | SSM (값은 손으로 넣음, 1-13) |
 | `SQS_*`, `SES_ENDPOINT`, `STORAGE_S3_*`, `LOCALSTACK_AUTH_TOKEN` | `.env` | 없음 (task role, 실제 endpoint) |
 
-- ECS 태스크 정의의 `secrets`로 환경 변수에 넣는다. 값은 태스크가 뜰 때 SSM에서 읽고 태스크 정의에는 남지 않는다. 앱은 로컬처럼 `${...}`로 읽는다.
-- 나머지를 Secrets Manager가 아니라 Parameter Store에 두는 건 비용 때문이다. SecureString은 무료이고, 로테이션이 필요한 건 RDS 관리자 비밀번호뿐이다.
-- `random_password`로 만든 값은 Terraform 상태 파일에 평문으로 들어간다. 상태 버킷은 암호화하고 접근을 배포하는 사람의 역할로만 제한한다(2-1).
+값은 ECS 태스크 정의의 `secrets`로 환경 변수에 들어간다. 태스크가 뜰 때 SSM에서 읽어 오므로 태스크 정의에는 남지 않고, 앱은 로컬과 똑같이 `${...}`로 읽는다.
+
+Secrets Manager 대신 Parameter Store를 쓰는 건 비용 때문이다. SecureString은 무료이고, 로테이션이 필요한 건 RDS 관리자 비밀번호 하나뿐이다.
+
+`random_password`로 만든 값은 Terraform 상태 파일에 평문으로 남는다. 그래서 상태 버킷은 암호화하고, 배포하는 사람의 역할만 접근하게 막는다(2-1).
 
 ### 1-11. 네트워크와 도메인
 
-- VPC는 퍼블릭 서브넷(ALB, NAT), 프라이빗 서브넷(ECS 태스크), DB 서브넷(RDS, Redis)으로 나뉜다. AZ마다 하나씩이다.
-- 태스크는 어느 환경이든 프라이빗 서브넷에 있고 공인 IP가 없다. 바깥(ECR·SSM·SQS·SES·Discord)으로는 NAT를 거친다. NAT의 종류와 VPC 엔드포인트 유무는 환경이 정한다(3장). S3 게이트웨이 엔드포인트는 무료라 항상 둔다.
-- 도메인은 `domain_name` 변수다. 비워 두면(기본 null) Route 53 영역, ACM 인증서, HTTPS 리스너, SES identity를 만들지 않는다. 넣고 apply한 뒤 출력 `name_servers`를 도메인 등록 업체에 설정한다.
-- WEB과 API는 같은 등록 도메인(사이트)에 있어야 한다. 예: `app.modudrive.com`과 `api.modudrive.com`. 세션 쿠키가 `SameSite=Strict` + host-only라서([004 인증](spec/004-auth-spec.md) 1-1-2), 사이트가 다르면 로그인은 200인데 이후 요청에 쿠키가 실리지 않아 전부 401이 된다. `*.cloudfront.net`·`*.elb.amazonaws.com`은 Public Suffix List에 있어 서로 다른 사이트로 취급되므로 커스텀 도메인이 필수다. 도메인이 없는 동안 `CLIENT_URL`은 `https://app.example.com` 자리 표시자다.
-- ModuDrive-WEB은 S3 + CloudFront로 올린다(Terraform에 아직 없음). CSP는 CloudFront 응답 헤더 정책으로 붙이고, 정책 문자열은 WEB `vite.config.ts`의 `contentSecurityPolicy()`를 원본으로 한다. `connect-src`에 API 도메인을 넣고 둘을 같이 고친다.
+VPC는 세 층으로 나뉜다. 퍼블릭 서브넷에 ALB와 NAT, 프라이빗 서브넷에 ECS 태스크, DB 서브넷에 RDS와 Redis가 있고, AZ마다 하나씩 만든다.
+
+태스크는 어느 환경이든 프라이빗 서브넷에 있고 공인 IP가 없다. ECR, SSM, SQS, SES, Discord 같은 바깥으로는 NAT를 거쳐 나간다. S3 게이트웨이 엔드포인트는 무료라 항상 두고, NAT 종류와 인터페이스 엔드포인트는 환경마다 다르다.
+
+도메인은 `domain_name` 변수로 넣는다. 비워 두면(기본값 null) Route 53 영역, ACM 인증서, HTTPS 리스너, SES identity를 만들지 않는다. 값을 넣고 apply한 뒤에는 출력 `name_servers`를 도메인 등록 업체에 설정한다.
+
+WEB과 API는 같은 등록 도메인 아래 있어야 한다. 예를 들면 `app.modudrive.com`과 `api.modudrive.com`이다. 세션 쿠키가 `SameSite=Strict`에 host-only라서([004 인증](spec/004-auth-spec.md) 1-1-2), 사이트가 다르면 로그인은 200으로 성공하는데 다음 요청부터 쿠키가 실리지 않아 전부 401이 난다. `*.cloudfront.net`과 `*.elb.amazonaws.com`은 Public Suffix List에 올라 있어 서로 다른 사이트로 취급되므로 커스텀 도메인이 꼭 있어야 한다. 도메인이 생기기 전까지 `CLIENT_URL`은 `https://app.example.com` 자리 표시자다.
+
+ModuDrive-WEB은 S3 + CloudFront로 올릴 예정이고 아직 Terraform에는 없다. CSP는 CloudFront 응답 헤더 정책으로 붙이되, 정책 문자열은 WEB `vite.config.ts`의 `contentSecurityPolicy()`를 원본으로 삼는다. `connect-src`에 API 도메인을 넣고, 바꿀 땐 둘을 같이 고친다.
 
 ### 1-12. 서비스 간 접근 제어
 
-서비스 간 호출(`/internal/**`)에는 앱 수준 인증이 없다. gateway가 이 경로를 바깥에 열지 않는 것에만 기댄다([004 인증](spec/004-auth-spec.md)). 로컬 compose 네트워크는 전부 열려 있지만 AWS에선 서비스마다 보안 그룹을 하나씩 두고, "누가 누구를 부를 수 있나"를 네트워크에서 강제한다.
+서비스끼리 부르는 `/internal/**`에는 앱 수준의 인증이 없다. gateway가 이 경로를 바깥에 열지 않는다는 것 하나에 기대고 있다([004 인증](spec/004-auth-spec.md)). 로컬 compose 네트워크는 전부 열려 있지만, AWS에서는 서비스마다 보안 그룹을 하나씩 두고 누가 누구를 부를 수 있는지를 네트워크에서 강제한다.
 
-- 인바운드는 호출하는 쪽 보안 그룹 → 내 앱 포트만 연다. CIDR로 열지 않는다. 대역으로 열면 같은 VPC의 모든 태스크가 닿는다.
-- 예를 들어 gateway가 뚫려도 member·file·storage의 `/internal`에는 닿지 않는다. gateway는 그 서비스들의 공개 API로만 라우팅하고, 그 요청은 세션 확인을 거친다.
-- Service Connect를 써도 그대로 적용된다. 호출은 호출하는 태스크의 네트워크 인터페이스에서 출발하므로 받는 쪽 보안 그룹이 출발지 보안 그룹으로 거른다.
+- 인바운드는 호출하는 쪽의 보안 그룹에서 내 앱 포트로 오는 것만 연다. CIDR 대역으로 열면 같은 VPC의 모든 태스크가 닿기 때문에 그렇게 하지 않는다.
+- 그래서 gateway가 뚫려도 member, file, storage의 `/internal`에는 닿지 못한다. gateway는 그 서비스들의 공개 API로만 라우팅하고, 그 요청은 세션 확인을 거친다.
+- Service Connect를 써도 똑같이 적용된다. 호출은 호출하는 태스크의 네트워크 인터페이스에서 출발하므로, 받는 쪽 보안 그룹이 출발지 보안 그룹으로 걸러 낸다.
 
-`.infra/security_groups.tf`와 같은 내용이다.
+아래 표는 `.infra/security_groups.tf`와 같다.
 
 | 보안 그룹 | 허용할 출발지 | 포트 | 이유 |
 |---|---|---|---|
 | `alb-sg` | 인터넷 `0.0.0.0/0` | 443, 80 | 유일한 외부 진입점. 80은 도메인이 있으면 리다이렉트만 한다 |
 | `gateway-sg` | `alb-sg` | 10001, 9464 | ALB → gateway, 헬스 체크 |
-| `auth-sg` | `gateway-sg` | 10011 | 라우팅(`/api/v1/auth/**`) + 세션 확인(`AuthClient`) |
-| `member-sg` | `gateway-sg`, `auth-sg`, `file-sg` | 10010 | 라우팅 / 로그인 확인(auth `MemberClient`) / 공유 대상 조회(file `MemberClient`) |
-| `file-sg` | `gateway-sg`, `storage-sg` | 10012 | 라우팅 / 버전·zip 항목·커밋된 블록 조회(storage `FileClient`) |
-| `storage-sg` | `gateway-sg`, `file-sg` | 10013 | 라우팅 / commit 때 올라온 블록 조회(file `StorageClient`). 블록 삭제는 SQS |
+| `auth-sg` | `gateway-sg` | 10011 | 라우팅(`/api/v1/auth/**`), 세션 확인(`AuthClient`) |
+| `member-sg` | `gateway-sg`, `auth-sg`, `file-sg` | 10010 | 라우팅, 로그인 확인(auth `MemberClient`), 공유 대상 조회(file `MemberClient`) |
+| `file-sg` | `gateway-sg`, `storage-sg` | 10012 | 라우팅, 버전·zip 항목·커밋된 블록 조회(storage `FileClient`) |
+| `storage-sg` | `gateway-sg`, `file-sg` | 10013 | 라우팅, commit 때 올라온 블록 조회(file `StorageClient`). 블록 삭제는 SQS로 한다 |
 | `notification-sg` | `gateway-sg` | 10015 | 라우팅(`/api/v1/notifications/**`) |
-| `mail-sg` | 없음 | — | HTTP API가 없다(SQS 소비만) |
+| `mail-sg` | 없음 | | HTTP API가 없다(SQS 소비만 한다) |
 | `rds-sg` (인스턴스마다) | 그 인스턴스에 DB가 있는 서비스, `db-init-sg` | 5432 | |
 | `redis-sg` (클러스터마다) | 그 클러스터를 쓰는 서비스 | 6379 | |
 | `otel-collector-sg` | 모든 서비스 | 4318 | 트레이스(OTLP). 반대로 collector는 모든 서비스의 9464를 수집한다 |
 
-- 새 Feign·WebClient 호출을 추가하면 이 표와 Terraform 규칙을 같이 고친다. 안 고치면 로컬에선 멀쩡하고 AWS에서만 타임아웃이 난다. 확인은 `grep -rn "@FeignClient\|clients\." services/*/src/main`.
-- 관리 포트(9464)는 중앙 ADOT collector에만 연다(1-13, gateway만 예외로 ALB에도).
-- 보안 그룹은 네트워크 수준이라 허용된 서비스가 허용되지 않은 경로를 부르는 건 못 막는다(예: file이 member의 로그인 확인 API 호출). 경로 단위 권한이 필요해지면 VPC Lattice + IAM 인증(태스크 역할로 SigV4 서명)을 검토한다. 서비스별 요금과 Service Connect 설계 변경이 따른다.
+- Feign이나 WebClient 호출을 새로 만들면 이 표와 Terraform 규칙을 같이 고친다. 빠뜨리면 로컬에서는 멀쩡하다가 AWS에서만 타임아웃이 난다. 호출 목록은 `grep -rn "@FeignClient\|clients\." services/*/src/main`으로 확인한다.
+- 관리 포트(9464)는 중앙 ADOT collector에만 열고, gateway만 예외로 ALB에도 연다.
+- 보안 그룹은 네트워크 수준이라, 허용된 서비스가 허용되지 않은 경로를 부르는 것까지는 못 막는다(예: file이 member의 로그인 확인 API를 부르는 경우). 경로 단위 권한이 필요해지면 VPC Lattice + IAM 인증(태스크 역할로 SigV4 서명)을 검토한다. 서비스별 요금이 붙고 Service Connect 설계도 바뀐다.
 
 ### 1-13. 모니터링과 알림
 
-로컬 스택은 [observability.md](observability.md). AWS에선 저장소를 전부 관리형으로 두고, 직접 띄우는 건 중앙 ADOT collector ECS 서비스 하나뿐이다(`monitoring.tf`). 지금 만든 것(PromQL 알림, tail sampling, OTLP)을 그대로 쓰는 게 기준이다.
+로컬 스택은 [observability.md](observability.md)에 정리돼 있다. AWS에서는 저장소를 전부 관리형으로 두고, 직접 띄우는 건 중앙 ADOT collector ECS 서비스 하나뿐이다(`monitoring.tf`). 로컬에서 쓰던 PromQL 알림, tail sampling, OTLP를 그대로 가져가는 걸 기준으로 삼았다.
 
 ```
 ECS 태스크들 ──OTLP 트레이스──▶ ┌─────────────────────┐ ──▶ X-Ray
@@ -198,66 +239,74 @@ ECS 태스크들 ──OTLP 트레이스──▶ ┌─────────
                  CloudWatch Logs        CloudWatch 경보·Budgets·GuardDuty ──▶ SNS ──▶ Lambda ──▶ Discord
 ```
 
-| 신호 | 로컬 | AWS | 수집 |
+| 신호 | 로컬 | AWS | 수집 방식 |
 |---|---|---|---|
-| 메트릭 | Prometheus | Amazon Managed Prometheus (AMP) | collector의 `ecs_observer`가 태스크를 찾아 `:9464` 수집 → remote write |
+| 지표 | Prometheus | Amazon Managed Prometheus (AMP) | collector의 `ecs_observer`가 태스크를 찾아 `:9464`를 긁고 remote write |
 | 트레이스 | otel-collector → Tempo | X-Ray | 앱 OTLP → collector(tail sampling) → X-Ray |
-| 로그 | Promtail → Loki | CloudWatch Logs (보존 14일) | `awslogs` 드라이버. Promtail은 docker socket 기반이라 Fargate에서 못 쓴다 |
-| 알림 | Prometheus 규칙 → Alertmanager → SNS → Lambda → Discord (SNS·Lambda는 LocalStack) | AMP 알림 규칙 → SNS → Lambda → Discord | |
-| 대시보드 | Grafana | Amazon Managed Grafana (`grafana = true`일 때), demo는 내 PC의 Grafana(`make demo`, 3-2) | AMP·X-Ray·CloudWatch 데이터소스 |
+| 로그 | Promtail → Loki | CloudWatch Logs (보존 14일) | `awslogs` 드라이버. Promtail은 docker socket을 써서 Fargate에서는 못 쓴다 |
+| 알림 | Prometheus 규칙 → Alertmanager → SNS → Lambda → Discord | AMP 알림 규칙 → SNS → Lambda → Discord | |
+| 화면 | Grafana | demo는 내 PC의 Grafana(3-4), prod는 Managed Grafana | AMP, X-Ray, CloudWatch 데이터소스 |
 
-앱 설정은 바뀌지 않는다. collector의 Service Connect 이름이 compose와 같은 `otel-collector:4318`이라 앱 기본값(`application-observability.yml`)이 그대로 맞는다. 그래서 mail도 Service Connect에 클라이언트로 들어간다.
+앱 설정은 바꿀 게 없다. collector의 Service Connect 이름이 compose와 같은 `otel-collector:4318`이라서 앱 기본값(`application-observability.yml`)이 그대로 맞는다. mail이 Service Connect에 클라이언트로 들어가는 것도 이 때문이다.
 
 #### collector
 
-- 사이드카가 아니라 1개다. 한 trace의 span이 전부 한 collector로 모여야 tail sampling(에러 + 1초 초과 + 5%)이 로컬처럼 동작한다. 태스크마다 사이드카를 붙이면 span이 흩어져 "에러 trace 전량 보관"이 깨진다. collector가 죽어도 telemetry만 잠시 빠지고 서비스는 영향이 없다(앱은 비동기 export, 실패하면 버린다). 2대 이상으로 늘릴 땐 앞단 collector가 `loadbalancing` exporter로 traceID 기준 라우팅하는 2단 구성으로 바꾼다.
-- 로컬 `prometheus.yml`은 서비스 7개를 `static_configs`로 박아 두지만 ECS에선 태스크 IP가 바뀌고 서비스당 태스크가 여럿이다. `ecs_observer`가 `ECS_PROMETHEUS_EXPORTER_PORT` 도커 라벨(`ecs.tf`)이 붙은 컨테이너를 찾고, 컨테이너 이름을 `service` 라벨로 붙인다. 알림은 `instance`(태스크 IP) 대신 이 라벨로 서비스를 가리킨다.
-- AMP는 샘플 수 과금이라 알림과 기본 대시보드에 쓰는 지표만 남기고 버린다(`otel-collector.yaml`의 `metric_relabel_configs`). 새 지표로 알림을 만들려면 여기에 먼저 넣는다. 수집 주기는 `otel_collector.scrape_interval`(demo 60초, prod 30초).
-- ADOT 이미지의 사용자(`aoc`)는 쓸 수 있는 디렉터리가 없다. `ecs_observer`가 대상 목록 파일을 써야 해서 uid 0으로 띄우되, capability를 전부 빼고 루트 파일시스템을 읽기 전용으로 둬 `/tmp` 볼륨 말고는 아무것도 못 쓰게 한다.
-- 메트릭 레이블에 userId·fileId를 넣지 않는다. 고유값은 span 태그와 로그에만 둔다. 그래서 AMP는 고객 관리 키 없이 AWS 소유 키로 둔다.
+collector는 사이드카가 아니라 한 대만 띄운다. tail sampling(에러, 1초 초과, 나머지 5%)이 로컬처럼 동작하려면 한 trace의 span이 전부 같은 collector로 모여야 한다. 태스크마다 사이드카를 붙이면 span이 흩어져서 "에러 trace는 전부 남긴다"는 규칙이 깨진다. collector가 죽어도 그동안의 telemetry만 빠질 뿐 서비스에는 영향이 없다. 앱은 비동기로 내보내고 실패하면 버린다. 두 대 이상으로 늘려야 하면 앞단 collector가 `loadbalancing` exporter로 traceID 기준 라우팅을 하는 2단 구성으로 바꾼다.
+
+- 로컬 `prometheus.yml`은 서비스 7개를 `static_configs`로 적어 두지만, ECS에서는 태스크 IP가 바뀌고 서비스마다 태스크가 여러 개다. 그래서 `ecs_observer`가 `ECS_PROMETHEUS_EXPORTER_PORT` 도커 라벨(`ecs.tf`)이 붙은 컨테이너를 찾고, 컨테이너 이름을 `service` 라벨로 붙인다. 로컬도 스크레이프 주소에서 같은 값의 `service` 라벨을 만들기 때문에 알림 규칙과 메시지가 양쪽에서 같다.
+- AMP는 샘플 수로 과금된다. 그래서 알림과 기본 화면에 쓰는 지표만 남기고 나머지는 버린다(`otel-collector.yaml`의 `metric_relabel_configs`). 새 지표로 알림을 만들려면 여기에 먼저 추가한다. 수집 주기는 `otel_collector.scrape_interval`로, demo는 60초, prod는 30초다.
+- ADOT 이미지의 기본 사용자(`aoc`)는 쓸 수 있는 디렉터리가 없다. `ecs_observer`가 대상 목록 파일을 써야 해서 uid 0으로 띄우는 대신, capability를 전부 빼고 루트 파일시스템을 읽기 전용으로 둬서 `/tmp` 볼륨 말고는 아무 데도 못 쓰게 했다.
+- 지표 레이블에는 userId나 fileId를 넣지 않는다. 고유값은 span 태그와 로그에만 둔다. AMP를 고객 관리 키 없이 AWS 소유 키로 두는 것도 이 때문이다.
 
 #### 알림
 
-- 알림 경로는 로컬과 같다. 로컬은 Prometheus + Alertmanager 컨테이너가 LocalStack의 SNS·Lambda로 보내고, AWS는 그 자리에 AMP가 있다. Lambda 코드(`monitoring/discord_forwarder.py`)와 Discord 문구(`monitoring/discord.tmpl`)는 두 환경이 같은 파일을 쓴다.
-- 규칙(`monitoring/alert-rules.yaml`)은 로컬 `.docker/observability/alert-rules.yaml`과 쿼리·기준값·대기 시간이 같다. 다른 건 확인 명령어(`docker logs` → `aws logs tail`, TraceQL → X-Ray 필터)와 규칙 하나 — ECS에선 죽은 태스크가 `up = 0`이 아니라 대상 목록에서 사라지므로 `ServiceNoTasks`가 `absent(up{service=...})`로 그걸 본다.
-- 묶음(`group_by: [alertname]`)·재알림(4시간)·채널 두 개(messaging·service)도 로컬과 같다(`monitoring/alertmanager.yaml`).
-- CloudWatch 경보·Budgets·GuardDuty는 로컬에 없다. 볼 대상(ALB, NAT, 요금, 계정 위협)이 로컬에 없어서다.
-- Managed Grafana의 알림이 아니라 AMP 알림 규칙을 쓰는 이유: Managed Grafana의 규칙은 로컬처럼 파일로 둘 수 없고, Terraform grafana provider로 관리하려면 최대 30일짜리 서비스 계정 토큰이 필요하다. AMP 규칙은 Terraform 리소스 하나라 리뷰·재현이 된다. 대신 AMP 알림은 SNS로만 나가므로 Discord로 넘기는 Lambda(`monitoring/discord_forwarder.py`)를 둔다. Lambda는 VPC 밖에 있어 NAT가 멈춰도 알림은 간다.
-- AWS 쪽 경보(CloudWatch)도 같은 SNS 토픽으로 보낸다. 앱 지표로는 안 보이는 것들이다.
+알림이 나가는 길은 로컬과 같다. 로컬은 Prometheus와 Alertmanager 컨테이너가 LocalStack의 SNS와 Lambda로 보내고, AWS는 그 자리에 AMP가 있다. Lambda 코드(`monitoring/discord_forwarder.py`)와 Discord 메시지 양식(`monitoring/discord.tmpl`)은 두 환경이 같은 파일을 쓴다.
 
-| 경보 | 기준 | 앱 알림으로 안 보이는 이유 |
-|---|---|---|
-| `queue-age-<큐>` | 가장 오래된 메시지가 5분 넘게 대기 | 컨슈머가 느리거나 멈추면 실패 없이 쌓이기만 해서 DLQ 알림이 안 울린다 |
-| `alb-5xx` | ALB가 직접 응답한 5xx가 5분에 10건 초과 | gateway가 죽으면 gateway 지표 자체가 없다 |
-| `gateway-unhealthy` | 헬스 체크를 통과한 gateway가 0개 | 위와 같다 |
-| `nat-instance-status` | NAT 인스턴스 상태 검사 실패 (demo) | 바깥 통신만 멈추고 서비스는 떠 있다 |
-| Budgets | 실제 비용 80% 초과, 월말 예상 100% 초과 | `monthly_budget_usd`, `alert_email`을 넣으면 메일로도 간다 |
-| GuardDuty | 심각도 7 이상 (prod) | 3-6 |
+- 규칙(`monitoring/alert-rules.yaml`)은 로컬 `.docker/observability/alert-rules.yaml`과 쿼리, 기준값, 대기 시간이 같다. 다른 건 확인 명령어(`docker logs` 대신 `aws logs tail`, TraceQL 대신 X-Ray 필터)와 규칙 하나다. ECS에서는 죽은 태스크가 `up = 0`으로 남지 않고 대상 목록에서 아예 사라지기 때문에, AWS에만 `ServiceNoTasks`(`absent(up{service=...})`)가 있다.
+- 묶음(`group_by: [alertname]`), 재알림 간격(4시간), 채널 두 개(messaging, service)도 로컬과 같다(`monitoring/alertmanager.yaml`).
+- Lambda는 메시지 본문에 색깔 있는 제목 카드를 붙인다. 발생은 빨강, 해제는 초록이다. Lambda는 VPC 밖에 있어서 NAT가 멈춰도 알림은 나간다.
 
-- Discord 웹후크 URL은 SSM에 손으로 한 번 넣는다(`aws ssm put-parameter --name /modudrive/DISCORD_SERVICE_WEBHOOK_URL --type SecureString --overwrite --value ...`, messaging도 같이). Lambda가 읽는다.
-- 로그 검색은 LogQL 대신 CloudWatch Logs Insights다. JSON 필드라 `filter traceId = "..."`, `filter userId = "..."`가 바로 된다.
-- ALB는 W3C `traceparent`가 아니라 `X-Amzn-Trace-Id`를 붙인다. trace는 gateway부터 시작하고, ALB 구간은 ALB 접근 로그로 본다.
+Managed Grafana의 알림을 쓰지 않는 이유는 세 가지다. demo에는 Managed Grafana가 없고, Managed Grafana의 규칙은 로컬처럼 파일로 둘 수 없으며, Terraform grafana provider로 관리하려면 최대 30일짜리 서비스 계정 토큰을 계속 갈아 줘야 한다. AMP 규칙은 Terraform 리소스 하나라 리뷰도 재현도 된다. 대신 AMP 알림은 SNS로만 나가므로 Discord로 넘겨 줄 Lambda를 둔다.
 
-#### 고르지 않은 선택지
+앱 지표로는 안 보이는 것들은 CloudWatch 경보로 보고, 같은 SNS 토픽으로 보낸다. 로컬에는 볼 대상(ALB, NAT, 요금, 계정 위협)이 없어서 이 경보들도 없다.
 
-| 선택지 | 뺀 이유 |
+| 경보 | 기준 | 앱 알림으로 안 보이는 이유 | 환경 |
+|---|---|---|---|
+| `queue-age-<큐>` | 가장 오래된 메시지가 5분 넘게 대기 | 컨슈머가 느리거나 멈추면 실패 없이 쌓이기만 해서 DLQ 알림이 안 울린다 | 둘 다 |
+| `alb-5xx` | ALB가 직접 응답한 5xx가 5분에 10건 초과 | gateway가 죽으면 gateway 지표 자체가 없다 | 둘 다 |
+| `gateway-unhealthy` | 헬스 체크를 통과한 gateway가 0개 | 위와 같다 | 둘 다 |
+| Budgets | 실제 비용 80% 초과, 월말 예상 100% 초과 | `alert_email`을 넣으면 메일로도 간다 | 둘 다 |
+| `nat-instance-status` | NAT 인스턴스 상태 검사 실패 | 바깥 통신만 멈추고 서비스는 떠 있다 | demo |
+| GuardDuty | 심각도 7 이상 (4-6) | 계정 수준의 위협이다 | prod |
+
+Discord 웹후크 URL은 SSM에 손으로 한 번 넣어 두면 Lambda가 읽는다. messaging 채널도 같은 식으로 넣는다.
+
+```bash
+aws ssm put-parameter --name /modudrive/DISCORD_SERVICE_WEBHOOK_URL --type SecureString --overwrite --value <URL>
+```
+
+로그는 LogQL 대신 CloudWatch Logs Insights로 찾는다. 로그가 JSON이라 `filter traceId = "..."`나 `filter userId = "..."`가 바로 된다. ALB는 W3C `traceparent`가 아니라 `X-Amzn-Trace-Id`를 붙이므로 trace는 gateway에서 시작한다. ALB 구간은 ALB 접근 로그로 보는데, 접근 로그는 prod에만 있다.
+
+#### 다른 선택지
+
+| 선택지 | 고르지 않은 이유 |
 |---|---|
-| CloudWatch만 | 알림을 CloudWatch Alarm으로 다시 써야 한다. Prometheus 지표를 커스텀 메트릭으로 넣으면 레이블 조합마다 과금이라 히스토그램 버킷 × URI × 상태 × 태스크로 비용이 커진다 |
-| Grafana 스택 직접 운영 | 저장소(S3/EFS)·업그레이드·장애 대응을 혼자 떠안는다 |
-| Grafana Cloud | 운영은 가장 쉽지만 데이터가 AWS 밖으로 나가 전송 비용이 들고, 양이 늘면 요금이 빠르게 오른다 |
+| CloudWatch만 쓰기 | 알림을 CloudWatch Alarm으로 다시 써야 한다. Prometheus 지표를 커스텀 메트릭으로 넣으면 레이블 조합마다 돈이 나가서, 히스토그램 버킷 × URI × 상태 × 태스크만큼 비용이 커진다 |
+| Grafana 스택 직접 운영 | 저장소(S3/EFS), 업그레이드, 장애 대응을 다 떠안는다 |
+| Grafana Cloud | 운영은 제일 편하지만 데이터가 AWS 밖으로 나가 전송 비용이 들고, 양이 늘면 요금이 빠르게 오른다 |
 
 #### 비용
 
-- 로그가 비용의 대부분이다. 보존 14일로 두고 INFO 로그를 줄이는 것부터 한다. 그래도 크면 FireLens(Fluent Bit)로 두 갈래로 나눈다 — ERROR/WARN·감사 로그는 CloudWatch Logs, 전량은 S3(Athena 조회).
-- X-Ray는 trace 건수 과금이라 tail sampling이 그대로 비용을 정한다.
-- demo에서 늘어나는 건 월 $13 안팎이다: collector Spot 태스크 ~$4, AMP ~$8(지표 거르기 + 60초 수집), 경보 ~$1. X-Ray·Lambda·Budgets는 이 규모에선 무료 구간이다.
+비용은 대부분 로그에서 나온다. 보존을 14일로 두고 INFO 로그를 줄이는 것부터 한다. 그래도 많으면 FireLens(Fluent Bit)로 두 갈래로 나눈다. ERROR, WARN, 감사 로그는 CloudWatch Logs로, 전체는 S3로 보내 Athena로 조회한다.
+
+X-Ray는 trace 건수로 과금되니 tail sampling 비율이 곧 비용이다.
 
 #### 처음 apply한 뒤 확인할 것
 
-- `ecs_observer`가 대상을 찾는지 — collector 로그에 `getDiscoverableTasks` 오류가 없고, AMP에서 `up{job="services"}`가 서비스마다 보이는지. `service` 라벨이 비어 있으면 relabel의 `__meta_ecs_container_name` 이름을 collector 버전 문서와 맞춘다.
-- X-Ray가 앱의 W3C trace ID(첫 32비트가 타임스탬프가 아님)를 그대로 받는지. 안 되면 X-Ray ID 생성기를 설정한다.
-- 알림 하나를 일부러 울려 Discord까지 오는지 — 예: notification 서비스를 0개로 줄여 `ServiceNoTasks`.
-- collector 1대의 CPU·메모리, 특히 `decision_wait`(30초) 동안 쌓이는 span.
+- `ecs_observer`가 대상을 찾는지. collector 로그에 `getDiscoverableTasks` 오류가 없고, AMP에서 `up{job="services"}`가 서비스마다 나와야 한다. `service` 라벨이 비어 있으면 relabel에 쓴 `__meta_ecs_container_name`이 collector 버전 문서와 같은지 본다.
+- X-Ray가 앱의 W3C trace ID를 그대로 받는지. 이 ID는 앞 32비트가 타임스탬프가 아니다. 안 받으면 X-Ray ID 생성기를 설정한다.
+- 알림 하나를 일부러 울려서 Discord까지 오는지. 예를 들어 notification 서비스를 0개로 줄이면 `ServiceNoTasks`가 온다.
+- collector 한 대의 CPU와 메모리. 특히 `decision_wait`(30초) 동안 쌓이는 span 양을 본다.
 
 ---
 
@@ -265,22 +314,23 @@ ECS 태스크들 ──OTLP 트레이스──▶ ┌─────────
 
 ### 2-1. 계정과 상태
 
-환경마다 AWS 계정과 상태가 따로다. 같은 코드를 `envs/<환경>.tfvars`로 크기만 바꿔 띄운다(3장).
+demo와 prod는 AWS 계정도, Terraform 상태도 따로다. 같은 코드를 `envs/<환경>.tfvars`만 바꿔서 띄운다.
 
-- 계정 분리: demo와 prod는 각자 다른 AWS 계정(Organizations 아래)에 있다. 리소스 이름에 환경을 붙이지 않는 건 계정이 이미 나눠 주기 때문이고, GuardDuty·Config·Security Hub 같은 계정 단위 설정도 이래야 겹치지 않는다. 백업 계정이 하나 더 있다(3-7).
-- 상태: 계정마다 S3 상태 버킷이 있다. 잠금은 `use_lockfile`(S3 자체 잠금, DynamoDB 불필요)이다. 버킷은 Terraform이 자기 자신을 관리할 수 없으니 계정마다 한 번 손으로 만든다(버전 관리 켬). 버킷 이름은 `envs/<환경>.backend.hcl`에 두고 git에는 올리지 않는다.
-- 잘못된 계정 막기: tfvars의 `account_id`를 채우면 provider가 다른 계정 자격 증명을 거부한다. prod.tfvars를 demo 계정에 plan하는 실수가 여기서 멈춘다.
-- 상태 파일에는 `random_password` 값이 평문으로 들어간다(1-10). 상태 버킷은 암호화하고 접근을 배포하는 사람의 역할로만 제한한다.
+- 계정은 Organizations 아래 환경마다 하나씩 있다. 리소스 이름에 환경을 붙이지 않는 것도 계정이 이미 나눠 주기 때문이다. GuardDuty, Config, Security Hub 같은 계정 단위 설정이 겹치지 않는 것도 같은 이유다. 이 밖에 백업 계정이 하나 더 있다(4-7).
+- 상태는 계정마다 있는 S3 버킷에 둔다. 잠금은 `use_lockfile`(S3 자체 잠금)이라 DynamoDB가 필요 없다. 버킷은 Terraform이 자기 자신을 관리할 수 없으니 계정마다 손으로 한 번 만든다(버전 관리 켬). 버킷 이름은 `envs/<환경>.backend.hcl`에 적고 git에는 올리지 않는다.
+- tfvars의 `account_id`를 채워 두면 provider가 다른 계정의 자격 증명을 거부한다. prod.tfvars로 demo 계정에 plan하는 실수가 여기서 걸린다.
+- 상태 파일에는 `random_password` 값이 평문으로 들어간다(1-10). 상태 버킷은 암호화하고 배포하는 사람의 역할만 접근하게 한다.
+- 크기 변수(`variables.tf`)에는 기본값이 없어서 `-var-file` 없이는 plan이 안 된다. 두 파일을 섞어 쓰지 않는다.
 
 ```bash
-cp .infra/envs/backend.hcl.example .infra/envs/demo.backend.hcl   # 그 계정의 버킷 이름
+cp .infra/envs/backend.hcl.example .infra/envs/demo.backend.hcl   # 그 계정의 버킷 이름을 적는다
 cd .infra
 terraform init -reconfigure -backend-config=envs/demo.backend.hcl
 terraform plan -var-file=envs/demo.tfvars -var image_tag=<지금 배포된 커밋>
-# 계정 없이 문법만: terraform init -backend=false && terraform validate
+# 계정 없이 문법만 볼 땐: terraform init -backend=false && terraform validate
 ```
 
-계정 없이 두 환경을 plan까지 돌려 볼 수 있다(`tests/plan.tftest.hcl`, provider를 흉내 낸다). tfvars의 `for_each`, 파일 사이 참조, precondition까지 걸린다.
+계정이 없어도 두 환경을 plan까지 돌려 볼 수 있다(`tests/plan.tftest.hcl`, provider를 흉내 낸다). tfvars의 `for_each`, 파일 사이 참조, precondition까지 다 걸린다.
 
 ```bash
 terraform init -backend=false
@@ -289,143 +339,214 @@ for env in demo prod; do terraform test -var-file=envs/$env.tfvars; done
 
 ### 2-2. 첫 배포
 
-순서가 있다. 서비스는 ECR 이미지와 DB가 있어야 뜬다. 모든 명령에 `-var-file=envs/<환경>.tfvars`를 붙인다.
+순서가 중요하다. 서비스는 ECR 이미지와 DB가 있어야 뜬다. 모든 명령에 `-var-file=envs/<환경>.tfvars`를 붙인다.
 
-1. `terraform apply -target=aws_ecr_repository.service -var image_tag=init` — 저장소만 먼저
-2. 서비스 이미지 7개를 빌드해 같은 태그로 ECR에 푸시
-3. `terraform apply -target=aws_ecs_task_definition.db_init -var image_tag=<태그>` → 출력 `db_init_run_tasks`의 명령을 인스턴스마다 한 번 실행
-4. `terraform apply -var image_tag=<태그>` — 나머지 전부
+1. `terraform apply -target=aws_ecr_repository.service -var image_tag=init`로 저장소만 먼저 만든다.
+2. 서비스 이미지 7개를 빌드해서 같은 태그로 ECR에 올린다.
+3. `terraform apply -target=aws_ecs_task_definition.db_init -var image_tag=<태그>`를 하고, 출력 `db_init_run_tasks`의 명령을 인스턴스마다 한 번씩 실행한다.
+4. `terraform apply -var image_tag=<태그>`로 나머지를 전부 만든다.
 5. GitHub 저장소 Settings에 배포가 쓸 값을 넣는다.
-   - Environments → 그 환경(`demo` 등): 변수 `AWS_DEPLOY_ROLE_ARN`(출력 `github_deploy_role_arn`). 계정마다 역할이 달라서 환경마다 넣는다. prod에는 승인자(required reviewers)를 건다.
+   - Environments → 해당 환경(`demo`, `prod`): 변수 `AWS_DEPLOY_ROLE_ARN`(출력 `github_deploy_role_arn`). 계정마다 역할이 달라 환경마다 넣는다. prod에는 승인자(required reviewers)를 건다.
    - Environments → `demo-terraform`(demo만): 변수 `AWS_TERRAFORM_ROLE_ARN`(출력 `github_terraform_role_arn`)과 `TF_STATE_BUCKET`(상태 버킷 이름). 배포 브랜치를 `demo`로 제한한다.
-   - Secrets and variables → Actions → Repository secrets: `LOCALSTACK_AUTH_TOKEN`. 배포 전 테스트 중 SQS 큐 설정 테스트가 LocalStack을 띄울 때 쓴다. AWS 환경과 무관하게 같은 값이라 저장소에 한 번만 넣는다.
+   - Secrets and variables → Actions → Repository secrets: `LOCALSTACK_AUTH_TOKEN`. 배포 전에 도는 테스트 중 SQS 큐 설정 테스트가 LocalStack을 띄울 때 쓴다. 환경과 상관없는 값이라 저장소에 한 번만 넣는다.
 
-계정에 GitHub OIDC provider가 이미 있으면 4번이 실패한다. `terraform import aws_iam_openid_connect_provider.github <ARN>`으로 가져온다.
+계정에 GitHub OIDC provider가 이미 있으면 4번에서 실패한다. 그땐 `terraform import aws_iam_openid_connect_provider.github <ARN>`으로 가져온다.
 
 ### 2-3. 자동 배포
 
-GitHub Actions가 한다(`.github/workflows/deploy.yml`). job이 둘이고 순서대로 돈다.
+배포는 GitHub Actions(`.github/workflows/deploy.yml`)가 한다. job은 두 개이고 순서대로 돈다.
 
 | 브랜치 | terraform job | deploy job |
 |---|---|---|
 | `demo` (dev를 병합) | demo에 plan → apply | demo에 앱 배포 |
-| `prod` | 없음 (사람이 apply) | prod에 앱 배포 |
+| `prod` | 없음 (apply는 사람이) | prod에 앱 배포 |
 | 수동 실행 | demo를 고르면 위와 같음 | 고른 환경 |
 
-- demo는 `dev`를 `demo` 브랜치로 병합(PR)하면 인프라와 코드가 같이 나간다. 새 환경 변수가 필요한 코드도 apply가 먼저라 순서가 맞는다. prod는 apply를 사람이 하고, 새 환경 변수가 필요한 코드는 apply 뒤에 배포한다.
-- 환경에 역할 ARN이 없으면(스택을 아직 안 띄웠으면) 두 job 모두 아무것도 하지 않고 끝난다.
-- 같은 환경의 배포는 한 번에 하나다. 두 번째는 앞의 것을 취소하지 않고 기다린다.
+demo는 `dev`를 `demo` 브랜치로 병합(PR)하면 인프라와 코드가 같이 나간다. apply가 먼저 돌기 때문에 새 환경 변수가 필요한 코드도 순서가 맞는다. prod는 apply를 사람이 하므로, 새 환경 변수가 필요한 코드는 apply를 마친 뒤에 배포한다.
+
+환경에 역할 ARN이 아직 없으면(스택을 안 띄웠으면) 두 job 모두 아무것도 하지 않고 끝난다. 같은 환경의 배포는 한 번에 하나만 돈다. 두 번째 배포는 앞의 것을 취소하지 않고 기다린다.
 
 #### terraform job
 
-- `terraform plan -var-file=envs/demo.tfvars -var image_tag=template` → 계획 요약을 실행 요약(Summary)에 남기고 → apply.
-- 데이터를 가진 리소스(DB, Redis, S3 버킷, 큐, KMS 키, 비밀값)를 지우거나 교체하는 계획이면 apply하지 않고 실패한다. 그런 변경은 스냅샷을 뜬 뒤 사람이 한다(3-8).
-- 역할은 `github-terraform`(`github.tf`)이다. Terraform이 IAM·KMS·네트워크까지 다루므로 계정 관리자 권한이고, 그래서 `terraform_in_ci = true`인 demo에만 만든다. GitHub environment `demo-terraform`만 이 역할을 받는다 — 그 environment의 배포 브랜치를 `demo`로 제한한다.
-- `image_tag`가 `template`로 고정인 이유: 첫 배포 뒤로 Terraform의 태스크 정의 리비전은 deploy job이 복사하는 틀일 뿐이다. 커밋 SHA를 넣으면 push마다 태스크 정의 7개가 바뀌는 계획이 나와 진짜 변경이 묻힌다.
+- `terraform plan -var-file=envs/demo.tfvars -var image_tag=template`을 돌리고, 계획 요약을 실행 요약(Summary)에 남긴 뒤 apply한다.
+- 데이터가 들어 있는 리소스(DB, Redis, S3 버킷, 큐, KMS 키, 비밀값)를 지우거나 교체하는 계획이면 apply하지 않고 실패한다. 이런 변경은 스냅샷을 뜬 뒤 사람이 직접 한다(2-4).
+- 역할은 `github-terraform`(`github.tf`)이다. Terraform이 IAM, KMS, 네트워크까지 만지므로 계정 관리자 권한이 필요하다. 그래서 `terraform_in_ci = true`인 demo에만 만들고, GitHub environment `demo-terraform`에서 도는 job만 이 역할을 받는다.
+- `image_tag`를 `template`로 고정한 이유가 있다. 첫 배포 이후 Terraform의 태스크 정의 리비전은 deploy job이 복사해 가는 틀일 뿐이다. 여기에 커밋 SHA를 넣으면 push할 때마다 태스크 정의 7개가 바뀌는 계획이 나와서 진짜 변경이 묻힌다.
 
 #### deploy job
 
-- 테스트 → 이미지 7개 빌드(태그는 커밋 SHA, 이미 올라간 태그는 건너뜀) → ECR 푸시 → 서비스마다 태스크 정의의 최신 리비전에서 이미지만 바꾼 새 리비전을 등록 → 서비스를 그 리비전으로 바꾼다 → 안정될 때까지 기다리고, 배포 서킷 브레이커가 롤백했으면 실패로 끝난다.
-- 최신 리비전에서 출발하므로 Terraform이 바꾼 태스크 정의(환경 변수, 크기)도 이때 함께 나간다.
-- 배포 역할(`github-deploy`)은 그 환경의 GitHub environment에서 도는 job만 받는다. 할 수 있는 건 이미지 푸시와 태스크 정의 등록·서비스 갱신뿐이라 배포 권한으로 DB나 네트워크를 건드릴 수 없다.
-- Terraform은 서비스가 어느 리비전을 돌리는지와 태스크 수를 무시한다(`ignore_changes = [desired_count, task_definition]`). 그래서 apply가 서비스를 옛 이미지로 되돌리거나 오토스케일이 늘린 태스크를 줄이지 않는다.
-- 스키마 변경은 이전 코드와 새 코드 모두에서 동작해야 한다. 새 태스크가 뜨면서 Flyway가 돌 때 이전 태스크가 아직 요청을 받고 있다. 컬럼 삭제·이름 변경은 두 번의 배포로 나눈다([db-migration.md](db-migration.md) 5장).
-- 롤백은 이전 커밋으로 워크플로를 수동 실행한다. ECR은 최근 30개 이미지를 남긴다.
+1. 테스트를 돌린다.
+2. 이미지 7개를 빌드해 ECR에 올린다. 태그는 커밋 SHA이고, 이미 올라간 태그는 건너뛴다.
+3. 서비스마다 태스크 정의의 최신 리비전을 가져와 이미지만 바꾼 새 리비전을 등록하고, 서비스를 그 리비전으로 바꾼다.
+4. 안정될 때까지 기다린다. 배포 서킷 브레이커가 롤백했으면 실패로 끝난다.
+
+- 최신 리비전에서 출발하기 때문에 Terraform이 바꿔 둔 태스크 정의(환경 변수, 크기)도 이때 같이 나간다.
+- 배포 역할(`github-deploy`)은 그 환경의 GitHub environment에서 도는 job만 받는다. 할 수 있는 건 이미지 푸시, 태스크 정의 등록, 서비스 갱신뿐이라 배포 권한으로 DB나 네트워크를 건드릴 수 없다.
+- Terraform은 서비스가 돌리는 리비전과 태스크 수를 무시한다(`ignore_changes = [desired_count, task_definition]`). 그래서 apply를 해도 서비스가 옛 이미지로 돌아가거나 오토스케일이 늘려 놓은 태스크가 줄지 않는다.
+- 스키마 변경은 이전 코드와 새 코드 둘 다에서 돌아가야 한다. 새 태스크가 뜨면서 Flyway가 도는 동안 이전 태스크가 아직 요청을 받고 있기 때문이다. 컬럼 삭제나 이름 변경은 배포 두 번으로 나눈다([db-migration.md](db-migration.md) 5장).
+- 롤백은 이전 커밋으로 워크플로를 수동 실행하면 된다. ECR에는 최근 이미지 30개가 남아 있다.
+
+### 2-4. 크기·엔진 변경
+
+tfvars의 값을 바꿀 때 데이터가 날아가거나 서비스가 끊기는 것들이다. terraform job도 이런 계획은 apply하지 않고 멈춘다(2-3).
+
+- ECS 용량(Spot ↔ 일반)을 바꾸거나 서브넷이 바뀌면 서비스가 교체된다. DB 클래스를 바꾸면 재시작된다. 사용자가 없을 때 한다.
+- `db_engine`을 바꾸면(`rds` ↔ `aurora`) 기존 DB가 지워지고 빈 DB가 새로 생긴다. 스냅샷 복원이나 덤프로 데이터를 옮긴 뒤에 바꾼다. 인스턴스 하나에 모아 둔 DB를 서비스별로 나눌 때도 마찬가지다. 공용 인스턴스 이름이 `file`이라 file_db는 그 자리에 남지만, member, auth, notification DB는 새 클러스터로 옮겨야 한다.
+- `redis_engine`을 바꾸면(`elasticache` ↔ `memorydb`) 클러스터가 전부 새로 생긴다. 세션이 사라져 전원 로그아웃되고, 이메일 인증 토큰, 메일 소비 기록, 업로드 기록, 다운로드 한도, zip 토큰도 사라진다. 올리던 블록은 다시 보내면 된다.
+- MemoryDB 파라미터 그룹(`memorydb_valkey7`, 엔진 7.3)과 ElastiCache 파라미터 그룹(`valkey8`, 엔진 8.1)은 엔진 버전이 다르다. 기존 클러스터에 적용하기 전에 엔진 버전부터 확인한다.
 
 ---
 
-## 3. 환경별 구성
+## 3. demo
 
-같은 Terraform 코드를 값 파일 하나로 두 규모로 띄운다. 서비스·보안 그룹·큐·IAM·모니터링 같은 구조는 같고, 돈이 드는 것과 이중화만 다르다. 둘은 각자 다른 AWS 계정에 있다(2-1).
+`.infra/envs/demo.tfvars`. 실제로 띄워서 쓰는 시험용 스택이다. 전체 구성이 다 돌아가는 걸 보여 주는 게 목적이라, 아낄 수 있는 비용은 전부 아꼈다. 격리와 이중화는 prod 설계(4장)로 보여 준다.
 
-- `.infra/envs/demo.tfvars` — 실제로 띄우는 시험용 스택
-- `.infra/envs/prod.tfvars` — MAU 500만을 목표로 한 운영 설계
+### 3-1. 사양
 
-크기 변수(`variables.tf`)에는 기본값이 없어서 `-var-file` 없이는 plan이 안 된다. 파일을 섞어 쓰지 않는다.
+| 항목 | 구성 |
+|---|---|
+| AZ | 2개 |
+| NAT | NAT 인스턴스 1대 (t4g.nano, fck-nat) |
+| VPC 엔드포인트 | S3 게이트웨이만 |
+| ECS | Fargate Spot, 전부 0.25 vCPU / 1 GB, 서비스마다 1개 고정 (오토스케일 없음) |
+| DB | RDS 1대 (db.t4g.micro, 단일 AZ)에 DB 4개, 백업 7일 |
+| Redis | ElastiCache 1개 (cache.t4g.micro, 노드 1개), 모든 서비스가 같이 씀 |
+| 암호화 | AWS 관리 키 (SSE-S3, SSE-SQS, `aws/ssm` 등) |
+| 보안 강화 (`hardened`) | 끔. WAF, Service Connect TLS, 감사 로그, GuardDuty 없음 |
+| 삭제 방지, Container Insights | 끔 |
+| 지표 수집 주기 | 60초 |
+| 화면 | Managed Grafana 없음. 내 PC의 Grafana로 본다 (3-4) |
+| 인프라 배포 | `demo` 브랜치에 병합하면 CI가 apply (2-3) |
+| 월 예산 알림 | $150 |
 
-### 3-1. 환경 비교
+### 3-2. 비용
 
-| | `demo` | `prod` |
-|---|---|---|
-| AZ | 2개 | 3개 |
-| NAT | NAT 인스턴스 1대 (t4g.nano, fck-nat) | AZ마다 NAT 게이트웨이 |
-| VPC 인터페이스 엔드포인트 | 없음 (S3 게이트웨이만) | SQS·ECR(api, dkr)·logs·SSM·Secrets Manager |
-| ECS 용량 | Fargate Spot | Fargate |
-| 태스크 크기 | 전부 0.25 vCPU / 1 GB | gateway·auth·file 1 vCPU / 2 GB, storage 2 vCPU / 4 GB, 나머지 0.5 vCPU / 1 GB |
-| 태스크 수 | 서비스마다 1개 고정 | gateway·auth·file·storage 최소 3개, 나머지 최소 2개, 최대 6~30개 |
-| DB | RDS 1대(db.t4g.micro, 단일 AZ)에 DB 4개 | 서비스마다 Aurora 클러스터 (쓰기 1 + 읽기 1) |
-| DB 백업 | 7일 | 35일 + 백업 계정으로 매일 복사 |
-| Redis | ElastiCache 1개, cache.t4g.micro 1노드, 모든 서비스 공용 | MemoryDB 용도별 4개, 샤드마다 노드 2 |
-| 삭제 방지 | 끔 | 켬 (RDS 최종 스냅샷 포함) |
-| Container Insights | 끔 | 켬 |
-| 보안 강화 (`hardened`) | 끔 | 켬 — 3-4~3-6 |
-| Managed Grafana | 없음 | 있음 |
-| 월 예산 알림 (`monthly_budget_usd`) | $150 | $8,000 |
-| 대략 비용 (서울, 트래픽 전) | 월 $120 안팎 | 월 $5,800 안팎 (3-3) |
+서울 리전 기준, 트래픽이 붙기 전에 월 $120쯤 든다.
 
-`hardened`(prod)가 켜는 것: KMS 고객 관리 키·S3 버전 관리(3-4), WAF·Service Connect TLS(3-5), 감사 로그·위협 탐지(3-6). 백업 계정 복사는 3-7.
+| 항목 | 월 |
+|---|---|
+| 태스크 7개 (Spot) | ~$26 |
+| ALB + 공인 IPv4 2개 | ~$29 |
+| RDS | ~$21 |
+| ElastiCache | ~$18 |
+| NAT 인스턴스 (공인 IP 포함) | ~$8 |
+| 모니터링 (collector Spot ~$4, AMP ~$8, 경보 ~$1) | ~$13 |
+| 로그 등 | ~$5 |
 
-### 3-2. demo
+X-Ray, Lambda, Budgets는 이 규모에선 무료 구간 안에 든다.
 
-시험용이라 줄일 수 있는 비용은 다 줄인다. 격리와 이중화는 `prod` 설계로 보여 준다.
+비용 때문에 이렇게 골랐다.
 
-월 $120의 내역은 대략 태스크 7개 Spot ~$26, ALB ~$22 + 공인 IPv4 2개 ~$7, RDS ~$21, ElastiCache ~$18, NAT 인스턴스 ~$8(공인 IP 포함), 모니터링 ~$13(1-13), 로그 등 ~$5다.
-
-#### 비용 때문에 고른 것
-
-- NAT 게이트웨이(AZ마다 월 ~$45) 대신 NAT 인스턴스 1대. 태스크마다 공인 IPv4를 붙이는 것(7개 ~$26)보다도 싸다.
-- 인터페이스 엔드포인트 없음. 2개 AZ에 6개를 두면 월 ~$110이다. AWS API 호출은 NAT로 나간다.
-- AZ 2개. 3번째 AZ는 ALB 공인 IPv4만 늘리고 시험용으로는 얻는 게 없다.
-- 태스크는 JVM이 뜨는 가장 작은 크기(0.25 vCPU / 1 GB)에 하나씩, 오토스케일 없음. 트래픽이 몰리면 비용이 오르는 대신 느려진다. 기동도 느려서 헬스 체크 유예 시간을 길게 잡는다(`ecs.tf` `startPeriod`).
-- DB는 인스턴스 1대에 4개를 모은다. 서비스마다 DB·로그인이 따로인 논리 분리는 `prod`와 같다.
+- NAT 게이트웨이는 AZ마다 월 $45쯤이라 NAT 인스턴스 한 대로 대신했다. 태스크마다 공인 IPv4를 붙이는 방법(7개에 ~$26)보다도 싸다.
+- 인터페이스 엔드포인트는 두지 않았다. AZ 2개에 6개를 두면 월 $110쯤 나온다. AWS API 호출은 NAT로 나간다.
+- AZ는 2개다. 세 번째 AZ는 ALB 공인 IPv4만 늘리고 시험용으로는 얻는 게 없다.
+- 태스크는 JVM이 뜨는 가장 작은 크기(0.25 vCPU / 1 GB)로 하나씩 두고 오토스케일을 껐다. 트래픽이 몰리면 비용이 오르는 대신 느려진다. 기동도 느려서 헬스 체크 유예 시간을 길게 잡았다(`ecs.tf`의 `startPeriod`).
+- DB는 인스턴스 한 대에 4개를 모았다. 서비스마다 DB와 로그인이 따로인 건 prod와 같다.
 - Redis는 로컬처럼 하나를 같이 쓴다.
-- Managed Grafana 없음. 사용자당 월 $9에 IAM Identity Center 설정이 필요하다. 알림은 Grafana와 무관하게 온다.
-  - 트레이스는 X-Ray 콘솔, 로그는 CloudWatch Logs Insights로 볼 수 있지만 AMP는 쿼리 화면이 없다. 그래서 볼 땐 내 PC에서 Grafana를 띄워 demo에 붙인다: `make demo` → `localhost:3002`, 끌 땐 `docker stop modudrive-demo-grafana-1`.
-  - AMP·X-Ray·CloudWatch 데이터소스가 미리 들어 있고(`.docker/demo/grafana/`), 접속은 내 `~/.aws` 자격 증명(`AWS_PROFILE`)으로 한다. AWS에 만들 것은 없고 비용은 조회한 만큼(AMP 쿼리, Logs Insights 스캔)이다.
-  - 로컬 개발 스택과는 네트워크(`modudrive-demo`)·포트·컨테이너가 따로다. AMP 주소는 demo 상태의 출력 `amp_endpoint`에서 읽으므로 `.infra`가 demo backend로 init돼 있어야 한다(2-1).
+- Managed Grafana는 사용자당 월 $9에 IAM Identity Center 설정까지 필요해서 뺐다.
 
-#### 감수하는 것
+### 3-3. 감수하는 것
 
-- 바깥으로 나가는 통신이 NAT 인스턴스 1대에 걸린다. 멈추면 화면·API는 그대로지만 이벤트·메일·새 태스크 기동이 복구될 때까지 기다린다(EC2 자동 복구, `nat-instance-status` 경보).
-- Spot 회수나 재배포 때 서비스마다 태스크가 하나라 잠깐 끊긴다.
-- Redis가 하나라 업로드가 몰리면 세션과 메모리를 나눠 쓰고, 가득 차면(`noeviction`) 로그인도 실패한다. Redis가 재시작되면 전원 로그아웃된다.
-- 어디에도 Multi-AZ가 없다. 백업도 이 계정 안에만 있다.
+- 바깥으로 나가는 통신이 NAT 인스턴스 한 대에 걸려 있다. 이게 멈추면 화면과 API는 그대로 돌지만, 이벤트 전송, 메일, 새 태스크 기동은 복구될 때까지 기다린다. EC2 자동 복구가 걸려 있고 `nat-instance-status` 경보가 온다.
+- 서비스마다 태스크가 하나라 Spot 회수나 재배포 때 잠깐 끊긴다.
+- Redis가 하나라서 업로드가 몰리면 세션과 메모리를 나눠 쓰게 된다. 가득 차면(`noeviction`) 로그인도 실패한다. Redis가 재시작되면 전원 로그아웃되고, Redis 백업은 없다.
+- 어디에도 Multi-AZ가 없다. DB 백업도 이 계정 안에만 있다.
+- ALB 접근 로그가 없어서 ALB에서 막힌 요청은 기록이 남지 않는다.
 
-암호화는 AWS 관리 키(SSE-S3, SSE-SQS, `aws/ssm` 등)를 쓴다.
+### 3-4. 지표·로그·트레이스 보기
 
-### 3-3. prod 가용성과 비용
+demo에는 Managed Grafana가 없다. 트레이스는 X-Ray 콘솔에서, 로그는 CloudWatch Logs Insights에서 볼 수 있지만 AMP에는 쿼리 화면이 없다. 그래서 볼 일이 있을 때 내 PC에서 Grafana를 띄워 demo에 붙인다.
 
-보안·일관성·가용성·분할 내성을 먼저 정하고, 그걸 지키는 데 필요한 만큼만 둔다. 숫자는 MAU 500만의 출발점이지 측정값이 아니다 — 부하 테스트와 오토스케일 기록으로 맞춘다.
+```bash
+make demo                                # http://localhost:3002
+docker stop modudrive-demo-grafana-1     # 끌 때
+```
 
-AZ를 3개 쓰는 건 하나를 잃거나 하나와 끊겨도 과반이 남게 하기 위해서다. Aurora 저장소 쿼럼과 ECS 태스크 배치가 이걸 전제로 한다.
+- AMP, X-Ray, CloudWatch 데이터소스가 미리 들어 있다(`.docker/demo/grafana/`).
+- 접속은 내 `~/.aws` 자격 증명으로 한다. 프로필은 `AWS_PROFILE`로 고른다. 읽기만 하므로 AMP 조회, X-Ray 조회, Logs Insights 쿼리 권한이면 된다.
+- AWS에 새로 만들 건 없다. 비용은 조회한 만큼만 나온다(AMP 쿼리, Logs Insights 스캔량).
+- 로컬 개발 스택과는 네트워크(`modudrive-demo`), 포트, 컨테이너가 따로다.
+- AMP 주소는 demo 상태의 출력 `amp_endpoint`에서 읽는다. `.infra`가 demo backend로 init돼 있어야 한다(2-1).
 
-#### DB — 서비스마다 Aurora PostgreSQL 18 클러스터 1개
+트레이스에서 로그로 넘어가는 건 손으로 한다. X-Ray trace ID `1-6703a1b2-9f8e…`에서 `1-`과 `-`를 빼면 로그의 32자리 `traceId`가 되고, 그 값으로 Logs Insights를 검색한다.
 
-- 쓰기 1대 + 읽기 1대. file은 db.r7g.xlarge, 나머지는 db.r7g.large.
-- 저장소는 인스턴스 수와 상관없이 AZ 3곳에 6벌이고 4벌이 확인해야 커밋된다. AZ 하나를 잃어도 커밋된 쓰기를 잃지 않는다. 읽기 노드는 장애 조치 시간을 산다 — 있으면 승격에 30초 안팎, 없으면 인스턴스를 새로 만드는 10분 안팎이다. 서비스는 쓰기 엔드포인트로만 읽고 쓰므로(복제 지연 없이 모든 읽기가 마지막 커밋을 본다) 읽기 노드를 2대로 늘려도 얻는 게 없다.
-- TLS 강제(`rds.force_ssl`), Performance Insights, 백업 35일(특정 시점 복구).
-- 클러스터를 나눈 이유: file-service의 부하(업로드, outbox)가 로그인 경로를 늦추지 않고, 클러스터마다 크기·장애 조치·업그레이드를 따로 한다. 보안 그룹도 클러스터마다라서 각 서비스는 자기 클러스터에만 닿는다.
+---
 
-#### Redis — MemoryDB for Valkey, 용도별 4개(`auth`·`member`·`mail`·`storage`)
+## 4. prod
 
-- ElastiCache는 복제가 비동기라 장애 조치 때 마지막 쓰기를 잃을 수 있다. MemoryDB는 쓰기가 Multi-AZ 트랜잭션 로그에 남은 뒤 응답하므로 장애 조치에도 잃지 않는다. 지속성은 복제본이 아니라 로그가 맡으므로 샤드마다 주 노드 1 + 복제본 1이면 된다.
-- `auth`는 db.r7g.large. `member`(가입 인증 코드)와 `mail`(소비 기록)은 담는 게 적어서 db.t4g.medium. `storage`는 업로드 기록(사용자당 하루 최대 25,600키)이 많아 샤드 2개에 db.r7g.xlarge. 스냅샷 35일.
-- 클러스터 모드라 한 명령에서 함께 쓰는 키에는 해시 태그를 붙인다.
-- 나눈 이유: 한 용도의 부하나 메모리 부족이 다른 용도로 번지지 않는다. 클러스터별 내용은 [006 2-4-6](spec/006-resilience-spec.md#2-4-6-redis-분리).
+`.infra/envs/prod.tfvars`. MAU 500만을 목표로 잡은 운영 설계다. 지금 띄워 둔 스택은 아니고, 실제로 운영한다면 이렇게 하겠다는 설계에 가깝다.
 
-#### ECS
+먼저 보안, 일관성, 가용성, 분할 내성을 정하고, 그걸 지키는 데 필요한 만큼만 뒀다. 숫자는 출발점이지 측정한 값이 아니다. 부하 테스트와 오토스케일 기록을 보고 맞춘다.
 
-- 사용자 요청을 받는 gateway·auth·file·storage는 최소 3개(AZ마다 하나), 나머지는 최소 2개. CPU 60% 기준으로 늘어난다.
-- Spot이 아닌 일반 Fargate다. 회수로 태스크가 빠지지 않는다.
+### 4-1. 사양
 
-#### 네트워크
+| 항목 | 구성 |
+|---|---|
+| AZ | 3개 |
+| NAT | AZ마다 NAT 게이트웨이 |
+| VPC 엔드포인트 | S3 게이트웨이 + 인터페이스(SQS, ECR api/dkr, logs, SSM, Secrets Manager) |
+| ECS | 일반 Fargate (아래 표) |
+| DB | 서비스마다 Aurora PostgreSQL 18 클러스터 (쓰기 1 + 읽기 1), 백업 35일 + 백업 계정 복사 |
+| Redis | MemoryDB for Valkey, 용도별 4개, 샤드마다 노드 2개 |
+| 암호화 | KMS 고객 관리 키 (4-4) |
+| 보안 강화 (`hardened`) | 켬. WAF, Service Connect TLS(4-5), 감사 로그와 위협 탐지(4-6) |
+| 삭제 방지 | 켬 (ALB, RDS 최종 스냅샷 포함) |
+| Container Insights | 켬 |
+| 지표 수집 주기 | 30초 |
+| 화면 | Amazon Managed Grafana |
+| 인프라 배포 | 사람이 apply (CI에 관리자 역할을 주지 않는다) |
+| 월 예산 알림 | $8,000 |
 
-- AZ마다 NAT 게이트웨이를 둬서 바깥 통신에 단일 지점이 없다.
-- SQS·ECR·CloudWatch Logs·SSM·Secrets Manager는 VPC 인터페이스 엔드포인트로 간다. NAT를 거치지 않으니 NAT 처리 비용이 줄고, 바깥으로 나가는 건 SES·Discord·AMP·X-Ray 정도다.
+| 서비스 | 크기 | 최소 ~ 최대 |
+|---|---|---|
+| gateway, auth, file | 1 vCPU / 2 GB | 3 ~ 30 |
+| storage | 2 vCPU / 4 GB | 3 ~ 30 |
+| member | 0.5 vCPU / 1 GB | 2 ~ 12 |
+| notification | 0.5 vCPU / 1 GB | 2 ~ 9 |
+| mail | 0.5 vCPU / 1 GB | 2 ~ 6 |
 
-#### 비용
+### 4-2. 가용성
 
-서울 온디맨드 시간당 단가 × 730시간, 트래픽에 따라 붙는 비용(S3 저장·요청, 데이터 전송, 로그, WAF 요청, GuardDuty 이벤트, AMP 샘플, Aurora 저장·I/O, MemoryDB 쓰기량) 전:
+AZ를 3개 쓰는 건 하나를 잃거나 하나와 연결이 끊겨도 과반이 남게 하려는 것이다. Aurora 저장소 쿼럼과 ECS 태스크 배치가 이걸 전제로 한다.
+
+#### DB
+
+서비스마다 Aurora 클러스터를 하나씩 둔다. file은 db.r7g.xlarge, 나머지는 db.r7g.large이고, 쓰기 노드 1대와 읽기 노드 1대로 구성한다.
+
+- Aurora 저장소는 인스턴스 수와 상관없이 AZ 3곳에 6벌을 두고, 4벌이 확인해야 커밋된다. AZ 하나를 잃어도 커밋된 쓰기는 잃지 않는다.
+- 읽기 노드는 장애 조치 시간을 줄여 준다. 있으면 승격에 30초 안팎, 없으면 인스턴스를 새로 만드느라 10분 안팎 걸린다.
+- 서비스는 쓰기 엔드포인트로만 읽고 쓴다. 복제 지연 없이 모든 읽기가 마지막 커밋을 보게 하려는 것이다. 그래서 읽기 노드를 2대로 늘려도 얻는 게 없다.
+- TLS 강제(`rds.force_ssl`), Performance Insights, 특정 시점 복구가 되는 35일 백업을 켠다.
+
+클러스터를 서비스마다 나눈 건 file-service의 부하(업로드, outbox)가 로그인 경로를 느리게 만들지 않게 하려는 것이다. 크기, 장애 조치, 업그레이드도 클러스터마다 따로 할 수 있다. 보안 그룹도 클러스터마다 있어서 각 서비스는 자기 클러스터에만 닿는다.
+
+#### Redis
+
+MemoryDB for Valkey를 용도별로 4개(`auth`, `member`, `mail`, `storage`) 둔다.
+
+ElastiCache는 복제가 비동기라 장애 조치 때 마지막 쓰기를 잃을 수 있다. MemoryDB는 쓰기가 Multi-AZ 트랜잭션 로그에 남은 뒤에 응답하므로 장애 조치 때도 잃지 않는다. 지속성은 복제본이 아니라 로그가 책임지니 샤드마다 주 노드 1개와 복제본 1개면 충분하다.
+
+| 클러스터 | 노드 | 담는 것 |
+|---|---|---|
+| `auth` | db.r7g.large | 세션, 로그인 시도 제한 |
+| `member` | db.t4g.medium | 가입 인증 코드 |
+| `mail` | db.t4g.medium | 소비 기록 |
+| `storage` | db.r7g.xlarge, 샤드 2개 | 업로드 기록(사용자당 하루 최대 25,600키), 다운로드 한도, zip 토큰 |
+
+- 스냅샷은 35일 보관한다.
+- 클러스터 모드라서 한 명령에서 함께 쓰는 키에는 해시 태그를 붙인다.
+- 용도별로 나눈 건 한 용도의 부하나 메모리 부족이 다른 용도로 번지지 않게 하려는 것이다. 클러스터별 내용은 [006 2-4-6](spec/006-resilience-spec.md#2-4-6-redis-분리)에 있다.
+
+#### ECS와 네트워크
+
+- 사용자 요청을 받는 gateway, auth, file, storage는 AZ마다 하나씩 최소 3개를 둔다. 나머지는 최소 2개다.
+- Spot이 아니라 일반 Fargate라서 회수로 태스크가 빠지는 일이 없다.
+- NAT 게이트웨이를 AZ마다 둬서 바깥 통신에 단일 장애 지점이 없다.
+- SQS, ECR, CloudWatch Logs, SSM, Secrets Manager는 인터페이스 엔드포인트로 간다. NAT를 안 거치니 NAT 처리 비용이 줄고, 바깥으로 나가는 건 SES, Discord, AMP, X-Ray 정도만 남는다.
+
+### 4-3. 비용
+
+서울 온디맨드 시간당 단가에 730시간을 곱한 값이다. 트래픽에 따라 붙는 비용(S3 저장·요청, 데이터 전송, 로그, WAF 요청, GuardDuty 이벤트, AMP 샘플, Aurora 저장·I/O, MemoryDB 쓰기량)은 뺐다.
 
 | 항목 | 구성 | 월 |
 |---|---|---|
@@ -436,85 +557,94 @@ AZ를 3개 쓰는 건 하나를 잃거나 하나와 끊겨도 과반이 남게 �
 | 보안 고정비 | 사설 CA, WAF 규칙, KMS | ~$65 |
 | 합계 | | ~$5,800 |
 
-- 읽기 노드 2대, 복제본 2개, 모든 서비스 최소 3개로 두면 같은 기준으로 월 $8,800 안팎이다. 그만큼 더 내도 일관성·지속성은 같고 장애 조치 후보만 하나 늘어난다.
-- 다음으로 줄일 곳: 1년 예약(Aurora·MemoryDB 30~40%), Fargate Savings Plans, 부하 테스트 뒤 `storage` MemoryDB 크기.
+읽기 노드 2대, 복제본 2개, 모든 서비스 최소 3개로 올리면 같은 기준으로 월 $8,800쯤 된다. 그렇게 더 내도 일관성과 지속성은 그대로이고, 장애 조치 후보만 하나 늘어난다.
 
-### 3-4. 저장 데이터 암호화
+다음에 줄일 곳은 1년 예약(Aurora, MemoryDB에서 30~40%), Fargate Savings Plans, 그리고 부하 테스트 뒤의 `storage` MemoryDB 크기다.
 
-`hardened = true`(prod)일 때 켜진다(`kms.tf`, `s3.tf`).
+### 4-4. 저장 데이터 암호화
 
-- KMS 고객 관리 키 하나(`alias/modudrive-data`, 매년 자동 교체)로 암호화한다: Aurora 저장소·Performance Insights, RDS가 관리하는 관리자 비밀번호, MemoryDB, S3 블록(버킷 키로 KMS 호출을 줄임), SQS 큐·DLQ, SSM 비밀값, CloudWatch 로그 그룹. AWS 관리 키와 달리 키 정책과 사용 기록(CloudTrail)을 직접 통제한다.
-- RDS와 ECS가 직접 만드는 로그 그룹(Aurora 쿼리 로그, Container Insights)도 Terraform이 먼저 만들어 키를 건다. 그냥 두면 암호화 없이 무기한 보존된다.
-- 키 정책은 계정(IAM 정책으로 위임), CloudWatch Logs(이 리전 로그 그룹만), SNS(`mail-ses-events` 토픽이 큐에 암호화해 넣도록)에 연다. IAM으로는 실행 역할에 SSM·Secrets Manager 복호화를, 큐를 쓰는 서비스와 storage에 데이터 키 생성·복호화만 준다.
-- S3 버전 관리를 켠다. 지워지거나 덮어쓰인 블록을 30일 동안 되살릴 수 있고, 그 뒤 이전 버전은 수명 주기 규칙이 지운다.
-- 처음 켤 때 확인할 것: 버전 관리 버킷에서 블록 정리의 조건부 삭제(`DeleteObject` + `If-Match`)가 그대로 412·삭제 마커로 동작하는지.
+`kms.tf`, `s3.tf`. KMS 고객 관리 키 하나(`alias/modudrive-data`, 매년 자동 교체)로 아래를 암호화한다.
 
-### 3-5. WAF와 서비스 간 TLS
+- Aurora 저장소와 Performance Insights, RDS가 관리하는 관리자 비밀번호
+- MemoryDB
+- S3 블록 (버킷 키를 써서 KMS 호출을 줄인다)
+- SQS 큐와 DLQ, SSM 비밀값, CloudWatch 로그 그룹
 
-`hardened = true`(prod)일 때 켜진다.
+AWS 관리 키와 달리 키 정책과 사용 기록(CloudTrail)을 직접 통제할 수 있다.
+
+- RDS와 ECS가 알아서 만드는 로그 그룹(Aurora 쿼리 로그, Container Insights)도 Terraform이 먼저 만들어 키를 건다. 그냥 두면 암호화 없이 무기한 보존된다.
+- 키 정책은 계정(IAM 정책으로 위임), CloudWatch Logs(이 리전 로그 그룹만), SNS(`mail-ses-events` 토픽이 큐에 암호화해서 넣을 수 있게)에 연다. IAM으로는 실행 역할에 SSM·Secrets Manager 복호화를, 큐를 쓰는 서비스와 storage에 데이터 키 생성·복호화만 준다.
+- 백업 계정이 스냅샷을 다시 암호화할 수 있도록 키 정책에 백업 계정도 들어간다(4-7).
+
+S3 버전 관리도 켠다. 지워지거나 덮어쓰인 블록을 30일 동안 되살릴 수 있고, 그 뒤 이전 버전은 수명 주기 규칙이 지운다. 처음 켤 때 블록 정리의 조건부 삭제(`DeleteObject` + `If-Match`)가 버전 관리 버킷에서도 412와 삭제 마커로 제대로 동작하는지 확인한다.
+
+### 4-5. WAF와 서비스 간 TLS
 
 #### WAF
 
-`waf.tf`, ALB에 연결. AWS 관리 규칙(IP 평판, 알려진 악성 입력, 공통 규칙, SQLi)과 IP별 요청 한도다.
+`waf.tf`, ALB에 연결한다. AWS 관리 규칙 4개(IP 평판, 알려진 악성 입력, 공통 규칙, SQLi)와 IP별 요청 한도로 이뤄져 있다.
 
-- 공통 규칙의 "본문 8KB 초과 차단"은 기록만 한다. commit 요청은 블록 해시를 전부 담아서 큰 파일이면 8KB를 넘는다. 본문 크기 제한은 앱이 맡는다.
-- 블록 업로드(`/api/v1/storage/blocks`)는 공통 규칙과 SQLi 규칙에서 뺀다. 본문이 파일 바이트 그대로라 .html이나 .sql 파일을 올리면 XSS·SQLi 패턴에 걸린다.
-- 알려진 악성 입력 규칙 중 본문을 보는 두 개(Log4J, Java 역직렬화)도 기록만 한다. 로그 파일이나 .ser 파일을 올리면 걸린다. 헤더·경로 검사는 그대로 막는다.
-- 세션 없이 비밀번호·코드를 확인하거나 메일을 보내는 경로(`/api/v1/auth/login`, `/api/v1/auth/verify-email/*`, `/api/v1/member/sign-up`, `/api/v1/member/verify-email/*`)는 IP당 5분에 100회까지다. 앱은 계정·기기별로만 제한하므로, 한 주소에서 여러 계정을 대입하거나 메일을 쏟아내는 건 여기서 막는다. 경로는 URL 디코딩과 정규화 뒤 비교해서 `//`나 `%2F`로 비켜 갈 수 없다.
-- 전체 요청은 IP당 5분에 20,000회까지다. 업로드가 블록마다 요청을 하나씩 보내고, 회사망이나 통신사 NAT 뒤에는 사용자가 여럿 모이므로 넉넉히 잡았다.
-- WAF 로그는 `aws-waf-logs-modudrive` 그룹에 30일 남기고, 세션 쿠키 헤더는 가린다.
-- 운영 첫 1~2주는 WAF 로그의 `terminatingRuleId`로 오탐을 본다. 파일·폴더 이름이나 검색어가 XSS·LFI·SQLi 규칙에 걸리면 그 규칙만 기록 전용으로 돌린다. 통신사 CGNAT 뒤에서 로그인 한도에 걸리는지도 `login-rate` 지표로 본다.
+| 규칙 | 설정 | 이유 |
+|---|---|---|
+| 공통 규칙의 본문 8KB 초과 차단 | 기록만 | commit 요청은 블록 해시를 전부 담아서 큰 파일이면 8KB를 넘는다. 본문 크기 제한은 앱이 맡는다 |
+| 공통 규칙, SQLi 규칙 | 블록 업로드(`/api/v1/storage/blocks`)는 제외 | 본문이 파일 바이트 그대로라 .html이나 .sql 파일을 올리면 XSS, SQLi 패턴에 걸린다 |
+| 알려진 악성 입력 중 본문 검사 2개 (Log4J, Java 역직렬화) | 기록만 | 로그 파일이나 .ser 파일을 올리면 걸린다. 헤더와 경로 검사는 그대로 막는다 |
+| 로그인·인증 경로 한도 | IP당 5분에 100회 | 아래 설명 |
+| 전체 요청 한도 | IP당 5분에 20,000회 | 업로드는 블록마다 요청을 하나씩 보내고, 회사망이나 통신사 NAT 뒤에는 사용자가 여럿 모여 있어서 넉넉히 잡았다 |
+
+로그인·인증 경로 한도는 세션 없이 비밀번호나 코드를 확인하거나 메일을 보내는 경로에 건다. `/api/v1/auth/login`, `/api/v1/auth/verify-email/*`, `/api/v1/member/sign-up`, `/api/v1/member/verify-email/*`가 여기 해당한다. 앱은 계정과 기기 단위로만 시도를 제한하므로, 한 주소에서 여러 계정을 대입하거나 메일을 쏟아내는 건 여기서 막는다. 경로는 URL 디코딩과 정규화를 거친 뒤 비교하므로 `//`나 `%2F`로 비켜 갈 수 없다.
+
+WAF 로그는 `aws-waf-logs-modudrive` 그룹에 30일 남기고, 세션 쿠키 헤더는 가린다. 운영 첫 1~2주는 WAF 로그의 `terminatingRuleId`로 오탐을 살핀다. 파일·폴더 이름이나 검색어가 XSS, LFI, SQLi 규칙에 걸리면 그 규칙만 기록 전용으로 돌린다. 통신사 CGNAT 뒤 사용자가 로그인 한도에 걸리는지도 `login-rate` 지표로 본다.
 
 #### Service Connect TLS
 
-`service_connect_tls.tf`.
+`service_connect_tls.tf`. 단기 인증서 전용 사설 CA(ACM PCA)와 ECS 인프라 역할을 둔다. member, auth, file, storage, notification의 Envoy 프록시가 TLS로 받고, 인증서 발급과 교체는 ECS가 맡는다. 앱은 여전히 옆의 프록시와 평문 HTTP로 이야기하므로 코드는 그대로다.
 
-- 단기 인증서 전용 사설 CA(ACM PCA)와 ECS 인프라 역할을 둔다. member·auth·file·storage·notification의 Envoy 프록시가 TLS로 받고, 인증서 발급과 교체는 ECS가 한다.
-- 앱은 여전히 로컬 프록시와 평문 HTTP로 통신하므로 코드는 그대로다.
-- 켜고 처음 배포할 때 서버 쪽과 클라이언트 쪽 서비스가 새 설정으로 함께 바뀐다. 롤링 중에 평문과 TLS 연결이 섞이지 않는지 사용자가 없을 때 켜고 본다.
+처음 켜고 배포할 때는 서버 쪽과 클라이언트 쪽 서비스가 새 설정으로 함께 바뀐다. 롤링 도중 평문과 TLS 연결이 섞이지 않는지 사용자가 없을 때 켜서 확인한다.
 
-남은 평문 구간은 ALB → gateway다. 바꾸려면 gateway에 인증서를 두고 대상 그룹을 HTTPS로 바꿔야 한다.
+남은 평문 구간은 ALB에서 gateway까지다. 여기까지 바꾸려면 gateway에 인증서를 두고 대상 그룹을 HTTPS로 바꿔야 한다.
 
-### 3-6. 감사와 위협 탐지
+### 4-6. 감사와 위협 탐지
 
-`hardened = true`(prod)일 때 켜진다(`audit.tf`). 기록은 로그 버킷(`modudrive-logs-<계정>`) 하나에 모은다.
+`audit.tf`. 기록은 로그 버킷(`modudrive-logs-<계정>`) 하나에 모은다.
 
-- 버킷은 TLS만 받고, 90일 뒤 Glacier Instant Retrieval로 옮겨 1년 뒤 지운다.
-- Object Lock(GOVERNANCE, 365일)을 건다. 버킷 쓰기 권한을 얻은 침입자도 1년 안의 기록을 지우거나 덮어쓰지 못한다. Object Lock은 버킷을 만들 때만 켤 수 있다.
-- ALB 접근 로그는 KMS 버킷에 쓰지 못해서 버킷 기본 암호화는 SSE-S3이고, CloudTrail 파일만 KMS 키로 암호화한다.
+- 버킷은 TLS로만 받는다. 90일 뒤 Glacier Instant Retrieval로 옮기고 1년 뒤 지운다.
+- Object Lock(GOVERNANCE, 365일)을 건다. 버킷 쓰기 권한을 얻은 침입자도 1년 안의 기록은 지우거나 덮어쓰지 못한다. Object Lock은 버킷을 만들 때만 켤 수 있다.
+- ALB 접근 로그는 KMS로 암호화한 버킷에 쓰지 못한다. 그래서 버킷 기본 암호화는 SSE-S3로 두고 CloudTrail 파일만 KMS 키로 암호화한다.
 
 | 무엇 | 남기는 것 | 비고 |
 |---|---|---|
-| CloudTrail | 계정의 모든 API 호출(전 리전), storage 버킷의 쓰기·삭제 | 로그 파일 검증(다이제스트)으로 사후 변조를 확인할 수 있다. 블록 읽기는 다운로드마다 생겨 양이 많고 앱 로그에 이미 남으므로 뺀다 |
-| VPC Flow Logs | VPC 안 모든 연결(허용·거부) | S3로 바로 보낸다 |
-| ALB 접근 로그 | 요청마다 클라이언트 IP·상태·지연 | WAF에 막혀 gateway까지 못 온 요청도 남는다 |
-| GuardDuty | CloudTrail·Flow·DNS 이상 징후, S3 데이터 이벤트, RDS 로그인, Fargate 런타임 | S3 보호는 블록 읽기까지 전부 분석하고 이벤트 수만큼 과금해서 GuardDuty 비용 대부분이 여기서 나온다. 블록은 파일 조각이라 S3 악성코드 검사는 켜지 않는다 |
-| Security Hub | AWS 기본 보안 모범 사례, CIS 3.0 | 검사 대부분이 AWS Config 기록을 쓰므로 Config 레코더도 켠다. Fargate 태스크마다 바뀌는 ENI는 하루 한 번만 기록한다. S3 계정 퍼블릭 차단, IAM Access Analyzer, EBS 기본 암호화도 함께 켠다(무료) |
+| CloudTrail | 계정의 모든 API 호출(전 리전), storage 버킷의 쓰기·삭제 | 로그 파일 검증(다이제스트)으로 나중에 변조됐는지 확인할 수 있다. 블록 읽기는 다운로드마다 생겨 양이 많고 앱 로그에 이미 남으므로 뺐다 |
+| VPC Flow Logs | VPC 안의 모든 연결(허용·거부) | S3로 바로 보낸다 |
+| ALB 접근 로그 | 요청마다 클라이언트 IP, 상태, 지연 | WAF에 막혀 gateway까지 못 온 요청도 남는다 |
+| GuardDuty | CloudTrail·Flow·DNS 이상 징후, S3 데이터 이벤트, RDS 로그인, Fargate 런타임 | S3 보호가 블록 읽기까지 전부 분석하고 이벤트 수로 과금해서 GuardDuty 비용 대부분이 여기서 나온다. 블록은 파일 조각이라 S3 악성코드 검사는 켜지 않는다 |
+| Security Hub | AWS 기본 보안 모범 사례, CIS 3.0 | 검사 대부분이 AWS Config 기록을 쓰므로 Config 레코더도 켠다. Fargate 태스크마다 바뀌는 ENI는 하루 한 번만 기록한다. S3 계정 퍼블릭 차단, IAM Access Analyzer, EBS 기본 암호화도 같이 켠다(무료) |
+
+GuardDuty 발견 중 심각도 7 이상은 EventBridge와 SNS를 거쳐 Discord로 온다(1-13). Security Hub 발견은 양이 많아서 알리지 않고, 콘솔의 점수와 실패 항목으로 본다.
 
 #### apply할 때 주의할 것
 
-- Config 서비스 연결 역할(`AWSServiceRoleForConfig`)이 계정에 이미 있으면 생성이 실패한다. `terraform import`로 가져온다. GuardDuty와 Security Hub가 이미 켜져 있어도 마찬가지다.
-- Fargate 런타임 모니터링을 켜면 GuardDuty가 VPC에 `guardduty-data` 엔드포인트와 `GuardDutyManaged*` 보안 그룹을 직접 만든다(Terraform 밖). `terraform destroy`나 VPC 교체 전에 이 둘을 먼저 지운다. 에이전트는 기능을 켠 뒤 새로 뜨는 태스크에만 붙으므로 첫 apply 후 서비스를 재배포한다.
-- apply 후 GuardDuty 콘솔에서 RDS 보호가 Aurora PostgreSQL 18을 실제로 다루는지 본다. 다시 `plan`을 돌려 런타임 모니터링 설정에 diff가 남지 않는지도 본다.
+- Config 서비스 연결 역할(`AWSServiceRoleForConfig`)이 계정에 이미 있으면 생성이 실패한다. `terraform import`로 가져온다. GuardDuty나 Security Hub가 이미 켜져 있을 때도 마찬가지다.
+- Fargate 런타임 모니터링을 켜면 GuardDuty가 VPC에 `guardduty-data` 엔드포인트와 `GuardDutyManaged*` 보안 그룹을 직접 만든다(Terraform 밖). `terraform destroy`나 VPC 교체 전에 이 둘을 먼저 지운다. 에이전트는 기능을 켠 뒤 새로 뜨는 태스크에만 붙으므로 첫 apply 뒤 서비스를 다시 배포한다.
+- apply 뒤 GuardDuty 콘솔에서 RDS 보호가 Aurora PostgreSQL 18을 실제로 지원하는지 본다. `plan`을 한 번 더 돌려 런타임 모니터링 설정에 diff가 남지 않는지도 확인한다.
 
-#### 한계와 알림
+#### 한계
 
-- CloudTrail은 전 리전을 기록하지만 GuardDuty·Config·Security Hub는 서울만 본다. 다른 리전에 몰래 만든 리소스는 기록에는 남지만 탐지되지 않는다. 메우려면 리전마다 provider alias를 두거나 Organizations 위임 관리자를 쓴다.
-- GuardDuty 발견 중 심각도 7 이상은 EventBridge → SNS로 Discord에 온다(1-13). Security Hub 발견은 양이 많아 알리지 않고 콘솔의 점수와 실패 항목으로 본다.
+CloudTrail은 전 리전을 기록하지만 GuardDuty, Config, Security Hub는 서울만 본다. 다른 리전에 몰래 만든 리소스는 기록에는 남아도 탐지되지는 않는다. 메우려면 리전마다 provider alias를 두거나 Organizations 위임 관리자를 쓴다.
 
-### 3-7. 백업과 복구
+### 4-7. 백업과 복구
 
-`backup.tf`, prod만. prod의 기본 백업(Aurora 35일, S3 이전 버전 30일, MemoryDB 스냅샷 35일)은 전부 데이터와 같은 계정·리전에 있다. 계정을 탈취당하거나 리전 전체가 멈추면 백업도 같이 잃는다. 그래서 별도 백업 계정으로 사본을 보낸다.
+`backup.tf`. prod의 기본 백업(Aurora 35일, S3 이전 버전 30일, MemoryDB 스냅샷 35일)은 전부 데이터와 같은 계정, 같은 리전에 있다. 계정을 탈취당하거나 리전 전체가 멈추면 백업도 같이 잃는다. 그래서 별도의 백업 계정으로 사본을 보낸다.
 
-| 무엇 | 어떻게 | 백업 계정 보관 |
+| 무엇 | 어떻게 | 백업 계정 보관 기간 |
 |---|---|---|
-| Aurora (서비스별 DB) | AWS Backup 매일 05:00 스냅샷 → 백업 계정 볼트로 복사 (`backup_copy_vault_arn`) | 90일 (이 계정 볼트 7일) |
-| storage 블록 (S3) | S3 복제 → 백업 계정 버킷, Glacier Instant Retrieval (`backup_bucket_arn`) | 백업 계정의 수명 주기 규칙 |
+| Aurora (서비스별 DB) | AWS Backup이 매일 05:00 스냅샷을 떠서 백업 계정 볼트로 복사 (`backup_copy_vault_arn`) | 90일 (이 계정 볼트에는 7일) |
+| storage 블록 (S3) | S3 복제로 백업 계정 버킷에, Glacier Instant Retrieval (`backup_bucket_arn`) | 백업 계정의 수명 주기 규칙 |
 | `STORAGE_ENCRYPTION_KEY` | 손으로 한 번 복사 (아래) | 영구 |
-| MemoryDB | 복사하지 않는다 | — |
+| MemoryDB | 복사하지 않음 | |
 
-- 삭제는 복제하지 않는다. 앱의 블록 정리든 버그든 침입자든, 여기서 지운 블록은 사본에 남는다. 사본을 언제 지울지는 백업 계정의 수명 주기 규칙이 정한다.
-- 블록 사본은 앱이 이미 암호화한 바이트라 `STORAGE_ENCRYPTION_KEY` 없이는 읽을 수 없다. 키를 잃으면 원본도 사본도 쓸모가 없으므로 키도 백업 계정에 둔다. 키는 바뀌지 않으므로(`prevent_destroy`) 한 번이면 된다.
+- 삭제는 복제하지 않는다. 앱의 블록 정리든 버그든 침입자든, prod에서 지운 블록은 사본에 그대로 남는다. 사본을 언제 지울지는 백업 계정의 수명 주기 규칙이 정한다.
+- 블록 사본은 앱이 이미 암호화한 바이트라서 `STORAGE_ENCRYPTION_KEY` 없이는 읽을 수 없다. 키를 잃으면 원본도 사본도 쓸모가 없으니 키도 백업 계정에 둔다. 키는 바뀌지 않으므로(`prevent_destroy`) 한 번만 복사하면 된다.
 
   ```bash
   aws ssm get-parameter --name /modudrive/STORAGE_ENCRYPTION_KEY --with-decryption \
@@ -523,32 +653,24 @@ AZ를 3개 쓰는 건 하나를 잃거나 하나와 끊겨도 과반이 남게 �
     --secret-string file:///dev/stdin --profile backup
   ```
 
-- MemoryDB는 AWS Backup이 지원하지 않는다. 담긴 것(세션, 인증 코드, 업로드 기록, 다운로드 한도)은 다시 만들어지는 값이라 잃으면 전원 다시 로그인하고 올리던 블록을 다시 보내면 된다.
+- MemoryDB는 AWS Backup이 지원하지 않는다. 담긴 것(세션, 인증 코드, 업로드 기록, 다운로드 한도)은 다시 생기는 값이라, 잃더라도 전원 다시 로그인하고 올리던 블록을 다시 보내면 된다.
 
 #### 백업 계정에 먼저 만들 것
 
-Terraform 밖, 백업 계정 쪽에서 한다.
+Terraform 밖에서, 백업 계정 쪽에 만든다.
 
-- Organizations 관리 계정에서 AWS Backup 계정 간 백업을 켠다.
-- 고객 관리 KMS 키로 암호화한 백업 볼트, 그리고 prod 계정이 `backup:CopyIntoBackupVault`를 할 수 있게 하는 볼트 접근 정책.
-- 블록 버킷: 버전 관리 켬, 고객 관리 KMS 키로 기본 암호화, Object Lock(선택). 버킷 정책으로 prod 계정의 `modudrive-s3-replication` 역할에 `s3:ReplicateObject`·`s3:ReplicateTags`·`s3:ObjectOwnerOverrideToBucketOwner`를, KMS 키 정책으로 같은 역할에 `kms:Encrypt`·`kms:GenerateDataKey`를 연다.
-- 이 셋의 ARN을 prod.tfvars의 `backup_*` 값에 넣는다. 비어 있으면 위 리소스는 만들어지지 않는다.
-- prod의 데이터 키는 백업 계정이 스냅샷을 다시 암호화할 수 있게 키 정책에 백업 계정이 들어간다(`kms.tf`).
+1. Organizations 관리 계정에서 AWS Backup 계정 간 백업을 켠다.
+2. 고객 관리 KMS 키로 암호화한 백업 볼트를 만들고, prod 계정이 `backup:CopyIntoBackupVault`를 할 수 있도록 볼트 접근 정책을 건다.
+3. 블록 버킷을 만든다. 버전 관리를 켜고, 고객 관리 KMS 키로 기본 암호화를 걸고, 원하면 Object Lock도 건다. 버킷 정책으로 prod 계정의 `modudrive-s3-replication` 역할에 `s3:ReplicateObject`, `s3:ReplicateTags`, `s3:ObjectOwnerOverrideToBucketOwner`를, KMS 키 정책으로 같은 역할에 `kms:Encrypt`, `kms:GenerateDataKey`를 연다.
+4. 셋의 ARN을 prod.tfvars의 `backup_*` 값에 넣는다. 비어 있으면 위 리소스는 만들어지지 않는다.
 
 #### 복구 목표
 
 | 상황 | 데이터 손실 (RPO) | 복구 시간 (RTO) | 방법 |
 |---|---|---|---|
 | AZ 하나 장애 | 없음 | Aurora 30초 안팎, MemoryDB 수십 초 | 자동 장애 조치 |
-| 잘못된 쓰기·삭제 (DB) | 5분 이내 | 30분~1시간 | Aurora 특정 시점 복구로 옆에 새 클러스터를 만들고, 필요한 행을 원래 클러스터로 옮긴다 |
+| 잘못된 쓰기·삭제 (DB) | 5분 이내 | 30분~1시간 | Aurora 특정 시점 복구로 옆에 새 클러스터를 만들고, 필요한 행만 원래 클러스터로 옮긴다 |
 | 잘못된 삭제 (블록) | 없음 (30일 안) | 수 분 | S3 이전 버전 복원 |
-| 계정 탈취·리전 장애 | DB 24시간, 블록 수 분 | 수 시간 | 새 계정에 Terraform으로 스택 → 백업 계정의 스냅샷 복원 → 버킷 사본을 새 버킷으로 복사, 키 복원 |
+| 계정 탈취, 리전 장애 | DB 24시간, 블록 수 분 | 수 시간 | 새 계정에 Terraform으로 스택을 띄우고, 백업 계정의 스냅샷을 복원하고, 버킷 사본을 새 버킷으로 복사한 뒤 키를 복원한다 |
 
-계정·리전 복구 절차는 연습해 본 적이 없다. 숫자는 목표이고, 한 번 돌려 보고 고친다.
-
-### 3-8. 크기·엔진 변경
-
-- ECS 서비스(Spot ↔ 일반)와 서브넷이 교체되고, DB 클래스 변경은 재시작이 따른다. 사용자가 없을 때 바꾼다.
-- `db_engine`을 바꾸면(`rds` ↔ `aurora`) 기존 DB가 삭제되고 새 DB가 빈 채로 생긴다. 스냅샷 복원이나 덤프로 데이터를 옮긴 뒤 바꾼다. 클러스터 하나를 서비스별로 나눌 때도 같다 — 공용 인스턴스는 `file` 이름이라 file_db는 그 자리에 남지만, member·auth·notification DB는 새 클러스터로 옮겨야 한다.
-- `redis_engine`을 바꾸면(`elasticache` ↔ `memorydb`) 클러스터가 전부 새로 생긴다. 세션이 사라져 전원 로그아웃되고, 이메일 인증 토큰·메일 소비 기록·업로드 기록·다운로드 한도·zip 토큰도 사라진다. 업로드 중이던 블록은 다시 보내면 된다.
-- MemoryDB 파라미터 그룹(`memorydb_valkey7`, 엔진 7.3)과 ElastiCache 파라미터 그룹(`valkey8`, 엔진 8.1)은 엔진 버전이 다르다. 기존 클러스터에 적용하기 전에 엔진 버전을 먼저 확인한다.
+계정·리전 복구는 아직 연습해 본 적이 없다. 위 숫자는 목표일 뿐이고, 한 번 돌려 본 뒤 고친다.
