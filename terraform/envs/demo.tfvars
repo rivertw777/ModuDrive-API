@@ -49,3 +49,5 @@ alert_email        = null
 # The smallest collector; scraping once a minute keeps AMP's per-sample bill near nothing.
 otel_collector = { cpu = 256, memory = 1024, scrape_interval = "60s" }
 grafana        = false # $9/user/month and IAM Identity Center — AMP, X-Ray and CloudWatch consoles do for a trial
+
+terraform_in_ci = true # a merge into the demo branch applies terraform/ (deploy.yml)

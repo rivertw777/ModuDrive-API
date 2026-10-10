@@ -38,9 +38,9 @@ variable "domain_name" {
 
 # The image the task definitions Terraform registers point at. Only the first apply needs a real one:
 # after that the deploy workflow (.github/workflows/deploy.yml) registers new revisions with the
-# commit's image and the services ignore Terraform's (ecs.tf). A later apply that changes a task
-# definition (an env var, a size) registers a revision the services don't run yet — the next deploy
-# starts from that revision, so pass the tag that's deployed now and run the workflow to roll it out.
+# commit's image and the services ignore Terraform's (ecs.tf). Terraform's revision is then just the
+# template the deploy copies — a later apply that changes a task definition (an env var, a size) rolls
+# out with the next deploy. CI applies pass image_tag=template so the tag never shows up as a change.
 variable "image_tag" {
   type = string
 }
@@ -234,4 +234,10 @@ variable "backup_bucket_kms_key_arn" {
 variable "github_repository" {
   type    = string
   default = "rivertw777/ModuDrive-API"
+}
+
+# CI applies terraform/ for this environment (github.tf, .github/workflows/deploy.yml): demo, on a
+# merge into the demo branch. Elsewhere apply stays a person's job and no admin role trusts GitHub.
+variable "terraform_in_ci" {
+  type = bool
 }
