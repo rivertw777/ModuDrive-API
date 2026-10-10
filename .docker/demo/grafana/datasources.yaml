@@ -1,0 +1,36 @@
+# demo 스택(AWS)의 지표·트레이스·로그를 내 PC의 Grafana에서 본다. 접속은 컨테이너에 얹은 내 AWS 자격 증명
+# (~/.aws, AWS_PROFILE)으로 SigV4 서명 — AWS 쪽에 만들 것은 없다. 읽기만 하므로 그 프로필에
+# aps:Query*·aps:Get*, xray:Get*·xray:BatchGet*, logs:StartQuery·GetQueryResults·Describe* 정도면 된다.
+apiVersion: 1
+
+datasources:
+  - name: AMP (demo)
+    uid: amp
+    type: grafana-amazonprometheus-datasource
+    access: proxy
+    # terraform output amp_endpoint — make demo가 채운다
+    url: ${DEMO_AMP_URL}
+    isDefault: true
+    jsonData:
+      httpMethod: POST
+      sigV4Auth: true
+      sigV4AuthType: default
+      sigV4Region: ap-northeast-2
+      sigv4Service: aps
+
+  - name: X-Ray (demo)
+    uid: xray
+    type: grafana-x-ray-datasource
+    jsonData:
+      authType: default
+      defaultRegion: ap-northeast-2
+
+  # 로그는 Logs Insights로: 로그 그룹 /ecs/modudrive/<서비스>, `filter traceId = "..."`.
+  # X-Ray의 trace ID(1-xxxxxxxx-yyyy…)에서 "1-"과 "-"를 빼면 로그의 traceId다.
+  - name: CloudWatch (demo)
+    uid: cloudwatch
+    type: cloudwatch
+    jsonData:
+      authType: default
+      defaultRegion: ap-northeast-2
+      tracingDatasourceUid: xray
