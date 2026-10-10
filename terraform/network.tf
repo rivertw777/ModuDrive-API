@@ -6,8 +6,8 @@ locals {
   azs = slice(data.aws_availability_zones.available.names, 0, 2)
 }
 
-# Public subnets hold the ALB and the NAT gateways; ECS tasks run in the private subnets in prod
-# and in the public ones in demo (no NAT — envs/demo.tfvars). RDS and ElastiCache are always private.
+# Public subnets hold the ALB and the NAT (gateways in prod, one instance in demo); ECS tasks, RDS and
+# ElastiCache are always in private subnets.
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "~> 6.7"
@@ -21,8 +21,9 @@ module "vpc" {
   database_subnets = ["10.0.20.0/24", "10.0.21.0/24"]
 
   # One per AZ, so an AZ outage doesn't cut the other AZ's egress (SES, Discord). ~$45/month each.
-  enable_nat_gateway     = var.nat
-  one_nat_gateway_per_az = var.nat
+  # Without them the module still makes a private route table per AZ, routed below to the instance.
+  enable_nat_gateway     = var.nat == "gateway"
+  one_nat_gateway_per_az = var.nat == "gateway"
 
   enable_dns_hostnames = true
   enable_dns_support   = true
@@ -36,7 +37,7 @@ resource "aws_vpc_endpoint" "s3" {
   vpc_id            = module.vpc.vpc_id
   service_name      = "com.amazonaws.${var.region}.s3"
   vpc_endpoint_type = "Gateway"
-  # Both, so S3 traffic skips the NAT/IGW wherever the tasks run (var.nat).
+  # Both, so S3 traffic (blocks) never goes through the NAT, gateway or instance.
   route_table_ids = concat(module.vpc.private_route_table_ids, module.vpc.public_route_table_ids)
 }
 
@@ -52,8 +53,76 @@ resource "aws_vpc_endpoint" "interface" {
   private_dns_enabled = true
 }
 
+# demo's NAT: one fck-nat instance (an Amazon Linux image set up to forward and masquerade) instead
+# of a managed gateway per AZ — ~$8/month against the ~$26 the tasks' own public IPv4s would cost.
+# Only outbound control traffic passes here (SQS, SES, logs, secrets, image pulls); user traffic comes
+# in through the ALB and S3 through its gateway endpoint. If it stops, running services keep serving,
+# but events and mail wait and new tasks can't pull their image until it's back (EC2 auto-recovery).
+# ponytail: one instance in one AZ — fck-nat's HA mode (ASG + static ENI) if demo ever needs it.
+data "aws_ami" "fck_nat" {
+  count = var.nat == "instance" ? 1 : 0
+
+  most_recent = true
+  owners      = ["568608671756"] # fck-nat
+
+  filter {
+    name   = "name"
+    values = ["fck-nat-al2023-*-arm64-ebs"]
+  }
+}
+
+resource "aws_security_group" "nat" {
+  count = var.nat == "instance" ? 1 : 0
+
+  name        = "${var.project}-nat"
+  description = "NAT instance: forwards the VPC's outbound traffic"
+  vpc_id      = module.vpc.vpc_id
+}
+
+resource "aws_vpc_security_group_ingress_rule" "nat" {
+  count = var.nat == "instance" ? 1 : 0
+
+  security_group_id = aws_security_group.nat[0].id
+  cidr_ipv4         = module.vpc.vpc_cidr_block
+  ip_protocol       = "-1"
+}
+
+resource "aws_vpc_security_group_egress_rule" "nat" {
+  count = var.nat == "instance" ? 1 : 0
+
+  security_group_id = aws_security_group.nat[0].id
+  cidr_ipv4         = "0.0.0.0/0"
+  ip_protocol       = "-1"
+}
+
+resource "aws_instance" "nat" {
+  count = var.nat == "instance" ? 1 : 0
+
+  ami                         = data.aws_ami.fck_nat[0].id
+  instance_type               = "t4g.nano"
+  subnet_id                   = module.vpc.public_subnets[0]
+  vpc_security_group_ids      = [aws_security_group.nat[0].id]
+  associate_public_ip_address = true
+  # It forwards packets addressed to others.
+  source_dest_check = false
+
+  metadata_options {
+    http_tokens = "required"
+  }
+
+  tags = { Name = "${var.project}-nat" }
+}
+
+resource "aws_route" "private_nat_instance" {
+  count = var.nat == "instance" ? length(module.vpc.private_route_table_ids) : 0
+
+  route_table_id         = module.vpc.private_route_table_ids[count.index]
+  destination_cidr_block = "0.0.0.0/0"
+  network_interface_id   = aws_instance.nat[0].primary_network_interface_id
+}
+
 locals {
-  # Without a NAT, tasks need a public IP to reach ECR, SSM, SQS, SES and Discord.
-  task_subnets          = var.nat ? module.vpc.private_subnets : module.vpc.public_subnets
-  task_assign_public_ip = !var.nat
+  # Tasks never get a public IP: their way out is the NAT, gateway or instance.
+  task_subnets          = module.vpc.private_subnets
+  task_assign_public_ip = false
 }

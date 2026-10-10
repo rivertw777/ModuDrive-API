@@ -6,7 +6,7 @@
 # every user-facing service, RDS Multi-AZ, one Valkey cluster per purpose with the sessions' keeping a
 # replica and automatic failover (a lost node no longer logs everyone out).
 
-nat                 = true
+nat                 = "gateway"
 interface_endpoints = true
 fargate_spot        = false
 container_insights  = true
