@@ -7,6 +7,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.cloud.gateway.support.ServerWebExchangeUtils;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
 import org.springframework.mock.web.server.MockServerWebExchange;
@@ -34,6 +35,7 @@ class FallbackControllerTest {
                         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.GATEWAY_TIMEOUT);
                         assertThat(response.getBody().getMessage())
                                 .isEqualTo(CircuitBreakerExceptionCase.CONNECTION_TIMEOUT.getMessage());
+                        assertThat(response.getHeaders().containsHeader(HttpHeaders.RETRY_AFTER)).isFalse();
                     })
                     .verifyComplete();
         }
@@ -73,6 +75,7 @@ class FallbackControllerTest {
                         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
                         assertThat(response.getBody().getMessage())
                                 .isEqualTo(CircuitBreakerExceptionCase.SERVICE_IS_OPEN.getMessage());
+                        assertThat(response.getHeaders().getFirst(HttpHeaders.RETRY_AFTER)).isEqualTo("10");
                     })
                     .verifyComplete();
         }
@@ -91,6 +94,7 @@ class FallbackControllerTest {
                         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
                         assertThat(response.getBody().getMessage())
                                 .isEqualTo(CircuitBreakerExceptionCase.SERVICE_UNAVAILABLE.getMessage());
+                        assertThat(response.getHeaders().getFirst(HttpHeaders.RETRY_AFTER)).isEqualTo("10");
                     })
                     .verifyComplete();
         }

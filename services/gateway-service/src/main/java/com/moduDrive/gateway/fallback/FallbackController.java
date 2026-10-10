@@ -1,10 +1,13 @@
 package com.moduDrive.gateway.fallback;
 
 import com.moduDrive.common.core.web.ApiResponse;
+import com.moduDrive.common.core.web.GlobalExceptionHandler;
 import com.moduDrive.common.infrastructure.resilience4j.CircuitBreakerExceptionCase;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.gateway.support.ServerWebExchangeUtils;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
@@ -42,7 +45,10 @@ class FallbackController {
     }
 
     private ResponseEntity<ApiResponse<Object>> createErrorResponse(CircuitBreakerExceptionCase exceptionCase) {
-        return ResponseEntity.status(exceptionCase.getHttpStatus())
-                .body(ApiResponse.error(exceptionCase));
+        ResponseEntity.BodyBuilder builder = ResponseEntity.status(exceptionCase.getHttpStatus());
+        if (exceptionCase.getHttpStatus() == HttpStatus.SERVICE_UNAVAILABLE) {
+            builder.header(HttpHeaders.RETRY_AFTER, GlobalExceptionHandler.RETRY_AFTER_SECONDS);
+        }
+        return builder.body(ApiResponse.error(exceptionCase));
     }
 }

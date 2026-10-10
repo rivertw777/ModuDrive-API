@@ -6,6 +6,7 @@ import com.moduDrive.gateway.exception.AuthExceptionCase;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
 import org.springframework.mock.web.server.MockServerWebExchange;
@@ -33,6 +34,7 @@ class CustomAuthenticationEntryPointTest {
                     .verifyComplete();
 
             assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+            assertThat(exchange.getResponse().getHeaders().containsHeader(HttpHeaders.RETRY_AFTER)).isFalse();
             String body = exchange.getResponse().getBodyAsString().block();
             assertThat(body).isEqualTo(
                     "{\"status\":\"UNAUTHORIZED\",\"message\":\"" + AuthExceptionCase.NO_SESSION.getMessage() + "\"}");
@@ -71,6 +73,7 @@ class CustomAuthenticationEntryPointTest {
                     .verifyComplete();
 
             assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+            assertThat(exchange.getResponse().getHeaders().getFirst(HttpHeaders.RETRY_AFTER)).isEqualTo("10");
             assertThat(exchange.getResponse().getBodyAsString().block())
                     .contains(CircuitBreakerExceptionCase.SERVICE_UNAVAILABLE.getMessage());
         }
