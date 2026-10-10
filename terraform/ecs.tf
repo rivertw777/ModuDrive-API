@@ -220,6 +220,17 @@ resource "aws_ecs_service" "service" {
             dns_name = "${each.key}-service"
             port     = each.value
           }
+
+          dynamic "tls" {
+            for_each = var.hardened ? [1] : []
+            content {
+              issuer_cert_authority {
+                aws_pca_authority_arn = aws_acmpca_certificate_authority_certificate.service_connect[0].certificate_authority_arn
+              }
+              role_arn = aws_iam_role.ecs_infrastructure[0].arn
+              kms_key  = local.kms_key_arn
+            }
+          }
         }
       }
     }
@@ -231,7 +242,7 @@ resource "aws_ecs_service" "service" {
   }
 
   # A new task pulls its image through the NAT, so the instance route must exist first (demo).
-  depends_on = [aws_route.private_nat_instance]
+  depends_on = [aws_route.private_nat_instance, aws_iam_role_policy_attachment.ecs_infrastructure, aws_iam_role_policy.ecs_infrastructure_kms]
 }
 
 resource "aws_appautoscaling_target" "service" {

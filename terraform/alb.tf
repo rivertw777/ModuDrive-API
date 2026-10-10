@@ -4,6 +4,11 @@ resource "aws_lb" "main" {
   load_balancer_type = "application"
   subnets            = module.vpc.public_subnets
   security_groups    = [aws_security_group.alb.id]
+
+  # Free, so every env: drop header names that aren't plain [A-Za-z0-9-] (smuggling vectors, and a
+  # client-sent X_USER_ID never reaches the gateway). Desync mitigation stays at its "defensive" default.
+  drop_invalid_header_fields = true
+  enable_deletion_protection = var.deletion_protection
 }
 
 resource "aws_lb_target_group" "gateway" {

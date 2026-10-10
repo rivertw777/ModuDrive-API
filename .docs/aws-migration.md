@@ -302,6 +302,20 @@ ECS 태스크들 ──OTLP 트레이스──▶ ┌─────────
 - `demo`는 그대로 AWS 관리 암호화(SSE-S3, SSE-SQS, `aws/ssm` 등)를 쓴다.
 - ⚠️ 적용 전 확인: 버전 관리 버킷에서 블록 정리의 조건부 삭제(`DeleteObject` + `If-Match`)가 그대로 412·삭제 마커로 동작하는지 스테이징에서 본다.
 
+### 2-16. 엣지 필터링과 서비스 간 TLS (prod: `hardened = true`)
+
+- **WAF**(`waf.tf`, ALB에 연결): AWS 관리 규칙(IP 평판, 알려진 악성 입력, 공통 규칙, SQLi)과 IP별 요청 한도를 둔다.
+  - 공통 규칙의 "본문 8KB 초과 차단"은 차단하지 않고 기록만 한다. commit 요청은 블록 해시를 전부 담으므로 큰 파일이면 8KB를 넘는다. 본문 크기 제한은 앱이 맡는다.
+  - 블록 업로드(`/api/v1/storage/blocks`)는 공통 규칙과 SQLi 규칙에서 뺀다. 본문이 파일 바이트 그대로라서 .html이나 .sql 파일을 올리면 XSS·SQLi 패턴에 걸린다.
+  - 세션 없이 비밀번호·코드를 확인하거나 메일을 보내는 경로(`/api/v1/auth/login`, `/api/v1/auth/verify-email/*`, `/api/v1/member/sign-up`, `/api/v1/member/verify-email/*`)는 IP당 5분에 100회까지다. 한 주소에서 여러 계정으로 비밀번호를 대입하거나 코드를 맞히거나 메일을 쏟아내는 것을 막는다(앱은 계정·기기별로만 제한한다). 경로는 URL 디코딩과 정규화 뒤 비교하므로 `//`나 `%2F`로 비켜 갈 수 없다. 전체 요청은 IP당 5분에 20,000회까지다. 업로드가 8MB 블록마다 요청을 하나씩 보내고, 회사망이나 통신사 NAT 뒤에는 사용자가 여럿 모이므로 넉넉히 잡은 홍수 방지선이다.
+  - 알려진 악성 입력 규칙 중 본문을 보는 두 개(Log4J, Java 역직렬화)는 기록만 한다. 로그 파일이나 .ser 파일을 올리면 걸리기 때문이다. 헤더·경로 검사는 그대로 차단한다.
+  - ⚠️ 운영 첫 1~2주는 WAF 로그의 `terminatingRuleId`로 오탐을 본다. 파일·폴더 이름이나 검색어가 XSS·LFI·SQLi 규칙에 걸리면 그 규칙만 기록 전용으로 돌린다. 통신사 CGNAT 뒤에서 로그인 한도(100회)에 걸리는지도 `login-rate` 지표로 확인한다.
+  - WAF 로그는 `aws-waf-logs-<project>` 그룹에 남긴다(KMS 암호화, 30일 보관). 세션 쿠키 헤더는 가린다.
+- **ALB**(전 환경, 무료): `drop_invalid_header_fields`로 이름이 `[A-Za-z0-9-]`가 아닌 헤더를 버린다. 요청 밀반입(smuggling)을 막고, 클라이언트가 보낸 `X_USER_ID`가 gateway까지 가지 않게 한다. 삭제 방지는 `deletion_protection`을 따른다.
+- **Service Connect TLS**(`service_connect_tls.tf`): 단기 인증서 전용 사설 CA(ACM PCA)와 ECS 인프라 역할을 둔다. 서버 서비스(member·auth·file·storage·notification)의 Envoy가 TLS로 받고, 인증서 발급과 교체는 ECS가 맡는다. 인증서 개인키는 Secrets Manager에 데이터 키(KMS)로 암호화해 둔다. 앱은 계속 로컬 프록시와 평문 HTTP로 통신하므로 코드는 바뀌지 않는다.
+  - ⚠️ 켜고 처음 배포할 때 서버 서비스와 클라이언트 서비스가 새 설정으로 함께 바뀐다. 롤링 중에 평문 연결과 TLS 연결이 섞이지 않는지 스테이징에서 먼저 확인한다.
+- 남은 평문 구간: ALB → gateway(VPC 안쪽). TLS로 바꾸려면 gateway에 인증서를 두고 대상 그룹을 HTTPS로 바꿔야 한다.
+
 ## 3. 진행 순서와 현황
 
 1. **이식성 작업** (로컬에서 검증 가능한 것들) — ✅ 완료
