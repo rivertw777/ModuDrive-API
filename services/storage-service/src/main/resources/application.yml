@@ -9,8 +9,8 @@ spring:
       - "classpath:application-resilience4j.yml"
   servlet:
     multipart:
-      # Uploads come one 4MB block per request (spec 008); this only needs to cover that plus
-      # the multipart envelope.
+      # Uploads come as up to 8MB of blocks per request, none over 4MB (spec 001 2장 4번); this
+      # only needs to cover that plus the multipart envelope (9MB request, 5MB part).
       max-file-size: ${STORAGE_MULTIPART_MAX_FILE_SIZE}
       max-request-size: ${STORAGE_MULTIPART_MAX_REQUEST_SIZE}
 
@@ -22,7 +22,7 @@ storage:
     secret-key: ${STORAGE_S3_SECRET_KEY:}
     region: ${STORAGE_S3_REGION}
   block-size: ${STORAGE_BLOCK_SIZE}
-  # Block uploads per user per 24h (spec 008) — 25,600 × 4MB = 100GB. Caps what uncommitted
+  # Block uploads per user per 24h (spec 001) — 25,600 × 4MB = 100GB. Caps what uncommitted
   # uploads can pile up in S3 and Redis before the sweep.
   upload-blocks-per-window: ${STORAGE_UPLOAD_BLOCKS_PER_WINDOW:25600}
   encryption-key: ${STORAGE_ENCRYPTION_KEY}
@@ -40,6 +40,23 @@ resilience4j:
     instances:
       fileServiceCircuitBreaker:
         baseConfig: default
+      # Spec 006 2-4-3: timeouts, connect failures and S3 5xx count; a 404 or 412 doesn't.
+      s3CircuitBreaker:
+        baseConfig: default
+        record-failure-predicate: com.moduDrive.storage.adapter.out.s3.S3Unavailable
+  # Spec 006 2-4-4: S3 never holds more request threads than these, so what doesn't touch S3
+  # (the commit's uploaded-block lookup) keeps answering while S3 is slow.
+  bulkhead:
+    instances:
+      s3Write:
+        max-concurrent-calls: 40
+        max-wait-duration: 0
+      s3Read:
+        max-concurrent-calls: 40
+        max-wait-duration: 0
+      s3Delete:
+        max-concurrent-calls: 5
+        max-wait-duration: 1s
 
 # Fixed service URLs (compose DNS locally, ECS Service Connect on AWS).
 clients:

@@ -105,6 +105,30 @@ class RedisUploadedBlockStoreTest {
         }
 
         @Test
+        @DisplayName("돌려놓은 블록은 다음에 다시 거두되, 그 사이 다시 올라온 블록은 새 시각을 지킨다")
+        void releasedBlocksAreClaimedAgainUnlessUploadedSince() throws InterruptedException {
+            store.recordUploaded(owner, "h1", 4);
+            store.recordUploaded(owner, "h2", 4);
+            Instant cutoff = Instant.now().plusMillis(1);
+            Thread.sleep(5);
+            List<UploadedBlock> claimed = store.claimStale(cutoff, 10);
+            store.recordUploaded(owner, "h2", 4); // uploaded again while claimed
+
+            store.release(claimed, cutoff.minusSeconds(60));
+
+            assertThat(store.claimStale(cutoff, 10)).containsExactly(new UploadedBlock(owner, "h1"));
+        }
+
+        @Test
+        @DisplayName("S3에 넣기 전에 정리 대상으로만 등록한 블록도 거둔다")
+        void claimsABlockScheduledButNeverRecorded() {
+            store.scheduleSweep(owner, "h1");
+
+            assertThat(store.findUploaded(owner, List.of("h1"))).isEmpty();
+            assertThat(store.claimStale(Instant.now().plusMillis(1), 10)).containsExactly(new UploadedBlock(owner, "h1"));
+        }
+
+        @Test
         @DisplayName("다시 올라온 블록은 시각이 갱신돼 거둬지지 않는다")
         void reUploadingMovesTheBlockOutOfReach() throws InterruptedException {
             store.recordUploaded(owner, "h1", 4);

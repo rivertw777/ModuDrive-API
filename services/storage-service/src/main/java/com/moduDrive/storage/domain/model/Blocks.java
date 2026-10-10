@@ -6,7 +6,7 @@ import java.time.Duration;
 import java.util.HexFormat;
 import java.util.UUID;
 
-/** Spec 008: a block is stored once per owner under the SHA-256 of its raw bytes. */
+/** Spec 001: a block is stored once per owner under the SHA-256 of its raw bytes. */
 public final class Blocks {
 
     /** How long an uploaded block waits to be committed. Past it, a commit asks for the block

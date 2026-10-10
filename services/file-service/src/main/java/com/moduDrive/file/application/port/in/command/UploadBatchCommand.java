@@ -7,8 +7,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-/** A whole upload selection — files, folders, or both — registered in one request. The bytes
- * are still sent per file afterwards; only the metadata rows are created here. */
+/** A whole upload selection — files, folders, or both — checked for name conflicts in one
+ * request. Nothing is created here; each file's commit makes its rows. */
 @Getter
 public class UploadBatchCommand {
 

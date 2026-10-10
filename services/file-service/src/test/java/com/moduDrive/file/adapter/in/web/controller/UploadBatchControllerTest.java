@@ -6,9 +6,6 @@ import com.moduDrive.file.application.port.in.command.UploadBatchCommand;
 import com.moduDrive.file.application.port.in.command.UploadBatchCommand.ConflictResolution;
 import com.moduDrive.file.application.port.in.usecase.UploadBatchUseCase;
 import com.moduDrive.file.application.port.in.usecase.UploadBatchUseCase.UploadedItem;
-import com.moduDrive.file.domain.model.File;
-import com.moduDrive.file.domain.model.File.*;
-import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.exception.FileExceptionCase;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -52,12 +49,6 @@ class UploadBatchControllerTest {
             ],"resolutions":{"보고서.pdf":"REPLACE"}}
             """;
 
-    private static File entry(String name, String path, boolean directory, FileStatus status) {
-        return File.withId(new FileId(UUID.randomUUID()), new FileNamespaceId(UUID.randomUUID()),
-                new FileName(name), new FilePath(path), new FileOwnerId(UUID.fromString(USER_ID)),
-                null, null, status, new FileIsDirectory(directory));
-    }
-
     private void perform(String json, org.springframework.test.web.servlet.ResultMatcher expected) throws Exception {
         mockMvc.perform(post("/api/v1/files/batch")
                         .header("X_USER_ID", USER_ID)
@@ -70,17 +61,16 @@ class UploadBatchControllerTest {
     @DisplayName("유효한 요청일 때")
     class WhenRequestIsValid {
 
-        private final File folder = entry("사진 (1)", "/", true, FileStatus.UPLOADED);
-        private final File photo = entry("a.jpg", "/사진 (1)", false, FileStatus.PENDING);
-        private final File report = entry("보고서.pdf", "/", false, FileStatus.PENDING);
+        private final UUID reportId = UUID.randomUUID();
+        private final List<UploadedItem> planned = List.of(
+                new UploadedItem("사진", null, "사진 (1)", "/", true, false),
+                new UploadedItem("사진/a.jpg", null, "a.jpg", "/사진 (1)", false, false),
+                new UploadedItem("보고서.pdf", reportId, "보고서.pdf", "/", false, true));
 
         @Test
-        @DisplayName("만들어진 항목을 요청 경로와 실제 위치로 돌려준다")
+        @DisplayName("항목마다 요청 경로와 올라갈 위치를 돌려준다")
         void returnsEveryCreatedItem() throws Exception {
-            given(uploadBatchUseCase.uploadBatch(any(UploadBatchCommand.class))).willReturn(List.of(
-                    new UploadedItem("사진", folder, false),
-                    new UploadedItem("사진/a.jpg", photo, false),
-                    new UploadedItem("보고서.pdf", report, true)));
+            given(uploadBatchUseCase.uploadBatch(any(UploadBatchCommand.class))).willReturn(planned);
 
             mockMvc.perform(post("/api/v1/files/batch")
                             .header("X_USER_ID", USER_ID)
@@ -92,17 +82,15 @@ class UploadBatchControllerTest {
                     .andExpect(jsonPath("$.data.items[0].name").value("사진 (1)"))
                     .andExpect(jsonPath("$.data.items[0].directory").value(true))
                     .andExpect(jsonPath("$.data.items[1].path").value("/사진 (1)"))
-                    .andExpect(jsonPath("$.data.items[1].fileId").value(photo.getId().toString()))
+                    .andExpect(jsonPath("$.data.items[1].fileId").doesNotExist())
+                    .andExpect(jsonPath("$.data.items[2].fileId").value(reportId.toString()))
                     .andExpect(jsonPath("$.data.items[2].replaced").value(true));
         }
 
         @Test
         @DisplayName("요청을 커맨드로 옮긴다")
         void mapsTheRequestToACommand() throws Exception {
-            given(uploadBatchUseCase.uploadBatch(any(UploadBatchCommand.class))).willReturn(List.of(
-                    new UploadedItem("사진", folder, false),
-                    new UploadedItem("사진/a.jpg", photo, false),
-                    new UploadedItem("보고서.pdf", report, true)));
+            given(uploadBatchUseCase.uploadBatch(any(UploadBatchCommand.class))).willReturn(planned);
 
             perform(REQUEST_JSON, status().isOk());
 

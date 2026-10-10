@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -44,20 +45,34 @@ class PurgeUncommittedUploadsService implements PurgeUncommittedUploadsUseCase {
             batch = claimStaleUploadsPort.claimStale(cutoff, BATCH_SIZE);
             Map<UUID, List<String>> hashesByOwner = batch.stream().collect(Collectors.groupingBy(
                     UploadedBlock::ownerId, Collectors.mapping(UploadedBlock::hash, Collectors.toList())));
-            hashesByOwner.forEach((ownerId, hashes) -> purge(ownerId, hashes, decidedAt));
+            List<UploadedBlock> failed = new ArrayList<>();
+            hashesByOwner.forEach((ownerId, hashes) -> {
+                if (!purge(ownerId, hashes, decidedAt)) {
+                    hashes.forEach(hash -> failed.add(new UploadedBlock(ownerId, hash)));
+                }
+            });
+            if (!failed.isEmpty()) {
+                // Back on the schedule, and stop: S3 or file-service is struggling (spec 006 2-4-5),
+                // and claiming on would only release the same blocks again. Next run retries them.
+                claimStaleUploadsPort.release(failed, cutoff);
+                return;
+            }
         } while (batch.size() == BATCH_SIZE);
     }
 
-    private void purge(UUID ownerId, List<String> hashes, Instant decidedAt) {
+    /** False if the owner's blocks couldn't all be dealt with — they are then released, and a
+     * retry is safe: a block already deleted is a no-op. */
+    private boolean purge(UUID ownerId, List<String> hashes, Instant decidedAt) {
         try {
             Set<String> committed = findCommittedBlocksPort.findCommitted(ownerId, hashes);
             hashes.stream()
                     .filter(hash -> !committed.contains(hash))
                     .forEach(hash -> deleteBlocksPort.deleteUnlessRewritten(Blocks.key(ownerId, hash), decidedAt));
+            return true;
         } catch (RuntimeException e) {
-            // ponytail: already claimed, so a failure here is not retried — those blocks stay
-            // orphaned (logged). Re-queue on failure if this shows up in the logs.
-            logger.error("Failed to purge {} uncommitted block(s) of owner {}", hashes.size(), ownerId, e);
+            logger.warn("Failed to purge {} uncommitted block(s) of owner {}; released for the next run",
+                    hashes.size(), ownerId, e);
+            return false;
         }
     }
 }

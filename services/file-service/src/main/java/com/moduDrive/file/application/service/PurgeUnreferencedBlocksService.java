@@ -16,7 +16,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-/** Spec 008: a block whose last reference went away is kept for a day — committing the same bytes
+/** Spec 001: a block whose last reference went away is kept for a day — committing the same bytes
  * again in that time (re-uploading a file right after emptying the trash) just references it again.
  * After that its row is deleted and storage-service told to drop the object, in one transaction
  * (outbox). */

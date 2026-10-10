@@ -3,6 +3,10 @@ package com.moduDrive.storage.adapter.out.s3;
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.storage.config.StorageProperties;
 import com.moduDrive.storage.exception.StorageExceptionCase;
+import io.github.resilience4j.bulkhead.BulkheadConfig;
+import io.github.resilience4j.bulkhead.BulkheadRegistry;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -27,6 +31,7 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.Collections;
@@ -54,6 +59,12 @@ class S3StorageAdapterTest {
     private S3Client s3Client;
 
     private final Map<String, byte[]> fakeBucket = new HashMap<>();
+    private final CircuitBreakerRegistry circuitBreakers = CircuitBreakerRegistry.of(CircuitBreakerConfig.custom()
+            .recordException(new S3Unavailable())
+            .slidingWindowSize(2).minimumNumberOfCalls(2)
+            .build());
+    private final BulkheadRegistry bulkheads = BulkheadRegistry.of(BulkheadConfig.custom()
+            .maxConcurrentCalls(1).maxWaitDuration(Duration.ZERO).build());
     private S3StorageAdapter adapter;
 
     @BeforeEach
@@ -61,7 +72,7 @@ class S3StorageAdapterTest {
         StorageProperties properties = new StorageProperties();
         properties.getS3().setBucket("test-bucket");
         properties.setEncryptionKey(Base64.getEncoder().encodeToString("0123456789abcdef".getBytes(StandardCharsets.UTF_8)));
-        adapter = new S3StorageAdapter(s3Client, properties);
+        adapter = new S3StorageAdapter(s3Client, properties, circuitBreakers, bulkheads);
     }
 
     @Nested
@@ -227,6 +238,60 @@ class S3StorageAdapterTest {
 
             assertThat(((BusinessException) thrown).getExceptionCase()).isEqualTo(StorageExceptionCase.TOO_MANY_BLOCKS);
             then(s3Client).shouldHaveNoInteractions();
+        }
+    }
+
+    @Nested
+    @DisplayName("S3가 응답하지 않을 때 (spec 006 2-4)")
+    class WhenS3IsDown {
+
+        @Test
+        @DisplayName("실패가 쌓여 서킷이 열리면 S3를 부르지 않고 바로 STORAGE_UNAVAILABLE")
+        void opensTheCircuitAndAnswersAtOnce() {
+            given(s3Client.putObject(any(PutObjectRequest.class), any(RequestBody.class)))
+                    .willThrow(SdkClientException.create("timeout"));
+            for (int i = 0; i < 2; i++) {
+                assertThat(((BusinessException) catchThrowable(() -> adapter.storeBlock(KEY, new byte[1])))
+                        .getExceptionCase()).isEqualTo(StorageExceptionCase.STORAGE_ERROR);
+            }
+
+            Throwable thrown = catchThrowable(() -> adapter.retrieveBlocks(List.of(KEY)));
+
+            assertThat(((BusinessException) thrown).getExceptionCase()).isEqualTo(StorageExceptionCase.STORAGE_UNAVAILABLE);
+            then(s3Client).should(never()).getObjectAsBytes(any(GetObjectRequest.class));
+        }
+
+        @Test
+        @DisplayName("없는 객체(404)는 S3 장애로 세지 않는다")
+        void doesNotCountANotFound() {
+            given(s3Client.headObject(any(HeadObjectRequest.class))).willThrow(NoSuchKeyException.builder().statusCode(404).build());
+
+            for (int i = 0; i < 3; i++) {
+                adapter.deleteUnlessRewritten(KEY, DECIDED_AT);
+            }
+
+            assertThat(circuitBreakers.circuitBreaker("s3CircuitBreaker").getMetrics().getNumberOfFailedCalls()).isZero();
+        }
+
+        @Test
+        @DisplayName("업로드 자리가 가득 차면 기다리지 않고 STORAGE_UNAVAILABLE")
+        void refusesWhenTheBulkheadIsFull() {
+            bulkheads.bulkhead("s3Write").tryAcquirePermission();
+
+            Throwable thrown = catchThrowable(() -> adapter.storeBlock(KEY, new byte[1]));
+
+            assertThat(((BusinessException) thrown).getExceptionCase()).isEqualTo(StorageExceptionCase.STORAGE_UNAVAILABLE);
+            then(s3Client).shouldHaveNoInteractions();
+        }
+
+        @Test
+        @DisplayName("업로드 자리가 가득 차도 다운로드는 자기 자리로 S3를 부른다")
+        void keepsReadsApartFromWrites() throws IOException {
+            stubS3();
+            adapter.storeBlock(KEY, "a".getBytes());
+            bulkheads.bulkhead("s3Write").tryAcquirePermission();
+
+            assertThat(adapter.retrieveBlocks(List.of(KEY))).containsExactly("a".getBytes());
         }
     }
 

@@ -18,6 +18,11 @@ output "redis_endpoint" {
   value       = aws_elasticache_replication_group.redis.primary_endpoint_address
 }
 
+output "storage_redis_endpoint" {
+  description = "storage-service's REDIS_HOST (with REDIS_SSL_ENABLED=true)"
+  value       = aws_elasticache_replication_group.storage_redis.primary_endpoint_address
+}
+
 output "storage_bucket" {
   description = "STORAGE_S3_BUCKET"
   value       = aws_s3_bucket.storage.bucket

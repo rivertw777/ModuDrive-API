@@ -10,6 +10,7 @@ import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -17,7 +18,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Uploaded blocks waiting to be committed (spec 008). {@code uploaded-block:{ownerId}:{hash}} holds
+ * Uploaded blocks waiting to be committed (spec 001). {@code uploaded-block:{ownerId}:{hash}} holds
  * the raw size and expires after {@link Blocks#UPLOAD_TTL}; {@code uploaded-blocks} is a sorted set
  * of {@code ownerId:hash} by upload time, so the sweep can still find a block whose record has
  * already expired.
@@ -32,6 +33,8 @@ class RedisUploadedBlockStore implements RecordUploadedBlockPort, FindUploadedBl
 
     private static final RedisScript<Long> RECORD_SCRIPT =
             RedisRepository.loadScript("scripts/uploaded-block-record.lua", Long.class);
+    private static final RedisScript<Long> RELEASE_SCRIPT =
+            RedisRepository.loadScript("scripts/uploaded-block-release.lua", Long.class);
     private static final RedisScript<Long> COUNT_SCRIPT =
             RedisRepository.loadScript("scripts/upload-count.lua", Long.class);
     @SuppressWarnings("rawtypes")
@@ -47,6 +50,11 @@ class RedisUploadedBlockStore implements RecordUploadedBlockPort, FindUploadedBl
                 String.valueOf(Blocks.UPLOAD_TTL.toMillis()),
                 String.valueOf(Instant.now().toEpochMilli()),
                 ownerId + ":" + hash);
+    }
+
+    @Override
+    public void scheduleSweep(UUID ownerId, String hash) {
+        redisRepository.addToSortedSet(INDEX_KEY, ownerId + ":" + hash, Instant.now().toEpochMilli());
     }
 
     @Override
@@ -84,6 +92,17 @@ class RedisUploadedBlockStore implements RecordUploadedBlockPort, FindUploadedBl
             String[] parts = member.split(":");
             return new UploadedBlock(UUID.fromString(parts[0]), parts[1]);
         }).toList();
+    }
+
+    @Override
+    public void release(List<UploadedBlock> blocks, Instant uploadedAt) {
+        if (blocks.isEmpty()) {
+            return;
+        }
+        List<String> args = new ArrayList<>(blocks.size() + 1);
+        args.add(String.valueOf(uploadedAt.toEpochMilli()));
+        blocks.forEach(block -> args.add(block.ownerId() + ":" + block.hash()));
+        redisRepository.executeScript(RELEASE_SCRIPT, List.of(INDEX_KEY), args.toArray(String[]::new));
     }
 
     private static String key(UUID ownerId, String hash) {

@@ -28,7 +28,9 @@ public enum FileExceptionCase implements ExceptionCase {
     INVALID_BATCH_ITEM(HttpStatus.BAD_REQUEST, "업로드 항목의 경로나 크기가 올바르지 않습니다."),
     FILE_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "파일 크기는 5GB를 초과할 수 없습니다."),
     /** The blocklist doesn't fit the declared size, or the uploadId belongs to another file. */
-    INVALID_BLOCKLIST(HttpStatus.BAD_REQUEST, "업로드한 파일 정보가 올바르지 않습니다.");
+    INVALID_BLOCKLIST(HttpStatus.BAD_REQUEST, "업로드한 파일 정보가 올바르지 않습니다."),
+    /** One commit request's blocklists add up to more than 1,280 hashes (spec 001 2장). */
+    COMMIT_TOO_LARGE(HttpStatus.BAD_REQUEST, "한 번에 확정할 수 있는 블록 수를 초과했습니다.");
 
     private final HttpStatus httpStatus;
     private final String message;

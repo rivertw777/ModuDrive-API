@@ -49,6 +49,11 @@ public class RedisRepository {
         return Boolean.TRUE.equals(redisTemplate.expire(key, ttl));
     }
 
+    /** Adds the member, or moves it to {@code score} if it is already there. */
+    public void addToSortedSet(String key, String member, double score) {
+        redisTemplate.opsForZSet().add(key, member, score);
+    }
+
     public <T> T executeScript(RedisScript<T> script, List<String> keys, Object... args) {
         return redisTemplate.execute(script, keys, args);
     }

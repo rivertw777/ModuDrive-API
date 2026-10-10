@@ -20,7 +20,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /** The block aggregate — one row per committed block of an owner, with how many version entries
- * point at it (spec 008). */
+ * point at it (spec 001). */
 @PersistenceAdapter
 @RequiredArgsConstructor
 class BlockPersistenceAdapter implements LockCommittedBlocksPort, FindCommittedBlocksPort, ReferenceBlocksPort,

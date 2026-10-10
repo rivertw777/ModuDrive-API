@@ -7,8 +7,6 @@ import com.moduDrive.file.application.port.in.command.UploadBatchCommand.Item;
 import com.moduDrive.file.application.port.in.usecase.UploadBatchUseCase.UploadedItem;
 import com.moduDrive.file.application.port.out.FindFilePort;
 import com.moduDrive.file.application.port.out.FindNamespacePort;
-import com.moduDrive.file.application.port.out.SaveFileAccessPort;
-import com.moduDrive.file.application.port.out.SaveFilePort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.FileId;
 import com.moduDrive.file.domain.model.File.FileIsDirectory;
@@ -40,12 +38,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willThrow;
-import static org.mockito.Mockito.lenient;
 
 @ExtendWith(MockitoExtension.class)
 class UploadBatchServiceTest {
@@ -54,10 +50,6 @@ class UploadBatchServiceTest {
     private FindNamespacePort findNamespacePort;
     @Mock
     private FindFilePort findFilePort;
-    @Mock
-    private SaveFilePort saveFilePort;
-    @Mock
-    private SaveFileAccessPort saveFileAccessPort;
     @Mock
     private FileAccessGuard fileAccessGuard;
     @InjectMocks
@@ -100,17 +92,6 @@ class UploadBatchServiceTest {
         given(findFilePort.findByNamespaceIdAndPath(any(), eq(target))).willReturn(List.of(files));
     }
 
-    /** Hands back what was saved, with ids assigned the way the DB would. Lenient: a batch only
-     * hits saveFile when it replaces something and saveNewFiles when it creates something. */
-    private void givenSaveReturnsArgument() {
-        lenient().when(saveFilePort.saveFile(any(File.class))).thenAnswer(inv -> inv.getArgument(0));
-        lenient().when(saveFilePort.saveNewFiles(anyList())).thenAnswer(inv -> inv.<List<File>>getArgument(0).stream()
-                .map(f -> File.withId(new FileId(UUID.randomUUID()), new FileNamespaceId(f.getNamespaceId()),
-                        new FileName(f.getName()), new FilePath(f.getPath()), new FileOwnerId(f.getOwnerId()),
-                        null, null, f.getStatus(), new FileIsDirectory(f.isDirectory())))
-                .toList());
-    }
-
     private static void assertFails(Throwable thrown, FileExceptionCase expected) {
         assertThat(thrown)
                 .isInstanceOf(BusinessException.class)
@@ -123,54 +104,23 @@ class UploadBatchServiceTest {
     class WhenNothingConflicts {
 
         @Test
-        @DisplayName("중간 폴더까지 부모부터 순서대로 만들고, 폴더는 UPLOADED·파일은 PENDING이다")
-        void createsTheWholeTreeParentsFirst() {
+        @DisplayName("중간 폴더까지 부모부터 순서대로 올라갈 자리를 돌려주고, 아무것도 만들지 않는다")
+        void plansTheWholeTreeParentsFirstWithoutCreatingAnything() {
             givenNamespace();
             givenExistingInTarget("/");
-            givenSaveReturnsArgument();
 
             List<UploadedItem> result = uploadBatchService.uploadBatch(command("/", List.of(
                     file("사진/2024/a.jpg"), folder("사진/빈폴더"), file("보고서.pdf"))));
 
             assertThat(result)
-                    .extracting(UploadedItem::relativePath, i -> i.file().getPath(), i -> i.file().getName(),
-                            i -> i.file().getStatus(), UploadedItem::replaced)
+                    .extracting(UploadedItem::relativePath, UploadedItem::path, UploadedItem::name,
+                            UploadedItem::directory, UploadedItem::fileId, UploadedItem::replaced)
                     .containsExactly(
-                            tuple("사진", "/", "사진", FileStatus.UPLOADED, false),
-                            tuple("사진/2024", "/사진", "2024", FileStatus.UPLOADED, false),
-                            tuple("사진/2024/a.jpg", "/사진/2024", "a.jpg", FileStatus.PENDING, false),
-                            tuple("사진/빈폴더", "/사진", "빈폴더", FileStatus.UPLOADED, false),
-                            tuple("보고서.pdf", "/", "보고서.pdf", FileStatus.PENDING, false));
-        }
-
-        @Test
-        @DisplayName("최근 문서함에는 폴더를 빼고 파일만 한 번에 기록한다")
-        void recordsAccessForFilesOnlyInOnePass() {
-            givenNamespace();
-            givenExistingInTarget("/");
-            givenSaveReturnsArgument();
-
-            List<UploadedItem> result = uploadBatchService.uploadBatch(command("/", List.of(
-                    file("사진/a.jpg"), folder("빈폴더"), file("b.txt"))));
-
-            List<UUID> fileIds = result.stream()
-                    .filter(item -> !item.file().isDirectory())
-                    .map(item -> item.file().getId())
-                    .toList();
-            assertThat(fileIds).hasSize(2);
-            then(saveFileAccessPort).should().recordAccesses(eq(userId), eq(fileIds), any());
-        }
-
-        @Test
-        @DisplayName("폴더만 올리면 최근 문서함에 기록하지 않는다")
-        void recordsNothingForFoldersOnly() {
-            givenNamespace();
-            givenExistingInTarget("/");
-            givenSaveReturnsArgument();
-
-            uploadBatchService.uploadBatch(command("/", List.of(folder("빈폴더"))));
-
-            then(saveFileAccessPort).shouldHaveNoInteractions();
+                            tuple("사진", "/", "사진", true, null, false),
+                            tuple("사진/2024", "/사진", "2024", true, null, false),
+                            tuple("사진/2024/a.jpg", "/사진/2024", "a.jpg", false, null, false),
+                            tuple("사진/빈폴더", "/사진", "빈폴더", true, null, false),
+                            tuple("보고서.pdf", "/", "보고서.pdf", false, null, false));
         }
 
         @Test
@@ -178,7 +128,6 @@ class UploadBatchServiceTest {
         void createsAFolderListedAfterItsChildOnlyOnce() {
             givenNamespace();
             givenExistingInTarget("/");
-            givenSaveReturnsArgument();
 
             List<UploadedItem> result = uploadBatchService.uploadBatch(command("/", List.of(
                     file("사진/a.jpg"), folder("사진"))));
@@ -193,12 +142,11 @@ class UploadBatchServiceTest {
             given(findFilePort.findActiveByNamespaceIdAndPathAndName(any(), eq("/"), eq("업무")))
                     .willReturn(Optional.of(existing("업무", "/", true)));
             givenExistingInTarget("/업무");
-            givenSaveReturnsArgument();
 
             List<UploadedItem> result = uploadBatchService.uploadBatch(command("/업무", List.of(file("사진/a.jpg"))));
 
             assertThat(result)
-                    .extracting(i -> i.file().getPath())
+                    .extracting(UploadedItem::path)
                     .containsExactly("/업무", "/업무/사진");
         }
 
@@ -207,7 +155,6 @@ class UploadBatchServiceTest {
         void acceptsAnEmptyFile() {
             givenNamespace();
             givenExistingInTarget("/");
-            givenSaveReturnsArgument();
 
             List<UploadedItem> result = uploadBatchService.uploadBatch(command("/", List.of(
                     new Item(".gitkeep", false, 0L))));
@@ -227,12 +174,11 @@ class UploadBatchServiceTest {
         void numbersAFolderAndMovesItsChildrenUnderTheNewName() {
             givenNamespace();
             givenExistingInTarget("/", existing("사진", "/", true));
-            givenSaveReturnsArgument();
 
             List<UploadedItem> result = uploadBatchService.uploadBatch(command("/", List.of(file("사진/a.jpg")), keepBoth));
 
             assertThat(result)
-                    .extracting(UploadedItem::relativePath, i -> i.file().getPath(), i -> i.file().getName())
+                    .extracting(UploadedItem::relativePath, UploadedItem::path, UploadedItem::name)
                     .containsExactly(
                             tuple("사진", "/", "사진 (1)"),
                             tuple("사진/a.jpg", "/사진 (1)", "a.jpg"));
@@ -243,11 +189,10 @@ class UploadBatchServiceTest {
         void skipsNumbersAlreadyTaken() {
             givenNamespace();
             givenExistingInTarget("/", existing("사진", "/", true), existing("사진 (1)", "/", true));
-            givenSaveReturnsArgument();
 
             List<UploadedItem> result = uploadBatchService.uploadBatch(command("/", List.of(folder("사진")), keepBoth));
 
-            assertThat(result).extracting(i -> i.file().getName()).containsExactly("사진 (2)");
+            assertThat(result).extracting(UploadedItem::name).containsExactly("사진 (2)");
         }
 
         @Test
@@ -255,11 +200,10 @@ class UploadBatchServiceTest {
         void numbersAFileClashingWithAFolder() {
             givenNamespace();
             givenExistingInTarget("/", existing("자료", "/", true));
-            givenSaveReturnsArgument();
 
             List<UploadedItem> result = uploadBatchService.uploadBatch(command("/", List.of(file("자료"))));
 
-            assertThat(result).extracting(i -> i.file().getName()).containsExactly("자료 (1)");
+            assertThat(result).extracting(UploadedItem::name).containsExactly("자료 (1)");
             then(fileAccessGuard).shouldHaveNoInteractions();
         }
 
@@ -268,12 +212,11 @@ class UploadBatchServiceTest {
         void numberingNeverTakesANameAnotherEntryOfTheBatchAskedFor() {
             givenNamespace();
             givenExistingInTarget("/", existing("사진", "/", true));
-            givenSaveReturnsArgument();
 
             List<UploadedItem> result = uploadBatchService.uploadBatch(command("/", List.of(
                     folder("사진"), folder("사진 (1)")), keepBoth));
 
-            assertThat(result).extracting(i -> i.file().getName()).containsExactly("사진 (2)", "사진 (1)");
+            assertThat(result).extracting(UploadedItem::name).containsExactly("사진 (2)", "사진 (1)");
         }
     }
 
@@ -294,7 +237,6 @@ class UploadBatchServiceTest {
 
             assertFails(thrown, FileExceptionCase.FILE_BATCH_CONFLICT);
             assertThat(((BusinessException) thrown).getData()).isEqualTo(Map.of("conflicts", List.of("사진", "a.txt")));
-            then(saveFilePort).shouldHaveNoInteractions();
         }
 
         @Test
@@ -307,14 +249,13 @@ class UploadBatchServiceTest {
             givenExistingInTarget("/", photos);
             givenExistingInTarget("/사진", oldPhoto, year, clashingKind);
             givenExistingInTarget("/사진/2024", existing("c.jpg", "/사진/2024", false));
-            givenSaveReturnsArgument();
 
             List<UploadedItem> result = uploadBatchService.uploadBatch(command("/", List.of(
                     file("사진/a.jpg"), file("사진/b.jpg"), file("사진/2024/d.jpg"), folder("사진/메모")),
                     Map.of("사진", ConflictResolution.REPLACE)));
 
             assertThat(result)
-                    .extracting(UploadedItem::relativePath, i -> i.file().getPath(), i -> i.file().getName(),
+                    .extracting(UploadedItem::relativePath, UploadedItem::path, UploadedItem::name,
                             UploadedItem::replaced)
                     .containsExactly(
                             tuple("사진", "/", "사진", true),
@@ -323,8 +264,9 @@ class UploadBatchServiceTest {
                             tuple("사진/2024", "/사진", "2024", true),
                             tuple("사진/2024/d.jpg", "/사진/2024", "d.jpg", false),
                             tuple("사진/메모", "/사진", "메모 (1)", false));
-            assertThat(result.get(0).file().getId()).isEqualTo(photos.getId());
-            assertThat(oldPhoto.getStatus()).isEqualTo(FileStatus.PENDING);
+            assertThat(result.get(0).fileId()).isEqualTo(photos.getId());
+            assertThat(result.get(1).fileId()).isEqualTo(oldPhoto.getId());
+            assertThat(oldPhoto.getStatus()).isEqualTo(FileStatus.UPLOADED);
             then(fileAccessGuard).should().requireOwner(photos, userId);
             then(fileAccessGuard).should().requireOwner(oldPhoto, userId);
         }
@@ -334,7 +276,6 @@ class UploadBatchServiceTest {
         void skipLeavesTheWholeFolderOut() {
             givenNamespace();
             givenExistingInTarget("/", photos);
-            givenSaveReturnsArgument();
 
             List<UploadedItem> result = uploadBatchService.uploadBatch(command("/",
                     List.of(file("사진/2024/a.jpg"), file("b.txt")), Map.of("사진", ConflictResolution.SKIP)));
@@ -362,23 +303,21 @@ class UploadBatchServiceTest {
             assertFails(thrown, FileExceptionCase.FILE_BATCH_CONFLICT);
             assertThat(((BusinessException) thrown).getData())
                     .isEqualTo(Map.of("conflicts", List.of("보고서.pdf", "a.txt")));
-            then(saveFilePort).shouldHaveNoInteractions();
         }
 
         @Test
-        @DisplayName("대체를 고르면 같은 파일을 PENDING으로 되돌려 새 버전을 받는다")
+        @DisplayName("대체를 고르면 기존 파일을 가리키고, 상태는 바꾸지 않는다")
         void replaceReusesTheExistingFile() {
             givenNamespace();
             givenExistingInTarget("/", report);
-            givenSaveReturnsArgument();
 
             List<UploadedItem> result = uploadBatchService.uploadBatch(command("/", List.of(file("보고서.pdf")),
                     Map.of("보고서.pdf", ConflictResolution.REPLACE)));
 
             assertThat(result).singleElement().satisfies(item -> {
                 assertThat(item.replaced()).isTrue();
-                assertThat(item.file().getId()).isEqualTo(report.getId());
-                assertThat(item.file().getStatus()).isEqualTo(FileStatus.PENDING);
+                assertThat(item.fileId()).isEqualTo(report.getId());
+                assertThat(report.getStatus()).isEqualTo(FileStatus.UPLOADED);
             });
             then(fileAccessGuard).should().requireOwner(report, userId);
         }
@@ -395,7 +334,6 @@ class UploadBatchServiceTest {
                     List.of(file("보고서.pdf")), Map.of("보고서.pdf", ConflictResolution.REPLACE))));
 
             assertFails(thrown, FileExceptionCase.FILE_ACCESS_DENIED);
-            then(saveFilePort).shouldHaveNoInteractions();
         }
 
         @Test
@@ -403,15 +341,14 @@ class UploadBatchServiceTest {
         void keepBothCreatesANumberedFile() {
             givenNamespace();
             givenExistingInTarget("/", report);
-            givenSaveReturnsArgument();
 
             List<UploadedItem> result = uploadBatchService.uploadBatch(command("/", List.of(file("보고서.pdf")),
                     Map.of("보고서.pdf", ConflictResolution.KEEP_BOTH)));
 
             assertThat(result).singleElement().satisfies(item -> {
                 assertThat(item.replaced()).isFalse();
-                assertThat(item.file().getName()).isEqualTo("보고서 (1).pdf");
-                assertThat(item.file().getId()).isNotEqualTo(report.getId());
+                assertThat(item.name()).isEqualTo("보고서 (1).pdf");
+                assertThat(item.fileId()).isNull();
             });
         }
 
@@ -420,7 +357,6 @@ class UploadBatchServiceTest {
         void skipLeavesOnlyThatFileOut() {
             givenNamespace();
             givenExistingInTarget("/", report);
-            givenSaveReturnsArgument();
 
             List<UploadedItem> result = uploadBatchService.uploadBatch(command("/",
                     List.of(file("보고서.pdf"), file("a.txt")), Map.of("보고서.pdf", ConflictResolution.SKIP)));
@@ -455,7 +391,6 @@ class UploadBatchServiceTest {
             Throwable thrown = catchThrowable(() -> uploadBatchService.uploadBatch(command("/업무", List.of(file("a.txt")))));
 
             assertFails(thrown, FileExceptionCase.DIRECTORY_NOT_FOUND);
-            then(saveFilePort).shouldHaveNoInteractions();
         }
 
         @Test
@@ -481,7 +416,6 @@ class UploadBatchServiceTest {
             Throwable thrown = catchThrowable(() -> uploadBatchService.uploadBatch(command("/", items)));
 
             assertFails(thrown, FileExceptionCase.INVALID_BATCH_ITEM);
-            then(saveFilePort).shouldHaveNoInteractions();
         }
 
         @Test
@@ -514,7 +448,6 @@ class UploadBatchServiceTest {
         void rejectsAParentPathLongerThanTheColumn() {
             givenNamespace();
             givenExistingInTarget("/");
-            givenSaveReturnsArgument();
             String deep = "d".repeat(200) + "/" + "e".repeat(60) + "/a.txt"; // parent "/ddd…/eee…" = 262자
 
             Throwable thrown = catchThrowable(() -> uploadBatchService.uploadBatch(command("/", List.of(file(deep)))));
@@ -533,7 +466,6 @@ class UploadBatchServiceTest {
                     Map.of(longName, ConflictResolution.KEEP_BOTH))));
 
             assertFails(thrown, FileExceptionCase.INVALID_BATCH_ITEM);
-            then(saveFilePort).shouldHaveNoInteractions();
         }
 
         @Test
