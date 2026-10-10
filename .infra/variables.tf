@@ -8,15 +8,15 @@ variable "project" {
   default = "modudrive"
 }
 
-# Which stack this is — demo, staging or prod. Each lives in its own AWS account with its own state
+# Which stack this is — demo or prod. Each lives in its own AWS account with its own state
 # bucket (envs/<env>.backend.hcl), so nothing here is named per environment; it only tags resources
 # and names the GitHub environment the deploy role trusts (github.tf).
 variable "environment" {
   type = string
 
   validation {
-    condition     = contains(["demo", "staging", "prod"], var.environment)
-    error_message = "environment is demo, staging or prod."
+    condition     = contains(["demo", "prod"], var.environment)
+    error_message = "environment is demo or prod."
   }
 }
 
@@ -47,7 +47,7 @@ variable "image_tag" {
 
 # Sizing — the same architecture at every size; only what costs money and what buys redundancy
 # differs. No defaults: every plan names its whole set with -var-file — envs/demo.tfvars (the trial
-# stack), envs/staging.tfvars (prod's shape at the smallest size) or envs/prod.tfvars — never a mix.
+# stack) or envs/prod.tfvars — never a mix.
 
 # How the tasks (always in private subnets) reach the internet — ECR, SSM, SQS, SES, Discord:
 #   "gateway"  — a managed NAT gateway per AZ (~$45/month each), nothing to run
