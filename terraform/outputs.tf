@@ -13,14 +13,9 @@ output "postgres_master_secret_arn" {
   value       = aws_db_instance.postgres.master_user_secret[0].secret_arn
 }
 
-output "redis_endpoint" {
-  description = "REDIS_HOST (with REDIS_SSL_ENABLED=true)"
-  value       = aws_elasticache_replication_group.redis.primary_endpoint_address
-}
-
-output "storage_redis_endpoint" {
-  description = "storage-service's REDIS_HOST (with REDIS_SSL_ENABLED=true)"
-  value       = aws_elasticache_replication_group.storage_redis.primary_endpoint_address
+output "redis_hosts" {
+  description = "REDIS_HOST per service (with REDIS_SSL_ENABLED=true)"
+  value       = local.redis_host
 }
 
 output "storage_bucket" {

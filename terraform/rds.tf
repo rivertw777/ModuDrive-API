@@ -6,7 +6,7 @@ resource "aws_db_instance" "postgres" {
   identifier     = var.project
   engine         = "postgres"
   engine_version = "18"
-  instance_class = local.scale.db_instance_class
+  instance_class = var.db_instance_class
 
   allocated_storage     = 20
   max_allocated_storage = 200
@@ -21,12 +21,12 @@ resource "aws_db_instance" "postgres" {
   vpc_security_group_ids = [aws_security_group.postgres.id]
   publicly_accessible    = false
 
-  # A standby in the other AZ at production scale; Aurora is the next step past that (2-4).
-  multi_az = local.scale.db_multi_az
+  # A standby in the other AZ in prod; Aurora is the next step past that (2-4).
+  multi_az = var.db_multi_az
 
   backup_retention_period    = 7
   auto_minor_version_upgrade = true
-  deletion_protection        = local.scale.deletion_protection
-  skip_final_snapshot        = !local.scale.deletion_protection
-  final_snapshot_identifier  = local.scale.deletion_protection ? "${var.project}-final" : null
+  deletion_protection        = var.deletion_protection
+  skip_final_snapshot        = !var.deletion_protection
+  final_snapshot_identifier  = var.deletion_protection ? "${var.project}-final" : null
 }
