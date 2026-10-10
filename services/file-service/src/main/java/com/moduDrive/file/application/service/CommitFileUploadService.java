@@ -92,6 +92,12 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
 
         CommitResult[] results = new CommitResult[commands.size()];
         Set<String> asked = new LinkedHashSet<>();
+        // Drive quota (quota_bytes, trash included — the sum the usage screen shows), checked before
+        // any block is asked for, so a file that won't fit is turned away before its bytes are sent.
+        // ponytail: one sum per request and a running total, not a lock — two requests committing at
+        // once can each pass and overshoot by a group; lock the namespace row if that ever matters.
+        NamespaceId namespaceId = new NamespaceId(namespace.getId());
+        long used = findFilePort.sumFileSizeByNamespaceId(namespaceId);
         for (int i = 0; i < commands.size(); i++) {
             try {
                 results[i] = alreadyDone(commands.get(i), ownerId);
@@ -99,7 +105,17 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
                 results[i] = CommitResult.failed(e.getExceptionCase());
             }
             if (results[i] == null) {
-                asked.addAll(commands.get(i).getBlocklist().value());
+                long growth = growthOf(commands.get(i), namespaceId);
+                // Every growing file of the group counted, committed or not yet — the second commit
+                // of the same files sees them all again, and they must fit together. A file that
+                // doesn't grow the drive always goes through, and frees nothing for the others: it
+                // may never be committed (its blocks may never come).
+                if (growth > 0 && used + growth > namespace.getQuotaBytes()) {
+                    results[i] = CommitResult.failed(FileExceptionCase.QUOTA_EXCEEDED);
+                } else {
+                    used += Math.max(growth, 0);
+                    asked.addAll(commands.get(i).getBlocklist().value());
+                }
             }
         }
 
@@ -191,6 +207,9 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
                 return DirectoryResult.created(folder.getId());
             } catch (BusinessException e) {
                 return DirectoryResult.failed(e.getExceptionCase());
+            } catch (PessimisticLockingFailureException e) {
+                // A lock cycle Postgres broke, as for a file: only this folder fails.
+                return DirectoryResult.failed(CircuitBreakerExceptionCase.SERVICE_UNAVAILABLE);
             }
         }).toList();
     }
@@ -308,6 +327,17 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
             parent = UploadBatchService.child(parent, segment);
         }
         return folder;
+    }
+
+    /** How much the drive grows if this file is committed: its size, less the current size of the
+     * file it replaces at that spot — counted only where the usage sum counts it (not a folder, not a
+     * PENDING row an old upload flow left). */
+    private long growthOf(CommitFileUploadCommand command, NamespaceId namespaceId) {
+        long replaced = findFilePort.findActiveByNamespaceIdAndPathAndName(namespaceId, command.getPath(), command.getName())
+                .filter(file -> !file.isDirectory() && file.getStatus() != FileStatus.PENDING && file.getFileSize() != null)
+                .map(File::getFileSize)
+                .orElse(0L);
+        return command.getFileSize().value() - replaced;
     }
 
     private static void requireSpot(String path, String name) {

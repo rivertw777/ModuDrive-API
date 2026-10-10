@@ -74,7 +74,10 @@
 - 크기·Multi-AZ는 규모 프로필(2-12)로 정한다 — 테스트는 db.t4g.micro 단일 AZ, 운영은 db.m7g.large Multi-AZ. 자동 백업 7일. 그 이상은 Aurora 검토.
 
 ### 2-5. Redis → ElastiCache for Valkey
-- 사용처: auth(토큰), member(인증 코드), storage(다운로드 쿼터), mail(메시지 중복 처리 방지).
+- 두 개로 나눈다 (`terraform/redis.tf`, [006 2-4-6](spec/006-resilience-spec.md#2-4-6-redis-분리)).
+  - `redis`: auth(세션·로그인 제한), member(인증 코드), mail(메시지 중복 처리 방지).
+  - `storage_redis`: storage(업로드 기록·업로드 수·다운로드 한도·zip 토큰) — 대량 업로드가 세션 메모리를 채우지 못하게.
+  - 둘 다 `maxmemory-policy noeviction` 파라미터 그룹(`valkey8`, 엔진 8.1 고정). 기존 클러스터에 적용하면 엔진 버전을 먼저 확인한다.
 - Valkey는 Redis 호환. **전송 암호화(TLS)를 켠다** — 켜면 TLS 연결만 받는다.
   앱은 `application-redis.yml`의 `ssl.enabled`가 `REDIS_SSL_ENABLED`(기본 false)를 읽으므로, ECS 태스크 정의에 `REDIS_SSL_ENABLED=true`만 넣으면 된다.
   인증서는 Amazon 발급이라 JVM 기본 trust store로 검증된다(SSL bundle 불필요). `REDIS_PASSWORD`는 ElastiCache AUTH 토큰 — AUTH는 TLS가 켜져 있어야 쓸 수 있다.

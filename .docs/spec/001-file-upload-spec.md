@@ -80,6 +80,16 @@ sequenceDiagram
    - 선택하지 않은 충돌이 있으면 409 `FILE_BATCH_CONFLICT` + 충돌한 이름 목록. 사용자가 `REPLACE`/`KEEP_BOTH`/`SKIP`을 고르면 `resolutions`에 담아 다시 보낸다.
    - 200이면 항목마다 실제로 올라갈 `path`·`name`(`KEEP_BOTH`면 번호 붙은 이름)과 `replaced`(같은 이름의 기존 파일을 대체하면 true, 그 파일의 `fileId`)를 돌려준다. `SKIP`한 항목은 빠진다.
    - 조회일 뿐이라 그 사이 다른 업로드가 같은 이름을 차지할 수 있다. 그때는 commit이 그 자리의 파일에 새 버전을 올린다 (아래 3번).
+
+   **batch 검증** (요청 전체가 실패한다)
+
+   | 확인 | 실패 |
+   |---|---|
+   | 항목 1~5,000개, 항목마다 `relativePath`(255자 이하)·`directory` 있음 | 400 (요청 검증) |
+   | 네임스페이스 있음 | 404 `NAMESPACE_NOT_FOUND` |
+   | 올릴 폴더(`path`)가 `/`이거나 호출자 드라이브의 활성 폴더 (정규형 경로) — 공유받은 폴더로는 올릴 수 없다 | 404 `DIRECTORY_NOT_FOUND` |
+   | `relativePath`가 겹치지 않고 세그먼트마다 이름 규칙에 맞음, 파일은 `size`가 0~5GB, 파일로 적은 경로를 다른 항목의 폴더로 쓰지 않음, 번호를 붙인 뒤에도 이름·경로가 255자 이하 | 400 `INVALID_BATCH_ITEM` |
+   | 최상위의 같은 종류 충돌에 `resolutions`가 모두 있음 | 409 `FILE_BATCH_CONFLICT` + `conflicts` |
 2. **해시 계산·묶기** — 파일마다 4MB씩 잘라(마지막 블록만 작음) 블록마다 SHA-256을 계산한다 (`crypto.subtle.digest`). 순서대로 늘어놓은 해시가 그 파일의 blocklist다.
    - **파일을 고르자마자** 계산을 시작한다. 1번 batch 요청과 충돌 선택 대화상자를 기다리는 동안 해시가 돌아, 그 시간이 통째로 숨는다.
    - 해시는 **Web Worker 풀**(코어 수만큼, 최대 8개)에서 계산한다. 블록 16개(64MB)씩 나눠 여러 Worker에 돌리므로 큰 파일도 코어 수만큼 빨라지고, 그동안 화면이 멈추지 않는다. Worker 하나는 블록 하나만 메모리에 둔다.
@@ -108,7 +118,7 @@ sequenceDiagram
    - 해시가 다르거나 빈 블록, `hash`와 `block` 개수가 다름: 400 `INVALID_BLOCK`
    - 블록 하나가 4MB 초과: 413 `BLOCK_TOO_LARGE`. 요청 합이 8MB 초과이거나 64개 초과: 413 `BLOCK_BATCH_TOO_LARGE`
    - S3 장애(서킷 열림)이거나 동시 업로드 자리가 가득 참: 503 `STORAGE_UNAVAILABLE` — 기다리지 않고 바로 답한다. WEB이 자동으로 다시 보낸다 ([006 2-4](006-resilience-spec.md#2-4-s3-호출-storage-service)). 요청 중간에 실패하면 일부 블록만 저장됐을 수 있지만, 다시 보내면 덮어쓰므로 무해하다
-   - 사용자당 24시간에 블록 25,600개(4MB 기준 100GB) 초과: 429 `UPLOAD_LIMIT_EXCEEDED` (`STORAGE_UPLOAD_BLOCKS_PER_WINDOW`). 블록 하나마다 센다. commit되지 않은 블록은 용량 한도에 잡히지 않으므로, 이 한도가 없으면 S3와 Redis를 무한히 채울 수 있다. WEB은 이 429를 **다시 보내지 않는다** — 업로드 경로의 429는 이것뿐이고, 24시간 창이라 몇 초 뒤 다시 보내도 같다
+   - 사용자당 24시간에 블록 25,600개(4MB 기준 100GB) 초과: 429 `UPLOAD_LIMIT_EXCEEDED` (`STORAGE_UPLOAD_BLOCKS_PER_WINDOW`). 블록 하나마다 센다. 이 한도가 없으면 commit하지 않을 블록으로 S3와 Redis를 무한히 채울 수 있다. 드라이브 용량 한도는 이와 별개로 commit이 검사한다 (아래 commit 검증). WEB은 이 429를 **다시 보내지 않는다** — 업로드 경로의 429는 이것뿐이고, 24시간 창이라 몇 초 뒤 다시 보내도 같다
 5. **다시 commit** (needBlocks가 있던 파일만) — 그 파일들을 같은 내용으로 한 번에 다시 보낸다. 빠진 블록이 없으면 파일마다 버전을 만든다. 그래도 빠진 블록이 있거나(그 사이 24시간이 지난 경우) 블록 전송이 끝내 실패한 파일은 WEB이 실패로 표시한다.
 6. **응답** — commit 응답(`fileId`, `versionId`)이 곧 완료다. storage-service → file-service 완료 콜백은 없다.
 
@@ -138,10 +148,18 @@ sequenceDiagram
 | `path`가 `/` 또는 정규형 절대 경로, `name`이 이름 규칙에 맞음, 둘 다 255자 이하 | 400 `INVALID_BATCH_ITEM` |
 | `uploadId`로 만든 버전이 있다면 호출자의 것이고 `size`·`blocklist`도 같음 | 400 `INVALID_BLOCKLIST` |
 | `size` ≤ 5GB | 413 `FILE_TOO_LARGE` |
+| 드라이브 사용량 + 이 파일이 늘리는 크기 ≤ 용량 한도(`namespace.quota_bytes`, 기본 20GB) | 413 `QUOTA_EXCEEDED` — WEB은 그 행에 "저장 공간 부족"을 표시한다 |
 | `blocklist` 길이 = `ceil(size / 4MB)` (빈 파일은 0) | 400 `INVALID_BLOCKLIST` |
 | 마지막을 뺀 블록은 모두 정확히 4MB, 마지막은 1바이트~4MB, 합 = `size` | 400 `INVALID_BLOCKLIST` — 크기는 `block` 행·Redis 표시에 저장된 실제 값 |
-| 그 자리에 폴더가 없음 (버전을 만들 때만) | 400 `FILE_ALREADY_EXISTS` |
+| 그 자리에 폴더가 없고, 상위 경로 중간에 파일이 없음 (버전을 만들 때만) | 400 `FILE_ALREADY_EXISTS` |
+| `block` 행에 없는 블록이 있는데 storage-service 조회가 실패함 (서킷 열림·시간 초과·5xx) | 503 (그 조회의 오류) |
+| Postgres가 잠금 순환(교착)을 끊음 | 503 — 다시 보내면 된다 |
 
+- **용량 한도**는 블록을 묻기 전에 검사해서, 들어가지 않을 파일은 블록 전송 없이 첫 commit에서 거절한다.
+  - 사용량은 사용량 화면과 같은 합(폴더 제외, 휴지통 포함, 영구 삭제 제외)이다. 대체 업로드는 기존 파일 크기를 뺀 늘어나는 만큼만 센다.
+  - 사용량을 늘리지 않는 파일(같거나 작아지는 대체)은 한도를 넘은 드라이브에서도 통과한다. 대신 줄어드는 만큼을 같은 묶음의 다른 파일에 내주지 않는다 — 그 파일은 블록이 끝내 안 와서 commit되지 않을 수도 있다.
+  - 묶음 안에서는 앞 파일부터 차례로 센다. 넘치는 파일만 실패하고, 들어가는 뒤 파일은 계속 간다.
+  - 요청마다 합을 한 번 구하고 잠그지 않는다. 동시에 commit하는 두 요청은 각자 통과해 한 묶음만큼 넘을 수 있다.
 - **같은 `uploadId`로 이미 버전이 있으면** 그 버전을 그대로 돌려준다. 응답이 유실된 commit을 다시 보내도 버전이 둘 생기지 않는다 (`file_version.upload_id` unique). 같은 commit 두 개가 동시에 와서 진 쪽이 유니크 자리(파일 자리·`upload_id`)에 걸리면, 이긴 쪽 버전을 답한다.
 - **현재 버전과 내용(`size`·`blocklist`)이 같고 파일이 `UPLOADED`면** 새 버전을 만들지 않고 현재 버전을 답한다. 바뀌지 않은 파일을 다시 올려도 버전과 블록 참조가 쌓이지 않는다.
 - 버전을 만드는 트랜잭션은 상위 폴더부터 대상 파일까지 **위에서부터 잠근다**(`FOR UPDATE`). 휴지통 이동도 대상 행과 그 하위 전체를 같은 순서(경로·이름 순)로 잠그고 읽는다.
@@ -152,7 +170,7 @@ sequenceDiagram
   - 영구 삭제는 대상을 잠근 뒤 다시 읽어 여전히 같은 휴지통 항목일 때만 지우고, 하위는 휴지통에 있는 행만 잠근다. 같은 경로를 다시 쓰는 살아 있는 폴더까지 잠그면 commit(블록 → 행)과 순서가 엇갈리기 때문이다. 행을 tombstone으로 바꾼 뒤(여전히 `TRASHED`였을 때만) 버전·공유·즐겨찾기를 지워서, 그사이 복원된 파일은 아무것도 잃지 않는다.
   - 저장은 바뀐 컬럼만 쓴다(`@DynamicUpdate`). 그사이 commit이 바꾼 현재 버전·크기를 옛 값으로 되돌리지 않는다.
   - file-service는 open-in-view를 끈다. 켜 두면 요청 하나가 EntityManager를 공유해, 잠그고 다시 읽어도 앞서 캐시된 옛 상태를 본다.
-  - Postgres가 잠금 순환을 끊으면(교착 상태) 그 파일만 503으로 실패하고 다시 보내면 된다.
+  - Postgres가 잠금 순환을 끊으면(교착 상태) 그 파일(`directories`면 그 폴더)만 503으로 실패하고 다시 보내면 된다.
 - 폴더 영구 삭제는 하위 파일 전부의 버전을 모아 블록 해제를 **한 번** 한다 ([2-3](#2-3-블록-정리)).
 - 같은 해시를 다시 보내면 그냥 덮어쓴다. 내용이 같으므로 무해하다.
 - storage-service 메모리는 요청당 블록 합 8MB까지 쓴다 (multipart 한도 `STORAGE_MULTIPART_MAX_REQUEST_SIZE` 9MB).
