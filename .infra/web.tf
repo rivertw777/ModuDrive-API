@@ -219,3 +219,58 @@ resource "aws_route53_record" "web" {
     evaluate_target_health = false
   }
 }
+
+# ModuDrive-WEB's deploy workflow assumes this through GitHub's OIDC: upload dist/ and invalidate the
+# cache, nothing else. Trusts only that repository's <env> GitHub environment.
+data "aws_iam_policy_document" "github_web_deploy_assume" {
+  count = local.domain_based ? 1 : 0
+
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.github.arn]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = ["repo:${var.web_github_repository}:environment:${var.environment}"]
+    }
+  }
+}
+
+resource "aws_iam_role" "github_web_deploy" {
+  count = local.domain_based ? 1 : 0
+
+  name               = "${var.project}-github-web-deploy"
+  assume_role_policy = data.aws_iam_policy_document.github_web_deploy_assume[0].json
+}
+
+data "aws_iam_policy_document" "github_web_deploy" {
+  count = local.domain_based ? 1 : 0
+
+  statement {
+    actions   = ["s3:ListBucket"]
+    resources = [aws_s3_bucket.web[0].arn]
+  }
+  statement {
+    actions   = ["s3:PutObject", "s3:DeleteObject"]
+    resources = ["${aws_s3_bucket.web[0].arn}/*"]
+  }
+  statement {
+    actions   = ["cloudfront:CreateInvalidation", "cloudfront:GetInvalidation"]
+    resources = [aws_cloudfront_distribution.web[0].arn]
+  }
+}
+
+resource "aws_iam_role_policy" "github_web_deploy" {
+  count = local.domain_based ? 1 : 0
+
+  role   = aws_iam_role.github_web_deploy[0].id
+  policy = data.aws_iam_policy_document.github_web_deploy[0].json
+}
