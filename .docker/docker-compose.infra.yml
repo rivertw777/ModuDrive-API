@@ -67,7 +67,8 @@ services:
       - ./mailpit:/app:ro
     restart: unless-stopped
 
-  # Local stand-in for Amazon SQS, S3, SES and SNS (SES events). Queues, the bucket and the sender identity come from localstack/init-aws.sh, run
+  # Local stand-in for Amazon SQS, S3, SES, SNS (SES events, alerts), Lambda and SSM (the Discord alert
+  # forwarder and its webhook URLs). Queues, the bucket, the sender identity and the alert pipeline come from localstack/init-aws.sh, run
   # on every start. In memory only — the free plan has no persistence, so a restart drops queued
   # messages and every uploaded block while Postgres keeps the file rows: `make reset` after one.
   # localstack_data only caches the license. Needs a (free, non-commercial) auth token.
@@ -79,7 +80,14 @@ services:
       - "127.0.0.1:4566:4566"
     environment:
       - LOCALSTACK_AUTH_TOKEN=${LOCALSTACK_AUTH_TOKEN:?set LOCALSTACK_AUTH_TOKEN in .docker/.env}
-      - SERVICES=s3,sqs,ses,sns
+      - SERVICES=s3,sqs,ses,sns,lambda,ssm
+      # The alert forwarder Lambda runs in its own container on this network, so it reaches LocalStack's
+      # SSM and the internet (Discord).
+      - LAMBDA_DOCKER_NETWORK=modudrive_network
+      # Put into SSM for the Lambda, like the by-hand `aws ssm put-parameter` on AWS. Unset = alerts are
+      # evaluated and sent, and only the last hop to Discord fails.
+      - DISCORD_MESSAGING_WEBHOOK_URL=${DISCORD_MESSAGING_WEBHOOK_URL:-https://discord.com/api/webhooks/unset}
+      - DISCORD_SERVICE_WEBHOOK_URL=${DISCORD_SERVICE_WEBHOOK_URL:-https://discord.com/api/webhooks/unset}
       # What the init script creates: queues in the services' SQS_REGION, storage-service's bucket,
       # mail-service's verified sender (SES rejects mail from an unverified one, LocalStack too).
       - AWS_DEFAULT_REGION=${SQS_REGION}
@@ -90,6 +98,11 @@ services:
       - localstack_data:/var/lib/localstack
       # 폴더째 마운트: 파일 하나만 마운트하면 Docker Desktop(WSL) 재시작 때 마운트가 깨져 exit 127로 죽는다.
       - ./localstack:/etc/localstack/init/ready.d:ro
+      # The forwarder's code — the same file Terraform zips for AWS.
+      - ../.infra/monitoring:/etc/modudrive-alerts:ro
+      # LocalStack runs each Lambda as a container. Same caveat as promtail's mount: the Docker Engine API
+      # is host-root equivalent — local dev only. (.raw: the socket inside Docker Desktop's VM.)
+      - /var/run/docker.sock.raw:/var/run/docker.sock
     healthcheck:
       test: ["CMD-SHELL", "curl -sf localhost:4566/_localstack/init/ready | grep -Eq '\"completed\": *true'"]
       interval: 10s

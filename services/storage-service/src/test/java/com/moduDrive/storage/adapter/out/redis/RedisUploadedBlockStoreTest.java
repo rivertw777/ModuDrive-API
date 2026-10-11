@@ -61,7 +61,7 @@ class RedisUploadedBlockStoreTest {
     class WhenRecording {
 
         @Test
-        @DisplayName("크기를 24시간 동안 기억하고, 같은 소유자의 그 해시로만 찾힌다")
+        @DisplayName("크기를 24시간 동안 기억하고, 같은 소유자의 그 해시로만 찾힌다 (정리 대상 등록은 scheduleSweep 몫)")
         void remembersTheSizeForTheOwnerOnly() {
             store.recordUploaded(owner, "h1", 4);
 
@@ -69,6 +69,7 @@ class RedisUploadedBlockStoreTest {
             assertThat(store.findUploaded(UUID.randomUUID(), List.of("h1"))).isEmpty();
             long ttl = redisTemplate.getExpire(RedisUploadedBlockStore.key(owner, "h1"), TimeUnit.MILLISECONDS);
             assertThat(ttl).isBetween(Blocks.UPLOAD_TTL.toMillis() - 5_000, Blocks.UPLOAD_TTL.toMillis());
+            assertThat(store.claimStale(Instant.now().plusSeconds(60), 10)).isEmpty();
         }
     }
 
@@ -97,45 +98,62 @@ class RedisUploadedBlockStoreTest {
         @Test
         @DisplayName("기준 시각 전에 올라온 것만 한 번씩 돌려준다")
         void claimsEachStaleBlockOnce() {
-            store.recordUploaded(owner, "h1", 4);
+            store.scheduleSweep(owner, "a1");
             Instant afterFirst = Instant.now().plusMillis(1);
 
             assertThat(store.claimStale(Instant.now().minusSeconds(60), 10)).isEmpty();
-            assertThat(store.claimStale(afterFirst, 10)).containsExactly(new UploadedBlock(owner, "h1"));
+            assertThat(store.claimStale(afterFirst, 10)).containsExactly(new UploadedBlock(owner, "a1"));
             assertThat(store.claimStale(afterFirst, 10)).isEmpty();
         }
 
         @Test
         @DisplayName("돌려놓은 블록은 다음에 다시 거두되, 그 사이 다시 올라온 블록은 새 시각을 지킨다")
         void releasedBlocksAreClaimedAgainUnlessUploadedSince() throws InterruptedException {
-            store.recordUploaded(owner, "h1", 4);
-            store.recordUploaded(owner, "h2", 4);
+            store.scheduleSweep(owner, "a1");
+            store.scheduleSweep(owner, "b2");
+            store.scheduleSweep(owner, "a2");
             Instant cutoff = Instant.now().plusMillis(1);
             Thread.sleep(5);
             List<UploadedBlock> claimed = store.claimStale(cutoff, 10);
-            store.recordUploaded(owner, "h2", 4); // uploaded again while claimed
+            store.scheduleSweep(owner, "a2"); // uploaded again while claimed
 
             store.release(claimed, cutoff.minusSeconds(60));
 
-            assertThat(store.claimStale(cutoff, 10)).containsExactly(new UploadedBlock(owner, "h1"));
+            assertThat(store.claimStale(cutoff, 10))
+                    .containsExactlyInAnyOrder(new UploadedBlock(owner, "a1"), new UploadedBlock(owner, "b2"));
         }
 
         @Test
         @DisplayName("S3에 넣기 전에 정리 대상으로만 등록한 블록도 거둔다")
         void claimsABlockScheduledButNeverRecorded() {
-            store.scheduleSweep(owner, "h1");
+            store.scheduleSweep(owner, "a1");
 
-            assertThat(store.findUploaded(owner, List.of("h1"))).isEmpty();
-            assertThat(store.claimStale(Instant.now().plusMillis(1), 10)).containsExactly(new UploadedBlock(owner, "h1"));
+            assertThat(store.findUploaded(owner, List.of("a1"))).isEmpty();
+            assertThat(store.claimStale(Instant.now().plusMillis(1), 10)).containsExactly(new UploadedBlock(owner, "a1"));
+        }
+
+        @Test
+        @DisplayName("여러 키에 나뉜 블록을 한도만큼 거두고, 한도보다 적게 돌려주면 남은 게 없다")
+        void claimsAcrossIndexKeysUpToTheLimit() {
+            List.of("01", "12", "a3", "f4", "f5").forEach(hash -> store.scheduleSweep(owner, hash));
+            Instant cutoff = Instant.now().plusMillis(1);
+
+            List<UploadedBlock> first = store.claimStale(cutoff, 3);
+            List<UploadedBlock> rest = store.claimStale(cutoff, 3);
+
+            assertThat(first).hasSize(3);
+            assertThat(rest).hasSize(2);
+            assertThat(first).doesNotContainAnyElementsOf(rest);
+            assertThat(store.claimStale(cutoff, 3)).isEmpty();
         }
 
         @Test
         @DisplayName("다시 올라온 블록은 시각이 갱신돼 거둬지지 않는다")
         void reUploadingMovesTheBlockOutOfReach() throws InterruptedException {
-            store.recordUploaded(owner, "h1", 4);
+            store.scheduleSweep(owner, "a1");
             Instant cutoff = Instant.now().plusMillis(1);
             Thread.sleep(5);
-            store.recordUploaded(owner, "h1", 4);
+            store.scheduleSweep(owner, "a1");
 
             assertThat(store.claimStale(cutoff, 10)).isEmpty();
         }
@@ -146,5 +164,15 @@ class RedisUploadedBlockStoreTest {
     void anOwnersRecordsShareAClusterSlot() {
         assertThat(SlotHash.getSlot(RedisUploadedBlockStore.key(owner, "h1")))
                 .isEqualTo(SlotHash.getSlot(RedisUploadedBlockStore.key(owner, "h2")));
+    }
+
+    @Test
+    @DisplayName("정리 대상 목록은 해시 첫 글자로 16개 키에 나뉘어, 여러 슬롯에 퍼진다")
+    void theSweepIndexSpreadsOverSlots() {
+        long slots = "0123456789abcdef".chars()
+                .mapToObj(c -> SlotHash.getSlot(RedisUploadedBlockStore.indexKey((char) c + "0")))
+                .distinct().count();
+
+        assertThat(slots).isEqualTo(16);
     }
 }

@@ -12,6 +12,7 @@ import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.FileId;
 import com.moduDrive.file.domain.model.Namespace;
 import com.moduDrive.file.domain.model.Namespace.NamespaceUserId;
+import com.moduDrive.file.domain.model.Role;
 import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -45,12 +46,14 @@ class ListRecentFilesService implements ListRecentFilesUseCase {
 
         // Pairs each access row with its file so accessedAt survives the filters below and
         // reaches the response as "최근 문서함에서 연 시각" (the client shows this, not updatedAt).
-        record Accessed(File file, LocalDateTime accessedAt) {}
+        // role is the caller's on a file they don't own, resolved once and used both to drop the
+        // ones they can no longer reach and to tell the client which actions to offer.
+        record Accessed(File file, LocalDateTime accessedAt, Role role) {}
 
         return findFileAccessPort.findByUserIdOrderByAccessedAtDesc(userId, command.getLimit())
                 .stream()
                 .flatMap(access -> findFilePort.findById(new FileId(access.getFileId()))
-                        .map(file -> new Accessed(file, access.getAccessedAt()))
+                        .map(file -> new Accessed(file, access.getAccessedAt(), null))
                         .stream())
                 .filter(accessed -> !accessed.file().isRemoved())
                 // Folders never belong in "recent" — the write side (GetFileController) already
@@ -63,8 +66,10 @@ class ListRecentFilesService implements ListRecentFilesUseCase {
                 // grant too — a file only reachable by browsing into a shared folder (see
                 // GetFileService) must not silently drop out of recent just because it was never
                 // shared directly (matches ListFavoritesService's same re-check).
-                .filter(accessed -> accessed.file().getNamespaceId().equals(ownNamespaceId)
-                        || fileAccessGuard.effectiveRole(accessed.file(), userId) != null)
+                .map(accessed -> accessed.file().getNamespaceId().equals(ownNamespaceId) ? accessed
+                        : new Accessed(accessed.file(), accessed.accessedAt(),
+                                fileAccessGuard.effectiveRole(accessed.file(), userId)))
+                .filter(accessed -> accessed.file().getNamespaceId().equals(ownNamespaceId) || accessed.role() != null)
                 .map(accessed -> {
                     File file = accessed.file();
                     FileView view;
@@ -74,7 +79,7 @@ class ListRecentFilesService implements ListRecentFilesUseCase {
                         // A shared file: per-user star, plus the caller's role so the client
                         // knows which actions to offer (rename needs EDITOR).
                         file.markFavorite(favoriteIds.contains(file.getId()));
-                        view = FileView.shared(file, fileAccessGuard.effectiveRole(file, userId));
+                        view = FileView.shared(file, accessed.role());
                     }
                     return view.withAccessedAt(accessed.accessedAt());
                 })

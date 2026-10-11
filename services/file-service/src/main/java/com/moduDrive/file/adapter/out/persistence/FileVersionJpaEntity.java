@@ -16,7 +16,10 @@ import java.util.UUID;
 @Getter
 @NoArgsConstructor
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
-@Table(name = "file_version")
+@Table(name = "file_version", indexes = {
+        // Per-file lookups and the version-retention sweep (V9).
+        @Index(name = "ix_file_version_file_id_created_at", columnList = "file_id, created_at")
+})
 @Entity
 class FileVersionJpaEntity extends CreatedAtEntity {
 

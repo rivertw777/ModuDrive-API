@@ -1,6 +1,6 @@
-# AMP alert rules — the local rules (.docker/observability/grafana/alerting/alerts.yaml, spec 007) in
-# Prometheus format: same queries, thresholds and waits. What differs on AWS:
-#   - a service is the `service` label (container name, otel-collector.yaml), not `instance` (a task IP)
+# AMP alert rules — the local rules (.docker/observability/alert-rules.yaml, spec 007): same queries,
+# thresholds and waits. What differs on AWS:
+#   - `service` is the container name (otel-collector.yaml) rather than the scrape host (prometheus.yml)
 #   - hints point at CloudWatch Logs and X-Ray instead of docker logs, Loki and Tempo
 #   - a task that's gone is no `up` series at all rather than up = 0, hence ServiceNoTasks
 #   - the threshold sits inside the ratio's parentheses: `and` binds looser than `>`, so `A and B > x`

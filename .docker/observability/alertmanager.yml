@@ -1,0 +1,47 @@
+# 알림이 Discord까지 가는 길은 AWS와 같다: Prometheus 규칙(alert-rules.yaml) → 여기 → SNS 토픽
+# modudrive-alerts → Lambda(discord_forwarder.py) → Discord. 로컬은 SNS·Lambda가 LocalStack이고
+# (.docker/localstack/init-aws.sh), 웹후크 URL은 Lambda가 LocalStack SSM에서 읽는다.
+# AWS 쪽은 .infra/monitoring/alertmanager.yaml — 묶음·채널·메시지 템플릿(discord.tmpl)까지 같다.
+route:
+  receiver: service
+  # 알림 이름 하나 = 메시지 하나. 서비스·큐마다 따로 보내면 여럿이 동시에 터질 때 웹후크 POST가
+  # 한꺼번에 나가 디스코드가 429로 막는다(재배포로 7개가 같이 내려갔을 때 3건이 실제로 사라졌다).
+  # 여러 건이 묶인 메시지는 템플릿이 건마다 한 줄로 줄인다.
+  group_by: [alertname]
+  # 해제도 이 간격에 묶인다 — 기본 5분이면 해제가 최대 5분 늦어서 규칙 평가 주기(1분)에 맞췄다.
+  group_interval: 1m
+  # 안 고치면 4시간마다 한 번 더 찌른다.
+  repeat_interval: 4h
+  # 규칙이 붙인 channel 라벨로 웹후크가 갈린다. 라벨이 없으면 service 채널.
+  routes:
+    - receiver: messaging
+      matchers: [channel="messaging"]
+
+templates:
+  - /etc/alertmanager/shared/discord.tmpl
+
+receivers:
+  - name: messaging
+    sns_configs:
+      - api_url: http://localstack:4566
+        topic_arn: arn:aws:sns:ap-northeast-2:000000000000:modudrive-alerts
+        sigv4:
+          region: ap-northeast-2
+          access_key: test
+          secret_key: test
+        subject: '{{ .CommonLabels.alertname }}'
+        message: '{{ template "discord.message" . }}'
+        attributes:
+          channel: messaging
+  - name: service
+    sns_configs:
+      - api_url: http://localstack:4566
+        topic_arn: arn:aws:sns:ap-northeast-2:000000000000:modudrive-alerts
+        sigv4:
+          region: ap-northeast-2
+          access_key: test
+          secret_key: test
+        subject: '{{ .CommonLabels.alertname }}'
+        message: '{{ template "discord.message" . }}'
+        attributes:
+          channel: service

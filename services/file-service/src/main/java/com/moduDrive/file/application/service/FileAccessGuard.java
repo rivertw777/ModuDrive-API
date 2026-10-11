@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * The single place that answers "may this caller act on this file?". Ownership is
@@ -44,18 +45,7 @@ class FileAccessGuard {
         if (isOwner(file, callerId)) {
             return null;
         }
-        return resolveRole(file, callerId);
-    }
-
-    /** What a descendant of {@code directory} inherits by virtue of directory access alone. From a
-     * descendant's point of view, {@code directory} is just its nearest ancestor — the same rule
-     * {@code resolveRole} applies to a file, so the body is identical; this is a separate,
-     * package-visible method purely to name the caller's intent (a descendant's *own* direct
-     * grant, if it has one, is layered on top by the caller — see {@code ListSharedDirectoryService}
-     * — the same way {@code resolveRole} layers a file's own grant over its ancestors). Null when
-     * the caller has no grant on {@code directory} or above. */
-    Role inheritableRole(File directory, UUID callerId) {
-        return resolveRole(directory, callerId);
+        return access(file, callerId).role();
     }
 
     void requireOwner(File file, UUID callerId) {
@@ -64,9 +54,12 @@ class FileAccessGuard {
         }
     }
 
-    void requirePermission(File file, UUID callerId, Permission required) {
+    /** Throws unless the caller may {@code required} on this file; returns what the check resolved
+     * ({@link Access#NONE} for the owner), so a caller that also shows the role or the grant's
+     * "공유한 사용자/날짜" doesn't walk the same path again. */
+    Access requirePermission(File file, UUID callerId, Permission required) {
         if (isOwner(file, callerId)) {
-            return;
+            return Access.NONE;
         }
         // A trashed or purged item is owner-only (restore / purge). To a grantee it's gone — an
         // inherited grant from a still-live ancestor directory must not keep a removed descendant
@@ -75,10 +68,11 @@ class FileAccessGuard {
         if (file.isRemoved()) {
             throw accessDenied(file);
         }
-        Role granted = resolveRole(file, callerId);
-        if (granted == null || !granted.permissions().contains(required)) {
+        Access access = access(file, callerId);
+        if (access.role() == null || !access.role().permissions().contains(required)) {
             throw accessDenied(file);
         }
+        return access;
     }
 
     /** Attaches isDirectory to the error body — the file already exists (we have it in hand), so
@@ -88,46 +82,52 @@ class FileAccessGuard {
         return new BusinessException(FileExceptionCase.FILE_ACCESS_DENIED, Map.of("isDirectory", file.isDirectory()));
     }
 
-    /** Returns null when the caller has no explicit share on this file or on any directory above
-     * it, and neither this file nor any ancestor is LINK-scoped either. A named grant (this
-     * file's own, or failing that the nearest ancestor's) is authoritative and always outranks a
-     * LINK fallback, even a more generous one — same priority as {@link #resolveGrant} below. Only
-     * once no named grant exists anywhere on the path does a self/ancestor LINK scope kick in,
-     * granting a signed-in stranger the same viewer-only access an anonymous link-holder already
-     * gets through the public routes (issue #303) — there is no reason to make a logged-in visitor
-     * use a different, token-bearing URL for the same "anyone with the link" file. */
-    private Role resolveRole(File file, UUID callerId) {
-        if (callerId == null) {
-            return null;
-        }
-        // A grant on this exact file is authoritative and skips ancestors entirely — it's a
-        // deliberate, file-specific decision by the owner, so it overrides an inherited grant
-        // even when the inherited one would be more generous (same priority as resolveGrant
-        // below, which likewise returns the file's own share row before considering any
-        // ancestor's). Only when there's no direct grant do ancestors get consulted, nearest-wins.
-        Role own = grantedRole(file.getId(), callerId);
-        if (own != null) {
-            return own;
-        }
-        List<File> ancestors = ancestorDirectories(file);
-        Role inherited = foldAncestors(ancestors, callerId);
-        if (inherited != null) {
-            return inherited;
-        }
-        return linkRoleFallback(file, ancestors);
+    /** The caller's access to a file and the named share it comes from. {@code role} is null when
+     * they have none; {@code grant} is null when the role comes from a LINK scope rather than a
+     * share (or there's no role). */
+    record Access(Role role, FileShare grant) {
+        static final Access NONE = new Access(null, null);
     }
 
-    /** The nearest ancestor's grant, not the most generous one across all ancestors — a farther
-     * ancestor's more generous role never outranks a nearer ancestor's, matching
-     * {@link #resolveGrant}'s own nearest-wins walk. */
-    private Role foldAncestors(List<File> ancestors, UUID callerId) {
-        for (int i = ancestors.size() - 1; i >= 0; i--) {
-            Role role = grantedRole(ancestors.get(i).getId(), callerId);
-            if (role != null) {
-                return role;
-            }
+    /** {@link Access#NONE} when the caller has no explicit share on this file or on any directory
+     * above it, and neither this file nor any ancestor is LINK-scoped either. A grant on this exact
+     * file is authoritative and skips ancestors entirely — it's a deliberate, file-specific decision
+     * by the owner, so it overrides an inherited grant even when the inherited one would be more
+     * generous. Only when there's no direct grant do ancestors count, nearest-wins: a farther
+     * ancestor's more generous role never outranks a nearer ancestor's. A named grant (own or
+     * inherited) always outranks a LINK fallback, even a more generous one. Only once no named grant
+     * exists anywhere on the path does a self/ancestor LINK scope kick in, granting a signed-in
+     * stranger the same viewer-only access an anonymous link-holder already gets through the public
+     * routes (issue #303) — there is no reason to make a logged-in visitor use a different,
+     * token-bearing URL for the same "anyone with the link" file.
+     * <p>
+     * {@code grant} is the specific share row behind the role — what a detail panel or a shared
+     * folder's listing shows as "공유한 사용자"/"공유된 날짜", so every child of a shared directory
+     * attributes to the same one. Owner-blind: an owner holds no share, so it's NONE for them.
+     * <p>
+     * Two queries however deep the file sits: the folders above it, then the caller's grants on the
+     * file and all of them at once (the priority above is applied in memory). */
+    Access access(File file, UUID callerId) {
+        if (callerId == null) {
+            return Access.NONE;
         }
-        return null;
+        List<File> ancestors = ancestorDirectories(file);
+        List<FileId> onPath = new ArrayList<>();
+        onPath.add(new FileId(file.getId()));
+        ancestors.forEach(ancestor -> onPath.add(new FileId(ancestor.getId())));
+        Map<UUID, FileShare> grants = findFileSharePort.findBySharedWithUserIdAndFileIdIn(callerId, onPath).stream()
+                .collect(Collectors.toMap(FileShare::getFileId, share -> share, (a, b) -> a));
+
+        // ancestorDirectories() returns root-most first; walk it backwards so the first hit is the
+        // nearest ancestor, matching ListFileSharesService's own nearest-wins tie-break.
+        FileShare grant = grants.get(file.getId());
+        for (int i = ancestors.size() - 1; grant == null && i >= 0; i--) {
+            grant = grants.get(ancestors.get(i).getId());
+        }
+        if (grant != null) {
+            return new Access(grant.getRole(), grant);
+        }
+        return new Access(linkRoleFallback(file, ancestors), null);
     }
 
     /** Last resort once no named grant exists anywhere on the path: this file's own LINK scope,
@@ -136,7 +136,7 @@ class FileAccessGuard {
      * one matched doesn't change the outcome — no nearest-wins tie-break needed here.
      * <p>
      * Whether {@code file} is reachable purely through "anyone with the link", with no grant and
-     * no caller identity involved at all. {@link #resolveRole} uses this as its own last resort
+     * no caller identity involved at all. {@link #access} uses this as its own last resort
      * for a signed-in caller with no named grant; {@code PublicFileResolver} uses it directly for
      * an anonymous visitor, who has nothing else to fall back on (issue #303 — the two routes
      * share this one judgment instead of each re-deciding what "anyone with the link" means).
@@ -158,59 +158,9 @@ class FileAccessGuard {
         return null;
     }
 
-    /** The specific share row that explains why {@code callerId} can read {@code file} — their
-     * own grant on it, or failing that, the nearest ancestor directory's. Unlike
-     * {@link #effectiveRole} (which only needs the resolved role, for a permission check),
-     * a listing that shows "공유한 사용자"/"공유된 날짜" for a shared directory's contents needs the
-     * actual origin grant, so every child in the listing attributes to the same one. Empty when
-     * the caller owns the file or holds no grant on it or any ancestor. */
-    Optional<FileShare> resolveGrant(File file, UUID callerId) {
-        if (callerId == null) {
-            return Optional.empty();
-        }
-        Optional<FileShare> own = findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(file.getId()), callerId);
-        if (own.isPresent()) {
-            return own;
-        }
-        // ancestorDirectories() returns root-most first; walk it backwards so the first hit is
-        // the nearest ancestor, matching ListFileSharesService's own nearest-wins tie-break.
-        List<File> ancestors = ancestorDirectories(file);
-        for (int i = ancestors.size() - 1; i >= 0; i--) {
-            Optional<FileShare> grant =
-                    findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(ancestors.get(i).getId()), callerId);
-            if (grant.isPresent()) {
-                return grant;
-            }
-        }
-        return Optional.empty();
-    }
-
-    private Role grantedRole(UUID fileId, UUID callerId) {
-        return findFileSharePort
-                .findByFileIdAndSharedWithUserId(new FileId(fileId), callerId)
-                .map(FileShare::getRole)
-                .orElse(null);
-    }
-
-    /** The directories on {@code file}'s materialized path, root-most first. {@code file.path} is
-     * the parent path, so each segment names one ancestor directory.
-     * ponytail: one lookup per path segment (depth-bounded, typically &lt;5) — add an
-     * effective-ACL cache only if deep trees or read volume make it hurt. */
+    /** The directories on {@code file}'s materialized path, root-most first — one query. */
     List<File> ancestorDirectories(File file) {
-        List<File> ancestors = new ArrayList<>();
-        String parentPath = file.getPath();
-        if (parentPath == null || "/".equals(parentPath)) {
-            return ancestors;
-        }
-        NamespaceId namespaceId = new NamespaceId(file.getNamespaceId());
-        String walked = "/";
-        for (String name : parentPath.substring(1).split("/")) {
-            findFilePort.findActiveByNamespaceIdAndPathAndName(namespaceId, walked, name)
-                    .filter(File::isDirectory)
-                    .ifPresent(ancestors::add);
-            walked = "/".equals(walked) ? "/" + name : walked + "/" + name;
-        }
-        return ancestors;
+        return findFilePort.findActiveAncestorDirectories(new NamespaceId(file.getNamespaceId()), file.getPath());
     }
 
     private boolean isOwner(File file, UUID callerId) {

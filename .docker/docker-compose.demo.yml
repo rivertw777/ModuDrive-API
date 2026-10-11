@@ -1,0 +1,35 @@
+name: modudrive-demo
+
+# 내 PC에서 AWS demo 스택을 보는 Grafana — demo엔 Managed Grafana가 없다(demo.tfvars grafana = false).
+# 데이터는 AWS(AMP·X-Ray·CloudWatch Logs)에 있고 이건 화면만 그린다. 필요할 때만 `make demo`로 켜고,
+# 끌 땐 `docker stop modudrive-demo-grafana-1`.
+#
+# 로컬 개발 스택과 섞이지 않게 따로 둔다: 네트워크는 자기 것만 쓰고(modudrive_network에 붙지 않는다 —
+# 로컬 서비스·DB에 닿을 일이 없다), 포트는 3002(로컬 Grafana는 3001), 볼륨 없음(설정은 전부 파일).
+
+services:
+  grafana:
+    image: grafana/grafana:13.2.0
+    networks:
+      - modudrive-demo
+    ports:
+      - "127.0.0.1:3002:3000"
+    environment:
+      - GF_INSTALL_PLUGINS=grafana-amazonprometheus-datasource 3.2.0,grafana-x-ray-datasource 2.17.2
+      - GF_SERVER_ROOT_URL=http://localhost:3002
+      # 루프백에만 열려 있고 나 혼자 본다: 로그인 없이 Explore까지(Editor).
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Editor
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+      # SDK 기본 체인: ~/.aws의 프로필(SSO 포함)을 그대로 쓴다.
+      - AWS_PROFILE=${AWS_PROFILE:-default}
+      - AWS_SDK_LOAD_CONFIG=true
+      - DEMO_AMP_URL=${DEMO_AMP_URL:?run it with make demo, or set it to terraform output amp_endpoint}
+    volumes:
+      - ./demo/grafana:/etc/grafana/provisioning/datasources:ro
+      # 읽기만 — SSO 토큰은 호스트에서 aws sso login으로 갱신한다.
+      - ${HOME}/.aws:/home/grafana/.aws:ro
+
+networks:
+  modudrive-demo:
+    name: modudrive-demo

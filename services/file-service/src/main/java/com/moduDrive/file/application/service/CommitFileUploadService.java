@@ -17,6 +17,7 @@ import com.moduDrive.file.application.port.out.ReferenceBlocksPort;
 import com.moduDrive.file.application.port.out.SaveFileAccessPort;
 import com.moduDrive.file.application.port.out.SaveFilePort;
 import com.moduDrive.file.application.port.out.SaveFileVersionPort;
+import com.moduDrive.file.application.port.out.UpdateNamespaceUsagePort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.FileIsDirectory;
 import com.moduDrive.file.domain.model.File.FileName;
@@ -70,6 +71,7 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
     private final ReferenceBlocksPort referenceBlocksPort;
     private final SaveFileAccessPort saveFileAccessPort;
     private final FindCommittedBlocksPort findCommittedBlocksPort;
+    private final UpdateNamespaceUsagePort updateNamespaceUsagePort;
     private final TransactionTemplate transactionTemplate;
 
     /** A file's blocklist can't be longer (5GB / 4MB), and a group is capped at the same, so one
@@ -92,12 +94,12 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
 
         CommitResult[] results = new CommitResult[commands.size()];
         Set<String> asked = new LinkedHashSet<>();
-        // Drive quota (quota_bytes, trash included — the sum the usage screen shows), checked before
-        // any block is asked for, so a file that won't fit is turned away before its bytes are sent.
-        // ponytail: one sum per request and a running total, not a lock — two requests committing at
-        // once can each pass and overshoot by a group; lock the namespace row if that ever matters.
+        // Drive quota (quota_bytes against used_bytes, trash included — what the usage screen
+        // shows), checked before any block is asked for, so a file that won't fit is turned away
+        // before its bytes are sent. Only a first pass: two requests can both pass it, so
+        // commitLocked checks again, atomically, as it adds the file to the usage.
         NamespaceId namespaceId = new NamespaceId(namespace.getId());
-        long used = findFilePort.sumFileSizeByNamespaceId(namespaceId);
+        long used = namespace.getUsedBytes();
         for (int i = 0; i < commands.size(); i++) {
             try {
                 results[i] = alreadyDone(commands.get(i), ownerId);
@@ -262,6 +264,8 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
         String name = command.getName();
         NamespaceId namespaceId = new NamespaceId(namespace.getId());
         File file = fileAt(namespaceId, path, name, ownerId);
+        // Read under the file's lock: no other commit can replace it meanwhile.
+        long replaced = file.getStatus() == FileStatus.PENDING || file.getFileSize() == null ? 0 : file.getFileSize();
         // The same content as the current version — a re-upload of an unchanged file — makes no new
         // version; otherwise repeating it would pile up versions (and their block rows) forever.
         Optional<FileVersion> current = file.getCurrentVersionId() == null ? Optional.empty()
@@ -286,6 +290,11 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
         saveFilePort.saveFile(file);
         // An uploaded file counts as "opened" for 최근 문서함 (spec 001 2장).
         saveFileAccessPort.recordAccesses(ownerId, List.of(file.getId()), LocalDateTime.now());
+        // The authoritative quota check, last: a commit that lost the race to another one into the
+        // same drive rolls all of the above back.
+        if (!updateNamespaceUsagePort.addUsedBytes(namespaceId, fileSize - replaced)) {
+            throw new BusinessException(FileExceptionCase.QUOTA_EXCEEDED);
+        }
         return CommitResult.committed(version);
     }
 

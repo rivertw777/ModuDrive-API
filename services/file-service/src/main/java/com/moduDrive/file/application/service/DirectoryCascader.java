@@ -1,20 +1,14 @@
 package com.moduDrive.file.application.service;
 
 import com.moduDrive.file.application.port.out.FindFilePort;
-import com.moduDrive.file.application.port.out.FindFileVersionsPort;
 import com.moduDrive.file.application.port.out.ReleaseBlocksPort;
 import com.moduDrive.file.application.port.out.SaveFilePort;
-import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.FileId;
-import com.moduDrive.file.domain.model.File.FilePath;
-import com.moduDrive.file.domain.model.FileStatus;
-import com.moduDrive.file.domain.model.FileVersion;
 import com.moduDrive.file.domain.model.Namespace.NamespaceId;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -32,48 +26,36 @@ class DirectoryCascader {
     private final FindFilePort findFilePort;
     private final SaveFilePort saveFilePort;
     private final ReleaseBlocksPort releaseBlocksPort;
-    private final FindFileVersionsPort findFileVersionsPort;
+
+    // Each cascade is a few set-based statements, not a load-and-save per descendant: the subtree is
+    // locked top-down in one query (like a commit locks the folders above its file, so the two never
+    // wait on each other in a cycle), then rewritten in one UPDATE.
 
     /** Rewrites the path prefix of every descendant after the directory itself moved/was renamed. */
     void movePath(NamespaceId namespaceId, String oldPrefix, String newPrefix) {
         if (oldPrefix.equals(newPrefix)) return;
-
-        // Locked top-down like the other cascades, so two of them never wait on each other in a cycle.
-        for (File descendant : findFilePort.lockByNamespaceIdAndPathStartingWith(namespaceId, oldPrefix)) {
-            String rest = descendant.getPath().substring(oldPrefix.length());
-            descendant.move(new FilePath(newPrefix + rest));
-            saveFilePort.saveFile(descendant);
-        }
+        saveFilePort.moveSubtree(namespaceId, oldPrefix, newPrefix);
     }
 
     /** Soft-deletes every descendant along with the directory being sent to trash. {@code trashedAt}
-     * is the directory's own — the whole cascade shares one instant (see {@link #purge}). */
+     * is the directory's own — the whole cascade shares one instant (see {@link #purge}). Locked,
+     * like the folder itself (DeleteFileService): a commit adding a version or a file under it
+     * finishes first, and its rows are trashed as they are after it. A descendant already trashed
+     * (individually, earlier) or already purged keeps its trashedAt — see purge()'s javadoc for why
+     * that matters. */
     void softDelete(NamespaceId namespaceId, String directoryFullPath, LocalDateTime trashedAt) {
-        // Locked, like the folder itself (DeleteFileService): a commit adding a version or a file
-        // under it finishes first, and its rows are trashed as they are after it.
-        for (File descendant : findFilePort.lockByNamespaceIdAndPathStartingWith(namespaceId, directoryFullPath)) {
-            // Already trashed (individually, earlier) or already purged — leave its trashedAt
-            // alone either way; see purge()'s javadoc for why that matters.
-            if (descendant.isRemoved()) continue;
-            descendant.softDelete(trashedAt);
-            saveFilePort.saveFile(descendant);
-        }
+        saveFilePort.trashSubtree(namespaceId, directoryFullPath, trashedAt);
     }
 
-    /** Restores every descendant along with the directory being restored from trash.
+    /** Restores every descendant along with the directory being restored from trash. Only a
+     * still-trashed descendant is restorable — one purged individually before the parent folder is
+     * restored is a tombstone (status DELETED): its content is gone, restoring the row would
+     * resurrect an empty file.
      * ponytail: restores the whole subtree unconditionally, so a file trashed individually
      * before its parent folder was trashed comes back too — track trash provenance separately
      * if that distinction ever matters. */
     void restore(NamespaceId namespaceId, String directoryFullPath) {
-        // Locked like softDelete: a purge of a descendant running now finishes first.
-        for (File descendant : findFilePort.lockByNamespaceIdAndPathStartingWith(namespaceId, directoryFullPath)) {
-            // Only a still-trashed descendant is restorable — one purged individually before the
-            // parent folder is restored is a tombstone (status DELETED): its content is gone,
-            // restoring the row would resurrect an empty file.
-            if (descendant.getStatus() != FileStatus.TRASHED) continue;
-            descendant.restore();
-            saveFilePort.saveFile(descendant);
-        }
+        saveFilePort.restoreSubtree(namespaceId, directoryFullPath);
     }
 
     /** Purges every descendant along with the directory being purged from trash (tombstones the
@@ -95,22 +77,15 @@ class DirectoryCascader {
      * descendant's tombstone shares the same value as the root, same as {@code rootTrashedAt}. */
     void purge(NamespaceId namespaceId, String directoryFullPath, LocalDateTime rootTrashedAt, UUID deletedBy) {
         // Locked like softDelete/restore, so a restore running now finishes first and is seen.
-        List<File> purged = findFilePort.lockTrashedByNamespaceIdAndPathStartingWith(namespaceId, directoryFullPath).stream()
+        List<FileId> purged = findFilePort.lockTrashedByNamespaceIdAndPathStartingWith(namespaceId, directoryFullPath).stream()
                 .filter(descendant -> descendant.getTrashedAt() == null || rootTrashedAt == null
                         || !descendant.getTrashedAt().isAfter(rootTrashedAt))
+                .map(descendant -> new FileId(descendant.getId()))
                 .toList();
-        // Every file's versions in one release, before purgeFile deletes their rows (see FilePurger):
-        // one call keeps the whole subtree's blocks in hash order, the order a commit locks them in.
-        // A nested subdirectory has no blocks of its own — only a real file does.
-        List<FileVersion> versions = new ArrayList<>();
-        for (File descendant : purged) {
-            if (!descendant.isDirectory()) {
-                versions.addAll(findFileVersionsPort.findAllByFileId(new FileId(descendant.getId())));
-            }
-        }
-        if (!versions.isEmpty()) {
-            releaseBlocksPort.releaseBlocks(versions);
-        }
-        purged.forEach(descendant -> saveFilePort.purgeFile(new FileId(descendant.getId()), deletedBy));
+        // The whole subtree's blocks in one release, before purgeFiles deletes the versions pointing
+        // at them (see FilePurger), in the hash order a commit locks them in. A nested subdirectory
+        // has no versions, so it adds nothing.
+        releaseBlocksPort.releaseBlocksOfFiles(purged.stream().map(FileId::value).toList());
+        saveFilePort.purgeFiles(purged, deletedBy);
     }
 }

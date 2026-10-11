@@ -7,7 +7,8 @@
 # service means a short gap on redeploy; no Multi-AZ anywhere.
 
 environment = "demo"
-account_id  = null # this environment's AWS account — set it and other accounts' credentials are refused
+domain_name = "modudrive.help"
+account_id  = "569854554527" # this environment's AWS account — set it and other accounts' credentials are refused
 
 nat                 = "instance"
 interface_endpoints = false # ~$110/month for six endpoints in two AZs; traffic goes out the IGW
@@ -18,7 +19,8 @@ hardened            = false
 az_count            = 2 # a third AZ would add an ALB public IPv4 and buys nothing for a trial
 
 # One instance for every service's database (each still its own database and login).
-db_engine = "rds"
+db_engine                = "rds"
+db_backup_retention_days = 1 # the account is on the AWS free plan, which caps it at 1
 db_instances = {
   file = { instance_class = "db.t4g.micro", nodes = 1, clients = ["member", "file", "notification", "auth"] }
 }

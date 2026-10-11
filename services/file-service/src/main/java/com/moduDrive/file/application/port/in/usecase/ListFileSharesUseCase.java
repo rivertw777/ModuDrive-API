@@ -28,7 +28,7 @@ public interface ListFileSharesUseCase {
      *       already lets that guest into this file through PublicFileResolver). One row per
      *       (ancestor, grantee) pair, never collapsed — includes a grantee who also has a row in
      *       {@code shares} directly (see ListFileSharesService for why: a full revoke needs every
-     *       one of those rows visible). FileAccessGuard.resolveRole ignores these entirely once a
+     *       one of those rows visible). FileAccessGuard.access ignores these entirely once a
      *       direct grant exists, but this view still needs to show them for the owner to actually
      *       revoke them.</li>
      *   <li>{@code inheritedLinkSources} — ancestor directories currently in LINK scope, i.e.

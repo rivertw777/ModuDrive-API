@@ -1,0 +1,10 @@
+round=1 quota=1572864 used=2097152 over=524288 {"ok": 2, "other": []}
+round=2 quota=1572864 used=2097152 over=524288 {"ok": 2, "other": []}
+round=3 quota=1572864 used=2097152 over=524288 {"ok": 2, "other": []}
+round=4 quota=1572864 used=2097152 over=524288 {"ok": 2, "other": []}
+round=5 quota=1572864 used=2097152 over=524288 {"ok": 2, "other": []}
+round=6 quota=1572864 used=2097152 over=524288 {"ok": 2, "other": []}
+round=7 quota=1572864 used=2097152 over=524288 {"ok": 2, "other": []}
+round=8 quota=1572864 used=2097152 over=524288 {"ok": 2, "other": []}
+round=9 quota=1572864 used=2097152 over=524288 {"ok": 2, "other": []}
+round=10 quota=1572864 used=2097152 over=524288 {"ok": 2, "other": []}

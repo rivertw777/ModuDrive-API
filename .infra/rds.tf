@@ -2,7 +2,7 @@
 # whether as RDS instances (demo, one for all four) or Aurora clusters (prod, one per service), so file-service's load (uploads, outbox) never
 # slows the login path and each can be sized, failed over and upgraded on its own.
 #
-# Either way every service has its own database and login that can reach only that database (aws-migration.md 1-5).
+# Either way every service has its own database and login that can reach only that database (003-aws-migration.md 1-5).
 # Terraform makes the instances; the databases and logins are made inside Postgres by
 # .docker/postgres/postgres_init.sh, run once per instance as an ECS task (db_init_run_tasks output).
 # Tables come from each service's Flyway migrations on startup.
@@ -42,7 +42,7 @@ resource "aws_db_instance" "postgres" {
   # A standby in another AZ at two nodes.
   multi_az = each.value.nodes > 1
 
-  backup_retention_period    = 7
+  backup_retention_period    = var.db_backup_retention_days
   auto_minor_version_upgrade = true
   deletion_protection        = var.deletion_protection
   skip_final_snapshot        = !var.deletion_protection

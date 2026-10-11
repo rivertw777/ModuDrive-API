@@ -6,7 +6,7 @@
 # Three AZs, so a majority survives losing or being cut off from any one: tasks in private subnets
 # behind a NAT per AZ, AWS APIs through VPC endpoints, at least two tasks per service, an Aurora
 # cluster per service (writer + one reader; storage keeps its quorum across the three AZs regardless).
-# Roughly $5,800/month on demand before traffic (aws-migration.md 2-4).
+# Roughly $5,800/month on demand before traffic (003-aws-migration.md 4-3).
 
 environment = "prod"
 account_id  = null # this environment's AWS account — set it and other accounts' credentials are refused
@@ -34,7 +34,8 @@ db_instances = {
 # MemoryDB, one cluster per purpose: a load spike or a full memory in one never reaches the others,
 # and no write is lost on a failover (the Multi-AZ transaction log, not the replicas, holds it). A
 # primary and one replica per shard. member (sign-up codes) and mail (idempotency keys) hold little and
-# run on t4g; storage's upload records (up to 25,600 keys per user a day) spread over two shards.
+# run on t4g; storage's upload records (up to 25,600 keys per user a day) and its sweep index (16 keys)
+# spread over two shards.
 redis_engine = "memorydb"
 redis_clusters = {
   auth    = { node_type = "db.r7g.large", nodes = 2, clients = ["auth"] }
@@ -59,7 +60,7 @@ alert_email        = null
 otel_collector = { cpu = 1024, memory = 2048, scrape_interval = "30s" }
 grafana        = true
 
-# Copies to the backup account (backup.tf, aws-migration.md 2-8) — made there first.
+# Copies to the backup account (backup.tf, 003-aws-migration.md 4-7) — made there first.
 backup_copy_vault_arn     = null # arn:aws:backup:ap-northeast-2:<backup-account>:backup-vault:modudrive-prod
 backup_bucket_arn         = null # arn:aws:s3:::modudrive-prod-blocks-<backup-account>
 backup_bucket_kms_key_arn = null # arn:aws:kms:ap-northeast-2:<backup-account>:key/...

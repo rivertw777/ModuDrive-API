@@ -416,6 +416,24 @@ class FilePersistenceAdapterTest {
         }
 
         @Test
+        @DisplayName("여러 파일에 대한 한 사용자의 공유를 한 번에 조회한다")
+        void findsAUsersGrantsOnSeveralFilesAtOnce() {
+            UUID grantee = UUID.randomUUID();
+            UUID parent = UUID.randomUUID();
+            UUID child = UUID.randomUUID();
+            UUID unrelated = UUID.randomUUID();
+            springDataFileShareRepository.save(new FileShareJpaEntity(parent, UUID.randomUUID(), grantee, Role.VIEWER));
+            springDataFileShareRepository.save(new FileShareJpaEntity(child, UUID.randomUUID(), grantee, Role.EDITOR));
+            springDataFileShareRepository.save(new FileShareJpaEntity(unrelated, UUID.randomUUID(), grantee, Role.EDITOR));
+            springDataFileShareRepository.save(new FileShareJpaEntity(parent, UUID.randomUUID(), UUID.randomUUID(), Role.EDITOR));
+
+            List<FileShare> grants = fileSharePersistenceAdapter.findBySharedWithUserIdAndFileIdIn(
+                    grantee, List.of(new FileId(parent), new FileId(child)));
+
+            assertThat(grants).extracting(FileShare::getFileId).containsExactlyInAnyOrder(parent, child);
+        }
+
+        @Test
         @DisplayName("공유를 해제하면 행이 사라진다")
         void deletesShare() {
             UUID fileIdValue = UUID.randomUUID();
@@ -568,6 +586,202 @@ class FilePersistenceAdapterTest {
             assertThat(springDataFileVersionRepository.findByFileIdOrderByCreatedAtDesc(
                     fileIdValue, org.springframework.data.domain.PageRequest.of(0, 10))).hasSize(1);
         }
+    }
+
+    @Nested
+    @DisplayName("여러 파일을 한 번에 영구 삭제할 때")
+    class WhenPurgingSeveralFiles {
+
+        @Test
+        @DisplayName("전부 tombstone으로 만들고 그 파일들의 버전·블록 목록·공유·즐겨찾기만 지운다")
+        void tombstonesAllAndClearsOnlyTheirAttachments() {
+            UUID a = springDataFileRepository.save(new FileJpaEntity(
+                    namespaceIdValue, "a.txt", "/1", UUID.randomUUID(), FileStatus.TRASHED, false)).getId();
+            UUID b = springDataFileRepository.save(new FileJpaEntity(
+                    namespaceIdValue, "b.txt", "/1", UUID.randomUUID(), FileStatus.TRASHED, false)).getId();
+            UUID other = springDataFileRepository.save(new FileJpaEntity(
+                    namespaceIdValue, "c.txt", "/1", UUID.randomUUID(), FileStatus.TRASHED, false)).getId();
+            for (UUID id : List.of(a, b, other)) {
+                springDataFileVersionRepository.save(version(id, UUID.randomUUID(), List.of("h1", "h2")));
+                springDataFileShareRepository.save(new FileShareJpaEntity(id, UUID.randomUUID(), UUID.randomUUID(), Role.VIEWER));
+                springDataFileFavoriteRepository.save(new FileFavoriteJpaEntity(UUID.randomUUID(), id));
+            }
+            UUID deletedBy = UUID.randomUUID();
+
+            filePersistenceAdapter.purgeFiles(List.of(new FileId(a), new FileId(b)), deletedBy);
+            entityManager.flush();
+            entityManager.clear();
+
+            assertThat(springDataFileRepository.findAllById(List.of(a, b)))
+                    .allSatisfy(f -> {
+                        assertThat(f.getStatus()).isEqualTo(FileStatus.DELETED);
+                        assertThat(f.getDeletedBy()).isEqualTo(deletedBy);
+                    });
+            assertThat(springDataFileRepository.findById(other).orElseThrow().getStatus()).isEqualTo(FileStatus.TRASHED);
+            assertThat(springDataFileVersionRepository.findAll()).extracting(FileVersionJpaEntity::getFileId).containsExactly(other);
+            assertThat(count("select count(*) from file_version_block")).isEqualTo(2);
+            assertThat(springDataFileShareRepository.findAll()).extracting(FileShareJpaEntity::getFileId).containsExactly(other);
+            assertThat(springDataFileFavoriteRepository.findAll()).extracting(FileFavoriteJpaEntity::getFileId).containsExactly(other);
+        }
+
+        @Test
+        @DisplayName("섞여 들어온 휴지통 밖 파일은 tombstone도 안 되고 버전도 지워지지 않는다")
+        void leavesARestoredFileInTheBatchUntouched() {
+            UUID trashed = springDataFileRepository.save(new FileJpaEntity(
+                    namespaceIdValue, "a.txt", "/1", UUID.randomUUID(), FileStatus.TRASHED, false)).getId();
+            UUID restored = springDataFileRepository.save(new FileJpaEntity(
+                    namespaceIdValue, "b.txt", "/1", UUID.randomUUID(), FileStatus.UPLOADED, false)).getId();
+            springDataFileVersionRepository.save(version(trashed, UUID.randomUUID(), List.of("h1")));
+            springDataFileVersionRepository.save(version(restored, UUID.randomUUID(), List.of("h2")));
+
+            filePersistenceAdapter.purgeFiles(List.of(new FileId(trashed), new FileId(restored)), null);
+            entityManager.flush();
+            entityManager.clear();
+
+            assertThat(springDataFileRepository.findById(restored).orElseThrow().getStatus()).isEqualTo(FileStatus.UPLOADED);
+            assertThat(springDataFileVersionRepository.findAll()).extracting(FileVersionJpaEntity::getFileId).containsExactly(restored);
+        }
+    }
+
+    @Nested
+    @DisplayName("디렉토리 하위 전체를 한 번에 바꿀 때")
+    class WhenRewritingASubtree {
+
+        private final LocalDateTime trashedAt = LocalDateTime.of(2026, 10, 1, 9, 0);
+
+        private UUID row(String path, String name, FileStatus status) {
+            UUID id = springDataFileRepository.save(new FileJpaEntity(
+                    namespaceIdValue, name, path, UUID.randomUUID(), status, false)).getId();
+            if (status == FileStatus.TRASHED) {
+                entityManager.flush();
+                entityManager.createNativeQuery("update file set trashed_at = :at where id = :id")
+                        .setParameter("at", trashedAt.minusDays(1)).setParameter("id", id).executeUpdate();
+            }
+            return id;
+        }
+
+        private FileJpaEntity reload(UUID id) {
+            entityManager.flush();
+            entityManager.clear();
+            return springDataFileRepository.findById(id).orElseThrow();
+        }
+
+        @Test
+        @DisplayName("이동하면 직속 자식과 손자까지 경로 접두사가 바뀌고, 접두사만 겹치는 형제는 그대로다")
+        void moveRewritesNestedPathsOnly() {
+            UUID child = row("/A", "b.txt", FileStatus.UPLOADED);
+            UUID grandchild = row("/A/Sub", "c.txt", FileStatus.TRASHED);
+            UUID sibling = row("/A2", "d.txt", FileStatus.UPLOADED);
+
+            filePersistenceAdapter.moveSubtree(namespaceId, "/A", "/C/A");
+
+            assertThat(reload(child).getPath()).isEqualTo("/C/A");
+            assertThat(reload(grandchild).getPath()).isEqualTo("/C/A/Sub");
+            assertThat(reload(sibling).getPath()).isEqualTo("/A2");
+        }
+
+        @Test
+        @DisplayName("폴더 이름의 LIKE 와일드카드(_)를 글자 그대로 다뤄, 패턴에만 맞는 형제 폴더는 옮기지 않는다")
+        void moveTreatsLikeWildcardsLiterally() {
+            UUID child = row("/a_b", "x.txt", FileStatus.UPLOADED);
+            UUID lookalike = row("/aXb", "y.txt", FileStatus.UPLOADED);
+
+            filePersistenceAdapter.moveSubtree(namespaceId, "/a_b", "/C/a_b");
+
+            assertThat(reload(child).getPath()).isEqualTo("/C/a_b");
+            assertThat(reload(lookalike).getPath()).isEqualTo("/aXb");
+        }
+
+        @Test
+        @DisplayName("이모지가 든 이름도 같은 자리에서 잘라 옮긴다")
+        void moveCountsCharactersNotUtf16Units() {
+            UUID child = row("/📁/x", "b.txt", FileStatus.UPLOADED);
+
+            filePersistenceAdapter.moveSubtree(namespaceId, "/📁", "/C/📁");
+
+            assertThat(reload(child).getPath()).isEqualTo("/C/📁/x");
+        }
+
+        @Test
+        @DisplayName("휴지통으로 보내면 살아 있는 항목만 그 시각으로 보내고, 이미 휴지통이거나 퍼지된 항목의 시각은 그대로 둔다")
+        void trashLeavesAlreadyRemovedRowsAlone() {
+            UUID active = row("/A", "b.txt", FileStatus.UPLOADED);
+            UUID alreadyTrashed = row("/A", "c.txt", FileStatus.TRASHED);
+            UUID purged = row("/A", "d.txt", FileStatus.DELETED);
+
+            filePersistenceAdapter.trashSubtree(namespaceId, "/A", trashedAt);
+
+            assertThat(reload(active)).satisfies(f -> {
+                assertThat(f.getStatus()).isEqualTo(FileStatus.TRASHED);
+                assertThat(f.getTrashedAt()).isEqualTo(trashedAt);
+                assertThat(f.getActiveSlotName()).isNull();
+            });
+            assertThat(reload(alreadyTrashed).getTrashedAt()).isEqualTo(trashedAt.minusDays(1));
+            assertThat(reload(purged).getStatus()).isEqualTo(FileStatus.DELETED);
+        }
+
+        @Test
+        @DisplayName("복원하면 휴지통 항목만 되살리고, 퍼지된 tombstone은 되살리지 않는다")
+        void restoreRevivesTrashedRowsOnly() {
+            UUID trashed = row("/A", "b.txt", FileStatus.TRASHED);
+            UUID tombstone = row("/A", "c.txt", FileStatus.DELETED);
+
+            filePersistenceAdapter.restoreSubtree(namespaceId, "/A");
+
+            assertThat(reload(trashed)).satisfies(f -> {
+                assertThat(f.getStatus()).isEqualTo(FileStatus.UPLOADED);
+                assertThat(f.getTrashedAt()).isNull();
+                assertThat(f.getActiveSlotName()).isEqualTo("b.txt");
+            });
+            assertThat(reload(tombstone).getStatus()).isEqualTo(FileStatus.DELETED);
+        }
+
+        @Test
+        @DisplayName("복원할 자리를 다른 활성 파일이 차지했으면 비즈니스 예외로 변환된다")
+        void restoreOntoATakenSlotIsABusinessError() {
+            row("/A", "b.txt", FileStatus.TRASHED);
+            row("/A", "b.txt", FileStatus.UPLOADED);
+
+            Throwable thrown = catchThrowable(() -> filePersistenceAdapter.restoreSubtree(namespaceId, "/A"));
+
+            assertThat(thrown).isInstanceOf(BusinessException.class);
+            assertThat(((BusinessException) thrown).getExceptionCase()).isEqualTo(FileExceptionCase.FILE_ALREADY_EXISTS);
+        }
+    }
+
+    @Nested
+    @DisplayName("파일 위의 폴더들을 찾을 때")
+    class WhenFindingAncestorDirectories {
+
+        private UUID directory(String path, String name, FileStatus status) {
+            return springDataFileRepository.save(new FileJpaEntity(
+                    namespaceIdValue, name, path, UUID.randomUUID(), status, true)).getId();
+        }
+
+        @Test
+        @DisplayName("경로의 폴더를 루트부터 순서대로 한 번에 돌려주고, 휴지통 폴더와 이름만 같은 다른 자리의 폴더는 뺀다")
+        void returnsExactSlotsRootMostFirst() {
+            UUID a = directory("/", "a", FileStatus.UPLOADED);
+            UUID b = directory("/a", "b", FileStatus.UPLOADED);
+            directory("/a", "b", FileStatus.TRASHED);
+            UUID c = directory("/a/b", "c", FileStatus.UPLOADED);
+            directory("/", "b", FileStatus.UPLOADED); // a "b" at the root is not /a/b
+            entityManager.flush();
+
+            List<File> ancestors = filePersistenceAdapter.findActiveAncestorDirectories(namespaceId, "/a/b/c");
+
+            assertThat(ancestors).extracting(File::getId).containsExactly(a, b, c);
+        }
+
+        @Test
+        @DisplayName("루트 바로 아래 파일은 위에 폴더가 없다")
+        void nothingAboveTheRoot() {
+            assertThat(filePersistenceAdapter.findActiveAncestorDirectories(namespaceId, "/")).isEmpty();
+        }
+    }
+
+    private long count(String sql) {
+        return ((Number) entityManager.createNativeQuery(sql).getSingleResult()).longValue();
     }
 
     @Nested
@@ -738,6 +952,117 @@ class FilePersistenceAdapterTest {
                     namespaceId, "/1", com.moduDrive.file.domain.model.DirectorySort.NAME_ASC, null, 50);
 
             assertThat(page.content()).extracting(File::getName).containsExactly("keep.txt");
+        }
+    }
+
+    @Nested
+    @DisplayName("보존 기간이 지난 버전을 찾을 때")
+    class WhenFindingVersionsToPrune {
+
+        private final LocalDateTime cutoff = LocalDateTime.now().minusDays(30);
+
+        /** A file with versions created {@code daysAgo} days back each, oldest first; the last is current. */
+        private UUID fileWithVersions(int... daysAgo) {
+            FileJpaEntity file = springDataFileRepository.save(new FileJpaEntity(
+                    namespaceIdValue, UUID.randomUUID() + ".txt", "/", UUID.randomUUID(), FileStatus.UPLOADED, false));
+            UUID current = null;
+            for (int days : daysAgo) {
+                current = springDataFileVersionRepository.saveAndFlush(
+                        version(file.getId(), UUID.randomUUID(), List.of("h1"))).getId();
+                entityManager.createNativeQuery("update file_version set created_at = :at where id = :id")
+                        .setParameter("at", LocalDateTime.now().minusDays(days))
+                        .setParameter("id", current)
+                        .executeUpdate();
+            }
+            file.applyChanges(file.getName(), file.getPath(), current, 10L, FileStatus.UPLOADED,
+                    ShareScope.RESTRICTED, null, null);
+            springDataFileRepository.saveAndFlush(file);
+            entityManager.clear();
+            return file.getId();
+        }
+
+        private List<LocalDateTime> createdAtOf(List<com.moduDrive.file.domain.model.FileVersion> versions) {
+            return versions.stream().map(v -> springDataFileVersionRepository.findById(v.getId()).orElseThrow().getCreatedAt()).toList();
+        }
+
+        @Test
+        @DisplayName("30일이 지난 버전은 고르지만 현재 버전은 오래돼도 남긴다")
+        void picksOldVersionsButNeverTheCurrentOne() {
+            UUID fileId = fileWithVersions(60, 40, 5, 45);
+
+            var picked = filePersistenceAdapter.findVersionsToPrune(new FileId(fileId), cutoff, 100);
+
+            // 60 and 40 days old go; 5 days stays; the 45-day one is current (the newest row in the
+            // real flow is always current — here only the current-version rule keeps it).
+            assertThat(picked).hasSize(2);
+            assertThat(createdAtOf(picked)).allMatch(at -> at.isBefore(cutoff));
+        }
+
+        @Test
+        @DisplayName("휴지통에 있는 파일의 버전은 고르지 않는다")
+        void skipsATrashedFile() {
+            UUID fileId = fileWithVersions(60, 1);
+            entityManager.createNativeQuery("update file set status = 'TRASHED' where id = :id")
+                    .setParameter("id", fileId)
+                    .executeUpdate();
+
+            assertThat(filePersistenceAdapter.findVersionsToPrune(new FileId(fileId), cutoff, 100)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("최근 버전이라도 최신 N개 밖이면 고른다")
+        void picksRecentVersionsOutsideTheNewestKeep() {
+            UUID fileId = fileWithVersions(3, 2, 1);
+
+            var picked = filePersistenceAdapter.findVersionsToPrune(new FileId(fileId), cutoff, 2);
+
+            assertThat(picked).hasSize(1);
+            assertThat(createdAtOf(picked).getFirst()).isBefore(LocalDateTime.now().minusDays(2).plusHours(1));
+        }
+
+        @Test
+        @DisplayName("버전 하나뿐인 파일과 최근 버전만 있는 파일은 후보에 넣지 않는다")
+        void listsOnlyFilesThatMayHaveSomethingToDrop() {
+            UUID old = fileWithVersions(60, 1);
+            UUID tooMany = fileWithVersions(3, 2, 1);
+            fileWithVersions(60);
+            fileWithVersions(2, 1);
+
+            List<UUID> candidates = filePersistenceAdapter.findFileIdsWithVersionsToPrune(cutoff, 2, new UUID(0, 0), 10);
+
+            assertThat(candidates).containsExactlyInAnyOrder(old, tooMany);
+        }
+
+        @Test
+        @DisplayName("후보는 파일 id 순서로 after 다음부터 limit개만 준다")
+        void pagesCandidatesByFileId() {
+            UUID a = fileWithVersions(60, 1);
+            UUID b = fileWithVersions(60, 1);
+            // Postgres orders uuids as unsigned bytes; UUID.compareTo is signed — compare the hex text.
+            UUID first = a.toString().compareTo(b.toString()) < 0 ? a : b;
+            UUID second = first == a ? b : a;
+
+            assertThat(filePersistenceAdapter.findFileIdsWithVersionsToPrune(cutoff, 100, new UUID(0, 0), 1))
+                    .containsExactly(first);
+            assertThat(filePersistenceAdapter.findFileIdsWithVersionsToPrune(cutoff, 100, first, 10))
+                    .containsExactly(second);
+        }
+
+        @Test
+        @DisplayName("고른 버전을 지우면 블록 목록 행도 같이 지워진다")
+        void deletingVersionsDropsTheirBlocklists() {
+            UUID fileId = fileWithVersions(60, 1);
+            var picked = filePersistenceAdapter.findVersionsToPrune(new FileId(fileId), cutoff, 100);
+
+            filePersistenceAdapter.deleteFileVersions(picked);
+            entityManager.flush();
+
+            assertThat(springDataFileVersionRepository.findByFileIdOrderByCreatedAtDesc(fileId, org.springframework.data.domain.Pageable.unpaged())).hasSize(1);
+            Number blocklistRows = (Number) entityManager.createNativeQuery(
+                            "select count(*) from file_version_block where version_id = :id")
+                    .setParameter("id", picked.getFirst().getId())
+                    .getSingleResult();
+            assertThat(blocklistRows.longValue()).isZero();
         }
     }
 

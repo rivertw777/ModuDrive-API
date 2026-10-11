@@ -33,7 +33,7 @@ class GetFileService implements GetFileUseCase {
     public FileView getFile(GetFileCommand command) {
         File file = findFilePort.findById(command.getFileId())
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_NOT_FOUND));
-        fileAccessGuard.requirePermission(file, command.getCallerId(), Permission.READ);
+        FileAccessGuard.Access access = fileAccessGuard.requirePermission(file, command.getCallerId(), Permission.READ);
 
         if (file.isRemoved()) {
             throw new BusinessException(FileExceptionCase.FILE_ALREADY_DELETED);
@@ -48,19 +48,20 @@ class GetFileService implements GetFileUseCase {
         // The caller doesn't own it: the detail panel shows the full "shared with me" context —
         // same as 공유 문서함 — wherever it opens. Their access can come from a grant on this file
         // itself or, for a file only reachable by browsing into a shared folder, one inherited
-        // from an ancestor (see ListSharedDirectoryService) — resolveGrant covers both so
+        // from an ancestor (see ListSharedDirectoryService) — the guard's access() covers both so
         // "공유된 날짜" isn't blank just because this particular file was never shared directly.
         //
         // No grant at all means the caller only got here through the LINK fallback in
-        // FileAccessGuard.resolveRole — nobody shared this file *with them*, so there is no
+        // FileAccessGuard.access — nobody shared this file *with them*, so there is no
         // "공유한 사용자" to name. Spec 3 gives a link-only visitor viewer access, not the owner's
         // identity: a link forwarded to a stranger must not leak whose drive it came from (#319).
-        Optional<FileShare> grant = fileAccessGuard.resolveGrant(file, command.getCallerId());
+        // The permission check above already resolved both; reused rather than walked again.
+        Optional<FileShare> grant = Optional.ofNullable(access.grant());
         MemberSummary sharedBy = grant.isPresent()
                 ? findMemberByIdPort.findMemberByIdOrUnknown(file.getOwnerId())
                 : FindMemberByIdPort.UNKNOWN_MEMBER;
         LocalDateTime sharedAt = grant.map(FileShare::getCreatedAt).orElse(null);
-        return new FileView(file, fileAccessGuard.effectiveRole(file, command.getCallerId()),
+        return new FileView(file, access.role(),
                 sharedBy.name(), sharedBy.email(), sharedAt, null, null);
     }
 }

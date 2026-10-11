@@ -45,14 +45,49 @@ interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID>, J
             @Param("escapedPrefix") String escapedPrefix);
 
     // The same subtree, locked top-down (path, then name) — the order a commit locks the folders
-    // above the file it creates, so the two never wait on each other in a cycle.
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select f from FileJpaEntity f where f.namespaceId = :namespaceId " +
-            "and (f.path = :prefix or f.path like concat(:escapedPrefix, '/%') escape '\\') order by f.path, f.name")
-    List<FileJpaEntity> lockSubtreeByNamespaceIdAndPathPrefix(
-            @Param("namespaceId") UUID namespaceId,
-            @Param("prefix") String prefix,
-            @Param("escapedPrefix") String escapedPrefix);
+    // above the file it creates, so the two never wait on each other in a cycle. Ids only: the bulk
+    // UPDATEs below rewrite the rows in place, nothing needs them loaded.
+    @Query(value = "select id from file where namespace_id = :namespaceId "
+            + "and (path = :prefix or path like concat(:escapedPrefix, '/%') escape '\\') order by path, name for update",
+            nativeQuery = true)
+    List<UUID> lockSubtreeIds(@Param("namespaceId") UUID namespaceId, @Param("prefix") String prefix,
+                              @Param("escapedPrefix") String escapedPrefix);
+
+    // Subtree rewrites, one statement each instead of one UPDATE per row. Each mirrors the File
+    // domain method it replaces (move / softDelete / restore) plus what FileJpaEntity derives from it
+    // (active_slot_name) and the auditing a save would have stamped (updated_at/updated_by).
+    // char_length, not Java's length(): both count characters, so a name with a non-BMP character
+    // (emoji) cuts at the same place.
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query(value = "update file set path = concat(:newPrefix, substr(path, char_length(:prefix) + 1)), "
+            + "updated_at = :now, updated_by = :by where namespace_id = :namespaceId "
+            + "and (path = :prefix or path like concat(:escapedPrefix, '/%') escape '\\')",
+            nativeQuery = true)
+    int moveSubtree(@Param("namespaceId") UUID namespaceId, @Param("prefix") String prefix,
+                    @Param("escapedPrefix") String escapedPrefix, @Param("newPrefix") String newPrefix,
+                    @Param("now") LocalDateTime now, @Param("by") UUID by);
+
+    // A row already trashed (individually, earlier) or purged keeps its trashed_at — see
+    // DirectoryCascader.purge for why that matters.
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query(value = "update file set status = 'TRASHED', trashed_at = :trashedAt, active_slot_name = null, "
+            + "updated_at = :now, updated_by = :by where namespace_id = :namespaceId "
+            + "and (path = :prefix or path like concat(:escapedPrefix, '/%') escape '\\') "
+            + "and status not in ('TRASHED', 'DELETED')",
+            nativeQuery = true)
+    int trashSubtree(@Param("namespaceId") UUID namespaceId, @Param("prefix") String prefix,
+                     @Param("escapedPrefix") String escapedPrefix, @Param("trashedAt") LocalDateTime trashedAt,
+                     @Param("now") LocalDateTime now, @Param("by") UUID by);
+
+    // Only still-trashed rows: a purged one is a tombstone whose content is gone.
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query(value = "update file set status = 'UPLOADED', trashed_at = null, active_slot_name = name, "
+            + "updated_at = :now, updated_by = :by where namespace_id = :namespaceId "
+            + "and (path = :prefix or path like concat(:escapedPrefix, '/%') escape '\\') and status = 'TRASHED'",
+            nativeQuery = true)
+    int restoreSubtree(@Param("namespaceId") UUID namespaceId, @Param("prefix") String prefix,
+                       @Param("escapedPrefix") String escapedPrefix, @Param("now") LocalDateTime now,
+                       @Param("by") UUID by);
 
     // Only the subtree's TRASHED rows: a purge locks these and then releases blocks, while a commit
     // locks blocks and then active rows — locking a live folder reusing the path would close a cycle.
@@ -75,29 +110,34 @@ interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID>, J
     // Retention sweep: in-trash long enough. Same "TRASHED never has deletedAt" invariant as above.
     List<FileJpaEntity> findByStatusAndTrashedAtBefore(FileStatus status, LocalDateTime cutoff);
 
+    // Of these, the rows a purge may still tombstone — locked, so they stay TRASHED until it commits.
+    @Query(value = "select id from file where id = any(:ids) and status = 'TRASHED' for update", nativeQuery = true)
+    List<UUID> lockTrashedIds(@Param("ids") UUID[] ids);
+
     // Tombstone stamp — BaseTimeEntity's deletedAt/isDeleted, but via a plain UPDATE so no
-    // @LastModifiedDate bump (see FilePersistenceAdapter.purgeFile). flush first so the
-    // version/share/favorite deletes in the same purgeFile call are committed; clear after so a
-    // stale managed FileJpaEntity isn't read back with the old value. The WHERE clause is the
-    // purge precondition (only a currently-trashed row is purge-eligible) and doubles as the
-    // idempotency guard — a second concurrent call no longer matches once the first commits.
+    // @LastModifiedDate bump (see FilePersistenceAdapter.purgeFiles). flush first so nothing pending
+    // is written after it; clear after so a stale managed FileJpaEntity isn't read back with the old
+    // value. The WHERE clause is the purge precondition (only a currently-trashed row is
+    // purge-eligible) and doubles as the idempotency guard — a second concurrent call no longer
+    // matches once the first commits.
     @Modifying(flushAutomatically = true, clearAutomatically = true)
-    @Query("update FileJpaEntity f set f.deletedAt = :now, f.isDeleted = true, f.status = 'DELETED', "
-            + "f.deletedBy = :deletedBy where f.id = :id and f.status = 'TRASHED'")
-    int markPurged(@Param("id") UUID id, @Param("now") LocalDateTime now, @Param("deletedBy") UUID deletedBy);
+    // An array, not an IN list: a folder of 100k files would be 100k bind parameters (Postgres caps at 65,535).
+    @Query(value = "update file set deleted_at = :now, is_deleted = true, status = 'DELETED', deleted_by = :deletedBy "
+            + "where id = any(:ids) and status = 'TRASHED'", nativeQuery = true)
+    int markPurged(@Param("ids") UUID[] ids, @Param("now") LocalDateTime now, @Param("deletedBy") UUID deletedBy);
+
+    // Active directories at any of these (path, name) slots — the caller keeps the exact pairs. The
+    // slot column is name for a live row and NULL once trashed, so matching on it both drops removed
+    // rows and walks uk_file_namespace_path_active_name all the way down.
+    @Query("select f from FileJpaEntity f where f.namespaceId = :namespaceId and f.directory = true "
+            + "and f.path in :paths and f.activeSlotName in :names")
+    List<FileJpaEntity> findActiveDirectoriesAt(@Param("namespaceId") UUID namespaceId,
+                                                @Param("paths") Collection<String> paths,
+                                                @Param("names") Collection<String> names);
 
     List<FileJpaEntity> findByNamespaceIdAndNameContainingIgnoreCaseAndStatusNotIn(
             UUID namespaceId, String name, Collection<FileStatus> statuses);
 
     List<FileJpaEntity> findByNamespaceIdAndDirectoryFalseAndStatusNotIn(
             UUID namespaceId, Collection<FileStatus> statuses);
-
-    // Trashed files still occupy storage until purged, so they count here too — but a purged
-    // tombstone (deleted_at set) no longer has blocks. This is independent of the TRASHED/DELETED
-    // status split above: deletedAt alone already tells "still has blocks" apart from "purged".
-    // PENDING (upload not finished, no committed size) is excluded too.
-    @Query("select coalesce(sum(f.fileSize), 0) from FileJpaEntity f " +
-            "where f.namespaceId = :namespaceId and f.directory = false " +
-            "and f.status <> 'PENDING' and f.deletedAt is null")
-    long sumFileSizeByNamespaceId(@Param("namespaceId") UUID namespaceId);
 }

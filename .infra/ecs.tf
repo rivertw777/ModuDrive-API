@@ -1,5 +1,5 @@
 # Seven ECS services on Fargate. They find each other through Service Connect under the same names
-# and ports as compose (http://member-service:10010 ...), so clients.<service>.url needs no change (aws-migration.md 1-3).
+# and ports as compose (http://member-service:10010 ...), so clients.<service>.url needs no change (003-aws-migration.md 1-3).
 locals {
   db_names     = { member = "member_db", file = "file_db", notification = "notification_db", auth = "auth_db" }
   sqs_clients  = ["member", "auth", "file", "storage", "mail", "notification"]
@@ -61,7 +61,7 @@ locals {
   }
 
   # ponytail: placeholders until a domain exists — CORS/CSRF and mail links point nowhere useful, and
-  # login can't work anyway without one (the __Host- cookie needs HTTPS on a shared site, aws-migration.md 1-11).
+  # login can't work anyway without one (the __Host- cookie needs HTTPS on a shared site, 003-aws-migration.md 1-11).
   client_url = local.domain_based ? "https://app.${var.domain_name}" : "https://app.example.com"
   mail_from  = local.domain_based ? "noreply@${var.domain_name}" : "noreply@example.com"
 }
@@ -100,7 +100,7 @@ resource "aws_cloudwatch_log_group" "service" {
 
   name       = "/ecs/${var.project}/${each.key}-service"
   kms_key_id = local.kms_key_arn
-  # Logs are the bulk of the monitoring bill at this scale — keep them short (aws-migration.md 1-13).
+  # Logs are the bulk of the monitoring bill at this scale — keep them short (003-aws-migration.md 1-13).
   retention_in_days = 14
 }
 
@@ -276,7 +276,7 @@ resource "aws_appautoscaling_policy" "cpu" {
 }
 
 # Creates each instance's databases and their logins, once, after RDS exists and before the services
-# first start — RDS is private, so it runs inside the VPC as a one-off task per instance (aws-migration.md 1-5), reusing
+# first start — RDS is private, so it runs inside the VPC as a one-off task per instance (003-aws-migration.md 1-5), reusing
 # the local script with DB_SERVICES naming that instance's. The commands are the db_init_run_tasks
 # output. A second run fails (CREATE ROLE of an existing role) — by design, it only ever runs once.
 resource "aws_cloudwatch_log_group" "db_init" {

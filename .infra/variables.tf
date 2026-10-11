@@ -8,15 +8,15 @@ variable "project" {
   default = "modudrive"
 }
 
-# Which stack this is — demo, staging or prod. Each lives in its own AWS account with its own state
+# Which stack this is — demo or prod. Each lives in its own AWS account with its own state
 # bucket (envs/<env>.backend.hcl), so nothing here is named per environment; it only tags resources
 # and names the GitHub environment the deploy role trusts (github.tf).
 variable "environment" {
   type = string
 
   validation {
-    condition     = contains(["demo", "staging", "prod"], var.environment)
-    error_message = "environment is demo, staging or prod."
+    condition     = contains(["demo", "prod"], var.environment)
+    error_message = "environment is demo or prod."
   }
 }
 
@@ -29,7 +29,7 @@ variable "account_id" {
 
 # WEB and API must share one registrable domain (app.<domain> / api.<domain>): the session cookie is
 # SameSite=Strict + host-only, and *.cloudfront.net / *.elb.amazonaws.com are each their own site
-# (aws-migration.md 1-11). Null until a domain is bought — everything domain-bound (Route 53 zone,
+# (003-aws-migration.md 1-11). Null until a domain is bought — everything domain-bound (Route 53 zone,
 # SES identity) is skipped until then.
 variable "domain_name" {
   type    = string
@@ -47,11 +47,11 @@ variable "image_tag" {
 
 # Sizing — the same architecture at every size; only what costs money and what buys redundancy
 # differs. No defaults: every plan names its whole set with -var-file — envs/demo.tfvars (the trial
-# stack), envs/staging.tfvars (prod's shape at the smallest size) or envs/prod.tfvars — never a mix.
+# stack) or envs/prod.tfvars — never a mix.
 
 # How the tasks (always in private subnets) reach the internet — ECR, SSM, SQS, SES, Discord:
 #   "gateway"  — a managed NAT gateway per AZ (~$45/month each), nothing to run
-#   "instance" — one t4g.nano NAT instance (fck-nat, ~$8/month with its IP), a single point for
+#   "instance" — one t4g.micro NAT instance (fck-nat, ~$11/month with its IP), a single point for
 #                outbound traffic only — inbound comes through the ALB either way
 variable "nat" {
   type = string
@@ -96,6 +96,13 @@ variable "db_engine" {
     condition     = contains(["rds", "aurora"], var.db_engine)
     error_message = "db_engine is \"rds\" or \"aurora\"."
   }
+}
+
+# Days of automated RDS backups (db_engine = "rds" only; Aurora keeps 35). An AWS free-plan account
+# allows at most 1.
+variable "db_backup_retention_days" {
+  type    = number
+  default = 7
 }
 
 # PostgreSQL instances (or Aurora clusters), and the services whose database each one holds (rds.tf).

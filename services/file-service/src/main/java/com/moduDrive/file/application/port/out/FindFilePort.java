@@ -35,12 +35,12 @@ public interface FindFilePort {
      * first and the trash doesn't write back the version it read before. */
     Optional<File> lockById(FileId fileId);
 
-    /** {@link #findByNamespaceIdAndPathStartingWith}, locking every row top-down — trashing a folder,
-     * for the same reason as {@link #lockById}. */
-    List<File> lockByNamespaceIdAndPathStartingWith(NamespaceId namespaceId, String pathPrefix);
+    /** The active directories on a materialized {@code path} (a file's parent path), root-most
+     * first — every folder above the file. One query, however deep. */
+    List<File> findActiveAncestorDirectories(NamespaceId namespaceId, String path);
 
-    /** {@link #lockByNamespaceIdAndPathStartingWith}, TRASHED rows only — a purge, which must not lock
-     * live rows a commit may be waiting on while holding the blocks the purge releases next. */
+    /** Every TRASHED row of the subtree, locked top-down — a purge, which must not lock live rows a
+     * commit may be waiting on while holding the blocks the purge releases next. */
     List<File> lockTrashedByNamespaceIdAndPathStartingWith(NamespaceId namespaceId, String pathPrefix);
 
     /** Entries whose {@code path} is {@code pathPrefix} or nested under it — i.e. every
@@ -54,8 +54,6 @@ public interface FindFilePort {
     List<File> findByNamespaceIdAndNameContaining(NamespaceId namespaceId, String query);
 
     List<File> findByNamespaceId(NamespaceId namespaceId);
-
-    long sumFileSizeByNamespaceId(NamespaceId namespaceId);
 
     /** Every not-yet-purged trashed file across every namespace that was trashed before
      * {@code cutoff}. Used by the retention sweep; unlike the rest of this port, deliberately

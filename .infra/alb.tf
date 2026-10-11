@@ -1,4 +1,4 @@
-# The only public entry point: ALB → gateway (aws-migration.md 1-4). Everything behind it is in private subnets.
+# The only public entry point: ALB → gateway (003-aws-migration.md 1-4). Everything behind it is in private subnets.
 resource "aws_lb" "main" {
   name               = var.project
   load_balancer_type = "application"

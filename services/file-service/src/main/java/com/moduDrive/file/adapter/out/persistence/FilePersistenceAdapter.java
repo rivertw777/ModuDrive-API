@@ -11,6 +11,7 @@ import com.moduDrive.file.domain.model.Namespace.NamespaceId;
 import com.moduDrive.file.exception.FileExceptionCase;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.AuditorAware;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.ScrollPosition;
 import org.springframework.data.domain.Sort;
@@ -18,8 +19,10 @@ import org.springframework.data.domain.Window;
 import org.springframework.data.jpa.domain.Specification;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -28,13 +31,16 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 /** The File aggregate — files/folders and their versions. Share and favorite rows are other
  * aggregates' tables, but a purge still has to clear them (see cascadeDeleteAttachments). */
-class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVersionPort, FindFileVersionsPort {
+class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVersionPort, FindFileVersionsPort,
+        DeleteFileVersionsPort {
 
     private final SpringDataFileRepository fileRepository;
     private final SpringDataFileVersionRepository fileVersionRepository;
     private final SpringDataFileShareRepository fileShareRepository;
     private final SpringDataFileFavoriteRepository fileFavoriteRepository;
+    private final SpringDataNamespaceRepository namespaceRepository;
     private final FileMapper fileMapper;
+    private final AuditorAware<UUID> auditorAware;
 
     @Override
     public File saveFile(File file) {
@@ -109,34 +115,96 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
     }
 
     /** Hard delete — no caller in the trash flow anymore (purgeFile keeps a tombstone), kept for
-     * a future job that clears out tombstones older than the recovery window. */
+     * a future job that clears out tombstones older than the recovery window. Tombstones only: it
+     * doesn't touch namespace.used_bytes, which a live file still counts in. */
     @Override
     public void deleteFile(FileId fileId) {
-        cascadeDeleteAttachments(fileId);
+        deleteAttachments(new UUID[]{fileId.value()});
         fileRepository.deleteById(fileId.value());
     }
 
     @Override
     public void purgeFile(FileId fileId, UUID deletedBy) {
-        // Tombstone purge: drop everything that costs storage, keep the metadata row with
-        // deletedAt stamped. markPurged is a plain UPDATE (not a JPA save) so it doesn't bump
-        // updatedAt — DirectoryCascader.purge's sibling check relies on trash-time timestamps
-        // staying put.
-        // Tombstone first, and drop the rest only if it was still TRASHED — a file restored meanwhile
-        // keeps its versions, shares and favorites.
-        if (fileRepository.markPurged(fileId.value(), LocalDateTime.now(), deletedBy) == 1) {
-            cascadeDeleteAttachments(fileId);
-        }
+        purgeFiles(List.of(fileId), deletedBy);
     }
 
-    // The file's versions would otherwise dangle forever, holding block references that
-    // FilePurger/DirectoryCascader already released. Its share and favorite rows
-    // likewise — no FK cascade, so a grant or a star on a purged file/folder would linger and
-    // only ever get filtered out at read time (ListSharedWithMeService / ListFavoritesService).
-    private void cascadeDeleteAttachments(FileId fileId) {
-        fileVersionRepository.deleteByFileId(fileId.value());
-        fileShareRepository.deleteByFileId(fileId.value());
-        fileFavoriteRepository.deleteByFileId(fileId.value());
+    @Override
+    public void purgeFiles(Collection<FileId> fileIds, UUID deletedBy) {
+        if (fileIds.isEmpty()) {
+            return;
+        }
+        // Only rows still TRASHED, and the rest only for those — a file restored meanwhile keeps its
+        // versions, shares and favorites, and a second purge of the same file frees nothing twice.
+        // The callers already lock and re-check what they pass; this keeps that true per row anyway.
+        UUID[] ids = fileRepository.lockTrashedIds(fileIds.stream().map(FileId::value).toArray(UUID[]::new))
+                .toArray(UUID[]::new);
+        if (ids.length == 0) {
+            return;
+        }
+        // Tombstone purge: drop everything that costs storage, keep the metadata rows with deletedAt
+        // stamped. markPurged is a plain UPDATE (not a JPA save) so it doesn't bump updatedAt —
+        // DirectoryCascader.purge's sibling check relies on trash-time timestamps staying put.
+        fileRepository.markPurged(ids, LocalDateTime.now(), deletedBy);
+        deleteAttachments(ids);
+        // In the same transaction as the tombstones, last, like the commit's usage update: one
+        // UPDATE of the drive's row for the whole batch.
+        namespaceRepository.releaseUsedBytesOf(ids);
+    }
+
+    // The files' versions would otherwise dangle forever, holding block references that
+    // FilePurger/DirectoryCascader already released. Their share and favorite rows likewise — no
+    // FK cascade, so a grant or a star on a purged file/folder would linger and only ever get
+    // filtered out at read time (ListSharedWithMeService / ListFavoritesService). Bulk deletes,
+    // one per table however many files.
+    private void deleteAttachments(UUID[] fileIds) {
+        fileVersionRepository.deleteBlocklistsByFileIds(fileIds);
+        fileVersionRepository.deleteByFileIds(fileIds);
+        fileShareRepository.deleteByFileIds(fileIds);
+        fileFavoriteRepository.deleteByFileIds(fileIds);
+    }
+
+    @Override
+    public void moveSubtree(NamespaceId namespaceId, String prefix, String newPrefix) {
+        lockSubtree(namespaceId, prefix);
+        translateSlotConflict(() -> fileRepository.moveSubtree(namespaceId.value(), prefix,
+                escapeLikePattern(prefix), newPrefix, LocalDateTime.now(), currentAuditor()));
+    }
+
+    @Override
+    public void trashSubtree(NamespaceId namespaceId, String prefix, LocalDateTime trashedAt) {
+        lockSubtree(namespaceId, prefix);
+        fileRepository.trashSubtree(namespaceId.value(), prefix, escapeLikePattern(prefix), trashedAt,
+                LocalDateTime.now(), currentAuditor());
+    }
+
+    @Override
+    public void restoreSubtree(NamespaceId namespaceId, String prefix) {
+        lockSubtree(namespaceId, prefix);
+        // Restoring re-occupies the rows' name slots, so it can collide like a single restore does.
+        translateSlotConflict(() -> fileRepository.restoreSubtree(namespaceId.value(), prefix,
+                escapeLikePattern(prefix), LocalDateTime.now(), currentAuditor()));
+    }
+
+    // Locked top-down before the bulk UPDATE: the UPDATE alone would lock rows in whatever order its
+    // scan finds them, and could then deadlock against a commit locking the same folders top-down.
+    private void lockSubtree(NamespaceId namespaceId, String prefix) {
+        fileRepository.lockSubtreeIds(namespaceId.value(), prefix, escapeLikePattern(prefix));
+    }
+
+    // A bulk UPDATE bypasses JPA auditing, so it stamps updated_by itself from the same source.
+    private UUID currentAuditor() {
+        return auditorAware.getCurrentAuditor().orElse(null);
+    }
+
+    private static void translateSlotConflict(Runnable update) {
+        try {
+            update.run();
+        } catch (DataIntegrityViolationException e) {
+            if (isActiveSlotConflict(e)) {
+                throw new BusinessException(FileExceptionCase.FILE_ALREADY_EXISTS);
+            }
+            throw e;
+        }
     }
 
     @Override
@@ -215,12 +283,31 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
     }
 
     @Override
-    public List<File> lockByNamespaceIdAndPathStartingWith(NamespaceId namespaceId, String pathPrefix) {
-        return fileRepository
-                .lockSubtreeByNamespaceIdAndPathPrefix(namespaceId.value(), pathPrefix, escapeLikePattern(pathPrefix))
+    public List<File> findActiveAncestorDirectories(NamespaceId namespaceId, String path) {
+        if (path == null || "/".equals(path)) {
+            return List.of();
+        }
+        // "/a/b/c" → the folders ("/", "a"), ("/a", "b"), ("/a/b", "c"), root-most first.
+        List<String> paths = new ArrayList<>();
+        List<String> names = new ArrayList<>();
+        String walked = "/";
+        for (String name : path.substring(1).split("/")) {
+            paths.add(walked);
+            names.add(name);
+            walked = "/".equals(walked) ? "/" + name : walked + "/" + name;
+        }
+        // The query matches any path with any name; keep only the exact pairs, in path order.
+        Map<List<String>, FileJpaEntity> bySlot = fileRepository.findActiveDirectoriesAt(namespaceId.value(), paths, names)
                 .stream()
-                .map(fileMapper::mapFileToDomain)
-                .toList();
+                .collect(Collectors.toMap(f -> List.of(f.getPath(), f.getName()), f -> f, (a, b) -> a));
+        List<File> ancestors = new ArrayList<>();
+        for (int i = 0; i < paths.size(); i++) {
+            FileJpaEntity directory = bySlot.get(List.of(paths.get(i), names.get(i)));
+            if (directory != null) {
+                ancestors.add(fileMapper.mapFileToDomain(directory));
+            }
+        }
+        return ancestors;
     }
 
     @Override
@@ -275,11 +362,6 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
     }
 
     @Override
-    public long sumFileSizeByNamespaceId(NamespaceId namespaceId) {
-        return fileRepository.sumFileSizeByNamespaceId(namespaceId.value());
-    }
-
-    @Override
     public List<File> findExpiredTrash(LocalDateTime cutoff) {
         return fileRepository
                 .findByStatusAndTrashedAtBefore(FileStatus.TRASHED, cutoff)
@@ -310,13 +392,6 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
     }
 
     @Override
-    public List<FileVersion> findAllByFileId(FileId fileId) {
-        return fileVersionRepository.findByFileId(fileId.value()).stream()
-                .map(fileMapper::mapFileVersionToDomain)
-                .toList();
-    }
-
-    @Override
     public List<FileVersion> findByFileIdOrderByCreatedAtDesc(FileId fileId, int limit) {
         return fileVersionRepository
                 .findByFileIdOrderByCreatedAtDesc(fileId.value(), PageRequest.of(0, limit))
@@ -325,4 +400,21 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
                 .collect(Collectors.toList());
     }
 
+    @Override
+    public List<UUID> findFileIdsWithVersionsToPrune(LocalDateTime cutoff, int keep, UUID afterFileId, int limit) {
+        return fileVersionRepository.findFileIdsWithVersionsToPrune(cutoff, keep, afterFileId, limit);
+    }
+
+    @Override
+    public List<FileVersion> findVersionsToPrune(FileId fileId, LocalDateTime cutoff, int keep) {
+        return fileVersionRepository.findVersionsToPrune(fileId.value(), cutoff, keep).stream()
+                .map(fileMapper::mapFileVersionToDomain)
+                .toList();
+    }
+
+    @Override
+    public void deleteFileVersions(List<FileVersion> versions) {
+        // Entity deletes, not a bulk JPQL delete: the blocklist (file_version_block) goes with each row.
+        fileVersionRepository.deleteAllById(versions.stream().map(FileVersion::getId).toList());
+    }
 }

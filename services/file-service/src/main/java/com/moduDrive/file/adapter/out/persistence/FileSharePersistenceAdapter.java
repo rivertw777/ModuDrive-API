@@ -12,6 +12,7 @@ import com.moduDrive.file.exception.FileExceptionCase;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -73,6 +74,18 @@ class FileSharePersistenceAdapter implements SaveFileSharePort, FindFileSharePor
     public Optional<FileShare> findByFileIdAndSharedWithUserId(FileId fileId, UUID sharedWithUserId) {
         return fileShareRepository.findByFileIdAndSharedWithUserId(fileId.value(), sharedWithUserId)
                 .map(fileMapper::mapFileShareToDomain);
+    }
+
+    @Override
+    public List<FileShare> findBySharedWithUserIdAndFileIdIn(UUID sharedWithUserId, Collection<FileId> fileIds) {
+        if (fileIds.isEmpty()) {
+            return List.of();
+        }
+        return fileShareRepository
+                .findByFileIdInAndSharedWithUserId(fileIds.stream().map(FileId::value).toList(), sharedWithUserId)
+                .stream()
+                .map(fileMapper::mapFileShareToDomain)
+                .toList();
     }
 
     @Override
