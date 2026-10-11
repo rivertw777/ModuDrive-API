@@ -36,9 +36,10 @@ interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID>, J
     // would silently fall back to an unescaped `like 'prefix%'` and reintroduce the prefix-collision
     // bug (e.g. "/foo" matching "/foo2") this hand-written JPQL exists to prevent.
     // :escapedPrefix has LIKE metacharacters (%, _, \) escaped by the caller; :prefix stays raw for
-    // the exact-match branch.
+    // the exact-match branch. `||`, not concat(): concat() is stable, so the pattern isn't a constant at
+    // plan time and the prefix index (V11) goes unused — every subtree query below would scan the drive.
     @Query("select f from FileJpaEntity f where f.namespaceId = :namespaceId " +
-            "and (f.path = :prefix or f.path like concat(:escapedPrefix, '/%') escape '\\')")
+            "and (f.path = :prefix or f.path like (:escapedPrefix || '/%') escape '\\')")
     List<FileJpaEntity> findSubtreeByNamespaceIdAndPathPrefix(
             @Param("namespaceId") UUID namespaceId,
             @Param("prefix") String prefix,
@@ -48,7 +49,7 @@ interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID>, J
     // above the file it creates, so the two never wait on each other in a cycle. Ids only: the bulk
     // UPDATEs below rewrite the rows in place, nothing needs them loaded.
     @Query(value = "select id from file where namespace_id = :namespaceId "
-            + "and (path = :prefix or path like concat(:escapedPrefix, '/%') escape '\\') order by path, name for update",
+            + "and (path = :prefix or path like (:escapedPrefix || '/%') escape '\\') order by path, name for update",
             nativeQuery = true)
     List<UUID> lockSubtreeIds(@Param("namespaceId") UUID namespaceId, @Param("prefix") String prefix,
                               @Param("escapedPrefix") String escapedPrefix);
@@ -61,7 +62,7 @@ interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID>, J
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query(value = "update file set path = concat(:newPrefix, substr(path, char_length(:prefix) + 1)), "
             + "updated_at = :now, updated_by = :by where namespace_id = :namespaceId "
-            + "and (path = :prefix or path like concat(:escapedPrefix, '/%') escape '\\')",
+            + "and (path = :prefix or path like (:escapedPrefix || '/%') escape '\\')",
             nativeQuery = true)
     int moveSubtree(@Param("namespaceId") UUID namespaceId, @Param("prefix") String prefix,
                     @Param("escapedPrefix") String escapedPrefix, @Param("newPrefix") String newPrefix,
@@ -72,7 +73,7 @@ interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID>, J
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query(value = "update file set status = 'TRASHED', trashed_at = :trashedAt, active_slot_name = null, "
             + "updated_at = :now, updated_by = :by where namespace_id = :namespaceId "
-            + "and (path = :prefix or path like concat(:escapedPrefix, '/%') escape '\\') "
+            + "and (path = :prefix or path like (:escapedPrefix || '/%') escape '\\') "
             + "and status not in ('TRASHED', 'DELETED')",
             nativeQuery = true)
     int trashSubtree(@Param("namespaceId") UUID namespaceId, @Param("prefix") String prefix,
@@ -83,7 +84,7 @@ interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID>, J
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query(value = "update file set status = 'UPLOADED', trashed_at = null, active_slot_name = name, "
             + "updated_at = :now, updated_by = :by where namespace_id = :namespaceId "
-            + "and (path = :prefix or path like concat(:escapedPrefix, '/%') escape '\\') and status = 'TRASHED'",
+            + "and (path = :prefix or path like (:escapedPrefix || '/%') escape '\\') and status = 'TRASHED'",
             nativeQuery = true)
     int restoreSubtree(@Param("namespaceId") UUID namespaceId, @Param("prefix") String prefix,
                        @Param("escapedPrefix") String escapedPrefix, @Param("now") LocalDateTime now,
@@ -93,7 +94,7 @@ interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID>, J
     // locks blocks and then active rows — locking a live folder reusing the path would close a cycle.
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select f from FileJpaEntity f where f.namespaceId = :namespaceId and f.status = 'TRASHED' " +
-            "and (f.path = :prefix or f.path like concat(:escapedPrefix, '/%') escape '\\') order by f.path, f.name")
+            "and (f.path = :prefix or f.path like (:escapedPrefix || '/%') escape '\\') order by f.path, f.name")
     List<FileJpaEntity> lockTrashedSubtreeByNamespaceIdAndPathPrefix(
             @Param("namespaceId") UUID namespaceId,
             @Param("prefix") String prefix,

@@ -7,6 +7,7 @@
 #   scenario.sh cascade <label> [sizes...]   — 001: move/trash/restore/purge (env ROUNDS, SKIP_WAIT)
 #   scenario.sh contend <label> [sizes...]   — 001: slowest same-drive commit while a cascade runs (env ROUNDS)
 #   scenario.sh perm <label>                 — 002: shared-folder permission by depth
+#   scenario.sh index <label> [sizes...]     — 001: folder purge in a drive with BACKGROUND other files (env ROUNDS, BACKGROUND)
 #   scenario.sh wait               — block until no file-service transaction is still running server-side
 #   scenario.sh cleanup            — delete the benchmark's drives and everything under them
 set -u
@@ -15,7 +16,7 @@ SERVICE_COMPOSE=.docker/docker-compose.service.yml
 PG=modudrive-infra-postgres-1
 psql_su() { docker exec -i $PG psql -U modudrive -v ON_ERROR_STOP=1 "$@"; }
 pg_restart() { docker restart $PG >/dev/null; until docker exec $PG pg_isready -q -U modudrive -d postgres; do sleep 1; done; }
-bench() { docker exec -e ROUNDS="${ROUNDS:-3}" -e SKIP_WAIT="${SKIP_WAIT:-}" bench sh -c "cd /w && python $*"; }
+bench() { docker exec -e ROUNDS="${ROUNDS:-3}" -e SKIP_WAIT="${SKIP_WAIT:-}" -e OPS="${OPS:-trash,purge}" -e BACKGROUND="${BACKGROUND:-1000000}" bench sh -c "cd /w && python $*"; }
 case ${1:-} in
   up)
     psql_su -d postgres < "$DIR/sql/01-pg-stat-statements-on.sql" && pg_restart
@@ -35,8 +36,9 @@ case ${1:-} in
   cascade) shift; bench cascade.py "$@" ;;
   contend) shift; bench contend.py "$@" ;;
   perm)    shift; bench perm.py "$@" ;;
+  index)   shift; bench index.py "$@" ;;
   wait)
     until [ "$(psql_su -d file_db -tA < "$DIR/sql/06-long-transactions.sql" | wc -l)" = 0 ]; do sleep 5; done ;;
   cleanup) psql_su -d file_db < "$DIR/sql/05-cleanup-bench-data.sql" ;;
-  *) sed -n 2,10p "$0"; exit 1 ;;
+  *) sed -n 2,13p "$0"; exit 1 ;;
 esac
