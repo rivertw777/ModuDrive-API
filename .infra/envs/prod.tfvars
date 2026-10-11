@@ -34,7 +34,8 @@ db_instances = {
 # MemoryDB, one cluster per purpose: a load spike or a full memory in one never reaches the others,
 # and no write is lost on a failover (the Multi-AZ transaction log, not the replicas, holds it). A
 # primary and one replica per shard. member (sign-up codes) and mail (idempotency keys) hold little and
-# run on t4g; storage's upload records (up to 25,600 keys per user a day) spread over two shards.
+# run on t4g; storage's upload records (up to 25,600 keys per user a day) and its sweep index (16 keys)
+# spread over two shards.
 redis_engine = "memorydb"
 redis_clusters = {
   auth    = { node_type = "db.r7g.large", nodes = 2, clients = ["auth"] }
