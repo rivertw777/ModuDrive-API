@@ -200,7 +200,16 @@ WEB과 API는 같은 등록 도메인 아래 있어야 한다. 예를 들면 `ap
 
 ModuDrive-WEB은 S3 + CloudFront로 `app.<domain>`에 올린다(`web.tf`). 버킷은 비공개이고 CloudFront(OAC)만 읽는다. 인증서는 CloudFront 규칙상 us-east-1에 따로 만든다. `/files/123` 같은 SPA 경로는 S3에 객체가 없어 403·404가 나므로 둘 다 `index.html`로 돌린다. CSP는 CloudFront 응답 헤더 정책으로 붙이되, 정책 문자열은 WEB `vite.config.ts`의 `contentSecurityPolicy()`를 원본으로 삼는다. `connect-src`에 API 도메인을 넣고, 바꿀 땐 둘을 같이 고친다. 도메인이 없으면 이것도 만들지 않는다.
 
-WEB 배포는 아직 손으로 한다(WEB 레포에 CI가 없다).
+WEB 배포는 WEB 레포의 GitHub Actions(`.github/workflows/deploy.yml`)가 한다. WEB은 demo 브랜치 없이 `prod` 하나만 쓴다. dev를 `prod`에 머지하면 테스트·빌드한 `dist/`를 버킷에 올리고 CloudFront 캐시를 무효화한다. 이때 맡는 역할이 `github_web_deploy`(`web.tf`)로, 그 버킷 쓰기와 그 배포 무효화만 할 수 있고 WEB 레포의 `prod` GitHub 환경에서만 맡을 수 있다. 어느 스택에 올릴지는 그 환경에 넣은 값이 정한다(지금은 demo 스택). 환경 변수는 terraform 출력에서 가져온다.
+
+| WEB 환경 변수 | 값 |
+|---|---|
+| `AWS_DEPLOY_ROLE_ARN` | `terraform output -raw github_web_deploy_role_arn` |
+| `WEB_BUCKET` | `terraform output -raw web_bucket` |
+| `WEB_DISTRIBUTION_ID` | `terraform output -raw web_distribution_id` |
+| `API_BASE_URL` | `https://api.<domain>` |
+
+손으로 올려야 할 때는 같은 일을 한다.
 
 ```bash
 VITE_API_BASE_URL=https://api.<domain> npm run build
