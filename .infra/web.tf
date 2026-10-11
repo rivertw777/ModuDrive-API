@@ -221,7 +221,8 @@ resource "aws_route53_record" "web" {
 }
 
 # ModuDrive-WEB's deploy workflow assumes this through GitHub's OIDC: upload dist/ and invalidate the
-# cache, nothing else. Trusts only that repository's <env> GitHub environment.
+# cache, nothing else. Trusts only that repository's prod GitHub environment — WEB has one deploy
+# branch (prod), whichever stack it points at; the role ARN set in that environment picks the stack.
 data "aws_iam_policy_document" "github_web_deploy_assume" {
   count = local.domain_based ? 1 : 0
 
@@ -239,7 +240,7 @@ data "aws_iam_policy_document" "github_web_deploy_assume" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.web_github_repository}:environment:${var.environment}"]
+      values   = ["repo:${var.web_github_repository}:environment:prod"]
     }
   }
 }
