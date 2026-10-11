@@ -35,12 +35,8 @@ public interface FindFilePort {
      * first and the trash doesn't write back the version it read before. */
     Optional<File> lockById(FileId fileId);
 
-    /** {@link #findByNamespaceIdAndPathStartingWith}, locking every row top-down — trashing a folder,
-     * for the same reason as {@link #lockById}. */
-    List<File> lockByNamespaceIdAndPathStartingWith(NamespaceId namespaceId, String pathPrefix);
-
-    /** {@link #lockByNamespaceIdAndPathStartingWith}, TRASHED rows only — a purge, which must not lock
-     * live rows a commit may be waiting on while holding the blocks the purge releases next. */
+    /** Every TRASHED row of the subtree, locked top-down — a purge, which must not lock live rows a
+     * commit may be waiting on while holding the blocks the purge releases next. */
     List<File> lockTrashedByNamespaceIdAndPathStartingWith(NamespaceId namespaceId, String pathPrefix);
 
     /** Entries whose {@code path} is {@code pathPrefix} or nested under it — i.e. every

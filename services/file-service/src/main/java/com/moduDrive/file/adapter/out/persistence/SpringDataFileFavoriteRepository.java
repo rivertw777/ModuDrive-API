@@ -1,6 +1,7 @@
 package com.moduDrive.file.adapter.out.persistence;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -15,8 +16,11 @@ interface SpringDataFileFavoriteRepository extends JpaRepository<FileFavoriteJpa
 
     void deleteByUserIdAndFileId(UUID userId, UUID fileId);
 
-    // Everyone's stars on a permanently-deleted file — no FK cascade backs this.
-    void deleteByFileId(UUID fileId);
+    // Everyone's stars on permanently-deleted files — no FK cascade backs this. Bulk: a derived
+    // deleteByFileId loads every row and deletes them one by one.
+    @Modifying
+    @Query(value = "delete from file_favorite where file_id = any(:fileIds)", nativeQuery = true)
+    void deleteByFileIds(@Param("fileIds") UUID[] fileIds);
 
     // Most-recently-starred first. `id desc` breaks ties deterministically: the PK is a
     // time-ordered UUIDv7.

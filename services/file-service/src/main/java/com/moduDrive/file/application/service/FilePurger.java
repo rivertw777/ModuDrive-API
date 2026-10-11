@@ -1,7 +1,6 @@
 package com.moduDrive.file.application.service;
 
 import com.moduDrive.file.application.port.out.FindFilePort;
-import com.moduDrive.file.application.port.out.FindFileVersionsPort;
 import com.moduDrive.file.application.port.out.ReleaseBlocksPort;
 import com.moduDrive.file.application.port.out.SaveFilePort;
 import com.moduDrive.file.domain.model.File;
@@ -13,6 +12,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -35,7 +35,6 @@ class FilePurger {
     private final SaveFilePort saveFilePort;
     private final DirectoryCascader directoryCascader;
     private final ReleaseBlocksPort releaseBlocksPort;
-    private final FindFileVersionsPort findFileVersionsPort;
     private final FindFilePort findFilePort;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -50,10 +49,10 @@ class FilePurger {
         if (root.isDirectory()) {
             directoryCascader.purge(new NamespaceId(root.getNamespaceId()), root.fullPath(), root.getTrashedAt(), deletedBy);
         } else {
-            // Read the versions now: purgeFile below deletes their rows. Releasing only lowers the
-            // blocks' reference counts in this transaction — a block is deleted by the
-            // unreferenced-block sweep later, so a rolled-back purge never loses one.
-            releaseBlocksPort.releaseBlocks(findFileVersionsPort.findAllByFileId(new FileId(root.getId())));
+            // Before purgeFile below deletes the versions. Releasing only lowers the blocks'
+            // reference counts in this transaction — a block is deleted by the unreferenced-block
+            // sweep later, so a rolled-back purge never loses one.
+            releaseBlocksPort.releaseBlocksOfFiles(List.of(root.getId()));
         }
         saveFilePort.purgeFile(new FileId(root.getId()), deletedBy);
     }

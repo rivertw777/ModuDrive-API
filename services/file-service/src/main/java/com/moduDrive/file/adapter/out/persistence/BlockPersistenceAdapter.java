@@ -76,6 +76,18 @@ class BlockPersistenceAdapter implements LockCommittedBlocksPort, FindCommittedB
     }
 
     @Override
+    public void releaseBlocksOfFiles(Collection<UUID> fileIds) {
+        if (fileIds.isEmpty()) {
+            return;
+        }
+        long missing = blockRepository.releaseAllOf(fileIds.toArray(UUID[]::new), LocalDateTime.now());
+        if (missing > 0) {
+            // Versions pointing at blocks with no row: references were lost somewhere.
+            logger.error("{} released block(s) of {} purged file(s) have no row", missing, fileIds.size());
+        }
+    }
+
+    @Override
     public List<UnreferencedBlock> claimUnreferenced(LocalDateTime cutoff, int limit) {
         List<BlockJpaEntity> rows = blockRepository.lockUnreferencedBefore(cutoff, limit);
         blockRepository.deleteAllInBatch(rows);

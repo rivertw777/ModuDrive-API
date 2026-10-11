@@ -45,6 +45,26 @@ interface SpringDataBlockRepository extends JpaRepository<BlockJpaEntity, BlockJ
     int release(@Param("ownerId") UUID ownerId, @Param("hash") String hash,
                 @Param("count") int count, @Param("now") LocalDateTime now);
 
+    // release() for every block the files' versions point at, in one statement: the references are
+    // counted per block in SQL (no versions loaded), the rows locked in (owner, hash) order — the
+    // order a commit locks them in, so the two can't deadlock — and then decremented. MATERIALIZED
+    // keeps the locking step a separate, ordered pass instead of letting the planner fold it into
+    // the UPDATE. The UPDATE joins only `locked` (carrying the count), so it can only go row by row
+    // through block's primary key — joining the two CTEs to each other let the planner, which can't
+    // estimate a CTE's size, pick a nested loop over both (quadratic: 130s for 10k files).
+    // Returns how many referenced blocks had no row (should be 0).
+    @Query(value = "with refs as (select v.owner_id, vb.hash, count(*) as cnt from file_version v "
+            + "join file_version_block vb on vb.version_id = v.id where v.file_id = any(:fileIds) "
+            + "group by v.owner_id, vb.hash), "
+            + "locked as materialized (select b.owner_id, b.hash, r.cnt from block b join refs r "
+            + "on r.owner_id = b.owner_id and r.hash = b.hash order by b.owner_id, b.hash for update of b), "
+            + "released as (update block b set ref_count = b.ref_count - l.cnt, "
+            + "unreferenced_at = case when b.ref_count - l.cnt <= 0 then :now else b.unreferenced_at end "
+            + "from locked l where b.owner_id = l.owner_id and b.hash = l.hash returning 1) "
+            + "select (select count(*) from refs) - (select count(*) from released)",
+            nativeQuery = true)
+    long releaseAllOf(@Param("fileIds") UUID[] fileIds, @Param("now") LocalDateTime now);
+
     // SKIP LOCKED: a row a commit is holding is about to be referenced again, so it is left for a
     // later sweep instead of waited on.
     @Query(value = "select * from block where ref_count = 0 and unreferenced_at < :cutoff "

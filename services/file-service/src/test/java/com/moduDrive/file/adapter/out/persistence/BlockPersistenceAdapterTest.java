@@ -1,5 +1,6 @@
 package com.moduDrive.file.adapter.out.persistence;
 
+import com.moduDrive.common.infrastructure.jpa.config.AuditingConfig;
 import com.moduDrive.file.application.port.out.ClaimUnreferencedBlocksPort.UnreferencedBlock;
 import com.moduDrive.file.domain.model.FileVersion;
 import com.moduDrive.file.domain.model.FileVersion.*;
@@ -22,7 +23,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /** Runs on real Postgres — the upsert and the release's CASE are native SQL, so this is where they
  * get checked. */
 @DataJpaTest
-@Import(BlockPersistenceAdapter.class)
+// AuditingConfig: the version rows WhenReleasingFiles saves need @CreatedDate.
+@Import({BlockPersistenceAdapter.class, AuditingConfig.class})
 class BlockPersistenceAdapterTest {
 
     @Autowired private BlockPersistenceAdapter adapter;
@@ -110,6 +112,43 @@ class BlockPersistenceAdapterTest {
 
             assertThat(row("h1")).get().extracting(BlockJpaEntity::getRefCount).isEqualTo(0);
             assertThat(row("h2")).get().extracting(BlockJpaEntity::getRefCount).isEqualTo(0);
+            assertThat(row("gone")).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("파일들의 모든 버전 참조를 한 번에 풀 때")
+    class WhenReleasingFiles {
+
+        @Autowired private SpringDataFileVersionRepository versionRepository;
+
+        private UUID fileWithVersions(List<List<String>> blocklists) {
+            UUID fileId = UUID.randomUUID();
+            blocklists.forEach(hashes -> versionRepository.save(
+                    new FileVersionJpaEntity(fileId, owner, 1L, UUID.randomUUID(), hashes)));
+            return fileId;
+        }
+
+        @Test
+        @DisplayName("여러 파일·버전에 걸친 같은 블록은 합쳐서 빼고, 다른 파일의 버전과 행이 없는 블록은 건너뛴다")
+        void sumsAcrossFilesAndVersions() {
+            adapter.referenceBlocks(owner, Map.of("h1", 4, "h2", 4, "h3", 4), Map.of("h1", 3, "h2", 1, "h3", 1));
+            UUID a = fileWithVersions(List.of(List.of("h1", "h2"), List.of("h1")));
+            UUID b = fileWithVersions(List.of(List.of("h1", "gone")));
+            fileWithVersions(List.of(List.of("h3")));
+            entityManager.flush();
+
+            adapter.releaseBlocksOfFiles(List.of(a, b));
+
+            assertThat(row("h1")).get().satisfies(r -> {
+                assertThat(r.getRefCount()).isZero();
+                assertThat(r.getUnreferencedAt()).isNotNull();
+            });
+            assertThat(row("h2")).get().extracting(BlockJpaEntity::getRefCount).isEqualTo(0);
+            assertThat(row("h3")).get().satisfies(r -> {
+                assertThat(r.getRefCount()).isEqualTo(1);
+                assertThat(r.getUnreferencedAt()).isNull();
+            });
             assertThat(row("gone")).isEmpty();
         }
     }

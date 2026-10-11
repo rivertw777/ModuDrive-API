@@ -13,9 +13,6 @@ public interface FindFileVersionsPort {
 
     List<FileVersion> findByFileIdOrderByCreatedAtDesc(FileId fileId, int limit);
 
-    /** Every version of the file, unordered and unbounded — a purge has to drop all their blocks. */
-    List<FileVersion> findAllByFileId(FileId fileId);
-
     /** The version a commit already created — the client picks a fresh uploadId per upload. */
     Optional<FileVersion> findByUploadId(UUID uploadId);
 
