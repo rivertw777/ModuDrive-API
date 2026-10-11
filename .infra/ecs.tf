@@ -47,8 +47,7 @@ locals {
           STORAGE_MULTIPART_MAX_REQUEST_SIZE = "9MB"
         }
         mail = merge(
-          { CLIENT_URL = local.client_url, MAIL_FROM = coalesce(var.smtp_username, local.mail_from) },
-          # Gmail sends as the account it logs in with, so the account is also the From address.
+          { CLIENT_URL = local.client_url, MAIL_FROM = coalesce(var.smtp_from, var.smtp_username, local.mail_from) },
           var.smtp_username == null ? {} : { MAIL_TRANSPORT = "smtp", SMTP_USERNAME = var.smtp_username },
         )
       }, name, {}),

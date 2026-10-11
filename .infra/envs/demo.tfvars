@@ -12,7 +12,8 @@ account_id  = "569854554527" # this environment's AWS account — set it and oth
 
 # SES production access isn't granted yet (sandbox: verified addresses only), so mail goes through
 # Gmail SMTP for now. App password: aws ssm put-parameter --name /modudrive/SMTP_PASSWORD --overwrite.
-smtp_username = "modudrive@gmail.com"
+smtp_username = "modudrive26@gmail.com"
+smtp_from     = "modudrive@gmail.com"
 
 nat                 = "instance"
 interface_endpoints = false # ~$110/month for six endpoints in two AZs; traffic goes out the IGW
