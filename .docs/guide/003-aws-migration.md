@@ -433,7 +433,7 @@ tfvars의 값을 바꿀 때 데이터가 날아가거나 서비스가 끊기는 
 | NAT | NAT 인스턴스 1대 (t4g.micro, fck-nat) |
 | VPC 엔드포인트 | S3 게이트웨이만 |
 | ECS | Fargate Spot, 전부 0.25 vCPU / 1 GB, 서비스마다 1개 고정 (오토스케일 없음) |
-| DB | RDS 1대 (db.t4g.micro, 단일 AZ)에 DB 4개, 백업 7일 |
+| DB | RDS 1대 (db.t4g.micro, 단일 AZ)에 DB 4개, 백업 1일(무료 플랜 한도) |
 | Redis | ElastiCache 1개 (cache.t4g.micro, 노드 1개), 모든 서비스가 같이 씀 |
 | 암호화 | AWS 관리 키 (SSE-S3, SSE-SQS, `aws/ssm` 등) |
 | 보안 강화 (`hardened`) | 끔. WAF, Service Connect TLS, 감사 로그, GuardDuty 없음 |
