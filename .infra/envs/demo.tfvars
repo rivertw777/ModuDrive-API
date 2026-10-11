@@ -7,6 +7,7 @@
 # service means a short gap on redeploy; no Multi-AZ anywhere.
 
 environment = "demo"
+domain_name = "modudrive.help"
 account_id  = "569854554527" # this environment's AWS account — set it and other accounts' credentials are refused
 
 nat                 = "instance"

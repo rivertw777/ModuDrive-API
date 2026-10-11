@@ -74,3 +74,13 @@ output "github_terraform_role_arn" {
   description = "AWS_TERRAFORM_ROLE_ARN in the <env>-terraform GitHub environment (terraform_in_ci only)"
   value       = var.terraform_in_ci ? aws_iam_role.github_terraform[0].arn : null
 }
+
+output "web_bucket" {
+  description = "Where ModuDrive-WEB's dist/ is uploaded (aws s3 sync dist/ s3://<this> --delete)"
+  value       = local.domain_based ? aws_s3_bucket.web[0].bucket : null
+}
+
+output "web_distribution_id" {
+  description = "Invalidate after an upload: aws cloudfront create-invalidation --distribution-id <this> --paths '/*'"
+  value       = local.domain_based ? aws_cloudfront_distribution.web[0].id : null
+}

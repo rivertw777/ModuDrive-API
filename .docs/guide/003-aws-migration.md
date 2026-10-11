@@ -198,7 +198,15 @@ VPC는 세 층으로 나뉜다. 퍼블릭 서브넷에 ALB와 NAT, 프라이빗 
 
 WEB과 API는 같은 등록 도메인 아래 있어야 한다. 예를 들면 `app.modudrive.com`과 `api.modudrive.com`이다. 세션 쿠키가 `SameSite=Strict`에 host-only라서([004 인증](../spec/004-auth-spec.md) 1-1-2), 사이트가 다르면 로그인은 200으로 성공하는데 다음 요청부터 쿠키가 실리지 않아 전부 401이 난다. `*.cloudfront.net`과 `*.elb.amazonaws.com`은 Public Suffix List에 올라 있어 서로 다른 사이트로 취급되므로 커스텀 도메인이 꼭 있어야 한다. 도메인이 생기기 전까지 `CLIENT_URL`은 `https://app.example.com` 자리 표시자다.
 
-ModuDrive-WEB은 S3 + CloudFront로 올릴 예정이고 아직 Terraform에는 없다. CSP는 CloudFront 응답 헤더 정책으로 붙이되, 정책 문자열은 WEB `vite.config.ts`의 `contentSecurityPolicy()`를 원본으로 삼는다. `connect-src`에 API 도메인을 넣고, 바꿀 땐 둘을 같이 고친다.
+ModuDrive-WEB은 S3 + CloudFront로 `app.<domain>`에 올린다(`web.tf`). 버킷은 비공개이고 CloudFront(OAC)만 읽는다. 인증서는 CloudFront 규칙상 us-east-1에 따로 만든다. `/files/123` 같은 SPA 경로는 S3에 객체가 없어 403·404가 나므로 둘 다 `index.html`로 돌린다. CSP는 CloudFront 응답 헤더 정책으로 붙이되, 정책 문자열은 WEB `vite.config.ts`의 `contentSecurityPolicy()`를 원본으로 삼는다. `connect-src`에 API 도메인을 넣고, 바꿀 땐 둘을 같이 고친다. 도메인이 없으면 이것도 만들지 않는다.
+
+WEB 배포는 아직 손으로 한다(WEB 레포에 CI가 없다).
+
+```bash
+VITE_API_BASE_URL=https://api.<domain> npm run build
+aws s3 sync dist/ s3://$(terraform output -raw web_bucket) --delete
+aws cloudfront create-invalidation --distribution-id $(terraform output -raw web_distribution_id) --paths '/*'
+```
 
 ### 1-12. 서비스 간 접근 제어
 
