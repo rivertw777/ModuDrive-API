@@ -66,7 +66,7 @@ sequenceDiagram
             loop 묶음 전체의 needBlocks (중복 없이), 요청당 8MB·64개 이하
                 U->>S: POST /api/v1/storage/blocks (multipart: hash + block 여러 개)
                 S->>S: 블록마다 크기 ≤ 4MB, SHA-256(받은 바이트) == hash 확인
-                S->>R: 블록마다 ZADD uploaded-blocks (정리 대상)
+                S->>R: 블록마다 ZADD uploaded-blocks:{해시 첫 글자} (정리 대상)
                 S->>S3: PUT blocks/{ownerId}/{hash} (GZIP → AES-GCM)
                 S->>R: SET uploaded-block:{ownerId}:{hash} 크기 (24시간)
             end
@@ -111,6 +111,8 @@ sequenceDiagram
    - storage-service는 블록마다 **정리 대상 등록(ZADD) → S3 PUT → 업로드 표시(SET)** 순서로 한다.
      - 표시(SET)는 반드시 PUT이 성공한 뒤다. 먼저 하면 S3에 없는 블록으로 commit이 성공해 파일이 깨진다.
      - 정리 대상 등록은 PUT보다 먼저다. PUT 뒤에 하면, PUT은 됐는데 Redis가 실패한 블록이 정리 대상에도 안 올라 S3에 영구히 남는다. 등록만 되고 PUT이 실패한 블록은 정리 작업이 없는 객체를 지우는 것으로 끝난다.
+     - 등록은 블록당 한 번이다. 같은 블록을 다시 올리면 등록 시각이 지금으로 옮겨져 정리 대상에서 멀어진다.
+     - 정리 대상 목록은 해시 첫 글자(hex)로 **16개 키**(`uploaded-blocks:{0}` ~ `{f}`)에 나뉜다. 모든 업로드가 쓰는 목록이라 키 하나면 Redis 샤드를 늘려도 한 샤드에 쓰기·메모리가 몰린다 ([006 2-4-6](006-resilience-spec.md#2-4-6-redis-분리)).
    - 요청은 **동시에 3개까지** 보낸다. 요청마다 왕복 시간을 기다리지 않고, storage-service 업로드 자리([006 2-4-4](006-resilience-spec.md#2-4-4-벌크헤드))는 다른 사용자에게 남긴다.
    - 요청 하나가 일시 중지 10분까지 실패하거나 429를 받으면 새 요청은 시작하지 않는다. 그때 블록이 빠진 파일만 실패하고, 블록이 다 간 파일은 다시 commit한다 ([2-1](#2-1-이어-올리기)).
    - storage-service는 블록마다 받은 바이트의 해시를 **다시 계산**해 함께 온 해시와 다르면 거절한다. 클라이언트가 보낸 해시는 믿지 않는다.
@@ -278,7 +280,7 @@ sequenceDiagram
 | 정리 | 어디서 | 대상 | 규칙 |
 |---|---|---|---|
 | 참조 없는 블록 | file-service | `block.ref_count`가 0이 된 지 24시간 지난 행 | 버전을 영구 삭제하면 그 블록들의 `ref_count`를 빼고, 0이 되는 순간 `unreferenced_at`을 찍는다. 24시간 안에 같은 블록이 다시 commit되면 `ref_count`가 오르고 `unreferenced_at`이 지워져 살아난다(휴지통을 비운 직후 같은 파일을 다시 올리는 경우). 지나면 행을 지우고(`FOR UPDATE SKIP LOCKED`) 같은 트랜잭션에서 `storage-blocks-purge-requested`(outbox)를 기록한다 |
-| commit되지 않은 블록 | storage-service | 올라온 지 25시간 지난 `uploaded-blocks` 항목 | [2-1](#2-1-이어-올리기). file-service에 commit됐는지 물어 commit된 블록은 남긴다 |
+| commit되지 않은 블록 | storage-service | 올라온 지 25시간 지난 `uploaded-blocks:{0..f}` 항목 (16개 키를 차례로) | [2-1](#2-1-이어-올리기). file-service에 commit됐는지 물어 commit된 블록은 남긴다 |
 
 - storage-service는 S3 객체를 지울 때 결정 시각(`decidedAt`) 뒤에 다시 쓰인 블록은 남긴다. `HeadObject`의 `LastModified`(초 단위)를 결정 시각과 비교하고, `DeleteObject`에 `If-Match: <ETag>`를 붙여 그 사이 덮어쓰인 객체는 412로 남는다(LocalStack에서 412 확인).
 - 블록 해제는 모든 버전의 해시를 합쳐 **해시 순서로** 한다. commit이 블록 행을 잠그고 참조하는 순서와 같아서, 같은 블록을 쓰는 commit과 영구 삭제가 교착 상태에 빠지지 않는다. 행이 없는 블록을 해제하면 오류 로그를 남긴다(참조 수가 어긋났다는 뜻).

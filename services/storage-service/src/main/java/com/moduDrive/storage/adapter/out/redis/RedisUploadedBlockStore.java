@@ -16,12 +16,14 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Uploaded blocks waiting to be committed (spec 001). {@code uploaded-block:{<ownerId>}:<hash>} holds
- * the raw size and expires after {@link Blocks#UPLOAD_TTL}; {@code uploaded-blocks} is a sorted set
- * of {@code ownerId:hash} by upload time, so the sweep can still find a block whose record has
- * already expired.
+ * the raw size and expires after {@link Blocks#UPLOAD_TTL}; {@code uploaded-blocks:{<c>}} is a sorted
+ * set of {@code ownerId:hash} by upload time, so the sweep can still find a block whose record has
+ * already expired. It is split 16 ways by the hash's first hex digit — one key would put every
+ * upload's write on a single shard however many there are.
  *
  * <p>Every command and script here touches a single key, or (the commit's lookup) one owner's keys,
  * which share a Redis Cluster hash slot through {@code {<ownerId>}} — so it runs unchanged on MemoryDB
@@ -32,7 +34,9 @@ import java.util.UUID;
 class RedisUploadedBlockStore implements RecordUploadedBlockPort, FindUploadedBlocksPort, ClaimStaleUploadsPort {
 
     private static final String KEY_PREFIX = "uploaded-block:";
-    private static final String INDEX_KEY = "uploaded-blocks";
+    private static final String INDEX_KEY_PREFIX = "uploaded-blocks:";
+    private static final List<String> INDEX_KEYS = "0123456789abcdef".chars()
+            .mapToObj(c -> INDEX_KEY_PREFIX + "{" + (char) c + "}").toList();
     private static final String COUNT_KEY_PREFIX = "upload-count:";
 
     private static final RedisScript<Long> RELEASE_SCRIPT =
@@ -48,15 +52,11 @@ class RedisUploadedBlockStore implements RecordUploadedBlockPort, FindUploadedBl
     @Override
     public void recordUploaded(UUID ownerId, String hash, int size) {
         redisRepository.set(key(ownerId, hash), String.valueOf(size), Blocks.UPLOAD_TTL);
-        // Moves it to now on the schedule: a block uploaded again is not stale. Two steps, not one
-        // script (record and index are in different slots), and the order needs none: scheduleSweep
-        // put the entry there before the block went to S3, and the sweep only claims what's a day old.
-        redisRepository.addToSortedSet(INDEX_KEY, ownerId + ":" + hash, Instant.now().toEpochMilli());
     }
 
     @Override
     public void scheduleSweep(UUID ownerId, String hash) {
-        redisRepository.addToSortedSet(INDEX_KEY, ownerId + ":" + hash, Instant.now().toEpochMilli());
+        redisRepository.addToSortedSet(indexKey(hash), ownerId + ":" + hash, Instant.now().toEpochMilli());
     }
 
     @Override
@@ -85,15 +85,23 @@ class RedisUploadedBlockStore implements RecordUploadedBlockPort, FindUploadedBl
     @Override
     @SuppressWarnings("unchecked")
     public List<UploadedBlock> claimStale(Instant cutoff, int limit) {
-        List<String> members = redisRepository.executeScript(CLAIM_STALE_SCRIPT, List.of(INDEX_KEY),
-                String.valueOf(cutoff.toEpochMilli()), String.valueOf(limit));
-        if (members == null) {
-            return List.of();
+        // Fewer than limit only once every key is drained, so the sweep's "a short batch is the
+        // last" still holds.
+        List<UploadedBlock> claimed = new ArrayList<>();
+        for (String indexKey : INDEX_KEYS) {
+            if (claimed.size() == limit) {
+                break;
+            }
+            List<String> members = redisRepository.executeScript(CLAIM_STALE_SCRIPT, List.of(indexKey),
+                    String.valueOf(cutoff.toEpochMilli()), String.valueOf(limit - claimed.size()));
+            if (members != null) {
+                members.forEach(member -> {
+                    String[] parts = member.split(":");
+                    claimed.add(new UploadedBlock(UUID.fromString(parts[0]), parts[1]));
+                });
+            }
         }
-        return members.stream().map(member -> {
-            String[] parts = member.split(":");
-            return new UploadedBlock(UUID.fromString(parts[0]), parts[1]);
-        }).toList();
+        return claimed;
     }
 
     @Override
@@ -101,13 +109,21 @@ class RedisUploadedBlockStore implements RecordUploadedBlockPort, FindUploadedBl
         if (blocks.isEmpty()) {
             return;
         }
-        List<String> args = new ArrayList<>(blocks.size() + 1);
-        args.add(String.valueOf(uploadedAt.toEpochMilli()));
-        blocks.forEach(block -> args.add(block.ownerId() + ":" + block.hash()));
-        redisRepository.executeScript(RELEASE_SCRIPT, List.of(INDEX_KEY), args.toArray(String[]::new));
+        // One script per index key: a script can only touch keys in one slot.
+        blocks.stream().collect(Collectors.groupingBy(block -> indexKey(block.hash()))).forEach((indexKey, group) -> {
+            List<String> args = new ArrayList<>(group.size() + 1);
+            args.add(String.valueOf(uploadedAt.toEpochMilli()));
+            group.forEach(block -> args.add(block.ownerId() + ":" + block.hash()));
+            redisRepository.executeScript(RELEASE_SCRIPT, List.of(indexKey), args.toArray(String[]::new));
+        });
     }
 
     static String key(UUID ownerId, String hash) {
         return KEY_PREFIX + "{" + ownerId + "}:" + hash;
+    }
+
+    /** Hashes are hex SHA-256, so the first digit spreads them evenly over the 16 keys. */
+    static String indexKey(String hash) {
+        return INDEX_KEY_PREFIX + "{" + hash.charAt(0) + "}";
     }
 }
