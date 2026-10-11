@@ -237,10 +237,12 @@ variable "backup_bucket_kms_key_arn" {
   default = null
 }
 
-# The repository whose deploy workflow may assume the deploy role (github.tf).
+# The repository whose deploy workflow may assume the deploy role (github.tf), as its OIDC token
+# names it. This repository uses GitHub's immutable subject — owner@owner-id/repo@repo-id, which
+# survives a rename (gh api repos/{owner}/{repo}/actions/oidc/customization/sub).
 variable "github_repository" {
   type    = string
-  default = "rivertw777/ModuDrive-API"
+  default = "rivertw777@105557972/ModuDrive-API@1257948532"
 }
 
 # CI applies .infra/ for this environment (github.tf, .github/workflows/deploy.yml): demo, on a
