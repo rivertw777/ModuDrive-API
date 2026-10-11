@@ -1,0 +1,502 @@
+{
+ "1": {
+  "get_file": {
+   "sql": 7,
+   "p50": 29.01,
+   "p95": 39.2,
+   "top": [
+    [
+     "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.id=$1",
+     1
+    ],
+    [
+     "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.namespace_id=$1 and fje1_0.is_directory=$4 and fje1_0.path in ($2) and fje1_0.active_slot_name in ($3)",
+     1
+    ],
+    [
+     "select ffje1_0.id from file_favorite ffje1_0 where ffje1_0.user_id=$1 and ffje1_0.file_id=$2 fetch first $3 rows only",
+     1
+    ],
+    [
+     "select faje1_0.id,faje1_0.accessed_at,faje1_0.created_at,faje1_0.created_by,faje1_0.file_id,faje1_0.user_id from file_access faje1_0 where faje1_0.id=$1",
+     1
+    ],
+    [
+     "update file_access set accessed_at=$1,file_id=$2,user_id=$3 where id=$4",
+     1
+    ],
+    [
+     "select faje1_0.id,faje1_0.accessed_at,faje1_0.created_at,faje1_0.created_by,faje1_0.file_id,faje1_0.user_id from file_access faje1_0 where faje1_0.user_id=$1 and faje1_0.file_id=$2",
+     1
+    ],
+    [
+     "select fsje1_0.id,fsje1_0.created_at,fsje1_0.created_by,fsje1_0.file_id,fsje1_0.granted_role,fsje1_0.grantee_email,fsje1_0.owner_id,fsje1_0.shared_with_user_id,fsje1_0.token from file_share fsje1_0 where fsje1_0.file_id in ($1 /*, ... */) and fsje1_0.shared_with_user_id=$2",
+     1
+    ]
+   ]
+  },
+  "list_folder_50": {
+   "sql": 5,
+   "p50": 21.53,
+   "p95": 26.86,
+   "top": [
+    [
+     "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.id=$1",
+     1
+    ],
+    [
+     "select fsje1_0.id,fsje1_0.created_at,fsje1_0.created_by,fsje1_0.file_id,fsje1_0.granted_role,fsje1_0.grantee_email,fsje1_0.owner_id,fsje1_0.shared_with_user_id,fsje1_0.token from file_share fsje1_0 where fsje1_0.file_id in ($1 /*, ... */) and fsje1_0.shared_with_user_id=$2",
+     1
+    ],
+    [
+     "select fsje1_0.id,fsje1_0.created_at,fsje1_0.created_by,fsje1_0.file_id,fsje1_0.granted_role,fsje1_0.grantee_email,fsje1_0.owner_id,fsje1_0.shared_with_user_id,fsje1_0.token from file_share fsje1_0 where fsje1_0.file_id in ($1) and fsje1_0.shared_with_user_id=$2",
+     1
+    ],
+    [
+     "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.namespace_id=$1 and fje1_0.path=$2 and fje1_0.status not in ($3 /*, ... */)",
+     1
+    ],
+    [
+     "select ffje1_0.id,ffje1_0.created_at,ffje1_0.created_by,ffje1_0.file_id,ffje1_0.user_id from file_favorite ffje1_0 where ffje1_0.user_id=$1 order by ffje1_0.created_at desc,ffje1_0.id desc",
+     1
+    ]
+   ]
+  },
+  "favorites_50": {
+   "sql": 152,
+   "p50": 149.33,
+   "p95": 211.06,
+   "top": [
+    [
+     "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.id=$1",
+     50
+    ],
+    [
+     "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.namespace_id=$1 and fje1_0.is_directory=true and fje1_0.path in ($2) and fje1_0.active_slot_name in ($3)",
+     50
+    ],
+    [
+     "select fsje1_0.id,fsje1_0.created_at,fsje1_0.created_by,fsje1_0.file_id,fsje1_0.granted_role,fsje1_0.grantee_email,fsje1_0.owner_id,fsje1_0.shared_with_user_id,fsje1_0.token from file_share fsje1_0 where fsje1_0.file_id in ($1,$2) and fsje1_0.shared_with_user_id=$3",
+     50
+    ],
+    [
+     "select nje1_0.id,nje1_0.created_at,nje1_0.created_by,nje1_0.deleted_at,nje1_0.deleted_by,nje1_0.is_deleted,nje1_0.quota_bytes,nje1_0.root_path,nje1_0.updated_at,nje1_0.updated_by,nje1_0.used_bytes,nje1_0.user_id from namespace nje1_0 where nje1_0.user_id=$1",
+     1
+    ],
+    [
+     "select ffje1_0.id,ffje1_0.created_at,ffje1_0.created_by,ffje1_0.file_id,ffje1_0.user_id from file_favorite ffje1_0 where ffje1_0.user_id=$1 order by ffje1_0.created_at desc,ffje1_0.id desc",
+     1
+    ]
+   ]
+  },
+  "recent_50": {
+   "sql": 153,
+   "p50": 131.36,
+   "p95": 159.11,
+   "top": [
+    [
+     "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.id=$1",
+     50
+    ],
+    [
+     "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.namespace_id=$1 and fje1_0.is_directory=true and fje1_0.path in ($2) and fje1_0.active_slot_name in ($3)",
+     50
+    ],
+    [
+     "select fsje1_0.id,fsje1_0.created_at,fsje1_0.created_by,fsje1_0.file_id,fsje1_0.granted_role,fsje1_0.grantee_email,fsje1_0.owner_id,fsje1_0.shared_with_user_id,fsje1_0.token from file_share fsje1_0 where fsje1_0.file_id in ($1,$2) and fsje1_0.shared_with_user_id=$3",
+     50
+    ],
+    [
+     "select faje1_0.id,faje1_0.accessed_at,faje1_0.created_at,faje1_0.created_by,faje1_0.file_id,faje1_0.user_id from file_access faje1_0 where faje1_0.user_id=$1 order by faje1_0.accessed_at desc fetch first $2 rows only",
+     1
+    ],
+    [
+     "select nje1_0.id,nje1_0.created_at,nje1_0.created_by,nje1_0.deleted_at,nje1_0.deleted_by,nje1_0.is_deleted,nje1_0.quota_bytes,nje1_0.root_path,nje1_0.updated_at,nje1_0.updated_by,nje1_0.used_bytes,nje1_0.user_id from namespace nje1_0 where nje1_0.user_id=$1",
+     1
+    ],
+    [
+     "select ffje1_0.id,ffje1_0.created_at,ffje1_0.created_by,ffje1_0.file_id,ffje1_0.user_id from file_favorite ffje1_0 where ffje1_0.user_id=$1 order by ffje1_0.created_at desc,ffje1_0.id desc",
+     1
+    ]
+   ]
+  }
+ },
+ "5": {
+  "get_file": {
+   "sql": 7,
+   "p50": 22.15,
+   "p95": 26.07,
+   "top": [
+    [
+     "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.id=$1",
+     1
+    ],
+    [
+     "select ffje1_0.id from file_favorite ffje1_0 where ffje1_0.user_id=$1 and ffje1_0.file_id=$2 fetch first $3 rows only",
+     1
+    ],
+    [
+     "select fsje1_0.id,fsje1_0.created_at,fsje1_0.created_by,fsje1_0.file_id,fsje1_0.granted_role,fsje1_0.grantee_email,fsje1_0.owner_id,fsje1_0.shared_with_user_id,fsje1_0.token from file_share fsje1_0 where fsje1_0.file_id in ($1 /*, ... */) and fsje1_0.shared_with_user_id=$2",
+     1
+    ],
+    [
+     "select faje1_0.id,faje1_0.accessed_at,faje1_0.created_at,faje1_0.created_by,faje1_0.file_id,faje1_0.user_id from file_access faje1_0 where faje1_0.id=$1",
+     1
+    ],
+    [
+     "update file_access set accessed_at=$1,file_id=$2,user_id=$3 where id=$4",
+     1
+    ],
+    [
+     "select faje1_0.id,faje1_0.accessed_at,faje1_0.created_at,faje1_0.created_by,faje1_0.file_id,faje1_0.user_id from file_access faje1_0 where faje1_0.user_id=$1 and faje1_0.file_id=$2",
+     1
+    ],
+    [
+     "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.namespace_id=$1 and fje1_0.is_directory=$2 and fje1_0.path in ($3 /*, ... */) and fje1_0.active_slot_name in ($4 /*, ... */)",
+     1
+    ]
+   ]
+  },
+  "list_folder_50": {
+   "sql": 6,
+   "p50": 19.55,
+   "p95": 27.75,
+   "top": [
+    [
+     "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.id=$1",
+     1
+    ],
+    [
+     "select fsje1_0.id,fsje1_0.created_at,fsje1_0.created_by,fsje1_0.file_id,fsje1_0.granted_role,fsje1_0.grantee_email,fsje1_0.owner_id,fsje1_0.shared_with_user_id,fsje1_0.token from file_share fsje1_0 where fsje1_0.file_id in ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$50) and fsje1_0.shared_with_user_id=$51",
+     1
+    ],
+    [
+     "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.namespace_id=$1 and fje1_0.is_directory=$2 and fje1_0.path in ($3 /*, ... */) and fje1_0.active_slot_name in ($4 /*, ... */)",
+     1
+    ],
+    [
+     "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.namespace_id=$1 and fje1_0.path=$2 and fje1_0.status not in ($3 /*, ... */)",
+     1
+    ],
+    [
+     "select fsje1_0.id,fsje1_0.created_at,fsje1_0.created_by,fsje1_0.file_id,fsje1_0.granted_role,fsje1_0.grantee_email,fsje1_0.owner_id,fsje1_0.shared_with_user_id,fsje1_0.token from file_share fsje1_0 where fsje1_0.file_id in ($1 /*, ... */) and fsje1_0.shared_with_user_id=$2",
+     1
+    ],
+    [
+     "select ffje1_0.id,ffje1_0.created_at,ffje1_0.created_by,ffje1_0.file_id,ffje1_0.user_id from file_favorite ffje1_0 where ffje1_0.user_id=$1 order by ffje1_0.created_at desc,ffje1_0.id desc",
+     1
+    ]
+   ]
+  },
+  "favorites_50": {
+   "sql": 152,
+   "p50": 139.7,
+   "p95": 171.45,
+   "top": [
+    [
+     "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.id=$1",
+     50
+    ],
+    [
+     "select fsje1_0.id,fsje1_0.created_at,fsje1_0.created_by,fsje1_0.file_id,fsje1_0.granted_role,fsje1_0.grantee_email,fsje1_0.owner_id,fsje1_0.shared_with_user_id,fsje1_0.token from file_share fsje1_0 where fsje1_0.file_id in ($1,$2,$3,$4,$5,$6) and fsje1_0.shared_with_user_id=$7",
+     50
+    ],
+    [
+     "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.namespace_id=$1 and fje1_0.is_directory=true and fje1_0.path in ($2,$3,$4,$5,$6) and fje1_0.active_slot_name in ($7,$8,$9,$10,$11)",
+     50
+    ],
+    [
+     "select nje1_0.id,nje1_0.created_at,nje1_0.created_by,nje1_0.deleted_at,nje1_0.deleted_by,nje1_0.is_deleted,nje1_0.quota_bytes,nje1_0.root_path,nje1_0.updated_at,nje1_0.updated_by,nje1_0.used_bytes,nje1_0.user_id from namespace nje1_0 where nje1_0.user_id=$1",
+     1
+    ],
+    [
+     "select ffje1_0.id,ffje1_0.created_at,ffje1_0.created_by,ffje1_0.file_id,ffje1_0.user_id from file_favorite ffje1_0 where ffje1_0.user_id=$1 order by ffje1_0.created_at desc,ffje1_0.id desc",
+     1
+    ]
+   ]
+  },
+  "recent_50": {
+   "sql": 153,
+   "p50": 134.17,
+   "p95": 152.58,
+   "top": [
+    [
+     "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.id=$1",
+     50
+    ],
+    [
+     "select fsje1_0.id,fsje1_0.created_at,fsje1_0.created_by,fsje1_0.file_id,fsje1_0.granted_role,fsje1_0.grantee_email,fsje1_0.owner_id,fsje1_0.shared_with_user_id,fsje1_0.token from file_share fsje1_0 where fsje1_0.file_id in ($1,$2,$3,$4,$5,$6) and fsje1_0.shared_with_user_id=$7",
+     50
+    ],
+    [
+     "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.namespace_id=$1 and fje1_0.is_directory=true and fje1_0.path in ($2,$3,$4,$5,$6) and fje1_0.active_slot_name in ($7,$8,$9,$10,$11)",
+     50
+    ],
+    [
+     "select faje1_0.id,faje1_0.accessed_at,faje1_0.created_at,faje1_0.created_by,faje1_0.file_id,faje1_0.user_id from file_access faje1_0 where faje1_0.user_id=$1 order by faje1_0.accessed_at desc fetch first $2 rows only",
+     1
+    ],
+    [
+     "select nje1_0.id,nje1_0.created_at,nje1_0.created_by,nje1_0.deleted_at,nje1_0.deleted_by,nje1_0.is_deleted,nje1_0.quota_bytes,nje1_0.root_path,nje1_0.updated_at,nje1_0.updated_by,nje1_0.used_bytes,nje1_0.user_id from namespace nje1_0 where nje1_0.user_id=$1",
+     1
+    ],
+    [
+     "select ffje1_0.id,ffje1_0.created_at,ffje1_0.created_by,ffje1_0.file_id,ffje1_0.user_id from file_favorite ffje1_0 where ffje1_0.user_id=$1 order by ffje1_0.created_at desc,ffje1_0.id desc",
+     1
+    ]
+   ]
+  }
+ },
+ "10": {
+  "get_file": {
+   "sql": 7,
+   "p50": 21.06,
+   "p95": 25.07,
+   "top": [
+    [
+     "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.id=$1",
+     1
+    ],
+    [
+     "select fsje1_0.id,fsje1_0.created_at,fsje1_0.created_by,fsje1_0.file_id,fsje1_0.granted_role,fsje1_0.grantee_email,fsje1_0.owner_id,fsje1_0.shared_with_user_id,fsje1_0.token from file_share fsje1_0 where fsje1_0.file_id in ($1 /*, ... */) and fsje1_0.shared_with_user_id=$2",
+     1
+    ],
+    [
+     "select ffje1_0.id from file_favorite ffje1_0 where ffje1_0.user_id=$1 and ffje1_0.file_id=$2 fetch first $3 rows only",
+     1
+    ],
+    [
+     "select faje1_0.id,faje1_0.accessed_at,faje1_0.created_at,faje1_0.created_by,faje1_0.file_id,faje1_0.user_id from file_access faje1_0 where faje1_0.id=$1",
+     1
+    ],
+    [
+     "update file_access set accessed_at=$1,file_id=$2,user_id=$3 where id=$4",
+     1
+    ],
+    [
+     "select faje1_0.id,faje1_0.accessed_at,faje1_0.created_at,faje1_0.created_by,faje1_0.file_id,faje1_0.user_id from file_access faje1_0 where faje1_0.user_id=$1 and faje1_0.file_id=$2",
+     1
+    ],
+    [
+     "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.namespace_id=$1 and fje1_0.is_directory=$2 and fje1_0.path in ($3 /*, ... */) and fje1_0.active_slot_name in ($4 /*, ... */)",
+     1
+    ]
+   ]
+  },
+  "list_folder_50": {
+   "sql": 6,
+   "p50": 17.99,
+   "p95": 21.16,
+   "top": [
+    [
+     "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.id=$1",
+     1
+    ],
+    [
+     "select fsje1_0.id,fsje1_0.created_at,fsje1_0.created_by,fsje1_0.file_id,fsje1_0.granted_role,fsje1_0.grantee_email,fsje1_0.owner_id,fsje1_0.shared_with_user_id,fsje1_0.token from file_share fsje1_0 where fsje1_0.file_id in ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$50) and fsje1_0.shared_with_user_id=$51",
+     1
+    ],
+    [
+     "select fsje1_0.id,fsje1_0.created_at,fsje1_0.created_by,fsje1_0.file_id,fsje1_0.granted_role,fsje1_0.grantee_email,fsje1_0.owner_id,fsje1_0.shared_with_user_id,fsje1_0.token from file_share fsje1_0 where fsje1_0.file_id in ($1 /*, ... */) and fsje1_0.shared_with_user_id=$2",
+     1
+    ],
+    [
+     "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.namespace_id=$1 and fje1_0.is_directory=$2 and fje1_0.path in ($3 /*, ... */) and fje1_0.active_slot_name in ($4 /*, ... */)",
+     1
+    ],
+    [
+     "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.namespace_id=$1 and fje1_0.path=$2 and fje1_0.status not in ($3,$4)",
+     1
+    ],
+    [
+     "select ffje1_0.id,ffje1_0.created_at,ffje1_0.created_by,ffje1_0.file_id,ffje1_0.user_id from file_favorite ffje1_0 where ffje1_0.user_id=$1 order by ffje1_0.created_at desc,ffje1_0.id desc",
+     1
+    ]
+   ]
+  },
+  "favorites_50": {
+   "sql": 152,
+   "p50": 145.28,
+   "p95": 175.68,
+   "top": [
+    [
+     "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.id=$1",
+     50
+    ],
+    [
+     "select fsje1_0.id,fsje1_0.created_at,fsje1_0.created_by,fsje1_0.file_id,fsje1_0.granted_role,fsje1_0.grantee_email,fsje1_0.owner_id,fsje1_0.shared_with_user_id,fsje1_0.token from file_share fsje1_0 where fsje1_0.file_id in ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) and fsje1_0.shared_with_user_id=$12",
+     50
+    ],
+    [
+     "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.namespace_id=$1 and fje1_0.is_directory=true and fje1_0.path in ($2,$3,$4,$5,$6,$7,$8,$9,$10,$11) and fje1_0.active_slot_name in ($12,$13,$14,$15,$16,$17,$18,$19,$20,$21)",
+     50
+    ],
+    [
+     "select nje1_0.id,nje1_0.created_at,nje1_0.created_by,nje1_0.deleted_at,nje1_0.deleted_by,nje1_0.is_deleted,nje1_0.quota_bytes,nje1_0.root_path,nje1_0.updated_at,nje1_0.updated_by,nje1_0.used_bytes,nje1_0.user_id from namespace nje1_0 where nje1_0.user_id=$1",
+     1
+    ],
+    [
+     "select ffje1_0.id,ffje1_0.created_at,ffje1_0.created_by,ffje1_0.file_id,ffje1_0.user_id from file_favorite ffje1_0 where ffje1_0.user_id=$1 order by ffje1_0.created_at desc,ffje1_0.id desc",
+     1
+    ]
+   ]
+  },
+  "recent_50": {
+   "sql": 153,
+   "p50": 145.04,
+   "p95": 170.64,
+   "top": [
+    [
+     "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.id=$1",
+     50
+    ],
+    [
+     "select fsje1_0.id,fsje1_0.created_at,fsje1_0.created_by,fsje1_0.file_id,fsje1_0.granted_role,fsje1_0.grantee_email,fsje1_0.owner_id,fsje1_0.shared_with_user_id,fsje1_0.token from file_share fsje1_0 where fsje1_0.file_id in ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) and fsje1_0.shared_with_user_id=$12",
+     50
+    ],
+    [
+     "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.namespace_id=$1 and fje1_0.is_directory=true and fje1_0.path in ($2,$3,$4,$5,$6,$7,$8,$9,$10,$11) and fje1_0.active_slot_name in ($12,$13,$14,$15,$16,$17,$18,$19,$20,$21)",
+     50
+    ],
+    [
+     "select faje1_0.id,faje1_0.accessed_at,faje1_0.created_at,faje1_0.created_by,faje1_0.file_id,faje1_0.user_id from file_access faje1_0 where faje1_0.user_id=$1 order by faje1_0.accessed_at desc fetch first $2 rows only",
+     1
+    ],
+    [
+     "select nje1_0.id,nje1_0.created_at,nje1_0.created_by,nje1_0.deleted_at,nje1_0.deleted_by,nje1_0.is_deleted,nje1_0.quota_bytes,nje1_0.root_path,nje1_0.updated_at,nje1_0.updated_by,nje1_0.used_bytes,nje1_0.user_id from namespace nje1_0 where nje1_0.user_id=$1",
+     1
+    ],
+    [
+     "select ffje1_0.id,ffje1_0.created_at,ffje1_0.created_by,ffje1_0.file_id,ffje1_0.user_id from file_favorite ffje1_0 where ffje1_0.user_id=$1 order by ffje1_0.created_at desc,ffje1_0.id desc",
+     1
+    ]
+   ]
+  }
+ },
+ "20": {
+  "get_file": {
+   "sql": 7,
+   "p50": 20.85,
+   "p95": 28.71,
+   "top": [
+    [
+     "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.id=$1",
+     1
+    ],
+    [
+     "select ffje1_0.id from file_favorite ffje1_0 where ffje1_0.user_id=$1 and ffje1_0.file_id=$2 fetch first $3 rows only",
+     1
+    ],
+    [
+     "select faje1_0.id,faje1_0.accessed_at,faje1_0.created_at,faje1_0.created_by,faje1_0.file_id,faje1_0.user_id from file_access faje1_0 where faje1_0.id=$1",
+     1
+    ],
+    [
+     "select fsje1_0.id,fsje1_0.created_at,fsje1_0.created_by,fsje1_0.file_id,fsje1_0.granted_role,fsje1_0.grantee_email,fsje1_0.owner_id,fsje1_0.shared_with_user_id,fsje1_0.token from file_share fsje1_0 where fsje1_0.file_id in ($1 /*, ... */) and fsje1_0.shared_with_user_id=$2",
+     1
+    ],
+    [
+     "update file_access set accessed_at=$1,file_id=$2,user_id=$3 where id=$4",
+     1
+    ],
+    [
+     "select faje1_0.id,faje1_0.accessed_at,faje1_0.created_at,faje1_0.created_by,faje1_0.file_id,faje1_0.user_id from file_access faje1_0 where faje1_0.user_id=$1 and faje1_0.file_id=$2",
+     1
+    ],
+    [
+     "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.namespace_id=$1 and fje1_0.is_directory=$2 and fje1_0.path in ($3 /*, ... */) and fje1_0.active_slot_name in ($4 /*, ... */)",
+     1
+    ]
+   ]
+  },
+  "list_folder_50": {
+   "sql": 6,
+   "p50": 17.54,
+   "p95": 20.13,
+   "top": [
+    [
+     "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.id=$1",
+     1
+    ],
+    [
+     "select fsje1_0.id,fsje1_0.created_at,fsje1_0.created_by,fsje1_0.file_id,fsje1_0.granted_role,fsje1_0.grantee_email,fsje1_0.owner_id,fsje1_0.shared_with_user_id,fsje1_0.token from file_share fsje1_0 where fsje1_0.file_id in ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$50) and fsje1_0.shared_with_user_id=$51",
+     1
+    ],
+    [
+     "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.namespace_id=$1 and fje1_0.is_directory=$2 and fje1_0.path in ($3 /*, ... */) and fje1_0.active_slot_name in ($4 /*, ... */)",
+     1
+    ],
+    [
+     "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.namespace_id=$1 and fje1_0.path=$2 and fje1_0.status not in ($3,$4)",
+     1
+    ],
+    [
+     "select fsje1_0.id,fsje1_0.created_at,fsje1_0.created_by,fsje1_0.file_id,fsje1_0.granted_role,fsje1_0.grantee_email,fsje1_0.owner_id,fsje1_0.shared_with_user_id,fsje1_0.token from file_share fsje1_0 where fsje1_0.file_id in ($1 /*, ... */) and fsje1_0.shared_with_user_id=$2",
+     1
+    ],
+    [
+     "select ffje1_0.id,ffje1_0.created_at,ffje1_0.created_by,ffje1_0.file_id,ffje1_0.user_id from file_favorite ffje1_0 where ffje1_0.user_id=$1 order by ffje1_0.created_at desc,ffje1_0.id desc",
+     1
+    ]
+   ]
+  },
+  "favorites_50": {
+   "sql": 152,
+   "p50": 150.72,
+   "p95": 174.32,
+   "top": [
+    [
+     "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.id=$1",
+     50
+    ],
+    [
+     "select fsje1_0.id,fsje1_0.created_at,fsje1_0.created_by,fsje1_0.file_id,fsje1_0.granted_role,fsje1_0.grantee_email,fsje1_0.owner_id,fsje1_0.shared_with_user_id,fsje1_0.token from file_share fsje1_0 where fsje1_0.file_id in ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) and fsje1_0.shared_with_user_id=$22",
+     50
+    ],
+    [
+     "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.namespace_id=$1 and fje1_0.is_directory=true and fje1_0.path in ($2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) and fje1_0.active_slot_name in ($22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41)",
+     50
+    ],
+    [
+     "select nje1_0.id,nje1_0.created_at,nje1_0.created_by,nje1_0.deleted_at,nje1_0.deleted_by,nje1_0.is_deleted,nje1_0.quota_bytes,nje1_0.root_path,nje1_0.updated_at,nje1_0.updated_by,nje1_0.used_bytes,nje1_0.user_id from namespace nje1_0 where nje1_0.user_id=$1",
+     1
+    ],
+    [
+     "select ffje1_0.id,ffje1_0.created_at,ffje1_0.created_by,ffje1_0.file_id,ffje1_0.user_id from file_favorite ffje1_0 where ffje1_0.user_id=$1 order by ffje1_0.created_at desc,ffje1_0.id desc",
+     1
+    ]
+   ]
+  },
+  "recent_50": {
+   "sql": 153,
+   "p50": 149.58,
+   "p95": 189.43,
+   "top": [
+    [
+     "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.id=$1",
+     50
+    ],
+    [
+     "select fsje1_0.id,fsje1_0.created_at,fsje1_0.created_by,fsje1_0.file_id,fsje1_0.granted_role,fsje1_0.grantee_email,fsje1_0.owner_id,fsje1_0.shared_with_user_id,fsje1_0.token from file_share fsje1_0 where fsje1_0.file_id in ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) and fsje1_0.shared_with_user_id=$22",
+     50
+    ],
+    [
+     "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.namespace_id=$1 and fje1_0.is_directory=true and fje1_0.path in ($2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) and fje1_0.active_slot_name in ($22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41)",
+     50
+    ],
+    [
+     "select faje1_0.id,faje1_0.accessed_at,faje1_0.created_at,faje1_0.created_by,faje1_0.file_id,faje1_0.user_id from file_access faje1_0 where faje1_0.user_id=$1 order by faje1_0.accessed_at desc fetch first $2 rows only",
+     1
+    ],
+    [
+     "select nje1_0.id,nje1_0.created_at,nje1_0.created_by,nje1_0.deleted_at,nje1_0.deleted_by,nje1_0.is_deleted,nje1_0.quota_bytes,nje1_0.root_path,nje1_0.updated_at,nje1_0.updated_by,nje1_0.used_bytes,nje1_0.user_id from namespace nje1_0 where nje1_0.user_id=$1",
+     1
+    ],
+    [
+     "select ffje1_0.id,ffje1_0.created_at,ffje1_0.created_by,ffje1_0.file_id,ffje1_0.user_id from file_favorite ffje1_0 where ffje1_0.user_id=$1 order by ffje1_0.created_at desc,ffje1_0.id desc",
+     1
+    ]
+   ]
+  }
+ }
+}

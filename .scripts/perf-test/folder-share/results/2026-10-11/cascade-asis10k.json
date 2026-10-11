@@ -1,0 +1,134 @@
+{
+ "10000": {
+  "move": {
+   "ms_median": 56731.29665500892,
+   "ms_all": [
+    56731
+   ],
+   "sql": [
+    10014
+   ],
+   "side_ms": [
+    0
+   ],
+   "side_status": [
+    null
+   ]
+  },
+  "trash": {
+   "ms_median": 54340.59510000225,
+   "ms_all": [
+    54056,
+    54625
+   ],
+   "sql": [
+    10013,
+    10013
+   ],
+   "side_ms": [
+    0,
+    0
+   ],
+   "side_status": [
+    null,
+    null
+   ]
+  },
+  "restore": {
+   "ms_median": 57502.719869997236,
+   "ms_all": [
+    57503
+   ],
+   "sql": [
+    10014
+   ],
+   "side_ms": [
+    0
+   ],
+   "side_status": [
+    null
+   ]
+  },
+  "purge": {
+   "ms_median": 495283.6862170079,
+   "ms_all": [
+    495284
+   ],
+   "sql": [
+    130058
+   ],
+   "side_ms": [
+    0
+   ],
+   "side_status": [
+    null
+   ]
+  },
+  "purge_top": [
+   [
+    "update block set ref_count = ref_count - $1, unreferenced_at = case when ref_count - $2 <= $6 then $3 else unreferenced_at end where owner_id = $4 and hash = $5",
+    30000
+   ],
+   [
+    "select fvje1_0.id,fvje1_0.created_at,fvje1_0.created_by,fvje1_0.file_id,fvje1_0.file_size,fvje1_0.owner_id,fvje1_0.upload_id from file_version fvje1_0 where fvje1_0.file_id=$1",
+    20011
+   ],
+   [
+    "select h1_0.version_id,h1_0.idx,h1_0.hash from file_version_block h1_0 where h1_0.version_id=$1",
+    20000
+   ],
+   [
+    "select fsje1_0.id,fsje1_0.created_at,fsje1_0.created_by,fsje1_0.file_id,fsje1_0.granted_role,fsje1_0.grantee_email,fsje1_0.owner_id,fsje1_0.shared_with_user_id,fsje1_0.token from file_share fsje1_0 where fsje1_0.file_id=$1",
+    10011
+   ],
+   [
+    "update namespace n set used_bytes = n.used_bytes - f.file_size from file f where f.id = $1 and n.id = f.namespace_id and f.is_directory = $2 and f.file_size is not null",
+    10011
+   ],
+   [
+    "update file fje1_0 set deleted_at=$1,is_deleted=$4,status=$5,deleted_by=$2 where fje1_0.id=$3 and fje1_0.status=$6",
+    10011
+   ],
+   [
+    "select ffje1_0.id,ffje1_0.created_at,ffje1_0.created_by,ffje1_0.file_id,ffje1_0.user_id from file_favorite ffje1_0 where ffje1_0.file_id=$1",
+    10011
+   ],
+   [
+    "delete from file_version where id=$1",
+    10000
+   ]
+  ],
+  "trash_top": [
+   [
+    "update file set active_slot_name=$1,status=$2,trashed_at=$3,updated_at=$4 where id=$5",
+    10011
+   ],
+   [
+    "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.namespace_id=$1 and (fje1_0.path=$2 or fje1_0.path like ($3||$4) escape $5) order by fje1_0.path,fje1_0.name for no key update of fje1_0",
+    1
+   ],
+   [
+    "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.id=$1 for no key update of fje1_0",
+    1
+   ]
+  ],
+  "move_top": [
+   [
+    "update file set path=$1,updated_at=$2,updated_by=$3 where id=$4",
+    10011
+   ],
+   [
+    "select ffje1_0.id from file_favorite ffje1_0 where ffje1_0.user_id=$1 and ffje1_0.file_id=$2 fetch first $3 rows only",
+    1
+   ],
+   [
+    "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.namespace_id=$1 and (fje1_0.path=$2 or fje1_0.path like ($3||$4) escape $5) order by fje1_0.path,fje1_0.name for no key update of fje1_0",
+    1
+   ],
+   [
+    "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.id=$1 for no key update of fje1_0",
+    1
+   ]
+  ]
+ }
+}

@@ -1,0 +1,6 @@
+tobe run=1 files=0 commit:{"p50": 31.9, "p95": 59.2} usage:{"p50": 6.8, "p95": 9.2}
+tobe run=1 files=100000 commit:{"p50": 24.2, "p95": 32.0} usage:{"p50": 4.4, "p95": 5.9}
+tobe run=2 files=0 commit:{"p50": 17.9, "p95": 22.1} usage:{"p50": 3.4, "p95": 4.2}
+tobe run=2 files=100000 commit:{"p50": 14.6, "p95": 17.4} usage:{"p50": 3.2, "p95": 4.0}
+tobe run=3 files=0 commit:{"p50": 14.9, "p95": 21.6} usage:{"p50": 4.2, "p95": 5.1}
+tobe run=3 files=100000 commit:{"p50": 17.9, "p95": 26.7} usage:{"p50": 3.8, "p95": 4.7}

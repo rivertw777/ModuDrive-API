@@ -1,0 +1,10 @@
+round=1 quota=10485760 used=10485760 counter=10485760 over=0 {"ok": 10, "other": ["저장 공간이 부족합니다."]}
+round=2 quota=10485760 used=10485760 counter=10485760 over=0 {"ok": 10, "other": ["저장 공간이 부족합니다."]}
+round=3 quota=10485760 used=10485760 counter=10485760 over=0 {"ok": 10, "other": ["저장 공간이 부족합니다."]}
+round=4 quota=10485760 used=10485760 counter=10485760 over=0 {"ok": 10, "other": ["저장 공간이 부족합니다."]}
+round=5 quota=10485760 used=10485760 counter=10485760 over=0 {"ok": 10, "other": ["저장 공간이 부족합니다."]}
+round=6 quota=10485760 used=10485760 counter=10485760 over=0 {"ok": 10, "other": ["저장 공간이 부족합니다."]}
+round=7 quota=10485760 used=10485760 counter=10485760 over=0 {"ok": 10, "other": ["저장 공간이 부족합니다."]}
+round=8 quota=10485760 used=10485760 counter=10485760 over=0 {"ok": 10, "other": ["저장 공간이 부족합니다."]}
+round=9 quota=10485760 used=10485760 counter=10485760 over=0 {"ok": 10, "other": ["저장 공간이 부족합니다."]}
+round=10 quota=10485760 used=10485760 counter=10485760 over=0 {"ok": 10, "other": ["저장 공간이 부족합니다."]}

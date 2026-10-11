@@ -1,0 +1,6 @@
+    move: 56731ms sql=10014 side={}
+    trash: 54056ms sql=10013 side={}
+    restore: 57503ms sql=10014 side={}
+    trash: 54625ms sql=10013 side={}
+    purge: 495284ms sql=130058 side={}
+10000 {"move": {"ms_median": 56731.29665500892, "ms_all": [56731], "sql": [10014], "side_ms": [0], "side_status": [null]}, "trash": {"ms_median": 54340.59510000225, "ms_all": [54056, 54625], "sql": [10013, 10013], "side_ms": [0, 0], "side_status": [null, null]}, "restore": {"ms_median": 57502.719869997236, "ms_all": [57503], "sql": [10014], "side_ms": [0], "side_status": [null]}, "purge": {"ms_median": 495283.6862170079, "ms_all": [495284], "sql": [130058], "side_ms": [0], "side_status": [null]}}

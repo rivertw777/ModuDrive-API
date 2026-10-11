@@ -1,0 +1,4 @@
+asis files=0 commit:{"p50": 27.4, "p95": 36.1} usage:{"p50": 6.0, "p95": 8.4}
+asis files=1000 commit:{"p50": 19.1, "p95": 25.4} usage:{"p50": 5.0, "p95": 6.3}
+asis files=10000 commit:{"p50": 17.8, "p95": 20.8} usage:{"p50": 5.9, "p95": 6.8}
+asis files=100000 commit:{"p50": 23.9, "p95": 29.1} usage:{"p50": 13.4, "p95": 15.1}

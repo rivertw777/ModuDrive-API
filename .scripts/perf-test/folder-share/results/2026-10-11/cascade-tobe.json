@@ -1,0 +1,684 @@
+{
+ "100": {
+  "move": {
+   "ms_median": 31.791824992978945,
+   "ms_all": [
+    527,
+    32,
+    30
+   ],
+   "sql": [
+    6,
+    5,
+    5
+   ],
+   "side_ms": [
+    0,
+    0,
+    0
+   ],
+   "side_status": [
+    null,
+    null,
+    null
+   ]
+  },
+  "trash": {
+   "ms_median": 28.55946999625303,
+   "ms_all": [
+    40,
+    34,
+    27,
+    30,
+    28,
+    27
+   ],
+   "sql": [
+    4,
+    4,
+    4,
+    4,
+    4,
+    4
+   ],
+   "side_ms": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "side_status": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ]
+  },
+  "restore": {
+   "ms_median": 39.34432000096422,
+   "ms_all": [
+    42,
+    30,
+    39
+   ],
+   "sql": [
+    5,
+    5,
+    5
+   ],
+   "side_ms": [
+    0,
+    0,
+    0
+   ],
+   "side_status": [
+    null,
+    null,
+    null
+   ]
+  },
+  "purge": {
+   "ms_median": 111.75286400248297,
+   "ms_all": [
+    175,
+    112,
+    83
+   ],
+   "sql": [
+    18,
+    18,
+    18
+   ],
+   "side_ms": [
+    0,
+    0,
+    0
+   ],
+   "side_status": [
+    null,
+    null,
+    null
+   ]
+  },
+  "purge_wait": {
+   "ms_median": 83.19654400111176,
+   "ms_all": [
+    119,
+    83,
+    77
+   ],
+   "sql": [
+    28,
+    28,
+    28
+   ],
+   "side_ms": [
+    254,
+    57,
+    51
+   ],
+   "side_status": [
+    200,
+    200,
+    200
+   ]
+  },
+  "move_wait": {
+   "ms_median": 34.47655099444091,
+   "ms_all": [
+    34,
+    38,
+    30
+   ],
+   "sql": [
+    19,
+    19,
+    19
+   ],
+   "side_ms": [
+    80,
+    77,
+    63
+   ],
+   "side_status": [
+    200,
+    200,
+    200
+   ]
+  },
+  "purge_top": [
+   [
+    "delete from file_version where file_id = any($1)",
+    2
+   ],
+   [
+    "select id from file where id = any($1) and status = $2 for update",
+    2
+   ],
+   [
+    "update file set deleted_at = $1, is_deleted = $4, status = $5, deleted_by = $2 where id = any($3) and status = $6",
+    2
+   ],
+   [
+    "delete from file_favorite where file_id = any($1)",
+    2
+   ],
+   [
+    "delete from file_share where file_id = any($1)",
+    2
+   ],
+   [
+    "delete from file_version_block where version_id in (select id from file_version where file_id = any($1))",
+    2
+   ],
+   [
+    "update namespace n set used_bytes = n.used_bytes - s.total from (select namespace_id, sum(file_size) as total from file where id = any($1) and is_directory = $2 and file_size is not null group by namespace_id) s where n.id = s.namespace_id",
+    2
+   ],
+   [
+    "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.id=$1",
+    1
+   ]
+  ],
+  "trash_top": [
+   [
+    "select id from file where namespace_id = $1 and (path = $2 or path like concat($3, $4) escape $5) order by path, name for update",
+    1
+   ],
+   [
+    "update file set active_slot_name=$1,status=$2,trashed_at=$3,updated_at=$4 where id=$5",
+    1
+   ],
+   [
+    "update file set status = $1, trashed_at = $2, active_slot_name = $3, updated_at = $4, updated_by = $5 where namespace_id = $6 and (path = $7 or path like concat($8, $9) escape $10) and status not in ($11 /*, ... */)",
+    1
+   ],
+   [
+    "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.id=$1 for no key update of fje1_0",
+    1
+   ]
+  ],
+  "move_top": [
+   [
+    "update file set path = concat($1, substr(path, char_length($2) + $8)), updated_at = $3, updated_by = $4 where namespace_id = $5 and (path = $6 or path like concat($7, $9) escape $10)",
+    1
+   ],
+   [
+    "SELECT c.oid, a.attnum, a.attname, c.relname, n.nspname, a.attnotnull OR (t.typtype = $1 AND t.typnotnull), a.attidentity != $2 OR pg_catalog.pg_get_expr(d.adbin, d.adrelid) LIKE $3 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON (c.relnamespace = n.oid) JOIN pg_catalog.pg_attribute a ON (c.oid = a.attrelid) JOIN pg_catalog.pg_type t ON (a.atttypid = t.oid) LEFT JOIN pg_catalog.pg_attrdef d ON (d.adrelid = a.attrelid AND d.adnum = a.attnum) JOIN (SELECT $4 AS oid , $5 AS attnum) vals ON (c.oid = vals.oid AND a.attnum = vals.attnum) where c.oid in ($6)",
+    1
+   ],
+   [
+    "select id from file where namespace_id = $1 and (path = $2 or path like concat($3, $4) escape $5) order by path, name for update",
+    1
+   ],
+   [
+    "select ffje1_0.id from file_favorite ffje1_0 where ffje1_0.user_id=$1 and ffje1_0.file_id=$2 fetch first $3 rows only",
+    1
+   ],
+   [
+    "update file set path=$1,updated_at=$2,updated_by=$3 where id=$4",
+    1
+   ],
+   [
+    "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.id=$1 for no key update of fje1_0",
+    1
+   ]
+  ]
+ },
+ "1000": {
+  "move": {
+   "ms_median": 40.0554590014508,
+   "ms_all": [
+    41,
+    36,
+    40
+   ],
+   "sql": [
+    5,
+    5,
+    5
+   ],
+   "side_ms": [
+    0,
+    0,
+    0
+   ],
+   "side_status": [
+    null,
+    null,
+    null
+   ]
+  },
+  "trash": {
+   "ms_median": 34.40493650123244,
+   "ms_all": [
+    39,
+    37,
+    36,
+    33,
+    33,
+    33
+   ],
+   "sql": [
+    4,
+    4,
+    4,
+    4,
+    4,
+    4
+   ],
+   "side_ms": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "side_status": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ]
+  },
+  "restore": {
+   "ms_median": 39.26563799905125,
+   "ms_all": [
+    39,
+    39,
+    37
+   ],
+   "sql": [
+    5,
+    5,
+    5
+   ],
+   "side_ms": [
+    0,
+    0,
+    0
+   ],
+   "side_status": [
+    null,
+    null,
+    null
+   ]
+  },
+  "purge": {
+   "ms_median": 176.52769600681495,
+   "ms_all": [
+    213,
+    177,
+    140
+   ],
+   "sql": [
+    18,
+    18,
+    18
+   ],
+   "side_ms": [
+    0,
+    0,
+    0
+   ],
+   "side_status": [
+    null,
+    null,
+    null
+   ]
+  },
+  "purge_wait": {
+   "ms_median": 177.46324100880884,
+   "ms_all": [
+    177,
+    157,
+    219
+   ],
+   "sql": [
+    28,
+    28,
+    29
+   ],
+   "side_ms": [
+    72,
+    44,
+    56
+   ],
+   "side_status": [
+    200,
+    200,
+    200
+   ]
+  },
+  "move_wait": {
+   "ms_median": 37.480490005691536,
+   "ms_all": [
+    38,
+    37,
+    35
+   ],
+   "sql": [
+    19,
+    19,
+    19
+   ],
+   "side_ms": [
+    68,
+    61,
+    59
+   ],
+   "side_status": [
+    200,
+    200,
+    200
+   ]
+  },
+  "purge_top": [
+   [
+    "delete from file_version where file_id = any($1)",
+    2
+   ],
+   [
+    "select id from file where id = any($1) and status = 'TRASHED' for update",
+    2
+   ],
+   [
+    "update file set deleted_at = $1, is_deleted = true, status = 'DELETED', deleted_by = $2 where id = any($3) and status = 'TRASHED'",
+    2
+   ],
+   [
+    "delete from file_favorite where file_id = any($1)",
+    2
+   ],
+   [
+    "delete from file_share where file_id = any($1)",
+    2
+   ],
+   [
+    "delete from file_version_block where version_id in (select id from file_version where file_id = any($1))",
+    2
+   ],
+   [
+    "update namespace n set used_bytes = n.used_bytes - s.total from (select namespace_id, sum(file_size) as total from file where id = any($1) and is_directory = false and file_size is not null group by namespace_id) s where n.id = s.namespace_id",
+    2
+   ],
+   [
+    "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.id=$1",
+    1
+   ]
+  ],
+  "trash_top": [
+   [
+    "select id from file where namespace_id = $1 and (path = $2 or path like concat($3, '/%') escape '\\') order by path, name for update",
+    1
+   ],
+   [
+    "update file set active_slot_name=$1,status=$2,trashed_at=$3,updated_at=$4 where id=$5",
+    1
+   ],
+   [
+    "update file set status = 'TRASHED', trashed_at = $1, active_slot_name = null, updated_at = $2, updated_by = $3 where namespace_id = $4 and (path = $5 or path like concat($6, '/%') escape '\\') and status not in ('TRASHED', 'DELETED')",
+    1
+   ],
+   [
+    "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.id=$1 for no key update of fje1_0",
+    1
+   ]
+  ],
+  "move_top": [
+   [
+    "update file set path = concat($1, substr(path, char_length($2) + 1)), updated_at = $3, updated_by = $4 where namespace_id = $5 and (path = $6 or path like concat($7, '/%') escape '\\')",
+    1
+   ],
+   [
+    "select id from file where namespace_id = $1 and (path = $2 or path like concat($3, '/%') escape '\\') order by path, name for update",
+    1
+   ],
+   [
+    "select ffje1_0.id from file_favorite ffje1_0 where ffje1_0.user_id=$1 and ffje1_0.file_id=$2 fetch first $3 rows only",
+    1
+   ],
+   [
+    "update file set path=$1,updated_at=$2,updated_by=$3 where id=$4",
+    1
+   ],
+   [
+    "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.id=$1 for no key update of fje1_0",
+    1
+   ]
+  ]
+ },
+ "10000": {
+  "move": {
+   "ms_median": 183.65709099452943,
+   "ms_all": [
+    168,
+    184,
+    236
+   ],
+   "sql": [
+    5,
+    5,
+    5
+   ],
+   "side_ms": [
+    0,
+    0,
+    0
+   ],
+   "side_status": [
+    null,
+    null,
+    null
+   ]
+  },
+  "trash": {
+   "ms_median": 171.50337199564092,
+   "ms_all": [
+    223,
+    170,
+    173,
+    160,
+    161,
+    221
+   ],
+   "sql": [
+    4,
+    4,
+    4,
+    4,
+    4,
+    4
+   ],
+   "side_ms": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "side_status": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ]
+  },
+  "restore": {
+   "ms_median": 169.044890004443,
+   "ms_all": [
+    153,
+    224,
+    169
+   ],
+   "sql": [
+    5,
+    5,
+    5
+   ],
+   "side_ms": [
+    0,
+    0,
+    0
+   ],
+   "side_status": [
+    null,
+    null,
+    null
+   ]
+  },
+  "purge": {
+   "ms_median": 1363.1378849968314,
+   "ms_all": [
+    1503,
+    1340,
+    1363
+   ],
+   "sql": [
+    18,
+    18,
+    18
+   ],
+   "side_ms": [
+    0,
+    0,
+    0
+   ],
+   "side_status": [
+    null,
+    null,
+    null
+   ]
+  },
+  "purge_wait": {
+   "ms_median": 1519.4087499985471,
+   "ms_all": [
+    1403,
+    1621,
+    1519
+   ],
+   "sql": [
+    28,
+    28,
+    28
+   ],
+   "side_ms": [
+    50,
+    59,
+    49
+   ],
+   "side_status": [
+    200,
+    200,
+    200
+   ]
+  },
+  "move_wait": {
+   "ms_median": 221.2587100075325,
+   "ms_all": [
+    221,
+    225,
+    204
+   ],
+   "sql": [
+    19,
+    19,
+    19
+   ],
+   "side_ms": [
+    169,
+    167,
+    121
+   ],
+   "side_status": [
+    200,
+    200,
+    200
+   ]
+  },
+  "purge_top": [
+   [
+    "delete from file_version where file_id = any($1)",
+    2
+   ],
+   [
+    "select id from file where id = any($1) and status = $2 for update",
+    2
+   ],
+   [
+    "update file set deleted_at = $1, is_deleted = $4, status = $5, deleted_by = $2 where id = any($3) and status = $6",
+    2
+   ],
+   [
+    "delete from file_favorite where file_id = any($1)",
+    2
+   ],
+   [
+    "delete from file_share where file_id = any($1)",
+    2
+   ],
+   [
+    "delete from file_version_block where version_id in (select id from file_version where file_id = any($1))",
+    2
+   ],
+   [
+    "update namespace n set used_bytes = n.used_bytes - s.total from (select namespace_id, sum(file_size) as total from file where id = any($1) and is_directory = $2 and file_size is not null group by namespace_id) s where n.id = s.namespace_id",
+    2
+   ],
+   [
+    "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.id=$1",
+    1
+   ]
+  ],
+  "trash_top": [
+   [
+    "select id from file where namespace_id = $1 and (path = $2 or path like concat($3, '/%') escape '\\') order by path, name for update",
+    1
+   ],
+   [
+    "update file set active_slot_name=$1,status=$2,trashed_at=$3,updated_at=$4 where id=$5",
+    1
+   ],
+   [
+    "update file set status = $1, trashed_at = $2, active_slot_name = $3, updated_at = $4, updated_by = $5 where namespace_id = $6 and (path = $7 or path like concat($8, $9) escape $10) and status not in ($11 /*, ... */)",
+    1
+   ],
+   [
+    "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.id=$1 for no key update of fje1_0",
+    1
+   ]
+  ],
+  "move_top": [
+   [
+    "update file set path = concat($1, substr(path, char_length($2) + $8)), updated_at = $3, updated_by = $4 where namespace_id = $5 and (path = $6 or path like concat($7, $9) escape $10)",
+    1
+   ],
+   [
+    "select id from file where namespace_id = $1 and (path = $2 or path like concat($3, $4) escape $5) order by path, name for update",
+    1
+   ],
+   [
+    "select ffje1_0.id from file_favorite ffje1_0 where ffje1_0.user_id=$1 and ffje1_0.file_id=$2 fetch first $3 rows only",
+    1
+   ],
+   [
+    "update file set path=$1,updated_at=$2,updated_by=$3 where id=$4",
+    1
+   ],
+   [
+    "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,fje1_0.is_directory,fje1_0.file_size,fje1_0.is_deleted,fje1_0.link_role,fje1_0.name,fje1_0.namespace_id,fje1_0.owner_id,fje1_0.path,fje1_0.status,fje1_0.trashed_at,fje1_0.updated_at,fje1_0.updated_by from file fje1_0 where fje1_0.id=$1 for no key update of fje1_0",
+    1
+   ]
+  ]
+ }
+}

@@ -1,0 +1,44 @@
+{
+ "1000": {
+  "purge_vs_root_commit": [
+   {
+    "op_ms": 12442,
+    "commits": 502,
+    "max_commit_ms": 4133,
+    "p50_commit_ms": 16
+   },
+   {
+    "op_ms": 11734,
+    "commits": 535,
+    "max_commit_ms": 4025,
+    "p50_commit_ms": 14
+   },
+   {
+    "op_ms": 12477,
+    "commits": 559,
+    "max_commit_ms": 4842,
+    "p50_commit_ms": 14
+   }
+  ],
+  "move_vs_inner_commit": [
+   {
+    "op_ms": 1257,
+    "commits": 14,
+    "max_commit_ms": 1267,
+    "p50_commit_ms": 14
+   },
+   {
+    "op_ms": 1342,
+    "commits": 14,
+    "max_commit_ms": 1348,
+    "p50_commit_ms": 16
+   },
+   {
+    "op_ms": 1374,
+    "commits": 14,
+    "max_commit_ms": 1384,
+    "p50_commit_ms": 15
+   }
+  ]
+ }
+}

@@ -1,0 +1,86 @@
+{
+ "1000": {
+  "purge_vs_root_commit": [
+   {
+    "op_ms": 149,
+    "commits": 10,
+    "max_commit_ms": 39,
+    "p50_commit_ms": 36
+   },
+   {
+    "op_ms": 232,
+    "commits": 10,
+    "max_commit_ms": 64,
+    "p50_commit_ms": 42
+   },
+   {
+    "op_ms": 247,
+    "commits": 13,
+    "max_commit_ms": 42,
+    "p50_commit_ms": 35
+   }
+  ],
+  "move_vs_inner_commit": [
+   {
+    "op_ms": 53,
+    "commits": 6,
+    "max_commit_ms": 63,
+    "p50_commit_ms": 45
+   },
+   {
+    "op_ms": 61,
+    "commits": 6,
+    "max_commit_ms": 79,
+    "p50_commit_ms": 43
+   },
+   {
+    "op_ms": 54,
+    "commits": 7,
+    "max_commit_ms": 53,
+    "p50_commit_ms": 37
+   }
+  ]
+ },
+ "10000": {
+  "purge_vs_root_commit": [
+   {
+    "op_ms": 1589,
+    "commits": 54,
+    "max_commit_ms": 42,
+    "p50_commit_ms": 33
+   },
+   {
+    "op_ms": 1711,
+    "commits": 60,
+    "max_commit_ms": 47,
+    "p50_commit_ms": 31
+   },
+   {
+    "op_ms": 2647,
+    "commits": 93,
+    "max_commit_ms": 38,
+    "p50_commit_ms": 30
+   }
+  ],
+  "move_vs_inner_commit": [
+   {
+    "op_ms": 172,
+    "commits": 7,
+    "max_commit_ms": 167,
+    "p50_commit_ms": 35
+   },
+   {
+    "op_ms": 162,
+    "commits": 7,
+    "max_commit_ms": 167,
+    "p50_commit_ms": 35
+   },
+   {
+    "op_ms": 214,
+    "commits": 7,
+    "max_commit_ms": 226,
+    "p50_commit_ms": 33
+   }
+  ]
+ }
+}
