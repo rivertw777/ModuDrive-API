@@ -44,6 +44,13 @@ variable "smtp_username" {
   default = null
 }
 
+# The From address for SMTP mail when it isn't the login account — Gmail keeps it only if it's a
+# "Send mail as" address of that account, and otherwise sends as the account.
+variable "smtp_from" {
+  type    = string
+  default = null
+}
+
 # The image the task definitions Terraform registers point at. Only the first apply needs a real one:
 # after that the deploy workflow (.github/workflows/deploy.yml) registers new revisions with the
 # commit's image and the services ignore Terraform's (ecs.tf). Terraform's revision is then just the
