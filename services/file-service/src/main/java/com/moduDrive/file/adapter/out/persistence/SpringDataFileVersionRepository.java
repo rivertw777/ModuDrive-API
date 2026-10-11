@@ -2,6 +2,7 @@ package com.moduDrive.file.adapter.out.persistence;
 
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -14,11 +15,18 @@ interface SpringDataFileVersionRepository extends JpaRepository<FileVersionJpaEn
 
     List<FileVersionJpaEntity> findByFileIdOrderByCreatedAtDesc(UUID fileId, Pageable pageable);
 
-    List<FileVersionJpaEntity> findByFileId(UUID fileId);
-
     Optional<FileVersionJpaEntity> findByUploadId(UUID uploadId);
 
-    void deleteByFileId(UUID fileId);
+    // Bulk deletes for a purge — the blocklist (an element collection) first, since a JPQL/native
+    // delete of the version rows doesn't cascade to it.
+    @Modifying
+    @Query(value = "delete from file_version_block where version_id in "
+            + "(select id from file_version where file_id = any(:fileIds))", nativeQuery = true)
+    void deleteBlocklistsByFileIds(@Param("fileIds") UUID[] fileIds);
+
+    @Modifying
+    @Query(value = "delete from file_version where file_id = any(:fileIds)", nativeQuery = true)
+    void deleteByFileIds(@Param("fileIds") UUID[] fileIds);
 
     // Files over the version cap, or with an old version besides the current one — the current is
     // always the newest (a commit makes its new version current), so with more than one version the

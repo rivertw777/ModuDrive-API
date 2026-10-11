@@ -33,7 +33,10 @@ interface SpringDataFileShareRepository extends JpaRepository<FileShareJpaEntity
 
     boolean existsByFileIdIn(List<UUID> fileIds);
 
-    void deleteByFileId(UUID fileId);
+    // Bulk, for a purge: a derived deleteByFileId loads every row and deletes them one by one.
+    @Modifying
+    @Query(value = "delete from file_share where file_id = any(:fileIds)", nativeQuery = true)
+    void deleteByFileIds(@Param("fileIds") UUID[] fileIds);
 
     // Most recently shared first — drives the "공유 문서함" list order.
     List<FileShareJpaEntity> findBySharedWithUserIdOrderByCreatedAtDesc(UUID sharedWithUserId);

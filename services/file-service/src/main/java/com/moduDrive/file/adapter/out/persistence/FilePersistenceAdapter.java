@@ -11,6 +11,7 @@ import com.moduDrive.file.domain.model.Namespace.NamespaceId;
 import com.moduDrive.file.exception.FileExceptionCase;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.AuditorAware;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.ScrollPosition;
 import org.springframework.data.domain.Sort;
@@ -37,6 +38,7 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
     private final SpringDataFileFavoriteRepository fileFavoriteRepository;
     private final SpringDataNamespaceRepository namespaceRepository;
     private final FileMapper fileMapper;
+    private final AuditorAware<UUID> auditorAware;
 
     @Override
     public File saveFile(File file) {
@@ -115,34 +117,92 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
      * doesn't touch namespace.used_bytes, which a live file still counts in. */
     @Override
     public void deleteFile(FileId fileId) {
-        cascadeDeleteAttachments(fileId);
+        deleteAttachments(new UUID[]{fileId.value()});
         fileRepository.deleteById(fileId.value());
     }
 
     @Override
     public void purgeFile(FileId fileId, UUID deletedBy) {
-        // Tombstone purge: drop everything that costs storage, keep the metadata row with
-        // deletedAt stamped. markPurged is a plain UPDATE (not a JPA save) so it doesn't bump
-        // updatedAt — DirectoryCascader.purge's sibling check relies on trash-time timestamps
-        // staying put.
-        // Tombstone first, and drop the rest only if it was still TRASHED — a file restored meanwhile
-        // keeps its versions, shares and favorites.
-        if (fileRepository.markPurged(fileId.value(), LocalDateTime.now(), deletedBy) == 1) {
-            cascadeDeleteAttachments(fileId);
-            // In the same transaction as the tombstone, and only when this call made it — a second
-            // purge of the same file frees nothing. Last, like the commit's usage update.
-            namespaceRepository.releaseUsedBytesOf(fileId.value());
-        }
+        purgeFiles(List.of(fileId), deletedBy);
     }
 
-    // The file's versions would otherwise dangle forever, holding block references that
-    // FilePurger/DirectoryCascader already released. Its share and favorite rows
-    // likewise — no FK cascade, so a grant or a star on a purged file/folder would linger and
-    // only ever get filtered out at read time (ListSharedWithMeService / ListFavoritesService).
-    private void cascadeDeleteAttachments(FileId fileId) {
-        fileVersionRepository.deleteByFileId(fileId.value());
-        fileShareRepository.deleteByFileId(fileId.value());
-        fileFavoriteRepository.deleteByFileId(fileId.value());
+    @Override
+    public void purgeFiles(Collection<FileId> fileIds, UUID deletedBy) {
+        if (fileIds.isEmpty()) {
+            return;
+        }
+        // Only rows still TRASHED, and the rest only for those — a file restored meanwhile keeps its
+        // versions, shares and favorites, and a second purge of the same file frees nothing twice.
+        // The callers already lock and re-check what they pass; this keeps that true per row anyway.
+        UUID[] ids = fileRepository.lockTrashedIds(fileIds.stream().map(FileId::value).toArray(UUID[]::new))
+                .toArray(UUID[]::new);
+        if (ids.length == 0) {
+            return;
+        }
+        // Tombstone purge: drop everything that costs storage, keep the metadata rows with deletedAt
+        // stamped. markPurged is a plain UPDATE (not a JPA save) so it doesn't bump updatedAt —
+        // DirectoryCascader.purge's sibling check relies on trash-time timestamps staying put.
+        fileRepository.markPurged(ids, LocalDateTime.now(), deletedBy);
+        deleteAttachments(ids);
+        // In the same transaction as the tombstones, last, like the commit's usage update: one
+        // UPDATE of the drive's row for the whole batch.
+        namespaceRepository.releaseUsedBytesOf(ids);
+    }
+
+    // The files' versions would otherwise dangle forever, holding block references that
+    // FilePurger/DirectoryCascader already released. Their share and favorite rows likewise — no
+    // FK cascade, so a grant or a star on a purged file/folder would linger and only ever get
+    // filtered out at read time (ListSharedWithMeService / ListFavoritesService). Bulk deletes,
+    // one per table however many files.
+    private void deleteAttachments(UUID[] fileIds) {
+        fileVersionRepository.deleteBlocklistsByFileIds(fileIds);
+        fileVersionRepository.deleteByFileIds(fileIds);
+        fileShareRepository.deleteByFileIds(fileIds);
+        fileFavoriteRepository.deleteByFileIds(fileIds);
+    }
+
+    @Override
+    public void moveSubtree(NamespaceId namespaceId, String prefix, String newPrefix) {
+        lockSubtree(namespaceId, prefix);
+        translateSlotConflict(() -> fileRepository.moveSubtree(namespaceId.value(), prefix,
+                escapeLikePattern(prefix), newPrefix, LocalDateTime.now(), currentAuditor()));
+    }
+
+    @Override
+    public void trashSubtree(NamespaceId namespaceId, String prefix, LocalDateTime trashedAt) {
+        lockSubtree(namespaceId, prefix);
+        fileRepository.trashSubtree(namespaceId.value(), prefix, escapeLikePattern(prefix), trashedAt,
+                LocalDateTime.now(), currentAuditor());
+    }
+
+    @Override
+    public void restoreSubtree(NamespaceId namespaceId, String prefix) {
+        lockSubtree(namespaceId, prefix);
+        // Restoring re-occupies the rows' name slots, so it can collide like a single restore does.
+        translateSlotConflict(() -> fileRepository.restoreSubtree(namespaceId.value(), prefix,
+                escapeLikePattern(prefix), LocalDateTime.now(), currentAuditor()));
+    }
+
+    // Locked top-down before the bulk UPDATE: the UPDATE alone would lock rows in whatever order its
+    // scan finds them, and could then deadlock against a commit locking the same folders top-down.
+    private void lockSubtree(NamespaceId namespaceId, String prefix) {
+        fileRepository.lockSubtreeIds(namespaceId.value(), prefix, escapeLikePattern(prefix));
+    }
+
+    // A bulk UPDATE bypasses JPA auditing, so it stamps updated_by itself from the same source.
+    private UUID currentAuditor() {
+        return auditorAware.getCurrentAuditor().orElse(null);
+    }
+
+    private static void translateSlotConflict(Runnable update) {
+        try {
+            update.run();
+        } catch (DataIntegrityViolationException e) {
+            if (isActiveSlotConflict(e)) {
+                throw new BusinessException(FileExceptionCase.FILE_ALREADY_EXISTS);
+            }
+            throw e;
+        }
     }
 
     @Override
@@ -218,15 +278,6 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
     @Override
     public Optional<File> lockById(FileId fileId) {
         return fileRepository.lockById(fileId.value()).map(fileMapper::mapFileToDomain);
-    }
-
-    @Override
-    public List<File> lockByNamespaceIdAndPathStartingWith(NamespaceId namespaceId, String pathPrefix) {
-        return fileRepository
-                .lockSubtreeByNamespaceIdAndPathPrefix(namespaceId.value(), pathPrefix, escapeLikePattern(pathPrefix))
-                .stream()
-                .map(fileMapper::mapFileToDomain)
-                .toList();
     }
 
     @Override
@@ -308,13 +359,6 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
     @Override
     public Optional<FileVersion> findByUploadId(UUID uploadId) {
         return fileVersionRepository.findByUploadId(uploadId).map(fileMapper::mapFileVersionToDomain);
-    }
-
-    @Override
-    public List<FileVersion> findAllByFileId(FileId fileId) {
-        return fileVersionRepository.findByFileId(fileId.value()).stream()
-                .map(fileMapper::mapFileVersionToDomain)
-                .toList();
     }
 
     @Override

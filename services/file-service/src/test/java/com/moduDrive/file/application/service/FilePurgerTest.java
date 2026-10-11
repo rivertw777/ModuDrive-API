@@ -1,15 +1,11 @@
 package com.moduDrive.file.application.service;
 
-import com.moduDrive.file.fixture.FileVersionTestFixture;
 import com.moduDrive.file.application.port.out.FindFilePort;
-import com.moduDrive.file.application.port.out.FindFileVersionsPort;
 import com.moduDrive.file.application.port.out.ReleaseBlocksPort;
 import com.moduDrive.file.application.port.out.SaveFilePort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
 import com.moduDrive.file.domain.model.FileStatus;
-import com.moduDrive.file.domain.model.FileVersion;
-import com.moduDrive.file.domain.model.FileVersion.*;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -35,7 +31,6 @@ class FilePurgerTest {
     @Mock private SaveFilePort saveFilePort;
     @Mock private DirectoryCascader directoryCascader;
     @Mock private ReleaseBlocksPort releaseBlocksPort;
-    @Mock private FindFileVersionsPort findFileVersionsPort;
     @Mock private FindFilePort findFilePort;
     @InjectMocks private FilePurger filePurger;
 
@@ -53,20 +48,17 @@ class FilePurgerTest {
     class WhenRootIsAFile {
 
         @Test
-        @DisplayName("버전 행을 지우기 전에 읽어 블록 참조를 풀고, 그다음 행을 tombstone으로 만든다")
-        void releasesBlocksOfVersionsReadBeforeTombstoning() {
+        @DisplayName("버전 행을 지우기 전에 블록 참조를 풀고, 그다음 행을 tombstone으로 만든다")
+        void releasesBlocksBeforeTombstoning() {
             File file = makeFile(new FileIsDirectory(false));
             FileId fileId = new FileId(file.getId());
-            List<FileVersion> versions = List.of(FileVersionTestFixture.aVersion(UUID.randomUUID(), file.getId(), 10L));
-            given(findFileVersionsPort.findAllByFileId(fileId)).willReturn(versions);
             given(findFilePort.lockById(fileId)).willReturn(Optional.of(file));
 
             filePurger.purgeRoot(file, callerId);
 
-            // purgeFile deletes the version rows — reading them afterwards would find nothing.
-            InOrder order = inOrder(findFileVersionsPort, releaseBlocksPort, saveFilePort);
-            order.verify(findFileVersionsPort).findAllByFileId(fileId);
-            order.verify(releaseBlocksPort).releaseBlocks(versions);
+            // purgeFile deletes the version rows — the release reads them, so it goes first.
+            InOrder order = inOrder(releaseBlocksPort, saveFilePort);
+            order.verify(releaseBlocksPort).releaseBlocksOfFiles(List.of(file.getId()));
             order.verify(saveFilePort).purgeFile(fileId, callerId);
             then(directoryCascader).shouldHaveNoInteractions();
         }
