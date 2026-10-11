@@ -35,6 +35,7 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
     private final SpringDataFileVersionRepository fileVersionRepository;
     private final SpringDataFileShareRepository fileShareRepository;
     private final SpringDataFileFavoriteRepository fileFavoriteRepository;
+    private final SpringDataNamespaceRepository namespaceRepository;
     private final FileMapper fileMapper;
 
     @Override
@@ -110,7 +111,8 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
     }
 
     /** Hard delete — no caller in the trash flow anymore (purgeFile keeps a tombstone), kept for
-     * a future job that clears out tombstones older than the recovery window. */
+     * a future job that clears out tombstones older than the recovery window. Tombstones only: it
+     * doesn't touch namespace.used_bytes, which a live file still counts in. */
     @Override
     public void deleteFile(FileId fileId) {
         cascadeDeleteAttachments(fileId);
@@ -127,6 +129,9 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
         // keeps its versions, shares and favorites.
         if (fileRepository.markPurged(fileId.value(), LocalDateTime.now(), deletedBy) == 1) {
             cascadeDeleteAttachments(fileId);
+            // In the same transaction as the tombstone, and only when this call made it — a second
+            // purge of the same file frees nothing. Last, like the commit's usage update.
+            namespaceRepository.releaseUsedBytesOf(fileId.value());
         }
     }
 
@@ -273,11 +278,6 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
                 .stream()
                 .map(fileMapper::mapFileToDomain)
                 .collect(Collectors.toList());
-    }
-
-    @Override
-    public long sumFileSizeByNamespaceId(NamespaceId namespaceId) {
-        return fileRepository.sumFileSizeByNamespaceId(namespaceId.value());
     }
 
     @Override

@@ -17,6 +17,7 @@ import com.moduDrive.file.application.port.out.ReferenceBlocksPort;
 import com.moduDrive.file.application.port.out.SaveFileAccessPort;
 import com.moduDrive.file.application.port.out.SaveFilePort;
 import com.moduDrive.file.application.port.out.SaveFileVersionPort;
+import com.moduDrive.file.application.port.out.UpdateNamespaceUsagePort;
 import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.*;
 import com.moduDrive.file.domain.model.FileStatus;
@@ -24,6 +25,7 @@ import com.moduDrive.file.domain.model.FileVersion;
 import com.moduDrive.file.domain.model.Namespace;
 import com.moduDrive.file.domain.model.Namespace.NamespaceId;
 import com.moduDrive.file.domain.model.Namespace.NamespaceQuotaBytes;
+import com.moduDrive.file.domain.model.Namespace.NamespaceUsedBytes;
 import com.moduDrive.file.domain.model.Namespace.NamespaceRootPath;
 import com.moduDrive.file.domain.model.Namespace.NamespaceUserId;
 import com.moduDrive.file.exception.FileExceptionCase;
@@ -55,6 +57,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
@@ -79,6 +82,7 @@ class CommitFileUploadServiceTest {
     @Mock private ReferenceBlocksPort referenceBlocksPort;
     @Mock private SaveFileAccessPort saveFileAccessPort;
     @Mock private FindCommittedBlocksPort findCommittedBlocksPort;
+    @Mock private UpdateNamespaceUsagePort updateNamespaceUsagePort;
     @Mock private TransactionTemplate transactionTemplate;
     @InjectMocks private CommitFileUploadService commitFileUploadService;
 
@@ -110,8 +114,21 @@ class CommitFileUploadServiceTest {
                 inv.<TransactionCallback<?>>getArgument(0).doInTransaction(null));
     }
 
+    @BeforeEach
+    void driveHasRoom() {
+        // Lenient: the drive has room unless a test says otherwise.
+        lenient().when(updateNamespaceUsagePort.addUsedBytes(any(), anyLong())).thenReturn(true);
+    }
+
     private void givenNamespace() {
         given(findNamespacePort.findByUserId(new NamespaceUserId(ownerId))).willReturn(Optional.of(namespace));
+    }
+
+    /** The same drive, {@code used} bytes into its quota. */
+    private void givenNamespaceUsing(long used) {
+        given(findNamespacePort.findByUserId(new NamespaceUserId(ownerId))).willReturn(Optional.of(Namespace.withId(
+                new NamespaceId(namespace.getId()), new NamespaceUserId(ownerId), new NamespaceRootPath("/"),
+                new NamespaceQuotaBytes(namespace.getQuotaBytes()), new NamespaceUsedBytes(used))));
     }
 
     /** Lenient: a commit that answers needBlocks never looks for the file. */
@@ -215,6 +232,7 @@ class CommitFileUploadServiceTest {
             assertThat(file.getCurrentVersionId()).isEqualTo(saved.getId());
             then(saveFilePort).should().saveFile(file);
             then(saveFileAccessPort).should().recordAccesses(eq(ownerId), eq(List.of(file.getId())), any());
+            then(updateNamespaceUsagePort).should().addUsedBytes(new NamespaceId(namespace.getId()), 3L * BLOCK);
         }
 
         @Test
@@ -572,9 +590,8 @@ class CommitFileUploadServiceTest {
         @Test
         @DisplayName("한도를 넘는 파일은 블록을 묻기 전에 QUOTA_EXCEEDED로 거절한다")
         void rejectsAFileThatWontFitBeforeAskingForBlocks() {
-            givenNamespace();
+            givenNamespaceUsing(quota - 5);
             given(findFileVersionsPort.findByUploadId(uploadId)).willReturn(Optional.empty());
-            given(findFilePort.sumFileSizeByNamespaceId(any())).willReturn(quota - 5);
 
             assertThat(commitError(command(10L, List.of(HASH_A)))).isEqualTo(FileExceptionCase.QUOTA_EXCEEDED);
             then(findCommittedBlocksPort).shouldHaveNoInteractions();
@@ -584,10 +601,10 @@ class CommitFileUploadServiceTest {
         @Test
         @DisplayName("대체 업로드는 늘어나는 만큼만 센다")
         void countsOnlyTheGrowthOfAReplacement() {
-            fileExists();
+            givenNamespaceUsing(quota - 5);
+            given(findFileVersionsPort.findByUploadId(uploadId)).willReturn(Optional.empty());
             file.markUploaded(UUID.randomUUID(), 8L);
             given(findFilePort.findActiveByNamespaceIdAndPathAndName(any(), eq("/사진"), eq("a.bin"))).willReturn(Optional.of(file));
-            given(findFilePort.sumFileSizeByNamespaceId(any())).willReturn(quota - 5);
             givenCommitted(Map.of());
             given(findUploadedBlocksPort.findUploadedBlocks(eq(ownerId), anyCollection())).willReturn(Map.of());
 
@@ -598,11 +615,10 @@ class CommitFileUploadServiceTest {
         @Test
         @DisplayName("줄어드는 대체 파일은 같은 묶음의 다른 파일에 용량을 내주지 않는다")
         void aShrinkingReplacementFreesNothingForTheGroup() {
-            givenNamespace();
+            givenNamespaceUsing(quota);
             file.markUploaded(UUID.randomUUID(), 1_000L);
             given(findFileVersionsPort.findByUploadId(any())).willReturn(Optional.empty());
             given(findFilePort.findActiveByNamespaceIdAndPathAndName(any(), eq("/사진"), eq("a.bin"))).willReturn(Optional.of(file));
-            given(findFilePort.sumFileSizeByNamespaceId(any())).willReturn(quota);
             givenCommitted(Map.of());
             given(findUploadedBlocksPort.findUploadedBlocks(eq(ownerId), anyCollection())).willReturn(Map.of());
 
@@ -618,9 +634,8 @@ class CommitFileUploadServiceTest {
         @Test
         @DisplayName("묶음 안에서 앞 파일들이 남은 용량을 쓰면, 넘치는 파일만 실패한다")
         void failsOnlyTheFilesPastTheQuotaWithinAGroup() {
-            givenNamespace();
+            givenNamespaceUsing(quota - 15);
             given(findFileVersionsPort.findByUploadId(any())).willReturn(Optional.empty());
-            given(findFilePort.sumFileSizeByNamespaceId(any())).willReturn(quota - 15);
             givenCommitted(Map.of());
             given(findUploadedBlocksPort.findUploadedBlocks(eq(ownerId), anyCollection())).willReturn(Map.of());
 
@@ -632,6 +647,31 @@ class CommitFileUploadServiceTest {
             assertThat(results.get(0).needBlocks()).containsExactly(HASH_A);
             assertThat(results.get(1).error()).isEqualTo(FileExceptionCase.QUOTA_EXCEEDED);
             assertThat(results.get(2).needBlocks()).containsExactly(HASH_C);
+        }
+
+        @Test
+        @DisplayName("다른 commit이 먼저 남은 용량을 쓰면, 잠근 뒤의 조건부 갱신에서 QUOTA_EXCEEDED로 실패한다")
+        void failsWhenAConcurrentCommitTookTheRoomFirst() {
+            fileExists();
+            givenCommitted(Map.of(HASH_A, 10));
+            given(updateNamespaceUsagePort.addUsedBytes(any(), anyLong())).willReturn(false);
+            given(saveFileVersionPort.saveFileVersion(any(FileVersion.class))).willAnswer(inv -> inv.getArgument(0));
+
+            // The first pass let it through (the namespace read showed room); the UPDATE didn't.
+            assertThat(commitError(command(10L, List.of(HASH_A)))).isEqualTo(FileExceptionCase.QUOTA_EXCEEDED);
+        }
+
+        @Test
+        @DisplayName("대체 업로드는 잠근 파일의 현재 크기를 뺀 만큼만 사용량에 더한다")
+        void addsOnlyTheGrowthOfTheLockedFile() {
+            fileExists();
+            file.markUploaded(UUID.randomUUID(), 8L);
+            givenCommitted(Map.of(HASH_A, 10));
+            given(saveFileVersionPort.saveFileVersion(any(FileVersion.class))).willAnswer(inv -> inv.getArgument(0));
+
+            commitOne(command(10L, List.of(HASH_A)));
+
+            then(updateNamespaceUsagePort).should().addUsedBytes(new NamespaceId(namespace.getId()), 2L);
         }
     }
 
