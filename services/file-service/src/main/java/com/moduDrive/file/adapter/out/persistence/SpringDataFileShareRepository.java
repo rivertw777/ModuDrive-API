@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -37,6 +38,9 @@ interface SpringDataFileShareRepository extends JpaRepository<FileShareJpaEntity
     @Modifying
     @Query(value = "delete from file_share where file_id = any(:fileIds)", nativeQuery = true)
     void deleteByFileIds(@Param("fileIds") UUID[] fileIds);
+
+    // The caller's grants on any of these files — a file and its ancestors in one query.
+    List<FileShareJpaEntity> findByFileIdInAndSharedWithUserId(Collection<UUID> fileIds, UUID sharedWithUserId);
 
     // Most recently shared first — drives the "공유 문서함" list order.
     List<FileShareJpaEntity> findBySharedWithUserIdOrderByCreatedAtDesc(UUID sharedWithUserId);

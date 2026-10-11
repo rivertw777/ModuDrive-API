@@ -35,6 +35,10 @@ public interface FindFilePort {
      * first and the trash doesn't write back the version it read before. */
     Optional<File> lockById(FileId fileId);
 
+    /** The active directories on a materialized {@code path} (a file's parent path), root-most
+     * first — every folder above the file. One query, however deep. */
+    List<File> findActiveAncestorDirectories(NamespaceId namespaceId, String path);
+
     /** Every TRASHED row of the subtree, locked top-down — a purge, which must not lock live rows a
      * commit may be waiting on while holding the blocks the purge releases next. */
     List<File> lockTrashedByNamespaceIdAndPathStartingWith(NamespaceId namespaceId, String pathPrefix);

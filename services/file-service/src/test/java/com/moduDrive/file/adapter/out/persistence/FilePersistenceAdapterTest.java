@@ -416,6 +416,24 @@ class FilePersistenceAdapterTest {
         }
 
         @Test
+        @DisplayName("여러 파일에 대한 한 사용자의 공유를 한 번에 조회한다")
+        void findsAUsersGrantsOnSeveralFilesAtOnce() {
+            UUID grantee = UUID.randomUUID();
+            UUID parent = UUID.randomUUID();
+            UUID child = UUID.randomUUID();
+            UUID unrelated = UUID.randomUUID();
+            springDataFileShareRepository.save(new FileShareJpaEntity(parent, UUID.randomUUID(), grantee, Role.VIEWER));
+            springDataFileShareRepository.save(new FileShareJpaEntity(child, UUID.randomUUID(), grantee, Role.EDITOR));
+            springDataFileShareRepository.save(new FileShareJpaEntity(unrelated, UUID.randomUUID(), grantee, Role.EDITOR));
+            springDataFileShareRepository.save(new FileShareJpaEntity(parent, UUID.randomUUID(), UUID.randomUUID(), Role.EDITOR));
+
+            List<FileShare> grants = fileSharePersistenceAdapter.findBySharedWithUserIdAndFileIdIn(
+                    grantee, List.of(new FileId(parent), new FileId(child)));
+
+            assertThat(grants).extracting(FileShare::getFileId).containsExactlyInAnyOrder(parent, child);
+        }
+
+        @Test
         @DisplayName("공유를 해제하면 행이 사라진다")
         void deletesShare() {
             UUID fileIdValue = UUID.randomUUID();
@@ -728,6 +746,37 @@ class FilePersistenceAdapterTest {
 
             assertThat(thrown).isInstanceOf(BusinessException.class);
             assertThat(((BusinessException) thrown).getExceptionCase()).isEqualTo(FileExceptionCase.FILE_ALREADY_EXISTS);
+        }
+    }
+
+    @Nested
+    @DisplayName("파일 위의 폴더들을 찾을 때")
+    class WhenFindingAncestorDirectories {
+
+        private UUID directory(String path, String name, FileStatus status) {
+            return springDataFileRepository.save(new FileJpaEntity(
+                    namespaceIdValue, name, path, UUID.randomUUID(), status, true)).getId();
+        }
+
+        @Test
+        @DisplayName("경로의 폴더를 루트부터 순서대로 한 번에 돌려주고, 휴지통 폴더와 이름만 같은 다른 자리의 폴더는 뺀다")
+        void returnsExactSlotsRootMostFirst() {
+            UUID a = directory("/", "a", FileStatus.UPLOADED);
+            UUID b = directory("/a", "b", FileStatus.UPLOADED);
+            directory("/a", "b", FileStatus.TRASHED);
+            UUID c = directory("/a/b", "c", FileStatus.UPLOADED);
+            directory("/", "b", FileStatus.UPLOADED); // a "b" at the root is not /a/b
+            entityManager.flush();
+
+            List<File> ancestors = filePersistenceAdapter.findActiveAncestorDirectories(namespaceId, "/a/b/c");
+
+            assertThat(ancestors).extracting(File::getId).containsExactly(a, b, c);
+        }
+
+        @Test
+        @DisplayName("루트 바로 아래 파일은 위에 폴더가 없다")
+        void nothingAboveTheRoot() {
+            assertThat(filePersistenceAdapter.findActiveAncestorDirectories(namespaceId, "/")).isEmpty();
         }
     }
 

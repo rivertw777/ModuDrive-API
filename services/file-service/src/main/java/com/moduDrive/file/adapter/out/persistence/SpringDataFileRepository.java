@@ -126,6 +126,15 @@ interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID>, J
             + "where id = any(:ids) and status = 'TRASHED'", nativeQuery = true)
     int markPurged(@Param("ids") UUID[] ids, @Param("now") LocalDateTime now, @Param("deletedBy") UUID deletedBy);
 
+    // Active directories at any of these (path, name) slots — the caller keeps the exact pairs. The
+    // slot column is name for a live row and NULL once trashed, so matching on it both drops removed
+    // rows and walks uk_file_namespace_path_active_name all the way down.
+    @Query("select f from FileJpaEntity f where f.namespaceId = :namespaceId and f.directory = true "
+            + "and f.path in :paths and f.activeSlotName in :names")
+    List<FileJpaEntity> findActiveDirectoriesAt(@Param("namespaceId") UUID namespaceId,
+                                                @Param("paths") Collection<String> paths,
+                                                @Param("names") Collection<String> names);
+
     List<FileJpaEntity> findByNamespaceIdAndNameContainingIgnoreCaseAndStatusNotIn(
             UUID namespaceId, String name, Collection<FileStatus> statuses);
 

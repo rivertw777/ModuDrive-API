@@ -19,8 +19,10 @@ import org.springframework.data.domain.Window;
 import org.springframework.data.jpa.domain.Specification;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -278,6 +280,34 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
     @Override
     public Optional<File> lockById(FileId fileId) {
         return fileRepository.lockById(fileId.value()).map(fileMapper::mapFileToDomain);
+    }
+
+    @Override
+    public List<File> findActiveAncestorDirectories(NamespaceId namespaceId, String path) {
+        if (path == null || "/".equals(path)) {
+            return List.of();
+        }
+        // "/a/b/c" → the folders ("/", "a"), ("/a", "b"), ("/a/b", "c"), root-most first.
+        List<String> paths = new ArrayList<>();
+        List<String> names = new ArrayList<>();
+        String walked = "/";
+        for (String name : path.substring(1).split("/")) {
+            paths.add(walked);
+            names.add(name);
+            walked = "/".equals(walked) ? "/" + name : walked + "/" + name;
+        }
+        // The query matches any path with any name; keep only the exact pairs, in path order.
+        Map<List<String>, FileJpaEntity> bySlot = fileRepository.findActiveDirectoriesAt(namespaceId.value(), paths, names)
+                .stream()
+                .collect(Collectors.toMap(f -> List.of(f.getPath(), f.getName()), f -> f, (a, b) -> a));
+        List<File> ancestors = new ArrayList<>();
+        for (int i = 0; i < paths.size(); i++) {
+            FileJpaEntity directory = bySlot.get(List.of(paths.get(i), names.get(i)));
+            if (directory != null) {
+                ancestors.add(fileMapper.mapFileToDomain(directory));
+            }
+        }
+        return ancestors;
     }
 
     @Override

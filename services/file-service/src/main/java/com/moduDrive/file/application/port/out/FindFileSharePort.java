@@ -4,6 +4,7 @@ import com.moduDrive.file.domain.model.File.FileId;
 import com.moduDrive.file.domain.model.FileShare;
 import com.moduDrive.file.domain.model.FileShare.FileShareId;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -15,6 +16,10 @@ public interface FindFileSharePort {
     boolean existsByFileIdAndGranteeEmail(FileId fileId, String granteeEmail);
 
     Optional<FileShare> findByFileIdAndSharedWithUserId(FileId fileId, UUID sharedWithUserId);
+
+    /** The user's grants on any of these files, in one query — a file and every folder above it
+     * when resolving inherited access, or a folder's children when listing it. */
+    List<FileShare> findBySharedWithUserIdAndFileIdIn(UUID sharedWithUserId, Collection<FileId> fileIds);
 
     /** The counterpart of {@link #findByFileIdAndSharedWithUserId} for a guest who hasn't
      * registered yet, whose only identity on the row is the invited email — see
