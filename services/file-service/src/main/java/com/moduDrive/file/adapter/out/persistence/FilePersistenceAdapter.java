@@ -28,7 +28,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 /** The File aggregate — files/folders and their versions. Share and favorite rows are other
  * aggregates' tables, but a purge still has to clear them (see cascadeDeleteAttachments). */
-class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVersionPort, FindFileVersionsPort {
+class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVersionPort, FindFileVersionsPort,
+        DeleteFileVersionsPort {
 
     private final SpringDataFileRepository fileRepository;
     private final SpringDataFileVersionRepository fileVersionRepository;
@@ -325,4 +326,21 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
                 .collect(Collectors.toList());
     }
 
+    @Override
+    public List<UUID> findFileIdsWithVersionsToPrune(LocalDateTime cutoff, int keep, UUID afterFileId, int limit) {
+        return fileVersionRepository.findFileIdsWithVersionsToPrune(cutoff, keep, afterFileId, limit);
+    }
+
+    @Override
+    public List<FileVersion> findVersionsToPrune(FileId fileId, LocalDateTime cutoff, int keep) {
+        return fileVersionRepository.findVersionsToPrune(fileId.value(), cutoff, keep).stream()
+                .map(fileMapper::mapFileVersionToDomain)
+                .toList();
+    }
+
+    @Override
+    public void deleteFileVersions(List<FileVersion> versions) {
+        // Entity deletes, not a bulk JPQL delete: the blocklist (file_version_block) goes with each row.
+        fileVersionRepository.deleteAllById(versions.stream().map(FileVersion::getId).toList());
+    }
 }

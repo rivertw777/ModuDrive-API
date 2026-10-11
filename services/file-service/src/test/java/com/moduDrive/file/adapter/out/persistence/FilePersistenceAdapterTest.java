@@ -741,6 +741,117 @@ class FilePersistenceAdapterTest {
         }
     }
 
+    @Nested
+    @DisplayName("보존 기간이 지난 버전을 찾을 때")
+    class WhenFindingVersionsToPrune {
+
+        private final LocalDateTime cutoff = LocalDateTime.now().minusDays(30);
+
+        /** A file with versions created {@code daysAgo} days back each, oldest first; the last is current. */
+        private UUID fileWithVersions(int... daysAgo) {
+            FileJpaEntity file = springDataFileRepository.save(new FileJpaEntity(
+                    namespaceIdValue, UUID.randomUUID() + ".txt", "/", UUID.randomUUID(), FileStatus.UPLOADED, false));
+            UUID current = null;
+            for (int days : daysAgo) {
+                current = springDataFileVersionRepository.saveAndFlush(
+                        version(file.getId(), UUID.randomUUID(), List.of("h1"))).getId();
+                entityManager.createNativeQuery("update file_version set created_at = :at where id = :id")
+                        .setParameter("at", LocalDateTime.now().minusDays(days))
+                        .setParameter("id", current)
+                        .executeUpdate();
+            }
+            file.applyChanges(file.getName(), file.getPath(), current, 10L, FileStatus.UPLOADED,
+                    ShareScope.RESTRICTED, null, null);
+            springDataFileRepository.saveAndFlush(file);
+            entityManager.clear();
+            return file.getId();
+        }
+
+        private List<LocalDateTime> createdAtOf(List<com.moduDrive.file.domain.model.FileVersion> versions) {
+            return versions.stream().map(v -> springDataFileVersionRepository.findById(v.getId()).orElseThrow().getCreatedAt()).toList();
+        }
+
+        @Test
+        @DisplayName("30일이 지난 버전은 고르지만 현재 버전은 오래돼도 남긴다")
+        void picksOldVersionsButNeverTheCurrentOne() {
+            UUID fileId = fileWithVersions(60, 40, 5, 45);
+
+            var picked = filePersistenceAdapter.findVersionsToPrune(new FileId(fileId), cutoff, 100);
+
+            // 60 and 40 days old go; 5 days stays; the 45-day one is current (the newest row in the
+            // real flow is always current — here only the current-version rule keeps it).
+            assertThat(picked).hasSize(2);
+            assertThat(createdAtOf(picked)).allMatch(at -> at.isBefore(cutoff));
+        }
+
+        @Test
+        @DisplayName("휴지통에 있는 파일의 버전은 고르지 않는다")
+        void skipsATrashedFile() {
+            UUID fileId = fileWithVersions(60, 1);
+            entityManager.createNativeQuery("update file set status = 'TRASHED' where id = :id")
+                    .setParameter("id", fileId)
+                    .executeUpdate();
+
+            assertThat(filePersistenceAdapter.findVersionsToPrune(new FileId(fileId), cutoff, 100)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("최근 버전이라도 최신 N개 밖이면 고른다")
+        void picksRecentVersionsOutsideTheNewestKeep() {
+            UUID fileId = fileWithVersions(3, 2, 1);
+
+            var picked = filePersistenceAdapter.findVersionsToPrune(new FileId(fileId), cutoff, 2);
+
+            assertThat(picked).hasSize(1);
+            assertThat(createdAtOf(picked).getFirst()).isBefore(LocalDateTime.now().minusDays(2).plusHours(1));
+        }
+
+        @Test
+        @DisplayName("버전 하나뿐인 파일과 최근 버전만 있는 파일은 후보에 넣지 않는다")
+        void listsOnlyFilesThatMayHaveSomethingToDrop() {
+            UUID old = fileWithVersions(60, 1);
+            UUID tooMany = fileWithVersions(3, 2, 1);
+            fileWithVersions(60);
+            fileWithVersions(2, 1);
+
+            List<UUID> candidates = filePersistenceAdapter.findFileIdsWithVersionsToPrune(cutoff, 2, new UUID(0, 0), 10);
+
+            assertThat(candidates).containsExactlyInAnyOrder(old, tooMany);
+        }
+
+        @Test
+        @DisplayName("후보는 파일 id 순서로 after 다음부터 limit개만 준다")
+        void pagesCandidatesByFileId() {
+            UUID a = fileWithVersions(60, 1);
+            UUID b = fileWithVersions(60, 1);
+            // Postgres orders uuids as unsigned bytes; UUID.compareTo is signed — compare the hex text.
+            UUID first = a.toString().compareTo(b.toString()) < 0 ? a : b;
+            UUID second = first == a ? b : a;
+
+            assertThat(filePersistenceAdapter.findFileIdsWithVersionsToPrune(cutoff, 100, new UUID(0, 0), 1))
+                    .containsExactly(first);
+            assertThat(filePersistenceAdapter.findFileIdsWithVersionsToPrune(cutoff, 100, first, 10))
+                    .containsExactly(second);
+        }
+
+        @Test
+        @DisplayName("고른 버전을 지우면 블록 목록 행도 같이 지워진다")
+        void deletingVersionsDropsTheirBlocklists() {
+            UUID fileId = fileWithVersions(60, 1);
+            var picked = filePersistenceAdapter.findVersionsToPrune(new FileId(fileId), cutoff, 100);
+
+            filePersistenceAdapter.deleteFileVersions(picked);
+            entityManager.flush();
+
+            assertThat(springDataFileVersionRepository.findByFileId(fileId)).hasSize(1);
+            Number blocklistRows = (Number) entityManager.createNativeQuery(
+                            "select count(*) from file_version_block where version_id = :id")
+                    .setParameter("id", picked.getFirst().getId())
+                    .getSingleResult();
+            assertThat(blocklistRows.longValue()).isZero();
+        }
+    }
+
     private static FileVersionJpaEntity version(UUID fileId, UUID uploadId, List<String> hashes) {
         return new FileVersionJpaEntity(fileId, UUID.randomUUID(), 10L, uploadId, hashes);
     }
