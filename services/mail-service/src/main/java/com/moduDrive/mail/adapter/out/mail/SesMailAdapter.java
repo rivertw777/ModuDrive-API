@@ -11,8 +11,7 @@ import java.io.IOException;
 import java.util.Map;
 import java.util.Properties;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.ByteArrayResource;
-import org.springframework.mail.javamail.MimeMessageHelper;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import software.amazon.awssdk.awscore.exception.AwsServiceException;
 import software.amazon.awssdk.core.SdkBytes;
@@ -24,6 +23,7 @@ import software.amazon.awssdk.services.ses.model.MessageTag;
  * which can't set message tags: every mail carries its delivery id as the {@link #DELIVERY_TAG} tag, and
  * the configuration set publishes SES's Send event with it — the proof that a timed-out send went out. */
 @Component
+@ConditionalOnProperty(name = "modudrive.mail.transport", havingValue = "ses", matchIfMissing = true)
 class SesMailAdapter implements SendMailPort {
 
     static final String DELIVERY_TAG = "deliveryId";
@@ -45,25 +45,9 @@ class SesMailAdapter implements SendMailPort {
             Map<String, byte[]> inlinePngImages) {
         ByteArrayOutputStream raw = new ByteArrayOutputStream();
         try {
-            MimeMessage message = new MimeMessage(session);
-            // multipart=true (multipart/related) is required for addInline below — without it
-            // the helper has nowhere to attach the inline resources.
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-            if (fromDisplayName != null) {
-                helper.setFrom(from, fromDisplayName);
-            } else {
-                helper.setFrom(from);
-            }
-            helper.setTo(to);
-            helper.setSubject(subject);
-            helper.setText(htmlBody, true);
-            for (Map.Entry<String, byte[]> image : inlinePngImages.entrySet()) {
-                helper.addInline(image.getKey(), new ByteArrayResource(image.getValue()), "image/png");
-            }
-            message.writeTo(raw);
-        } catch (MessagingException | IOException e) {
-            // Malformed MIME structure, not a sending failure — retrying the same body would fail identically.
-            // Type only: an AddressException's message quotes the address.
+            HtmlMime.build(new MimeMessage(session), from, to, subject, htmlBody, fromDisplayName, inlinePngImages)
+                    .writeTo(raw);
+        } catch (IOException | MessagingException e) {
             throw new MailRejectedException(e.getClass().getName());
         }
 

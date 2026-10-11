@@ -36,6 +36,14 @@ variable "domain_name" {
   default = null
 }
 
+# Set → mail-service sends through Gmail SMTP as this account instead of SES (its app password is the
+# SMTP_PASSWORD parameter, secrets.tf). ponytail: only while SES is still in the sandbox — unset it once
+# production access is granted.
+variable "smtp_username" {
+  type    = string
+  default = null
+}
+
 # The image the task definitions Terraform registers point at. Only the first apply needs a real one:
 # after that the deploy workflow (.github/workflows/deploy.yml) registers new revisions with the
 # commit's image and the services ignore Terraform's (ecs.tf). Terraform's revision is then just the

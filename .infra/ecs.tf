@@ -46,7 +46,11 @@ locals {
           STORAGE_MULTIPART_MAX_FILE_SIZE    = "5MB"
           STORAGE_MULTIPART_MAX_REQUEST_SIZE = "9MB"
         }
-        mail = { CLIENT_URL = local.client_url, MAIL_FROM = local.mail_from }
+        mail = merge(
+          { CLIENT_URL = local.client_url, MAIL_FROM = coalesce(var.smtp_username, local.mail_from) },
+          # Gmail sends as the account it logs in with, so the account is also the From address.
+          var.smtp_username == null ? {} : { MAIL_TRANSPORT = "smtp", SMTP_USERNAME = var.smtp_username },
+        )
       }, name, {}),
     )
   }
@@ -57,6 +61,7 @@ locals {
       contains(keys(local.db_names), name) ? { SPRING_DATASOURCE_PASSWORD = aws_ssm_parameter.db_password[name].arn } : {},
       contains(local.redis_clients, name) ? { REDIS_PASSWORD = aws_ssm_parameter.redis_password[local.redis_cluster_of[name]].arn } : {},
       name == "storage" ? { STORAGE_ENCRYPTION_KEY = aws_ssm_parameter.storage_encryption_key.arn } : {},
+      name == "mail" && var.smtp_username != null ? { SMTP_PASSWORD = aws_ssm_parameter.smtp_password[0].arn } : {},
     )
   }
 
