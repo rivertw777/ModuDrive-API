@@ -358,7 +358,16 @@ for env in demo prod; do terraform test -var-file=envs/$env.tfvars; done
 
 1. `terraform apply -target=aws_ecr_repository.service -var image_tag=init`로 저장소만 먼저 만든다.
 2. 서비스 이미지 7개를 빌드해서 같은 태그로 ECR에 올린다.
-3. `terraform apply -target=aws_ecs_task_definition.db_init -var image_tag=<태그>`를 하고, 출력 `db_init_run_tasks`의 명령을 인스턴스마다 한 번씩 실행한다.
+3. db_init 태스크가 돌 자리까지만 만든다. 태스크 정의만 target하면 클러스터, NAT, private 서브넷, 보안 그룹 규칙이 빠져서 태스크가 뜨지 못한다.
+   ```bash
+   terraform apply -var-file=envs/<환경>.tfvars -var image_tag=<태그> \
+     -target=aws_ecs_task_definition.db_init -target=aws_ecs_cluster.main -target=module.vpc \
+     -target=aws_route.private_nat_instance \
+     -target=aws_vpc_security_group_ingress_rule.nat -target=aws_vpc_security_group_egress_rule.nat \
+     -target=aws_vpc_security_group_ingress_rule.postgres -target=aws_vpc_security_group_egress_rule.all \
+     -target=aws_iam_role_policy_attachment.execution -target=aws_iam_role_policy.execution_secrets
+   ```
+   그다음 출력 `db_init_run_tasks`의 명령을 인스턴스마다 한 번씩 실행한다. 태스크가 종료 코드 0으로 끝나고 로그(`/ecs/modudrive/db-init`)에 `CREATE DATABASE`가 서비스 수만큼 찍히면 된다.
 4. `terraform apply -var image_tag=<태그>`로 나머지를 전부 만든다.
 5. GitHub 저장소 Settings에 배포가 쓸 값을 넣는다.
    - Environments → 해당 환경(`demo`, `prod`): 변수 `AWS_DEPLOY_ROLE_ARN`(출력 `github_deploy_role_arn`). 계정마다 역할이 달라 환경마다 넣는다. prod에는 승인자(required reviewers)를 건다.
@@ -421,10 +430,10 @@ tfvars의 값을 바꿀 때 데이터가 날아가거나 서비스가 끊기는 
 | 항목 | 구성 |
 |---|---|
 | AZ | 2개 |
-| NAT | NAT 인스턴스 1대 (t4g.nano, fck-nat) |
+| NAT | NAT 인스턴스 1대 (t4g.micro, fck-nat) |
 | VPC 엔드포인트 | S3 게이트웨이만 |
 | ECS | Fargate Spot, 전부 0.25 vCPU / 1 GB, 서비스마다 1개 고정 (오토스케일 없음) |
-| DB | RDS 1대 (db.t4g.micro, 단일 AZ)에 DB 4개, 백업 7일 |
+| DB | RDS 1대 (db.t4g.micro, 단일 AZ)에 DB 4개, 백업 1일(무료 플랜 한도) |
 | Redis | ElastiCache 1개 (cache.t4g.micro, 노드 1개), 모든 서비스가 같이 씀 |
 | 암호화 | AWS 관리 키 (SSE-S3, SSE-SQS, `aws/ssm` 등) |
 | 보안 강화 (`hardened`) | 끔. WAF, Service Connect TLS, 감사 로그, GuardDuty 없음 |
