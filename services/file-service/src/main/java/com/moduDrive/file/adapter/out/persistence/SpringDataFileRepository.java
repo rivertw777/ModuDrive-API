@@ -91,13 +91,4 @@ interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID>, J
 
     List<FileJpaEntity> findByNamespaceIdAndDirectoryFalseAndStatusNotIn(
             UUID namespaceId, Collection<FileStatus> statuses);
-
-    // Trashed files still occupy storage until purged, so they count here too — but a purged
-    // tombstone (deleted_at set) no longer has blocks. This is independent of the TRASHED/DELETED
-    // status split above: deletedAt alone already tells "still has blocks" apart from "purged".
-    // PENDING (upload not finished, no committed size) is excluded too.
-    @Query("select coalesce(sum(f.fileSize), 0) from FileJpaEntity f " +
-            "where f.namespaceId = :namespaceId and f.directory = false " +
-            "and f.status <> 'PENDING' and f.deletedAt is null")
-    long sumFileSizeByNamespaceId(@Param("namespaceId") UUID namespaceId);
 }

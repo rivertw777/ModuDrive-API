@@ -3,7 +3,6 @@ package com.moduDrive.file.application.service;
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.file.application.port.in.command.GetStorageUsageCommand;
 import com.moduDrive.file.application.port.in.usecase.GetStorageUsageUseCase;
-import com.moduDrive.file.application.port.out.FindFilePort;
 import com.moduDrive.file.application.port.out.FindNamespacePort;
 import com.moduDrive.file.domain.model.Namespace;
 import com.moduDrive.file.domain.model.Namespace.*;
@@ -28,7 +27,6 @@ import static org.mockito.BDDMockito.given;
 class GetStorageUsageServiceTest {
 
     @Mock private FindNamespacePort findNamespacePort;
-    @Mock private FindFilePort findFilePort;
     @InjectMocks private GetStorageUsageService getStorageUsageService;
 
     private static final long TEST_QUOTA_BYTES = 21474836480L;
@@ -36,7 +34,8 @@ class GetStorageUsageServiceTest {
     private final UUID userId = UUID.randomUUID();
     private final GetStorageUsageCommand command = new GetStorageUsageCommand(userId);
     private final Namespace namespace = Namespace.withId(
-            new NamespaceId(UUID.randomUUID()), new NamespaceUserId(userId), new NamespaceRootPath("/1"), new NamespaceQuotaBytes(TEST_QUOTA_BYTES));
+            new NamespaceId(UUID.randomUUID()), new NamespaceUserId(userId), new NamespaceRootPath("/1"), new NamespaceQuotaBytes(TEST_QUOTA_BYTES),
+            new NamespaceUsedBytes(1024L));
 
     @Nested
     @DisplayName("네임스페이스가 존재할 때")
@@ -45,7 +44,6 @@ class GetStorageUsageServiceTest {
         @Test
         void returnsUsedAndQuotaBytes() {
             given(findNamespacePort.findByUserId(any())).willReturn(Optional.of(namespace));
-            given(findFilePort.sumFileSizeByNamespaceId(any())).willReturn(1024L);
 
             GetStorageUsageUseCase.StorageUsage result = getStorageUsageService.getStorageUsage(command);
 

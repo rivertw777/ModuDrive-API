@@ -22,7 +22,8 @@ class FileMapper {
                 new NamespaceId(entity.getId()),
                 new NamespaceUserId(entity.getUserId()),
                 new NamespaceRootPath(entity.getRootPath()),
-                new NamespaceQuotaBytes(entity.getQuotaBytes())
+                new NamespaceQuotaBytes(entity.getQuotaBytes()),
+                new NamespaceUsedBytes(entity.getUsedBytes())
         );
     }
 

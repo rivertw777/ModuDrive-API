@@ -3,7 +3,9 @@ package com.moduDrive.file.adapter.out.persistence;
 import com.moduDrive.common.core.annotation.PersistenceAdapter;
 import com.moduDrive.file.application.port.out.FindNamespacePort;
 import com.moduDrive.file.application.port.out.SaveNamespacePort;
+import com.moduDrive.file.application.port.out.UpdateNamespaceUsagePort;
 import com.moduDrive.file.domain.model.Namespace;
+import com.moduDrive.file.domain.model.Namespace.NamespaceId;
 import com.moduDrive.file.domain.model.Namespace.NamespaceUserId;
 import lombok.RequiredArgsConstructor;
 
@@ -11,7 +13,7 @@ import java.util.Optional;
 
 @PersistenceAdapter
 @RequiredArgsConstructor
-class NamespacePersistenceAdapter implements SaveNamespacePort, FindNamespacePort {
+class NamespacePersistenceAdapter implements SaveNamespacePort, FindNamespacePort, UpdateNamespaceUsagePort {
 
     private final SpringDataNamespaceRepository namespaceRepository;
     private final FileMapper fileMapper;
@@ -26,5 +28,10 @@ class NamespacePersistenceAdapter implements SaveNamespacePort, FindNamespacePor
     public Optional<Namespace> findByUserId(NamespaceUserId userId) {
         return namespaceRepository.findByUserId(userId.value())
                 .map(fileMapper::mapNamespaceToDomain);
+    }
+
+    @Override
+    public boolean addUsedBytes(NamespaceId namespaceId, long delta) {
+        return namespaceRepository.addUsedBytes(namespaceId.value(), delta) == 1;
     }
 }
