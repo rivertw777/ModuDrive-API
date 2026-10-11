@@ -260,6 +260,13 @@ variable "github_repository" {
   default = "rivertw777@105557972/ModuDrive-API@1257948532"
 }
 
+# ModuDrive-WEB, as its OIDC token names it (immutable subject, like github_repository) — its deploy
+# workflow may assume the web deploy role (web.tf).
+variable "web_github_repository" {
+  type    = string
+  default = "rivertw777@105557972/ModuDrive-WEB@1305591929"
+}
+
 # CI applies .infra/ for this environment (github.tf, .github/workflows/deploy.yml): demo, on a
 # merge into the demo branch. Elsewhere apply stays a person's job and no admin role trusts GitHub.
 variable "terraform_in_ci" {

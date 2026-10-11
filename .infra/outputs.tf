@@ -84,3 +84,8 @@ output "web_distribution_id" {
   description = "Invalidate after an upload: aws cloudfront create-invalidation --distribution-id <this> --paths '/*'"
   value       = local.domain_based ? aws_cloudfront_distribution.web[0].id : null
 }
+
+output "github_web_deploy_role_arn" {
+  description = "AWS_DEPLOY_ROLE_ARN in ModuDrive-WEB's GitHub environment for this environment"
+  value       = local.domain_based ? aws_iam_role.github_web_deploy[0].arn : null
+}
