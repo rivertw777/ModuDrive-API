@@ -152,7 +152,11 @@ expand/contract 패턴으로 단계를 나눈다. 옛 버전 앱과 새 버전 �
 
 ### 인덱스 추가
 
-작은 테이블은 그냥 `create index`로 만든다. 운영의 큰 테이블에는 쓰기를 막지 않는 `create index concurrently`를 써야 하는데, 이건 트랜잭션 안에서 돌 수 없다. 이럴 땐 같은 이름의 설정 파일(`V9__add_index.sql.conf`)에 `executeInTransaction=false`를 넣어 그 파일만 트랜잭션 없이 실행한다.
+작은 테이블은 그냥 `create index`로 만든다. 운영의 큰 테이블에는 쓰기를 막지 않는 `create index concurrently`를 써야 하는데, 이건 트랜잭션 안에서 돌 수 없다. 이럴 땐 같은 이름의 설정 파일(`V9__add_index.sql.conf`)에 `executeInTransaction=false`를 넣어 그 파일만 트랜잭션 없이 실행한다. 예: file의 `V9__file_version_file_id_idx.sql`.
+
+`concurrently`는 열려 있는 모든 트랜잭션이 끝나길 기다린다. Flyway는 기본으로 잠금을 트랜잭션 안에서 잡아서(`idle in transaction`) 그 트랜잭션까지 기다리다 영영 멈춘다. 그래서 공통 설정(`application-jpa.yml`)에 `spring.flyway.postgresql.transactional-lock: false`를 둬서 세션 단위 잠금을 쓴다.
+
+`concurrently` 빌드가 중간에 실패하면 쓸 수 없는(INVALID) 인덱스가 남는다. 이때 `if not exists`가 붙어 있으면 다음 실행이 그 인덱스를 건너뛰고 성공으로 기록한다. 실패했다면 `drop index concurrently <이름>`으로 지운 뒤 다시 띄운다. 확인: `select indexrelid::regclass from pg_index where not indisvalid`.
 
 ### enum 값 추가
 

@@ -183,6 +183,7 @@ sequenceDiagram
 - **대체 업로드**도 같은 흐름이다. 이름 충돌에서 대체를 고르면 1번이 기존 파일의 `path`·`name`을 그대로 돌려주고, commit이 그 파일의 새 버전을 만든다.
   - 이전 버전과 같은 블록은 이미 있으므로 **바뀐 블록만** `needBlocks`로 나온다. 내용이 같으면 0바이트 전송이다.
   - 이전 버전은 그대로 남고 블록을 공유한다. 새 버전이 commit되기 전까지는 이전 버전이 열린다.
+  - 이전 버전은 [2-3](#2-3-블록-정리)의 버전 보존 규칙(30일·최신 100개)에 따라 정리된다.
   - 블록 경계가 고정 4MB라서 **앞쪽에 바이트를 끼워 넣으면** 뒤 블록이 전부 밀려 다 다시 올라간다. 덮어쓰기·뒤에 덧붙이기에서만 이득이 있다 (Dropbox도 같은 한계).
 
 ### 2-1. 이어 올리기
@@ -275,11 +276,12 @@ sequenceDiagram
 
 ### 2-3. 블록 정리
 
-블록은 두 곳에서 지운다. 둘 다 1시간마다 돈다.
+블록은 두 곳에서 지운다. 지울 블록을 만드는 버전 정리까지 셋 다 1시간마다 돈다.
 
 | 정리 | 어디서 | 대상 | 규칙 |
 |---|---|---|---|
-| 참조 없는 블록 | file-service | `block.ref_count`가 0이 된 지 24시간 지난 행 | 버전을 영구 삭제하면 그 블록들의 `ref_count`를 빼고, 0이 되는 순간 `unreferenced_at`을 찍는다. 24시간 안에 같은 블록이 다시 commit되면 `ref_count`가 오르고 `unreferenced_at`이 지워져 살아난다(휴지통을 비운 직후 같은 파일을 다시 올리는 경우). 지나면 행을 지우고(`FOR UPDATE SKIP LOCKED`) 같은 트랜잭션에서 `storage-blocks-purge-requested`(outbox)를 기록한다 |
+| 보존 기간이 지난 버전 | file-service | `UPLOADED` 파일에서, 현재 버전이 아니면서 만든 지 30일이 지났거나 그 파일의 최신 100개 밖인 `file_version` 행 (휴지통 파일의 버전은 영구 삭제 때 같이 지워진다) | commit과 같은 순서로 블록(해시 순) → 파일 행을 잠그고, 잠근 뒤 다시 읽어 그 버전들의 블록 참조를 풀고 행을 지운다. 파일마다 트랜잭션 하나, ShedLock. 풀린 블록은 아래 "참조 없는 블록"이 24시간 뒤 지운다. 이전 버전은 받을 수도 없고 용량(현재 버전 크기의 합)에도 안 잡히는데, 이 규칙이 없으면 덮어쓸 때마다 그 블록이 파일이 영구 삭제될 때까지 S3에 남는다 |
+| 참조 없는 블록 | file-service | `block.ref_count`가 0이 된 지 24시간 지난 행 | 버전을 영구 삭제하거나 보존 기간이 지나 지우면 그 블록들의 `ref_count`를 빼고, 0이 되는 순간 `unreferenced_at`을 찍는다. 24시간 안에 같은 블록이 다시 commit되면 `ref_count`가 오르고 `unreferenced_at`이 지워져 살아난다(휴지통을 비운 직후 같은 파일을 다시 올리는 경우). 지나면 행을 지우고(`FOR UPDATE SKIP LOCKED`) 같은 트랜잭션에서 `storage-blocks-purge-requested`(outbox)를 기록한다 |
 | commit되지 않은 블록 | storage-service | 올라온 지 25시간 지난 `uploaded-blocks:{0..f}` 항목 (16개 키를 차례로) | [2-1](#2-1-이어-올리기). file-service에 commit됐는지 물어 commit된 블록은 남긴다 |
 
 - storage-service는 S3 객체를 지울 때 결정 시각(`decidedAt`) 뒤에 다시 쓰인 블록은 남긴다. `HeadObject`의 `LastModified`(초 단위)를 결정 시각과 비교하고, `DeleteObject`에 `If-Match: <ETag>`를 붙여 그 사이 덮어쓰인 객체는 412로 남는다(LocalStack에서 412 확인).
