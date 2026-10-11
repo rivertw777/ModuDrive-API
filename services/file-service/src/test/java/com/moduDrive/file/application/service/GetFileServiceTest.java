@@ -88,11 +88,10 @@ class GetFileServiceTest {
             given(findFilePort.findById(command.getFileId()))
                     .willReturn(Optional.of(fileOwnedBy(otherOwnerId, FileStatus.UPLOADED)));
             given(fileFavoritePort.isFavorite(callerId, fileId)).willReturn(true);
-            given(fileAccessGuard.effectiveRole(any(File.class), eq(callerId))).willReturn(Role.EDITOR);
+            given(fileAccessGuard.requirePermission(any(File.class), eq(callerId), eq(Permission.READ)))
+                    .willReturn(new FileAccessGuard.Access(Role.EDITOR, grantTo(callerId, LocalDateTime.of(2026, 9, 4, 15, 5))));
             given(findMemberByIdPort.findMemberById(otherOwnerId))
                     .willReturn(new MemberSummary("홍길동", "owner@modudrive.com"));
-            given(fileAccessGuard.resolveGrant(any(File.class), eq(callerId)))
-                    .willReturn(Optional.of(grantTo(callerId, LocalDateTime.of(2026, 9, 4, 15, 5))));
 
             FileView result = getFileService.getFile(command);
 
@@ -109,10 +108,10 @@ class GetFileServiceTest {
             FileShare inheritedGrant = grantTo(callerId, sharedAt);
             given(findFilePort.findById(command.getFileId()))
                     .willReturn(Optional.of(fileOwnedBy(otherOwnerId, FileStatus.UPLOADED)));
-            given(fileAccessGuard.effectiveRole(any(File.class), eq(callerId))).willReturn(Role.VIEWER);
+            given(fileAccessGuard.requirePermission(any(File.class), eq(callerId), eq(Permission.READ)))
+                    .willReturn(new FileAccessGuard.Access(Role.VIEWER, inheritedGrant));
             given(findMemberByIdPort.findMemberById(otherOwnerId))
                     .willReturn(new MemberSummary("홍길동", "owner@modudrive.com"));
-            given(fileAccessGuard.resolveGrant(any(File.class), eq(callerId))).willReturn(Optional.of(inheritedGrant));
 
             FileView result = getFileService.getFile(command);
 
@@ -130,8 +129,8 @@ class GetFileServiceTest {
             given(findFilePort.findById(command.getFileId()))
                     .willReturn(Optional.of(fileOwnedBy(otherOwnerId, FileStatus.UPLOADED)));
             // LINK 폴백으로만 VIEWER를 얻은 경우 — 공유 행(grant)이 존재하지 않는다.
-            given(fileAccessGuard.resolveGrant(any(File.class), eq(callerId))).willReturn(Optional.empty());
-            given(fileAccessGuard.effectiveRole(any(File.class), eq(callerId))).willReturn(Role.VIEWER);
+            given(fileAccessGuard.requirePermission(any(File.class), eq(callerId), eq(Permission.READ)))
+                    .willReturn(new FileAccessGuard.Access(Role.VIEWER, null));
 
             FileView result = getFileService.getFile(command);
 

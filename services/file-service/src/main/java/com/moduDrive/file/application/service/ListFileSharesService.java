@@ -55,7 +55,7 @@ class ListFileSharesService implements ListFileSharesUseCase {
         // clear every one of those grants, not just whichever one would win a display tie-break —
         // otherwise the grant this service didn't mention keeps letting them in. (Attribution for
         // a *viewer's* "공유한 사용자" listing is a separate concern, resolved by
-        // FileAccessGuard.resolveGrant, which does pick a single nearest/most-generous grant —
+        // FileAccessGuard.access, which does pick a single nearest/most-generous grant —
         // that's unaffected by this.)
         List<File> inheritedLinkSources = new ArrayList<>();
         List<InheritedShare> inheritedShares = new ArrayList<>();

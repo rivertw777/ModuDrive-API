@@ -53,10 +53,9 @@ class ListSharedDirectoryServiceTest {
     @BeforeEach
     void defaults() {
         lenient().when(fileFavoritePort.favoriteFileIds(any())).thenReturn(Set.of());
-        lenient().when(fileAccessGuard.inheritableRole(any(), any())).thenReturn(null);
-        lenient().when(fileAccessGuard.resolveGrant(any(), any())).thenReturn(Optional.empty());
+        lenient().when(fileAccessGuard.requirePermission(any(), any(), any())).thenReturn(FileAccessGuard.Access.NONE);
         lenient().when(findMemberByIdPort.findMemberById(any())).thenReturn(new MemberSummary("홍길동", "owner@modudrive.com"));
-        lenient().when(findFileSharePort.findByFileIdAndSharedWithUserId(any(), any())).thenReturn(Optional.empty());
+        lenient().when(findFileSharePort.findBySharedWithUserIdAndFileIdIn(any(), any())).thenReturn(List.of());
     }
 
     private final UUID dirId = UUID.randomUUID();
@@ -130,8 +129,8 @@ class ListSharedDirectoryServiceTest {
             given(findFilePort.findById(command.getDirectoryId())).willReturn(Optional.of(dir()));
             given(findFilePort.findByNamespaceIdAndPath(new NamespaceId(namespaceId), "/shared"))
                     .willReturn(List.of(child));
-            given(fileAccessGuard.resolveGrant(any(), eq(callerId))).willReturn(Optional.of(grant));
-            given(fileAccessGuard.inheritableRole(any(), eq(callerId))).willReturn(Role.VIEWER);
+            given(fileAccessGuard.requirePermission(any(File.class), eq(callerId), eq(Permission.READ)))
+                    .willReturn(new FileAccessGuard.Access(Role.VIEWER, grant));
 
             List<FileView> result = listSharedDirectoryService.listSharedDirectory(command);
 
@@ -155,9 +154,10 @@ class ListSharedDirectoryServiceTest {
             given(findFilePort.findById(command.getDirectoryId())).willReturn(Optional.of(dir()));
             given(findFilePort.findByNamespaceIdAndPath(new NamespaceId(namespaceId), "/shared"))
                     .willReturn(List.of(plainChild, individuallySharedChild));
-            given(fileAccessGuard.inheritableRole(any(), eq(callerId))).willReturn(Role.VIEWER);
-            given(findFileSharePort.findByFileIdAndSharedWithUserId(
-                    new FileId(individuallySharedChild.getId()), callerId)).willReturn(Optional.of(directGrant));
+            given(fileAccessGuard.requirePermission(any(File.class), eq(callerId), eq(Permission.READ)))
+                    .willReturn(new FileAccessGuard.Access(Role.VIEWER, null));
+            given(findFileSharePort.findBySharedWithUserIdAndFileIdIn(eq(callerId), any()))
+                    .willReturn(List.of(directGrant));
 
             List<FileView> result = listSharedDirectoryService.listSharedDirectory(command);
 
@@ -172,7 +172,7 @@ class ListSharedDirectoryServiceTest {
         }
 
         @Test
-        @DisplayName("직접 공유 권한이 상속 권한보다 약해도, 직접 공유가 그대로 이긴다 (FileAccessGuard.resolveRole과 동일 규칙)")
+        @DisplayName("직접 공유 권한이 상속 권한보다 약해도, 직접 공유가 그대로 이긴다 (FileAccessGuard.access와 동일 규칙)")
         void aDirectGrantWinsOutrightEvenWhenWeakerThanTheInheritedRole() {
             File individuallySharedChild = entry("a.txt", "/shared", false, FileStatus.UPLOADED);
             LocalDateTime directSharedAt = LocalDateTime.of(2026, 9, 8, 9, 0);
@@ -184,9 +184,10 @@ class ListSharedDirectoryServiceTest {
             given(findFilePort.findById(command.getDirectoryId())).willReturn(Optional.of(dir()));
             given(findFilePort.findByNamespaceIdAndPath(new NamespaceId(namespaceId), "/shared"))
                     .willReturn(List.of(individuallySharedChild));
-            given(fileAccessGuard.inheritableRole(any(), eq(callerId))).willReturn(Role.EDITOR);
-            given(findFileSharePort.findByFileIdAndSharedWithUserId(
-                    new FileId(individuallySharedChild.getId()), callerId)).willReturn(Optional.of(directGrant));
+            given(fileAccessGuard.requirePermission(any(File.class), eq(callerId), eq(Permission.READ)))
+                    .willReturn(new FileAccessGuard.Access(Role.EDITOR, null));
+            given(findFileSharePort.findBySharedWithUserIdAndFileIdIn(eq(callerId), any()))
+                    .willReturn(List.of(directGrant));
 
             List<FileView> result = listSharedDirectoryService.listSharedDirectory(command);
 
