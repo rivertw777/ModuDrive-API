@@ -42,7 +42,7 @@ resource "aws_db_instance" "postgres" {
   # A standby in another AZ at two nodes.
   multi_az = each.value.nodes > 1
 
-  backup_retention_period    = 7
+  backup_retention_period    = var.db_backup_retention_days
   auto_minor_version_upgrade = true
   deletion_protection        = var.deletion_protection
   skip_final_snapshot        = !var.deletion_protection

@@ -51,7 +51,7 @@ variable "image_tag" {
 
 # How the tasks (always in private subnets) reach the internet — ECR, SSM, SQS, SES, Discord:
 #   "gateway"  — a managed NAT gateway per AZ (~$45/month each), nothing to run
-#   "instance" — one t4g.nano NAT instance (fck-nat, ~$8/month with its IP), a single point for
+#   "instance" — one t4g.micro NAT instance (fck-nat, ~$11/month with its IP), a single point for
 #                outbound traffic only — inbound comes through the ALB either way
 variable "nat" {
   type = string
@@ -96,6 +96,13 @@ variable "db_engine" {
     condition     = contains(["rds", "aurora"], var.db_engine)
     error_message = "db_engine is \"rds\" or \"aurora\"."
   }
+}
+
+# Days of automated RDS backups (db_engine = "rds" only; Aurora keeps 35). An AWS free-plan account
+# allows at most 1.
+variable "db_backup_retention_days" {
+  type    = number
+  default = 7
 }
 
 # PostgreSQL instances (or Aurora clusters), and the services whose database each one holds (rds.tf).
