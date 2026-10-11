@@ -1,4 +1,4 @@
-# demo — what actually runs, a trial stack: the whole system up for the least money (~$108/month
+# demo — what actually runs, a trial stack: the whole system up for the least money (~$126/month
 # in Seoul, before traffic). Cut whatever cost can be cut here; isolation and redundancy are shown in
 # prod.tfvars instead. terraform plan -var-file=envs/demo.tfvars
 #
@@ -37,19 +37,19 @@ redis_clusters = {
   auth = { node_type = "cache.t4g.micro", nodes = 1, clients = ["auth", "member", "mail", "storage"] }
 }
 
-# The smallest Fargate size a JVM runs in (0.25 vCPU, 1 GB) and exactly one task each — no autoscaling,
-# so a traffic burst slows the demo down instead of raising the bill. Slower start (ecs.tf startPeriod).
+# 0.5 vCPU, 1 GB and exactly one task each — no autoscaling, so a traffic burst slows the demo down
+# instead of raising the bill. 0.25 vCPU ran out on every request (CPU peaking at 120%), memory stays ~45%.
 services = {
-  gateway      = { cpu = 256, memory = 1024, min = 1, max = 1 }
-  member       = { cpu = 256, memory = 1024, min = 1, max = 1 }
-  auth         = { cpu = 256, memory = 1024, min = 1, max = 1 }
-  file         = { cpu = 256, memory = 1024, min = 1, max = 1 }
-  storage      = { cpu = 256, memory = 1024, min = 1, max = 1 }
-  mail         = { cpu = 256, memory = 1024, min = 1, max = 1 }
-  notification = { cpu = 256, memory = 1024, min = 1, max = 1 }
+  gateway      = { cpu = 512, memory = 1024, min = 1, max = 1 }
+  member       = { cpu = 512, memory = 1024, min = 1, max = 1 }
+  auth         = { cpu = 512, memory = 1024, min = 1, max = 1 }
+  file         = { cpu = 512, memory = 1024, min = 1, max = 1 }
+  storage      = { cpu = 512, memory = 1024, min = 1, max = 1 }
+  mail         = { cpu = 512, memory = 1024, min = 1, max = 1 }
+  notification = { cpu = 512, memory = 1024, min = 1, max = 1 }
 }
 
-# A trial account's first alarm. ~$108 of infrastructure + AMP/X-Ray/logs, with headroom.
+# A trial account's first alarm. ~$126 of infrastructure + AMP/X-Ray/logs, with headroom.
 monthly_budget_usd = 150
 alert_email        = null
 
