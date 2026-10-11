@@ -5,7 +5,7 @@ import lombok.Getter;
 import java.util.List;
 import java.util.UUID;
 
-/** Several blocks in one request (spec 001 2장 4번): each with the hash the client says it has. */
+/** Several blocks in one request (spec 001 3-4): each with the hash the client says it has. */
 @Getter
 public class UploadBlocksCommand {
 

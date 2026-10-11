@@ -9,7 +9,7 @@ spring:
       - "classpath:application-resilience4j.yml"
   servlet:
     multipart:
-      # Uploads come as up to 8MB of blocks per request, none over 4MB (spec 001 2장 4번); this
+      # Uploads come as up to 8MB of blocks per request, none over 4MB (spec 001 3-4); this
       # only needs to cover that plus the multipart envelope (9MB request, 5MB part).
       max-file-size: ${STORAGE_MULTIPART_MAX_FILE_SIZE}
       max-request-size: ${STORAGE_MULTIPART_MAX_REQUEST_SIZE}

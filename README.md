@@ -129,7 +129,7 @@
     </tr>
     <tr>
         <td align="center"><strong>Backend</strong></td>
-        <td align="center"> <img src="https://img.shields.io/badge/Java 25-007396"/> <img src="https://img.shields.io/badge/Spring Boot 4.1-6DB33F?logo=springboot&logoColor=white"/> <img src="https://img.shields.io/badge/Spring Cloud 2025.1-6DB33F?logo=spring&logoColor=white"/> </td>
+        <td align="center"> <img src="https://img.shields.io/badge/Java%2025-007396?logo=openjdk&logoColor=white"/> <img src="https://img.shields.io/badge/Spring%20Boot%204.1-6DB33F?logo=springboot&logoColor=white"/> <img src="https://img.shields.io/badge/Spring%20Cloud%202025.1-6DB33F?logo=spring&logoColor=white"/> </td>
     </tr>
     <tr>
         <td align="center"><strong>Database</strong></td>
@@ -141,23 +141,23 @@
     </tr>
     <tr>
         <td align="center"><strong>Messaging</strong></td>
-        <td align="center"> <img src="https://img.shields.io/badge/Amazon SQS-FF4F8B?logo=amazonsqs&logoColor=white"/> </td>
+        <td align="center"> <img src="https://img.shields.io/badge/Amazon%20SQS-FF4F8B?logo=amazonsqs&logoColor=white"/> </td>
     </tr>
     <tr>
         <td align="center"><strong>Storage</strong></td>
-        <td align="center"> <img src="https://img.shields.io/badge/Amazon S3-569A31?logo=amazons3&logoColor=white"/> </td>
+        <td align="center"> <img src="https://img.shields.io/badge/Amazon%20S3-569A31?logo=amazons3&logoColor=white"/> </td>
     </tr>
     <tr>
         <td align="center"><strong>Mail</strong></td>
-        <td align="center"> <img src="https://img.shields.io/badge/Amazon SES-DD344C?logo=amazonsimpleemailservice&logoColor=white"/> </td>
+        <td align="center"> <img src="https://img.shields.io/badge/Amazon%20SES-DD344C?logo=amazonsimpleemailservice&logoColor=white"/> </td>
     </tr>
     <tr>
         <td align="center"><strong>Container</strong></td>
-        <td align="center"> <img src="https://img.shields.io/badge/Amazon ECS-FF9900?logo=amazonecs&logoColor=white"/> <img src="https://img.shields.io/badge/Docker-0db7ed?logo=docker&logoColor=white"/> </td>
+        <td align="center"> <img src="https://img.shields.io/badge/Amazon%20ECS-FF9900?logo=amazonecs&logoColor=white"/> <img src="https://img.shields.io/badge/Docker-0db7ed?logo=docker&logoColor=white"/> </td>
     </tr>
     <tr>
         <td align="center"><strong>IaC · CI/CD</strong></td>
-        <td align="center"> <img src="https://img.shields.io/badge/Terraform-7B42BC?logo=terraform&logoColor=white"/> <img src="https://img.shields.io/badge/GitHub Actions-2088FF?logo=githubactions&logoColor=white"/> </td>
+        <td align="center"> <img src="https://img.shields.io/badge/Terraform-7B42BC?logo=terraform&logoColor=white"/> <img src="https://img.shields.io/badge/GitHub%20Actions-2088FF?logo=githubactions&logoColor=white"/> </td>
     </tr>
     <tr>
         <td align="center"><strong>Monitoring</strong></td>
