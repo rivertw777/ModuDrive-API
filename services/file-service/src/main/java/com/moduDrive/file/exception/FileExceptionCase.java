@@ -29,7 +29,7 @@ public enum FileExceptionCase implements ExceptionCase {
     FILE_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "파일 크기는 5GB를 초과할 수 없습니다."),
     /** The blocklist doesn't fit the declared size, or the uploadId belongs to another file. */
     INVALID_BLOCKLIST(HttpStatus.BAD_REQUEST, "업로드한 파일 정보가 올바르지 않습니다."),
-    /** One commit request's blocklists add up to more than 1,280 hashes (spec 001 3-3). */
+    /** One commit request's blocklists add up to more than 1,280 hashes (spec 001 5). */
     COMMIT_TOO_LARGE(HttpStatus.BAD_REQUEST, "한 번에 확정할 수 있는 블록 수를 초과했습니다."),
     QUOTA_EXCEEDED(HttpStatus.PAYLOAD_TOO_LARGE, "저장 공간이 부족합니다.");
 

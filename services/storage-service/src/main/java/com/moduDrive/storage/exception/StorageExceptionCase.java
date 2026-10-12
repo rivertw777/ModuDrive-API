@@ -12,7 +12,7 @@ public enum StorageExceptionCase implements ExceptionCase {
     /** Empty, or the bytes don't hash to the hash in the path. */
     INVALID_BLOCK(HttpStatus.BAD_REQUEST, "블록 내용이 해시와 일치하지 않습니다."),
     BLOCK_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "블록 하나는 블록 크기를 초과할 수 없습니다."),
-    /** More than 64 blocks or 8MB in one upload request (spec 001 3-4). */
+    /** More than 64 blocks or 8MB in one upload request (spec 001 6). */
     BLOCK_BATCH_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "한 번에 보낼 수 있는 블록 양을 초과했습니다."),
     /** The owner already uploaded {@code storage.upload-blocks-per-window} blocks in the last 24h. */
     UPLOAD_LIMIT_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, "24시간 업로드 한도(100GB)를 초과했습니다. 나중에 다시 시도해 주세요."),
