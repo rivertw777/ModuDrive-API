@@ -93,7 +93,7 @@ dev 시드는 지금 두 서비스에 있다.
 
 ### 절차
 
-1. `services/<서비스>/src/main/resources/db/migration/`에 다음 버전 파일을 만든다. 예: `V9__add_file_description.sql`
+1. `services/<서비스>/src/main/resources/db/migration/`에 다음 버전 파일을 만든다. 예: file이면 `V12__add_file_description.sql`
 2. 같은 커밋에서 엔티티도 고친다. SQL과 엔티티는 항상 같은 PR에 들어가야 한다.
 3. `./gradlew :services:<서비스>:test`를 돌린다. persistence 테스트가 새 마이그레이션을 적용한 Postgres 위에서 validate까지 돈다. 엔티티와 SQL이 어긋나면 `Schema validation: ...`으로 실패한다.
 4. 로컬 서비스를 다시 띄우면 Flyway가 새 파일만 추가로 실행한다. `make reset`은 필요 없다.
@@ -112,7 +112,7 @@ dev 시드는 지금 두 서비스에 있다.
 
 ### dev 시드를 바꾸고 싶을 때
 
-시드도 버전 파일이라 고치면 체크섬이 어긋난다. 새 파일을 추가하거나(`V9_1__seed_...sql`처럼 해당 스키마 버전 뒤에), 로컬 전용이니 `make reset`으로 DB를 비우고 기존 파일을 고쳐도 된다. 다만 뒤의 방법은 모든 사람이 reset해야 한다.
+시드도 버전 파일이라 고치면 체크섬이 어긋난다. 새 파일을 추가하거나(`V12_1__seed_...sql`처럼 해당 스키마 버전 뒤에), 로컬 전용이니 `make reset`으로 DB를 비우고 기존 파일을 고쳐도 된다. 다만 뒤의 방법은 모든 사람이 reset해야 한다.
 
 ---
 
@@ -152,7 +152,7 @@ expand/contract 패턴으로 단계를 나눈다. 옛 버전 앱과 새 버전 �
 
 ### 인덱스 추가
 
-작은 테이블은 그냥 `create index`로 만든다. 운영의 큰 테이블에는 쓰기를 막지 않는 `create index concurrently`를 써야 하는데, 이건 트랜잭션 안에서 돌 수 없다. 이럴 땐 같은 이름의 설정 파일(`V9__add_index.sql.conf`)에 `executeInTransaction=false`를 넣어 그 파일만 트랜잭션 없이 실행한다. 예: file의 `V9__file_version_file_id_idx.sql`.
+작은 테이블은 그냥 `create index`로 만든다. 운영의 큰 테이블에는 쓰기를 막지 않는 `create index concurrently`를 써야 하는데, 이건 트랜잭션 안에서 돌 수 없다. 이럴 땐 같은 이름의 설정 파일(`V12__add_index.sql.conf`)에 `executeInTransaction=false`를 넣어 그 파일만 트랜잭션 없이 실행한다. 예: file의 `V9__file_version_file_id_idx.sql`, `V11__file_path_prefix_idx.sql`.
 
 `concurrently`는 열려 있는 모든 트랜잭션이 끝나길 기다린다. Flyway는 기본으로 잠금을 트랜잭션 안에서 잡아서(`idle in transaction`) 그 트랜잭션까지 기다리다 영영 멈춘다. 그래서 공통 설정(`application-jpa.yml`)에 `spring.flyway.postgresql.transactional-lock: false`를 둬서 세션 단위 잠금을 쓴다.
 

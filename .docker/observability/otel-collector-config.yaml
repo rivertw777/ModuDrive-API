@@ -40,6 +40,4 @@ service:
       receivers: [otlp]
       processors: [tail_sampling, batch]
       exporters: [otlp/tempo]
-    # 메트릭은 각 서비스의 /actuator/prometheus를 Prometheus가 직접 스크레이프한다
-    # (micrometer-registry-otlp를 안 붙였으므로 OTLP로 메트릭을 보내는 앱이 없다) — 여기 metrics
-    # 파이프라인은 만들지 않는다. OTLP 메트릭이 필요해지면 registry 추가 + 여기 파이프라인 추가.
+    # metrics 파이프라인은 없다: Prometheus가 각 서비스의 /actuator/prometheus를 직접 스크레이프한다.

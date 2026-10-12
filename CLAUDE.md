@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ModuDrive is a cloud-drive microservices backend built with **Spring Boot 4.1.1**, **Java 25**, and **Spring Cloud 2025.1.3**, organized as a Gradle 9.7.1 multi-module project. There is no service registry: services call each other at fixed URLs (`clients.<service>.url` in each `application.yml` — compose DNS locally, ECS Service Connect on AWS). Inter-service calls use OpenFeign (`auth-service` → `member-service`) or `WebClient` (`gateway-service` → `auth-service`), with Resilience4j providing circuit breaking and retry.
+ModuDrive is a cloud-drive microservices backend built with **Spring Boot 4.1.1**, **Java 25**, and **Spring Cloud 2025.1.3**, organized as a Gradle 9.7.1 multi-module project. There is no service registry: services call each other at fixed URLs (`clients.<service>.url` in each `application.yml` — compose DNS locally, ECS Service Connect on AWS). Inter-service calls use OpenFeign (`auth-service` → `member-service`, `file-service` → `member-service`/`storage-service`, `storage-service` → `file-service`) or `WebClient` (`gateway-service` → `auth-service`), with Resilience4j providing circuit breaking and retry.
 
 ## Build & Run Commands
 
@@ -34,7 +34,10 @@ make reset
 make service
 
 # Test + build image + start a single service
-make member   # or: make gateway, make auth, make file, make storage, make mail
+make member   # or: make gateway, make auth, make file, make storage, make mail, make notification
+
+# Grafana on localhost:3002 for the AWS demo stack (reads its AMP endpoint from terraform output)
+make demo
 ```
 
 Docker Compose files are at `.docker/docker-compose.service.yml` (services), `.docker/docker-compose.infra.yml` (Postgres, Redis, LocalStack — local SQS + S3 + SES, Mailpit — local inbox for SES mail at `localhost:8025`; needs `LOCALSTACK_AUTH_TOKEN` in `.docker/.env`), and `.docker/docker-compose.observability.yml` (Grafana/Tempo/Loki/Prometheus/Alertmanager/OTel — alerts go Prometheus rules → Alertmanager → LocalStack SNS → Lambda → Discord, the same path as AWS). All three attach to `modudrive_network` as an **external** network, created by the `network` Make target (a prerequisite of `infra`/`observability`; `start.sh` creates it inline). Postgres holds one database + login per service (`member_db`/`member_service`, `file_db`/`file_service`, `notification_db`/`notification_service`, `auth_db`/`auth_service`); each login can only connect to its own database. They are created by `.docker/postgres/postgres_init.sh`, which runs only on an empty volume — `make reset` after changing it. Tables come from Flyway, not this script — see [Database Migrations](#database-migrations-flyway). The shared `Dockerfile` lives at `.docker/Dockerfile`, referenced by every service's `build.gradle` via its `docker` task.
@@ -75,10 +78,11 @@ For the full layer breakdown, naming conventions, dependency-direction rules, an
 | `common:infrastructure:resilience4j`| `CircuitBreakerEventConfig`, `RetryEventConfig`, `FeignFallbackUtils` |
 | `common:infrastructure:spring-cloud`| `spring-cloud-starter-openfeign` — all services that use Feign depend on this module |
 | `common:infrastructure:swagger`     | Aggregated OpenAPI/Swagger UI config (dev profile)           |
+| `common:infrastructure:observability` | Actuator on management port 9464, Prometheus registry, OTLP tracing to `otel-collector:4318`, `UserIdObservationFilter` — used by every service |
 
-Application services (auth, member, gateway) depend on `common:core`, `common:api`, and `common:infrastructure:spring-cloud`. JPA services also depend on `common:infrastructure:jpa`.
+Every service depends on `common:core` and `common:infrastructure:observability`. JPA services (member, file, notification, auth) also depend on `common:infrastructure:jpa`.
 
-Root `build.gradle`'s `subprojects {}` block applies the Spring Boot plugin (and disables `bootJar`/`bootRun`/`bootBuildImage`) to every module — including implicit intermediate directories like `common` and `services`, which Gradle creates automatically from nested `include(...)` paths in `settings.gradle` even without their own `build.gradle` file. Only the 4 runnable services re-enable those tasks in their own `build.gradle`.
+Root `build.gradle`'s `subprojects {}` block applies the Spring Boot plugin (and disables `bootJar`/`bootRun`/`bootBuildImage`) to every module — including implicit intermediate directories like `common` and `services`, which Gradle creates automatically from nested `include(...)` paths in `settings.gradle` even without their own `build.gradle` file. Only the 7 runnable services re-enable those tasks in their own `build.gradle`.
 
 ## Auth Flow
 
@@ -86,7 +90,7 @@ Server-side sessions — the browser holds only an `HttpOnly` session cookie, ne
 
 1. Client sends credentials to `POST /api/v1/auth/login` via the gateway.
 2. `auth-service` calls `member-service` via Feign (`POST /internal/v1/member/authenticate`) to verify credentials.
-3. On success from a device the member already verified (`__Host-device` cookie, `known-device:*` in Redis), `auth-service` stores a session in Redis (`session:{sha256(id)}`, idle 30 min / absolute 12 h) and sets the `__Host-session` cookie; other devices' sessions stay (concurrent logins are allowed). From an unknown device it instead mails a 6-digit code (member-service → outbox → mail-service) and answers `verificationRequired`; `POST /api/v1/auth/verify-email/confirm` checks the code and then issues the session.
+3. On success from a device the member already verified (`__Host-device` cookie, `known_device` table in `auth_db`), `auth-service` stores a session in Redis (`session:{sha256(id)}`, idle 30 min / absolute 12 h) and sets the `__Host-session` cookie; other devices' sessions stay (concurrent logins are allowed). From an unknown device it instead mails a 6-digit code (member-service → outbox → mail-service) and answers `verificationRequired`; `POST /api/v1/auth/verify-email/confirm` checks the code and then issues the session.
 4. For every request, the gateway's `AuthenticationWebFilter` (`SessionAuthenticationConverter` → `SessionAuthenticationManager`) sends the cookie's session id to `auth-service` (`POST /internal/v1/auth/sessions/validate`) via `WebClient` and injects the `SecurityContext`; `UserContextFilter` then sets `X_USER_ID`/`X_USER_ROLE`. `CsrfOriginGuardFilter` rejects any POST/PUT/PATCH/DELETE whose `Origin` isn't `CLIENT_URL`.
 
 ## Error Handling

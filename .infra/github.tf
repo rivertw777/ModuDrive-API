@@ -1,6 +1,6 @@
 # The role the deploy workflow (.github/workflows/deploy.yml) assumes through GitHub's OIDC — no
 # long-lived keys anywhere. It can push images and roll the services to a new revision, nothing else:
-# infrastructure changes stay with whoever runs terraform apply.
+# infrastructure changes go through terraform apply (by hand, or the github_terraform role below).
 resource "aws_iam_openid_connect_provider" "github" {
   url            = "https://token.actions.githubusercontent.com"
   client_id_list = ["sts.amazonaws.com"]

@@ -1,7 +1,7 @@
 """Lock-hold benchmark (.docs/perf-test/001-folder-cascade.md): while a cascade runs, a second client keeps
 committing empty files into the same drive; records the slowest commit.
 python contend.py <label> [sizes...]"""
-import json, sys, threading, time, statistics
+import json, os, sys, threading, time, statistics
 import psycopg
 from cascade import DB, http, seed, commit_empty
 
@@ -30,7 +30,7 @@ def main():
     with psycopg.connect(DB, autocommit=True) as conn, conn.cursor() as cur:
         for n in sizes:
             rows = {"purge_vs_root_commit": [], "move_vs_inner_commit": []}
-            for _ in range(int(__import__("os").environ.get("ROUNDS", "3"))):
+            for _ in range(int(os.environ.get("ROUNDS", "3"))):
                 with conn.transaction():
                     ns, owner, root = seed(cur, n)
                 http("DELETE", f"/api/v1/files/{root}", owner)

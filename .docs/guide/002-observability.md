@@ -109,7 +109,7 @@ flowchart LR
 운영에서 알아 둘 것들이다.
 
 - `service` 라벨은 로컬이 스크레이프 주소에서, 운영이 컨테이너 이름에서 붙이는데 값이 같아서(`member-service`) 알림 규칙을 그대로 쓴다. 운영에만 있는 규칙은 `ServiceNoTasks` 하나다. ECS에서는 죽은 태스크가 `up = 0`으로 남지 않고 수집 대상에서 사라지기 때문이다.
-- collector를 태스크마다 사이드카로 붙이지 않고 한 대만 두는 건 tail sampling 때문이다. 한 trace의 span이 같은 collector에 모여야 "에러 trace는 전부 남긴다"가 지켜진다. 두 대 이상이 필요해지면 앞단 collector가 traceID 기준으로 나눠 보내는 2단 구성으로 바꾼다.
+- collector를 태스크마다 사이드카로 붙이지 않고 한 대만 두는 건 tail sampling 때문이다. 한 trace의 span이 같은 collector에 모여야 "에러 trace는 전부 남긴다"가 지켜진다.
 - collector의 Service Connect 이름이 로컬과 같은 `otel-collector:4318`이라 앱의 트레이스 설정도 바꿀 게 없다.
 - ALB는 W3C `traceparent`가 아니라 `X-Amzn-Trace-Id`를 붙인다. 그래서 trace는 gateway에서 시작하고, ALB 구간은 ALB 접근 로그(prod만)로 본다.
 - 처음 띄운 뒤에는 X-Ray가 앱의 W3C trace ID를 그대로 받는지 확인한다. 이 ID는 앞 32비트가 타임스탬프가 아니라서, 거절되면 X-Ray ID 생성기를 설정해야 한다.
@@ -145,7 +145,6 @@ flowchart LR
 
 - 대상 7개를 `prometheus.yml`의 `static_configs`에 `<서비스>:9464`로 적어 뒀다. 서비스를 추가하면 여기도 추가해야 한다.
 - 스크레이프 주소에서 포트를 떼어 `service` 라벨을 붙인다(`member-service:9464` → `member-service`). 알림 규칙과 Discord 메시지가 이 라벨로 서비스를 가리킨다.
-- 서비스를 여러 개 띄우면 컨테이너 DNS가 하나만 잡힐 수 있다. 그땐 `dns_sd_configs`나 `docker_sd_configs`로 바꾼다.
 - `--enable-feature=exemplar-storage`로 exemplar를 저장한다(5-2).
 - `--web.external-url=http://localhost:9090`. 알림에 붙는 "어느 규칙에서 왔나" 링크가 이 주소로 만들어진다.
 

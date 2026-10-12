@@ -1,10 +1,9 @@
 """Folder cascade benchmark (.docs/perf-test/001-folder-cascade.md): move / trash / restore / purge
 of a folder with N files — SQL count (pg_stat_statements) and latency. Also holds the shared helpers.
 Run through scenario.sh, or inside the bench container: python cascade.py <label> [sizes...]"""
-import json, sys, threading, time, urllib.request, uuid, statistics
+import json, os, sys, threading, time, urllib.request, uuid, statistics
 import psycopg
 
-import os
 DB = os.environ.get("BENCH_DB", "host=postgres dbname=file_db user=modudrive password=changeme")
 API = "http://file-service:10012"
 NOISE = ("outbox", "shedlock", "processed_event", "pg_stat_statements")
@@ -86,7 +85,7 @@ def op(cur, name, user, fid, contend=None):
 def main():
     label = sys.argv[1]
     sizes = [int(x) for x in sys.argv[2:]] or [100, 1000, 10000]
-    rounds = int(__import__("os").environ.get("ROUNDS", "3"))
+    rounds = int(os.environ.get("ROUNDS", "3"))
     out = {}
     with psycopg.connect(DB, autocommit=True) as conn, conn.cursor() as cur:
         for n in sizes:
@@ -98,7 +97,7 @@ def main():
                     res[k].append(op(cur, k, owner, root))
                 res["trash"].append(op(cur, "trash", owner, root))
                 res["purge"].append(op(cur, "purge", owner, root))
-                if __import__("os").environ.get("SKIP_WAIT"):
+                if os.environ.get("SKIP_WAIT"):
                     continue
                 # Contention: a same-drive commit at the root while a purge runs; a commit into a
                 # subfolder while the folder moves.

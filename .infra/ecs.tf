@@ -64,8 +64,8 @@ locals {
     )
   }
 
-  # ponytail: placeholders until a domain exists — CORS/CSRF and mail links point nowhere useful, and
-  # login can't work anyway without one (the __Host- cookie needs HTTPS on a shared site, 003-aws-migration.md 1-11).
+  # Placeholders until a domain exists: CORS/CSRF and mail links point nowhere, and login can't work
+  # without one anyway (the __Host- cookie needs HTTPS on a shared site, 003-aws-migration.md 1-11).
   client_url = local.domain_based ? "https://app.${var.domain_name}" : "https://app.example.com"
   mail_from  = local.domain_based ? "noreply@${var.domain_name}" : "noreply@example.com"
 }
@@ -131,7 +131,7 @@ resource "aws_ecs_task_definition" "service" {
 
     portMappings = [
       { name = "http", containerPort = each.value, protocol = "tcp", appProtocol = "http" },
-      # Actuator (health, prometheus) — the ALB health check and, later, the ADOT collector.
+      # Actuator (health, prometheus): the ALB health check and the ADOT collector's scrape.
       { name = "management", containerPort = 9464, protocol = "tcp" },
     ]
 
@@ -160,7 +160,7 @@ resource "aws_ecs_task_definition" "service" {
       interval = 30
       timeout  = 5
       retries  = 3
-      # The most ECS allows: on demo's quarter vCPU, Spring Boot can take a couple of minutes to start.
+      # The most ECS allows: on demo's half vCPU, Spring Boot can take a couple of minutes to start.
       startPeriod = 300
     }
 

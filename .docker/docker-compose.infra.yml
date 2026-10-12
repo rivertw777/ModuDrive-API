@@ -68,8 +68,8 @@ services:
     restart: unless-stopped
 
   # Local stand-in for Amazon SQS, S3, SES, SNS (SES events, alerts), Lambda and SSM (the Discord alert
-  # forwarder and its webhook URLs). Queues, the bucket, the sender identity and the alert pipeline come from localstack/init-aws.sh, run
-  # on every start. In memory only — the free plan has no persistence, so a restart drops queued
+  # forwarder and its webhook URLs). Queues, the bucket, the sender identity and the alert pipeline
+  # come from localstack/init-aws.sh, run on every start. In memory only — the free plan has no persistence, so a restart drops queued
   # messages and every uploaded block while Postgres keeps the file rows: `make reset` after one.
   # localstack_data only caches the license. Needs a (free, non-commercial) auth token.
   localstack:
@@ -96,7 +96,7 @@ services:
       - MAIL_FROM=${MAIL_FROM}
     volumes:
       - localstack_data:/var/lib/localstack
-      # 폴더째 마운트: 파일 하나만 마운트하면 Docker Desktop(WSL) 재시작 때 마운트가 깨져 exit 127로 죽는다.
+      # The folder, not the file: a single-file mount breaks on a Docker Desktop (WSL) restart and exits 127.
       - ./localstack:/etc/localstack/init/ready.d:ro
       # The forwarder's code — the same file Terraform zips for AWS.
       - ../.infra/monitoring:/etc/modudrive-alerts:ro
@@ -110,8 +110,8 @@ services:
       retries: 10
     restart: unless-stopped
 
-# Observability (otel-collector, tempo, loki, promtail, prometheus, grafana) lives
-# in docker-compose.observability.yml — run `make observability` after `make infra`.
+# Observability (otel-collector, tempo, loki, promtail, prometheus, alertmanager, grafana) lives
+# in docker-compose.observability.yml — `make observability`.
 
 networks:
   modudrive_network:

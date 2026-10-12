@@ -1,14 +1,12 @@
 # PostgreSQL — var.db_instances says how many and which services' databases each holds, var.db_engine
-# whether as RDS instances (demo, one for all four) or Aurora clusters (prod, one per service), so file-service's load (uploads, outbox) never
-# slows the login path and each can be sized, failed over and upgraded on its own.
+# whether as RDS instances (demo, one for all four) or Aurora clusters (prod, one per service).
 #
 # Either way every service has its own database and login that can reach only that database (003-aws-migration.md 1-5).
 # Terraform makes the instances; the databases and logins are made inside Postgres by
 # .docker/postgres/postgres_init.sh, run once per instance as an ECS task (db_init_run_tasks output).
 # Tables come from each service's Flyway migrations on startup.
 
-# The stack's first, shared instance is the one that holds file_db: kept, not destroyed and made
-# again. In prod the other services' databases then move to their own instances (a data migration).
+# The stack's first, shared instance is the one that holds file_db: kept, not destroyed and made again.
 moved {
   from = aws_db_instance.postgres
   to   = aws_db_instance.postgres["file"]
@@ -140,8 +138,7 @@ locals {
   db_master_secret_arn = var.db_engine == "aurora" ? { for name, c in aws_rds_cluster.postgres : name => c.master_user_secret[0].secret_arn } : { for name, i in aws_db_instance.postgres : name => i.master_user_secret[0].secret_arn }
   db_master_username   = "modudrive"
 
-  # The services with a database, and the instance each one's lives on.
-  postgres_clients = flatten([for instance in var.db_instances : instance.clients])
+  # The instance each service's database lives on.
   db_instance_of = merge([
     for name, instance in var.db_instances : { for client in instance.clients : client => name }
   ]...)

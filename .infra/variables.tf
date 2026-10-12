@@ -37,8 +37,7 @@ variable "domain_name" {
 }
 
 # Set → mail-service sends through Gmail SMTP as this account instead of SES (its app password is the
-# SMTP_PASSWORD parameter, secrets.tf). ponytail: only while SES is still in the sandbox — unset it once
-# production access is granted.
+# SMTP_PASSWORD parameter, secrets.tf). Meant for while SES is still in the sandbox.
 variable "smtp_username" {
   type    = string
   default = null
@@ -198,7 +197,7 @@ variable "services" {
 }
 
 # The security extras that cost money (prod): a customer-managed KMS key for data at rest, S3
-# versioning, and — in later steps — WAF, Service Connect TLS and audit logging. Free hardening
+# versioning, WAF, Service Connect TLS, ALB access logs and audit logging (audit.tf). Free hardening
 # (non-root read-only containers, TLS-only S3) applies everywhere regardless.
 variable "hardened" {
   type = bool

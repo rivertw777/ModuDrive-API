@@ -10,9 +10,10 @@ one-way: `domain` ← `application` ← `adapter`. `domain` never imports `appli
 or `adapter`. `application` never imports `adapter`.
 
 Applies to the services with a real `domain/application/adapter` split: member, auth,
-file, storage, notification, mail (mail has no `domain/` yet — it only renders and sends). `gateway-service` (a reactive WebFlux edge service — `config/filter/security/client/fallback/exception`
-only, no domain/application layer) doesn't follow this structure; only borrow the adapter/config conventions below where
-they're actually relevant.
+file, storage, notification, mail (mail has no `domain/`: it only renders and sends).
+`gateway-service` (reactive WebFlux; `config/filter/security/client/fallback/exception`
+only, no domain/application layer) doesn't follow this structure; borrow the
+adapter/config conventions below only where they apply.
 
 ## Core principles
 
@@ -237,7 +238,7 @@ or the service layer depend on the Feign DTOs directly — only the
 ```java
 @FeignClient(name = "member-service", url = "${clients.member-service.url}")
 interface MemberClient {
-    @PostMapping("/api/v1/member/authenticate")
+    @PostMapping("/internal/v1/member/authenticate")
     @CircuitBreaker(name = "memberServiceCircuitBreaker")
     @Retry(name = "memberServiceRetry", fallbackMethod = "authenticateMemberFallback")
     ApiResponse<AuthenticateMemberResponse> authenticateMember(AuthenticateMemberRequest request);
