@@ -40,7 +40,7 @@ def main():
                 rows["move_vs_inner_commit"].append(run(owner, ("PATCH", f"/api/v1/files/{root}/path", {"path": "/dest"}), "/bench/d3"))
             out[n] = rows
             print(n, json.dumps(rows), flush=True)
-    json.dump(out, open(f"/w/results/contend-{label}.json", "w"), indent=1)
+    json.dump(out, open(f"results/contend-{label}.json", "w"), indent=1)
 
 
 if __name__ == "__main__":

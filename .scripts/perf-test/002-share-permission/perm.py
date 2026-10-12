@@ -2,7 +2,7 @@
 files under a folder shared only at the top of a depth-d chain. python perm.py <label>"""
 import json, sys, statistics, uuid, time
 import psycopg
-from cascade import DB, http, reset_stats, read_stats
+from bench import DB, http, reset_stats, read_stats
 
 COLS = "id,namespace_id,owner_id,name,path,is_directory,file_size,status,active_slot_name,access_scope,created_at,updated_at,is_deleted"
 REPS = 200
@@ -55,7 +55,7 @@ def main():
                  "recent_50": measure(cur, grantee, "/api/v1/files/recent?limit=50")}
             out[depth] = r
             print(depth, json.dumps({k: {kk: vv for kk, vv in v.items() if kk != "top"} for k, v in r.items()}), flush=True)
-    json.dump(out, open(f"/w/results/perm-{label}.json", "w"), ensure_ascii=False, indent=1, default=str)
+    json.dump(out, open(f"results/perm-{label}.json", "w"), ensure_ascii=False, indent=1, default=str)
 
 
 if __name__ == "__main__":
