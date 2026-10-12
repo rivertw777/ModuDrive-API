@@ -36,10 +36,8 @@ class FileSharePersistenceAdapter implements SaveFileSharePort, FindFileSharePor
             try {
                 return fileMapper.mapFileShareToDomain(fileShareRepository.save(entity));
             } catch (DataIntegrityViolationException e) {
-                // The app-layer existsBy check in ShareFileService is best-effort against a
-                // concurrent duplicate invite; the DB unique constraint is what actually closes
-                // that race, so translate its violation into the same business error instead of
-                // letting a raw constraint-violation message leak out as a 500.
+                // A concurrent duplicate invite passes ShareFileService's existsBy check and hits
+                // the unique constraint here.
                 throw new BusinessException(FileExceptionCase.FILE_SHARE_ALREADY_EXISTS);
             }
         }
@@ -47,12 +45,8 @@ class FileSharePersistenceAdapter implements SaveFileSharePort, FindFileSharePor
         FileShareJpaEntity entity = fileShareRepository.findById(fileShare.getId())
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_SHARE_NOT_FOUND));
         entity.applyGrantedRole(fileShare.getRole());
-        // Only a pending→claimed transition (entity still null, incoming now set) should touch
-        // sharedWithUserId here — an ordinary role update on an already-granted share must not
-        // re-run applyClaim's side effect of clearing granteeEmail (a no-op for those rows, but
-        // the guard keeps this branch doing only what its caller — ClaimPendingFileSharesService
-        // — asks of it). ClaimPendingFileSharesService pre-checks for a colliding grant before
-        // calling this, so no DataIntegrityViolationException is expected here.
+        // Only a pending -> claimed transition touches sharedWithUserId.
+        // ClaimPendingFileSharesService pre-checks for a colliding grant first.
         if (entity.getSharedWithUserId() == null && fileShare.getSharedWithUserId() != null) {
             entity.applyClaim(fileShare.getSharedWithUserId());
         }

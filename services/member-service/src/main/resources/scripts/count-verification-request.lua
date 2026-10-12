@@ -1,5 +1,5 @@
--- KEYS[1] = email-verify-requests:{email}
--- KEYS[2] = email-verify-cooldown:{email}
+-- KEYS[1] = email-verify-requests:{sha256(email)}
+-- KEYS[2] = email-verify-cooldown:{sha256(email)}
 -- ARGV[1] = window in ms
 -- ARGV[2] = resend cooldown in ms
 -- Counts one code request and returns the running total, or 0 within the resend cooldown after the

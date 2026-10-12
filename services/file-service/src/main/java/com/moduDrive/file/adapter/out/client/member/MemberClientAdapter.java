@@ -24,11 +24,8 @@ class MemberClientAdapter implements FindMemberByEmailPort, FindMemberByIdPort {
             val response = memberClient.findMemberByEmail(email).getData();
             return Optional.of(UUID.fromString(response.id()));
         } catch (FeignException e) {
-            // member-service answers an unknown/invalid email with a 4xx business rejection, which
-            // FeignFallbackUtils deliberately rethrows untouched (only 5xx/timeouts become
-            // SERVICE_UNAVAILABLE, and only those are in resilience4j's record-exceptions, so this
-            // path can't trip the breaker). A 400/404 here just means "not a member" — a guest
-            // invite target, not a failure — so it resolves to empty instead of throwing.
+            // FeignFallbackUtils rethrows a 4xx untouched (and it doesn't trip the breaker). A
+            // 400/404 means "not a member": a guest invite, not a failure.
             if (e.status() == 400 || e.status() == 404) {
                 return Optional.empty();
             }

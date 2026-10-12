@@ -16,9 +16,9 @@ import java.util.UUID;
 
 public final class NotificationTestFixture {
 
-    public static final LocalDateTime CREATED_AT = LocalDateTime.of(2026, 8, 25, 10, 0);
-    public static final String SHARER_NAME = "홍길동";
-    public static final String SHARER_EMAIL = "owner@modudrive.com";
+    private static final LocalDateTime CREATED_AT = LocalDateTime.of(2026, 8, 25, 10, 0);
+    private static final String SHARER_NAME = "홍길동";
+    private static final String SHARER_EMAIL = "owner@modudrive.com";
 
     private NotificationTestFixture() {
     }

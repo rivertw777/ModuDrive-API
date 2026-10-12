@@ -48,8 +48,8 @@ class DirectoryCascaderTest {
         return file;
     }
 
-    // What each subtree rewrite does to the rows (skip removed, keep tombstones, ...) is SQL now —
-    // covered on real Postgres in FilePersistenceAdapterTest.WhenRewritingASubtree.
+    // What each subtree rewrite does to the rows (skip removed, keep tombstones, ...) is SQL, covered on Postgres in
+    // FilePersistenceAdapterTest.WhenRewritingASubtree.
 
     @Test
     @DisplayName("이동한 디렉토리의 하위 경로를 한 번에 바꾼다")

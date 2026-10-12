@@ -10,10 +10,9 @@ import org.springframework.mail.MailAuthenticationException;
 import org.springframework.mail.javamail.JavaMailSenderImpl;
 import org.springframework.stereotype.Component;
 
-/** Plain SMTP (STARTTLS, e.g. Gmail with an app password) — for an environment whose SES is still in the
- * sandbox. No delivery tag or Send event here, so a send that times out after the server took the mail
- * is retried and can arrive twice.
- * ponytail: stop-gap until SES production access; delete with modudrive.mail.transport once it's granted. */
+/** Plain SMTP (STARTTLS, e.g. Gmail with an app password) for an environment whose SES is still in the
+ * sandbox. There is no Send event here, so a send that times out after the server took the mail is
+ * retried and can arrive twice. */
 @Component
 @ConditionalOnProperty(name = "modudrive.mail.transport", havingValue = "smtp")
 class SmtpMailAdapter implements SendMailPort {

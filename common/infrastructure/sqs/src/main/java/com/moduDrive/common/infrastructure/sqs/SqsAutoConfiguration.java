@@ -4,12 +4,12 @@ import com.moduDrive.common.infrastructure.messaging.MessagePublisher;
 import io.awspring.cloud.sqs.listener.MessageListenerContainerRegistry;
 import io.awspring.cloud.sqs.listener.errorhandler.AsyncErrorHandler;
 import io.awspring.cloud.sqs.listener.errorhandler.ExponentialBackoffErrorHandler;
+import io.awspring.cloud.sqs.operations.SqsTemplate;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
-import io.awspring.cloud.sqs.operations.SqsTemplate;
 import software.amazon.awssdk.services.sqs.SqsAsyncClient;
 
 /** The SQS adapter's wiring: {@link MessagePublisher} for producers and the listener error handler for
@@ -20,7 +20,7 @@ public class SqsAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean(AsyncErrorHandler.class)
     AsyncErrorHandler<Object> deadLetteringErrorHandler(SqsAsyncClient sqsAsyncClient) {
-        // Retry delays 1s, 2s, 4s; the queue's maxReceiveCount (4) then redrives to the DLQ.
+        // Retry delays 1s, 2s, 4s; on the last receive maxReceiveCount (4) allows, the handler moves it to the DLQ.
         AsyncErrorHandler<Object> retry = ExponentialBackoffErrorHandler.builder()
                 .initialVisibilityTimeoutSeconds(1)
                 .multiplier(2)
@@ -29,8 +29,7 @@ public class SqsAutoConfiguration {
         return new DeadLetteringErrorHandler(sqsAsyncClient, retry);
     }
 
-    /** Without a {@link MeterRegistry} the gauge isn't published and the queues aren't polled; a
-     * service with no listener has no DLQ to watch and does nothing either. */
+    /** Without a {@link MeterRegistry}, or with no listeners, this polls nothing. */
     @Bean(initMethod = "start", destroyMethod = "stop")
     DeadLetterQueueMetrics deadLetterQueueMetrics(SqsAsyncClient sqsAsyncClient,
                                                   MessageListenerContainerRegistry containers,

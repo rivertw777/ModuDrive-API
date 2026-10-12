@@ -12,7 +12,6 @@ with psycopg.connect(DB) as conn, conn.cursor() as cur:
     ns, owner, root = seed(cur, 10000)
     cur.execute("select id from file where namespace_id=%s and not is_directory", (ns,))
     ids = [r[0] for r in cur.fetchall()]
-    cur.execute("analyze file_version; analyze file_version_block; analyze block") if False else None
     cur.execute(SQL, (ids,))
     for r in cur.fetchall(): print(r[0])
     conn.rollback()

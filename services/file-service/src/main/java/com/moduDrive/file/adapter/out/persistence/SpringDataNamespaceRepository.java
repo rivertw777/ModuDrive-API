@@ -22,10 +22,9 @@ interface SpringDataNamespaceRepository extends JpaRepository<NamespaceJpaEntity
             "where n.id = :id and (:delta <= 0 or n.usedBytes + :delta <= n.quotaBytes)")
     int addUsedBytes(@Param("id") UUID id, @Param("delta") long delta);
 
-    // A purge frees what the files counted: their current size, unless it's a folder or has none (a
-    // PENDING row an old upload flow left). Read from the file rows themselves, which a purge doesn't
-    // clear. One UPDATE per drive however many files — and none when nothing had a size, so purging an
-    // empty folder doesn't take the drive's row lock at all.
+    // A purge frees the files' current sizes (folders and size-less PENDING rows count nothing),
+    // read from the rows themselves. One UPDATE per drive, and none when nothing had a size, so
+    // purging an empty folder doesn't lock the drive's row.
     @Modifying(flushAutomatically = true)
     @Query(value = "update namespace n set used_bytes = n.used_bytes - s.total from "
             + "(select namespace_id, sum(file_size) as total from file where id = any(:fileIds) "

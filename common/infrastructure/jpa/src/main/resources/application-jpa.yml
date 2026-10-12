@@ -1,8 +1,8 @@
 spring:
   datasource:
     hikari:
-      # Hikari's 30s default outlasts a caller's Feign read timeout (10s): with the DB down, the 503
-      # (GlobalExceptionHandler) would only be sent after the caller gave up on a read timeout.
+      # Must stay below the callers' Feign read timeout (10s), or with the DB down the caller times out
+      # before GlobalExceptionHandler sends its 503. Hikari's default is 30s.
       connection-timeout: 3000
   jpa:
     hibernate:
@@ -15,14 +15,13 @@ spring:
         use_sql_comments: true
   flyway:
     postgresql:
-      # Session-level advisory lock instead of Flyway's default transaction-level one. A migration run
-      # outside a transaction (create index concurrently, .docs/guide/001-db-migration.md 5장) waits for
-      # every open transaction to end — Flyway's own lock transaction included, so it would never finish.
+      # Session-level advisory lock. A non-transactional migration (create index concurrently,
+      # .docs/guide/001-db-migration.md section 5) waits for every open transaction, including the one holding
+      # Flyway's default transaction-level lock, so it would never finish.
       transactional-lock: false
 
-# DB spans (datasource-micrometer). Connection span = time holding a pooled connection (pool waits show
-# up here), query span = one statement. ResultSet fetches are left out — a span per row read is noise.
-# Parameter values stay out of spans (include-parameter-values defaults to false) — they can be PII.
+# DB spans (datasource-micrometer): connection (time holding a pooled connection, pool waits included) and
+# query. No ResultSet spans (one per row is noise). Parameter values stay out (the default), they can be PII.
 jdbc:
   includes: connection, query
 ---

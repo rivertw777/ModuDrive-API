@@ -19,8 +19,7 @@ class NotificationEventListener {
     private final RecordFileSharedNotificationUseCase recordFileSharedNotificationUseCase;
     private final ProcessedEvents processedEvents;
 
-    /** @Transactional so the "already handled" record commits with the notification row: if recording
-     * fails, both are rolled back and the retry starts over. */
+    /** The "already handled" record commits with the notification row, so a failed attempt rolls back both. */
     @Transactional
     @SqsListener(FileQueues.FILE_SHARED)
     void onFileShared(FileSharedNotified event,

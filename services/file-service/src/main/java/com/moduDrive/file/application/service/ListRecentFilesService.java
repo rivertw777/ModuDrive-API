@@ -18,7 +18,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -32,8 +31,7 @@ class ListRecentFilesService implements ListRecentFilesUseCase {
     private final FileFavoritePort fileFavoritePort;
     private final FileAccessGuard fileAccessGuard;
 
-    // ponytail: one findById per access row (N+1), same tradeoff as ListSharedWithMeService;
-    // fine at this scale, batch-fetch by file id if a user's recent list grows large.
+    // One findById per access row (N+1).
     @Transactional(readOnly = true)
     @Override
     public List<FileView> listRecentFiles(ListRecentFilesCommand command) {
@@ -44,10 +42,8 @@ class ListRecentFilesService implements ListRecentFilesUseCase {
 
         Set<UUID> favoriteIds = fileFavoritePort.favoriteFileIds(userId);
 
-        // Pairs each access row with its file so accessedAt survives the filters below and
-        // reaches the response as "최근 문서함에서 연 시각" (the client shows this, not updatedAt).
-        // role is the caller's on a file they don't own, resolved once and used both to drop the
-        // ones they can no longer reach and to tell the client which actions to offer.
+        // role is the caller's on a file they don't own: resolved once, it both drops files they
+        // can no longer reach and tells the client which actions to offer.
         record Accessed(File file, LocalDateTime accessedAt, Role role) {}
 
         return findFileAccessPort.findByUserIdOrderByAccessedAtDesc(userId, command.getLimit())
@@ -56,16 +52,9 @@ class ListRecentFilesService implements ListRecentFilesUseCase {
                         .map(file -> new Accessed(file, access.getAccessedAt(), null))
                         .stream())
                 .filter(accessed -> !accessed.file().isRemoved())
-                // Folders never belong in "recent" — the write side (GetFileController) already
-                // skips them, this also hides any row recorded before that skip existed.
+                // GetFileController doesn't record folders; this hides any recorded anyway.
                 .filter(accessed -> !accessed.file().isDirectory())
-                // A file recorded as "recently opened" may since have had its share revoked
-                // or moved out of reach — recent must reflect what the viewer can access
-                // *now*, not just what they once opened, so re-check reachability here rather
-                // than trusting the access log alone. effectiveRole honours an inherited folder
-                // grant too — a file only reachable by browsing into a shared folder (see
-                // GetFileService) must not silently drop out of recent just because it was never
-                // shared directly (matches ListFavoritesService's same re-check).
+                // Reachability is checked again: a share may have been revoked since.
                 .map(accessed -> accessed.file().getNamespaceId().equals(ownNamespaceId) ? accessed
                         : new Accessed(accessed.file(), accessed.accessedAt(),
                                 fileAccessGuard.effectiveRole(accessed.file(), userId)))
@@ -76,8 +65,6 @@ class ListRecentFilesService implements ListRecentFilesUseCase {
                     if (file.getOwnerId().equals(userId)) {
                         view = FileView.owned(file);
                     } else {
-                        // A shared file: per-user star, plus the caller's role so the client
-                        // knows which actions to offer (rename needs EDITOR).
                         file.markFavorite(favoriteIds.contains(file.getId()));
                         view = FileView.shared(file, accessed.role());
                     }

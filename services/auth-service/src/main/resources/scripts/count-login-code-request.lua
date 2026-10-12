@@ -1,5 +1,5 @@
--- KEYS[1] = login-code-requests:{email}
--- KEYS[2] = login-code-cooldown:{email}
+-- KEYS[1] = login-code-requests:{sha256(email)}
+-- KEYS[2] = login-code-cooldown:{sha256(email)}
 -- ARGV[1] = window in ms
 -- ARGV[2] = resend cooldown in ms
 -- Same rule as member-service's sign-up code requests: counts one request and returns the running

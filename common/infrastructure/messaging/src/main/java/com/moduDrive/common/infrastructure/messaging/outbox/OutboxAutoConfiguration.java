@@ -18,13 +18,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Transactional outbox for a service that publishes events. Opt-in per service
- * ({@code modudrive.messaging.outbox.enabled: true}): switching it on is what maps {@code outbox_event},
- * so a service that only consumes isn't asked for a table it doesn't have. Each producing service
- * creates the table in its own Flyway migration.
- * <p>
- * Tracing is optional: without a {@link Tracer} and {@link ObservationRegistry} (e.g. in a test
- * context) events are recorded and relayed without trace context.
+ * Transactional outbox. Opt-in ({@code modudrive.messaging.outbox.enabled}): it maps {@code outbox_event},
+ * which each producing service creates in its own Flyway migration. Without a {@link Tracer} and
+ * {@link ObservationRegistry} events are relayed without trace context.
  */
 @AutoConfiguration
 @AutoConfigurationPackage

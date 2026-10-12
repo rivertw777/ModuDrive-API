@@ -202,7 +202,7 @@ resource "aws_wafv2_web_acl" "main" {
     }
   }
 
-  # A flood guard, not a quota: an upload sends one request per 8 MB block, and an office or mobile
+  # A flood guard, not a quota: an upload sends one request per 8 MB of blocks, and an office or mobile
   # carrier puts many users behind one address.
   rule {
     name     = "ip-rate"

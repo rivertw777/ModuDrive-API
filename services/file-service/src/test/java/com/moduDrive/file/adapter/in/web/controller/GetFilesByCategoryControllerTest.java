@@ -55,8 +55,7 @@ class GetFilesByCategoryControllerTest {
 
         @Test
         void invalidTypeIsRejected() throws Exception {
-            // GlobalExceptionHandler now handles MethodArgumentTypeMismatchException
-            // (enum conversion failures included) with a 400.
+            // An enum conversion failure is a 400.
             mockMvc.perform(get("/api/v1/files/category")
                             .header("X_USER_ID", USER_ID)
                             .param("type", "NOT_A_CATEGORY"))

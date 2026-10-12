@@ -30,10 +30,8 @@ class MemberPersistenceAdapter implements
                 member.isValid()
         );
 
-        // existsByEmail in the service layer isn't atomic with this insert, so a concurrent
-        // sign-up for the same email can still slip past it — saveAndFlush forces the unique
-        // constraint violation to surface here (a plain save() only defers to a later,
-        // uncontrolled flush) instead of as a raw 500 at commit time.
+        // The service's existsByEmail check isn't atomic with this insert, so a concurrent sign-up
+        // can still hit the unique constraint. saveAndFlush surfaces it here instead of as a 500 at commit.
         MemberJpaEntity saved;
         try {
             saved = springDataMemberRepository.saveAndFlush(entity);
@@ -46,10 +44,7 @@ class MemberPersistenceAdapter implements
         return memberMapper.mapToDomainEntity(saved);
     }
 
-    // Only the email uniqueness violation should be reported as "duplicate email" — this insert
-    // also flushes the member_role collection, so a NOT NULL/FK/other integrity violation there
-    // is a real bug and should surface as-is rather than being misreported. Same pattern as
-    // FilePersistenceAdapter.isActiveSlotConflict.
+    // The insert also flushes member_role, so any other integrity violation is a bug and is rethrown as-is.
     private static boolean isEmailConflict(DataIntegrityViolationException e) {
         Throwable cause = e.getMostSpecificCause();
         return cause.getMessage() != null

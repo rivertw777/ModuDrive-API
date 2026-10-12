@@ -9,7 +9,7 @@
 locals {
   backup_copy   = var.backup_copy_vault_arn != null
   backup_bucket = var.backup_bucket_arn != null
-  # Both name the backup account in their ARN (arn:aws:<service>:<region>:<account>:...).
+  # From the vault ARN, or the bucket's KMS key ARN (S3 bucket ARNs carry no account).
   backup_account_id = (
     local.backup_copy ? split(":", var.backup_copy_vault_arn)[4]
     : local.backup_bucket ? split(":", var.backup_bucket_kms_key_arn)[4] : null

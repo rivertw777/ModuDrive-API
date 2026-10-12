@@ -17,16 +17,13 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * Purges one trash root — every purge path (single-file purge, empty-trash, scheduled retention
- * sweep) ends up doing exactly this for each root it finds, so it's centralized here rather than
- * repeated per caller. "Purge" keeps the metadata row as a tombstone ({@code file.deleted_at});
- * only the versions/shares/favorites go, and the versions' block references with them. A directory has no blocks of its own;
- * {@link DirectoryCascader#purge} tombstones its descendants and releases their blocks.
+ * Purges one trash root, for every purge path (single purge, empty trash, retention sweep). The
+ * row is kept as a tombstone ({@code file.deleted_at}); its versions, shares and favorites go, and
+ * the versions' block references with them. For a directory, {@link DirectoryCascader#purge} does
+ * the same for its descendants.
  *
- * {@code REQUIRES_NEW}: a batch caller (empty-trash, the retention sweep) purges many roots in
- * one pass — without its own transaction, one root's failure would roll back every other root
- * already purged in the same call. Isolating each root means a failure only loses that one root's
- * progress, not the whole batch's.
+ * <p>{@code REQUIRES_NEW}: a batch caller purges many roots, and one root's failure must not roll
+ * back the others.
  */
 @Component
 @RequiredArgsConstructor

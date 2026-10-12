@@ -26,9 +26,8 @@ class CreateNamespaceService implements CreateNamespaceUseCase {
         this.defaultQuotaBytes = defaultQuotaBytes;
     }
 
-    /** Returns the existing namespace on a redelivered signup event. REQUIRES_NEW so it commits on
-     * its own: a later step of the same signup (claiming shares) failing and retrying must not take
-     * the namespace down with it (#424). */
+    /** Returns the existing namespace on a redelivered signup event. REQUIRES_NEW: a later step of
+     * the same signup (claiming shares) failing must not roll the namespace back. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     @Override
     public Namespace createNamespace(CreateNamespaceCommand command) {

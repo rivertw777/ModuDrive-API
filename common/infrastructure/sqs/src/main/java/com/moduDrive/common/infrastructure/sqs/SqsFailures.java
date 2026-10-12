@@ -10,13 +10,9 @@ final class SqsFailures {
     }
 
     /**
-     * A send that can only ever fail: SQS rejected this message (queue missing, body too large, bad
-     * group id — a 400 that isn't throttling), or it never got that far because the event wouldn't
-     * serialize. Outages, 5xx, throttling and access denied are retryable, since they fail every
-     * message alike and clear up on their own or with a config fix.
-     * <p>
-     * The serialization half matters because the relay stops its batch on a retryable failure: without
-     * it one unserializable row would block every row behind it for good.
+     * SQS rejected this message (a 400 that isn't throttling: queue missing, body too large), or the event
+     * won't serialize. Outages, 5xx, throttling and access denied are retryable: they fail every message
+     * alike and clear up on their own or with a config fix.
      */
     static boolean isPermanentSendFailure(Throwable failure) {
         return PermanentFailures.isPermanentForPublisher(failure)

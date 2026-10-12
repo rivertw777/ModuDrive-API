@@ -11,11 +11,8 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Stands in for sending straight to the broker: saves the event to {@code outbox_event} instead, and
- * {@link OutboxRelay} sends it later. The write joins the caller's transaction, so the
- * event commits or rolls back with the business change. If there is no transaction, it opens its
- * own. Either way, once this returns without an exception the event will reach the broker even if it
- * is unreachable right now.
+ * Saves the event to {@code outbox_event} for {@link OutboxRelay} to send. Joins the caller's transaction
+ * (or opens one), so the event commits or rolls back with the business change.
  */
 public class OutboxEventRecorder {
 

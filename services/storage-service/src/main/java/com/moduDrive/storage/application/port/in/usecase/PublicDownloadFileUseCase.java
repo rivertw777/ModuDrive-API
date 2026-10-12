@@ -11,6 +11,6 @@ public interface PublicDownloadFileUseCase {
     /** Same as {@link DownloadFileUseCase#viewRange}. */
     RangeContent viewPublicRange(PublicDownloadFileCommand command, long start, Long end);
 
-    /** Same reasoning as {@link DownloadFileUseCase#downloadStream}. */
+    /** Same as {@link DownloadFileUseCase#downloadStream}. */
     void downloadPublicStream(PublicDownloadFileCommand command, OutputStream out);
 }

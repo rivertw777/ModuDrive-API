@@ -27,9 +27,8 @@ class EmptyTrashService implements EmptyTrashUseCase {
     private final FindFilePort findFilePort;
     private final FilePurger filePurger;
 
-    // Not @Transactional here on purpose: FilePurger.purgeRoot opens its own transaction per
-    // root (see its javadoc), so one root's failure can't roll back roots already purged in this
-    // same call — wrapping the whole loop in one transaction would undo that isolation.
+    // Not @Transactional: FilePurger.purgeRoot runs each root in its own transaction, so one
+    // root's failure doesn't roll back the others.
     @Override
     public void emptyTrash(EmptyTrashCommand command) {
         Namespace namespace = findNamespacePort.findByUserId(command.getUserId())
@@ -38,9 +37,7 @@ class EmptyTrashService implements EmptyTrashUseCase {
         NamespaceId namespaceId = new NamespaceId(namespace.getId());
         List<File> deleted = findFilePort.findTrashedNotPurged(namespaceId);
 
-        // Same trick as ListTrashService: purging a trashed directory root cascades onto every
-        // descendant, so purging both the root and its already-covered descendants would double
-        // up work (purgeFile on an already-purged row is a no-op UPDATE, but pointless).
+        // Only the roots: purging a trashed directory already cascades onto its descendants.
         Set<String> deletedDirectoryFullPaths = deleted.stream()
                 .filter(File::isDirectory)
                 .map(File::fullPath)
@@ -56,8 +53,6 @@ class EmptyTrashService implements EmptyTrashUseCase {
         try {
             filePurger.purgeRoot(root, deletedBy);
         } catch (RuntimeException e) {
-            // One bad root (a since-changed row, a failed write) must not abort
-            // every other root already queued in this empty-trash call.
             log.error("Failed to purge trash root fileId={} namespaceId={}", root.getId(), root.getNamespaceId(), e);
         }
     }

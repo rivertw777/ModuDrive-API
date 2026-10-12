@@ -18,24 +18,20 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 class PurgeExpiredTrashService implements PurgeExpiredTrashUseCase {
 
-    // ponytail: hardcoded retention, not a config value yet — bump to @Value if a real need to
-    // tune it per deployment shows up.
     private static final int TRASH_RETENTION_DAYS = 30;
 
     private final FindFilePort findFilePort;
     private final FilePurger filePurger;
 
-    // Not @Transactional here on purpose: FilePurger.purgeRoot opens its own transaction per
-    // root (see its javadoc). This sweep can span every namespace in the system — one bad root
-    // must not roll back (or block committing) every other root already purged this run.
+    // Not @Transactional: FilePurger.purgeRoot runs each root in its own transaction, so one bad
+    // root doesn't roll back the rest of the sweep.
     @Override
     public void purgeExpiredTrash() {
         LocalDateTime cutoff = LocalDateTime.now().minusDays(TRASH_RETENTION_DAYS);
         List<File> expired = findFilePort.findExpiredTrash(cutoff);
 
-        // Group by namespace, then within each namespace keep only the roots of a deleted
-        // subtree (same trick as ListTrashService/EmptyTrashService) — purging a root directory
-        // cascades onto every descendant regardless of its own age.
+        // Per namespace, only the roots: purging a directory cascades onto its descendants
+        // whatever their own age.
         expired.stream()
                 .collect(Collectors.groupingBy(File::getNamespaceId))
                 .forEach(this::purgeRootsInNamespace);
@@ -54,13 +50,9 @@ class PurgeExpiredTrashService implements PurgeExpiredTrashUseCase {
 
     private void purgeRootSkippingFailures(File root) {
         try {
-            // No caller — this is a system-triggered sweep, not a user action. The tombstone's
-            // deletedBy stays null, same as any other system/background write (see
-            // AuditingConfig#auditorAware).
+            // A system sweep: deletedBy stays null.
             filePurger.purgeRoot(root, null);
         } catch (RuntimeException e) {
-            // One bad root (a since-changed row, a failed write) must not abort the
-            // rest of the sweep — every other namespace's expired trash still needs purging.
             log.error("Failed to purge expired trash root fileId={} namespaceId={}", root.getId(), root.getNamespaceId(), e);
         }
     }

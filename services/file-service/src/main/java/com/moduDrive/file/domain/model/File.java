@@ -25,13 +25,10 @@ public class File {
     private ShareScope accessScope;
     /** Only meaningful while {@code accessScope == LINK}; null otherwise. */
     private Role linkRole;
-    /** When this file was sent to trash; null while it is not in the trash. Set alongside
-     * {@code status = TRASHED}, cleared on restore. */
+    /** Set with {@code status = TRASHED}, cleared on restore. */
     private LocalDateTime trashedAt;
-    /** When this file was purged from the trash. Set exactly once, alongside the
-     * {@code TRASHED -> DELETED} transition — never un-set. Non-null makes the row a tombstone:
-     * its blocks/versions/shares/favorites are gone but the metadata row is kept as a deletion
-     * record. Every {@link #isRemoved()} read already hides both this and a merely-trashed row. */
+    /** Set once by a purge ({@code TRASHED -> DELETED}) and never cleared: the row is then a
+     * tombstone whose blocks/versions/shares/favorites are gone. */
     private LocalDateTime deletedAt;
 
     public static File create(FileNamespaceId namespaceId,
@@ -115,10 +112,8 @@ public class File {
         this.fileSize = size;
     }
 
-    /** Sends this file to trash — recoverable via {@link #restore()} until it's purged.
-     * {@code trashedAt} is passed in, not read from the clock here, so a directory and every
-     * descendant trashed in the same cascade share one instant — {@code DirectoryCascader.purge}
-     * tells a cascade sibling from a later, unrelated file at a reused path by that equality. */
+    /** {@code trashedAt} is passed in so a directory and every descendant trashed in the same
+     * cascade share one instant — {@code DirectoryCascader.purge} relies on that equality. */
     public void softDelete(LocalDateTime trashedAt) {
         this.status = FileStatus.TRASHED;
         this.trashedAt = trashedAt;
@@ -129,8 +124,7 @@ public class File {
         this.trashedAt = null;
     }
 
-    /** True once this entry has left the live tree — trashed or purged. Every "show me what's
-     * actually there" read filters this out (see {@link FileStatus#REMOVED}). */
+    /** Trashed or purged (see {@link FileStatus#REMOVED}). */
     public boolean isRemoved() {
         return FileStatus.REMOVED.contains(status);
     }
@@ -143,8 +137,7 @@ public class File {
         this.path = path.value();
     }
 
-    /** This entry's own full path (its parent {@code path} joined with its {@code name}) — the
-     * value child entries store as their {@code path} while they live inside it. */
+    /** {@code path} joined with {@code name} — what child entries store as their {@code path}. */
     public String fullPath() {
         return "/".equals(path) ? "/" + name : path + "/" + name;
     }
@@ -165,13 +158,9 @@ public class File {
         this.deletedAt = deletedAt;
     }
 
-    /** A link is a bearer credential anyone who obtains it can use, unlike a named RESTRICTED
-     * grant — so it only ever hands out {@link Role#VIEWER} (spec 2). The role isn't a parameter
-     * precisely so no caller can express anything else: an editor link is not a state this model
-     * can reach (#318). Grants no bearer secret of its own either: {@code fileId} is already the
-     * capability for "anyone with the link" (see {@code FileAccessGuard.linkRoleFallback} /
-     * {@code PublicFileResolver}, issue #303), so this address never changes across toggling link
-     * sharing off/on. */
+    /** A link is a bearer credential, so it only ever grants {@link Role#VIEWER}; the role isn't a
+     * parameter so no caller can make an editor link. There is no separate link token: the
+     * {@code fileId} is the capability (see {@code FileAccessGuard.linkRoleFallback}). */
     public void enableLinkSharing() {
         this.accessScope = ShareScope.LINK;
         this.linkRole = Role.VIEWER;
@@ -185,10 +174,8 @@ public class File {
     public record FileId(UUID value) {}
     public record FileNamespaceId(UUID value) {}
     public record FileName(String value) {
-        /** Rejects anything that would corrupt {@link #fullPath()} (a path separator embedded in
-         * a name) or that {@code DirectoryCascader.movePath} would misread as a path segment
-         * ("." / ".."), not just for the create-directory entry point that already had this
-         * check, but for every caller — including rename, which had none (#210). */
+        /** Rejects a path separator, which would corrupt {@link #fullPath()}, and "." / "..",
+         * which a path would read as a segment. */
         public FileName {
             if (value == null || value.isBlank()
                     || value.contains("/") || value.contains("\\")
@@ -197,9 +184,8 @@ public class File {
             }
         }
 
-        /** "report.pdf" + 1 -> "report (1).pdf" — the "keep both" name on a conflict. A directory
-         * has no extension ("v1.2" -> "v1.2 (1)"), and neither does a dotfile (".env" -> ".env (1)"),
-         * so for both the number goes last. */
+        /** "report.pdf" + 1 -> "report (1).pdf", the "keep both" name on a conflict. A directory
+         * or a dotfile has no extension, so the number goes last ("v1.2 (1)", ".env (1)"). */
         public FileName numbered(int n, boolean directory) {
             int dot = value.lastIndexOf('.');
             return !directory && dot > 0

@@ -199,7 +199,7 @@ jobs:
             echo "$svc-service → ${revision[$svc]}"
           done
 
-          # services-stable gives up after 10 minutes; a slow start on demo's quarter vCPU can need more.
+          # services-stable gives up after 10 minutes; a slow start on demo's half vCPU can need more.
           service_names=$(printf '%s-service ' $SERVICES)
           for attempt in 1 2 3; do
             aws ecs wait services-stable --cluster "$PROJECT" --services $service_names && break  # word-split on purpose

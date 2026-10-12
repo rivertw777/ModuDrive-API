@@ -1,4 +1,4 @@
--- KEYS[1] = login-attempts:{email}
+-- KEYS[1] = login-attempts:<email>, or login-attempts:<email>:<sha256(device)> for a known device
 -- ARGV[1] = window in ms
 -- Counts one attempt and returns the running total. The window starts at the first attempt and is
 -- never extended, so a locked account unlocks when that window ends however often it is retried.

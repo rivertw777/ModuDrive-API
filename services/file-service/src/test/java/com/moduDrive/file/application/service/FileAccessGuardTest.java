@@ -32,7 +32,6 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.lenient;
 
 @ExtendWith(MockitoExtension.class)
@@ -46,13 +45,10 @@ class FileAccessGuardTest {
     private final UUID callerId = UUID.randomUUID();
     private final UUID namespaceId = UUID.randomUUID();
 
-    /** A file two directories deep: /shared/sub/report.pdf */
     /**
-     * The guard asks for the whole path at once — every folder above the file in one call, every
-     * grant on them in another. These answers rebuild both from the per-slot / per-file stubs the
-     * tests below set up, so each test still reads as "this folder exists, this grant exists" and
-     * the priority rules are what's under test. The batch queries themselves are tested on Postgres
-     * (FilePersistenceAdapterTest).
+     * The guard asks for all ancestor folders in one call and all their grants in another. These answers rebuild
+     * both from the per-slot / per-file stubs of each test, so the priority rules are what is under test. The batch
+     * queries themselves are tested on Postgres (FilePersistenceAdapterTest).
      */
     @BeforeEach
     void answerBatchLookupsFromPerItemStubs() {
@@ -249,10 +245,8 @@ class FileAccessGuardTest {
         @Test
         @DisplayName("파일 자신에 직접 grant가 있으면, 조상이 더 관대해도 직접 grant가 이긴다")
         void aDirectGrantOverridesAMoreGenerousInheritedOne() {
-            // lenient(): these ancestor stubs must never actually be consulted — the direct grant
-            // short-circuits before ancestorDirectories() is even called. A more generous ancestor
-            // (EDITOR) is wired in specifically so this test would fail on the old
-            // fold-all-ancestors-together behavior (which would have let RENAME through).
+            // lenient(): never consulted, the direct grant short-circuits before ancestorDirectories(). The more generous
+            // EDITOR ancestor would let RENAME through if it were.
             lenient().when(findFilePort.findActiveByNamespaceIdAndPathAndName(new NamespaceId(namespaceId), "/", "shared"))
                     .thenReturn(Optional.of(directory(sharedDirId, "/", "shared")));
             lenient().when(findFilePort.findActiveByNamespaceIdAndPathAndName(new NamespaceId(namespaceId), "/shared", "sub"))
@@ -276,17 +270,13 @@ class FileAccessGuardTest {
             ancestorsExist();
             given(findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(fileId), callerId))
                     .willReturn(Optional.empty());
-            // Never actually consulted — foldAncestors returns on the nearest hit (subDirId)
-            // before reaching this farther, more generous one. Wired in specifically so this test
-            // would fail on the old most-generous-wins behavior.
+            // Never consulted: the nearest hit (subDirId) wins before reaching this farther, more generous one.
             lenient().when(findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(sharedDirId), callerId))
                     .thenReturn(Optional.of(grant(sharedDirId, callerId, Role.EDITOR)));
             given(findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(subDirId), callerId))
                     .willReturn(Optional.of(grant(subDirId, callerId, Role.VIEWER)));
 
-            // Pins the resolved role at exactly VIEWER (the nearer ancestor's), not just "not
-            // EDITOR" — READ must still pass or a foldAncestors that returned null would also
-            // make the RENAME assertion below pass vacuously.
+            // Pin the role at exactly VIEWER (the nearer ancestor's): READ must pass, or a null role would make the RENAME assertion pass vacuously.
             assertThatCode(() -> fileAccessGuard.requirePermission(f, callerId, Permission.READ))
                     .doesNotThrowAnyException();
             Throwable thrown = catchThrowable(() -> fileAccessGuard.requirePermission(f, callerId, Permission.RENAME));
@@ -347,9 +337,7 @@ class FileAccessGuardTest {
                     .willReturn(Optional.of(directory(subDirId, "/shared", "sub")));
             given(findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(fileId), callerId))
                     .willReturn(Optional.empty());
-            // subDir's own named grant is nearer than the LINK-scoped grandparent, so foldAncestors
-            // returns on this hit without ever consulting sharedDir — RENAME must pass. A LINK
-            // fallback capped at VIEWER would wrongly deny this.
+            // subDir's own named grant is nearer than the LINK-scoped grandparent, so sharedDir is never consulted and RENAME must pass.
             given(findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(subDirId), callerId))
                     .willReturn(Optional.of(grant(subDirId, callerId, Role.EDITOR)));
 
@@ -360,8 +348,7 @@ class FileAccessGuardTest {
         @Test
         @DisplayName("휴지통에 들어간 하위 파일은 조상 grant가 있어도 접근 거부")
         void deniesATrashedDescendantEvenWithAnInheritedGrant() {
-            // isRemoved() is checked before any grant lookup: a still-live ancestor share must not
-            // keep a soft-deleted descendant reachable, so access() is never consulted here.
+            // isRemoved() is checked before any grant lookup, so a live ancestor share must not keep a soft-deleted descendant reachable.
             File trashed = File.withId(new FileId(fileId), new FileNamespaceId(namespaceId),
                     new FileName("report.pdf"), new FilePath("/shared/sub"), new FileOwnerId(ownerId),
                     null, null, FileStatus.TRASHED, new FileIsDirectory(false));
@@ -416,8 +403,7 @@ class FileAccessGuardTest {
         // 무관하게 grandparent보다 항상 이긴다 (access()의 direct-wins와 동일한 패턴).
         private final File directory = directory(directoryId, "/grandparent", "directory");
 
-        // lenient(): unused in directorysOwnGrantWinsOverAMoreGenerousGrandparentGrant, where
-        // directory's own grant short-circuits before ancestorDirectories() is even called.
+        // lenient(): unused where directory's own grant short-circuits before ancestorDirectories().
         private void grandparentExists() {
             lenient().when(findFilePort.findActiveByNamespaceIdAndPathAndName(new NamespaceId(namespaceId), "/", "grandparent"))
                     .thenReturn(Optional.of(directory(grandparentId, "/", "grandparent")));
@@ -533,8 +519,7 @@ class FileAccessGuardTest {
                     .willReturn(Optional.of(directory(farDirId, "/", "far")));
             given(findFilePort.findActiveByNamespaceIdAndPathAndName(new NamespaceId(namespaceId), "/far", "near"))
                     .willReturn(Optional.of(directory(nearDirId, "/far", "near")));
-            // near is checked first and matches, so far's own grant is never even queried —
-            // access() takes on the first hit walking child-to-root.
+            // near matches first, so far's grant is never queried: access() stops at the first hit walking child-to-root.
             FileShare nearGrant = grant(nearDirId, callerId, Role.VIEWER);
             given(findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(nearFileId), callerId))
                     .willReturn(Optional.empty());
@@ -565,10 +550,8 @@ class FileAccessGuardTest {
         @Test
         @DisplayName("포트가 아직 claim 안 된 pending 게스트 share를 돌려줘도 그대로 반환한다")
         void returnsAStillPendingGuestShareAsIs() {
-            // access() trusts whatever the port's query gives it — it doesn't re-check
-            // claim state. A real repository query filters by sharedWithUserId=callerId, which a
-            // pending row (sharedWithUserId==null) would never match, but access() itself has
-            // no such guard, so a stubbed port here documents that it just passes the row through.
+            // access() passes through whatever the port returns and does not re-check claim state; a real query filters by
+            // sharedWithUserId=callerId, so a pending row would never match.
             FileShare pending = FileShare.createPending(new FileShareFileId(fileId),
                     new FileShareOwnerId(ownerId), new FileShareGranteeEmail("guest@example.com"), new FileShareRole(Role.VIEWER));
             given(findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(fileId), callerId))

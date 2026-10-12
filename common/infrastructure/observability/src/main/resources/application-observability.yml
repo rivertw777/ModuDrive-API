@@ -1,6 +1,6 @@
 management:
-  # 액추에이터를 애플리케이션 포트와 분리 — Spring Security 체인이 걸린 gateway에서도 인증 없이
-  # 내부 네트워크(prometheus 컨테이너)에서만 스크레이프 가능해진다. 이 포트는 호스트에 퍼블리시하지 않는다.
+  # Actuator on its own port, outside the gateway's Spring Security chain, so Prometheus can scrape it
+  # without auth. Never publish this port to the host.
   server:
     port: 9464
   opentelemetry:
@@ -10,8 +10,8 @@ management:
           endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://otel-collector:4318}/v1/traces
   tracing:
     sampling:
-      # head 단계는 전량 export (샘플링은 otel-collector의 tail_sampling이 결정).
-      # 실제 저장 보존율을 낮추려면 .docker/observability/otel-collector-config.yaml 튜닝.
+      # Export everything; the otel-collector's tail_sampling decides what is kept
+      # (.docker/observability/otel-collector-config.yaml).
       probability: 1.0
   endpoints:
     web:
@@ -19,11 +19,10 @@ management:
         include: health,prometheus
   metrics:
     distribution:
-      # Request timers as histograms, so latency can be alerted on (the "느린 요청" rule reads the 1s
-      # bucket) and each bucket carries an exemplar — the trace_id of a request that landed in it, which
-      # Grafana links to Tempo. A few fixed buckets rather than percentiles-histogram's ~70: series count
-      # is what Prometheus (and AMP, billed per sample) pays for. 1s matches the collector's slow-request
-      # policy, so the exemplars in the slow buckets point at traces that were kept.
+      # Request histograms for latency alerts (the slow-request rule reads the 1s bucket) and exemplars
+      # linking to Tempo. A few fixed buckets instead of percentiles-histogram's ~70 to keep series count
+      # down (AMP bills per sample). 1s must match the collector's latency policy so slow-bucket exemplars
+      # point at kept traces.
       slo:
         http.server.requests: 100ms, 300ms, 1s, 3s, 10s
         spring.cloud.gateway.requests: 100ms, 300ms, 1s, 3s, 10s
@@ -31,5 +30,5 @@ management:
 logging:
   structured:
     format:
-      # 콘솔 로그를 한 줄 JSON으로 — traceId/spanId가 필드가 돼서 Loki·CloudWatch Logs Insights에서 그대로 검색된다.
+      # One-line JSON console logs, so traceId/spanId are searchable fields in Loki and CloudWatch Logs Insights.
       console: ecs

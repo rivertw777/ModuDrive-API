@@ -24,18 +24,16 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
- * Lays out already-authorized roots as zip entries — shared by the signed-in and the public zip
- * routes so the two can't disagree about what a folder zip contains. Access is checked on the
- * roots only: a grant (or LINK scope, or guest invite) on a folder reaches everything under it and
- * no descendant grant can take DOWNLOAD away (every role has it), so re-checking each descendant
- * would only cost an ancestor walk per file. The zip size caps live here too, so both the prepare
- * and the download step (which re-resolves) enforce them.
+ * Lays out already-authorized roots as zip entries, for both the signed-in and the public zip
+ * routes. Access is checked on the roots only: access to a folder reaches everything under it and
+ * every role has DOWNLOAD. The size caps live here so both the prepare and the download step
+ * (which re-resolves) enforce them.
  */
 @Component
 @RequiredArgsConstructor
 class ArchiveEntryCollector {
 
-    // ponytail: fixed caps; make configurable if a real need to tune them shows up.
+    // Must match FileExceptionCase.ARCHIVE_TOO_LARGE's message.
     static final int MAX_FILES = 10_000;
     static final long MAX_BYTES = 20L * 1024 * 1024 * 1024;
 

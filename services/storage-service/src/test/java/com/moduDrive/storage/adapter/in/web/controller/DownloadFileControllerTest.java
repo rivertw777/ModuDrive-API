@@ -160,11 +160,10 @@ class DownloadFileControllerTest {
         }
 
         @Test
-        @DisplayName("스트림 토큰 파라미터는 더 이상 없다 — 신원은 게이트웨이가 넣은 X_USER_ID뿐")
+        @DisplayName("게이트웨이가 넣은 X_USER_ID가 없으면 거절한다")
         void requiresTheGatewayResolvedUser() throws Exception {
             mockMvc.perform(get("/api/v1/storage/view/" + UUID.randomUUID())
-                            .param("fileName", "clip.mp4")
-                            .param("streamToken", "tok-1"))
+                            .param("fileName", "clip.mp4"))
                     .andExpect(status().isBadRequest());
         }
 

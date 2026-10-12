@@ -34,8 +34,7 @@ class ListTrashService implements ListTrashUseCase {
         List<File> deleted = favoriteEnricher.withFavorites(command.getUserId().value(),
                 findFilePort.findTrashedNotPurged(new NamespaceId(namespace.getId())));
 
-        // Deleting a directory cascades DELETED onto every descendant, so trash would otherwise
-        // list each nested file/folder too — keep only the roots of each deleted subtree.
+        // Trashing a directory trashes its descendants too; list only the roots.
         Set<String> deletedDirectoryFullPaths = deleted.stream()
                 .filter(File::isDirectory)
                 .map(File::fullPath)

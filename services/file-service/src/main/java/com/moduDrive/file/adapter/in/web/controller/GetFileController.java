@@ -29,10 +29,7 @@ class GetFileController {
             @RequestHeader("X_USER_ID") UUID userId,
             @PathVariable UUID fileId) {
         FileView view = getFileUseCase.getFile(new GetFileCommand(fileId, userId));
-        // Folders are kept out of "recent" (Google-Drive-style — recent is for documents you
-        // opened, not folders you browsed). RecordFileAccessUseCase never throws (see
-        // RecordFileAccessService) — a tracking failure must never turn an already-successful
-        // read into a 500.
+        // Folders stay out of "recent". recordAccess never throws.
         if (!view.file().isDirectory()) {
             recordFileAccessUseCase.recordAccess(new RecordFileAccessCommand(userId, fileId));
         }

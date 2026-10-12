@@ -9,8 +9,7 @@ from email.utils import getaddresses
 SES_STORE = "http://localstack:4566/_aws/ses"
 MAILPIT = ("mailpit", 1025)
 
-# ponytail: in-memory only, so a restart of this container alone replays what LocalStack still holds
-# (duplicates in Mailpit). Both lose everything on restart anyway, so they rarely drift apart.
+# In memory only: restarting this container alone replays what LocalStack still holds (duplicates in Mailpit).
 seen = set()
 
 

@@ -32,12 +32,11 @@ interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID>, J
             @Param("namespaceId") UUID namespaceId, @Param("path") String path, @Param("name") String name,
             @Param("statuses") Collection<FileStatus> statuses);
 
-    // Named to avoid Spring Data's "StartingWith" derived-query keyword — losing the @Query here
-    // would silently fall back to an unescaped `like 'prefix%'` and reintroduce the prefix-collision
-    // bug (e.g. "/foo" matching "/foo2") this hand-written JPQL exists to prevent.
-    // :escapedPrefix has LIKE metacharacters (%, _, \) escaped by the caller; :prefix stays raw for
-    // the exact-match branch. `||`, not concat(): concat() is stable, so the pattern isn't a constant at
-    // plan time and the prefix index (V11) goes unused — every subtree query below would scan the drive.
+    // Not named "StartingWith": without this @Query, Spring Data would derive an unescaped
+    // `like 'prefix%'`, and "/foo" would match "/foo2". :escapedPrefix has LIKE metacharacters
+    // escaped by the caller; :prefix stays raw for the exact match. `||`, not concat(): concat() is
+    // stable, so the pattern wouldn't be a plan-time constant and the prefix index (V11) would go
+    // unused in every subtree query below.
     @Query("select f from FileJpaEntity f where f.namespaceId = :namespaceId " +
             "and (f.path = :prefix or f.path like (:escapedPrefix || '/%') escape '\\')")
     List<FileJpaEntity> findSubtreeByNamespaceIdAndPathPrefix(
@@ -104,23 +103,17 @@ interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID>, J
     @Query("select f from FileJpaEntity f where f.id = :id")
     Optional<FileJpaEntity> lockById(@Param("id") UUID id);
 
-    // Trash view: status alone is enough now — TRASHED never has deletedAt set (purge is the only
-    // thing that sets it, and purge moves status to DELETED in the same update).
     List<FileJpaEntity> findByNamespaceIdAndStatus(UUID namespaceId, FileStatus status);
 
-    // Retention sweep: in-trash long enough. Same "TRASHED never has deletedAt" invariant as above.
     List<FileJpaEntity> findByStatusAndTrashedAtBefore(FileStatus status, LocalDateTime cutoff);
 
     // Of these, the rows a purge may still tombstone — locked, so they stay TRASHED until it commits.
     @Query(value = "select id from file where id = any(:ids) and status = 'TRASHED' for update", nativeQuery = true)
     List<UUID> lockTrashedIds(@Param("ids") UUID[] ids);
 
-    // Tombstone stamp — BaseTimeEntity's deletedAt/isDeleted, but via a plain UPDATE so no
-    // @LastModifiedDate bump (see FilePersistenceAdapter.purgeFiles). flush first so nothing pending
-    // is written after it; clear after so a stale managed FileJpaEntity isn't read back with the old
-    // value. The WHERE clause is the purge precondition (only a currently-trashed row is
-    // purge-eligible) and doubles as the idempotency guard — a second concurrent call no longer
-    // matches once the first commits.
+    // Tombstone stamp: BaseTimeEntity's deletedAt/isDeleted via a plain UPDATE, so no
+    // @LastModifiedDate bump. Flushed before and cleared after, so no stale entity is written or
+    // read back. `status = 'TRASHED'` also makes a second purge a no-op.
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     // An array, not an IN list: a folder of 100k files would be 100k bind parameters (Postgres caps at 65,535).
     @Query(value = "update file set deleted_at = :now, is_deleted = true, status = 'DELETED', deleted_by = :deletedBy "

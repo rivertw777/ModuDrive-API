@@ -72,32 +72,6 @@ class RedisRepositoryTest {
     }
 
     @Nested
-    @DisplayName("키 존재 여부를 확인할 때")
-    class WhenCheckingKeyExistence {
-
-        @Test
-        void returnsTrueWhenTemplateReportsPresent() {
-            given(redisTemplate.hasKey(KEY)).willReturn(true);
-
-            assertThat(redisRepository.hasKey(KEY)).isTrue();
-        }
-
-        @Test
-        void returnsFalseWhenTemplateReportsAbsent() {
-            given(redisTemplate.hasKey(KEY)).willReturn(false);
-
-            assertThat(redisRepository.hasKey(KEY)).isFalse();
-        }
-
-        @Test
-        void returnsFalseWhenTemplateReturnsNull() {
-            given(redisTemplate.hasKey(KEY)).willReturn(null);
-
-            assertThat(redisRepository.hasKey(KEY)).isFalse();
-        }
-    }
-
-    @Nested
     @DisplayName("스크립트를 실행할 때")
     class WhenExecutingScript {
 

@@ -13,20 +13,17 @@ public record FileShareResponse(
         Role role,
         String sharedWithEmail,
         String sharedWithName,
-        /** Non-null when this grant comes from a directory above the file being viewed, not from
-         * a share on the file itself — the web shows it read-only and points the owner at that
-         * directory's own sharing dialog to change it. */
+        /** The directory above the file this grant comes from; null for a direct share. */
         InheritedFrom inheritedFrom
 ) {
     public record InheritedFrom(UUID fileId, String name) {}
 
-    /** Create/update-role responses: the caller already knows who they just acted on, so
-     * enrichment is skipped rather than spending an extra member-service round trip. */
+    /** Create/update-role responses, without the grantee's display info. */
     public static FileShareResponse from(FileShare fileShare) {
         return from(fileShare, null, null);
     }
 
-    /** List responses enrich each row with the accessor's display info (see #156). */
+    /** List responses, with the grantee's display info. */
     public static FileShareResponse from(FileShare fileShare, String sharedWithEmail, String sharedWithName) {
         return new FileShareResponse(
                 fileShare.getId(), fileShare.getFileId(),

@@ -2,9 +2,8 @@ package com.moduDrive.common.infrastructure.messaging;
 
 import java.time.Duration;
 
-/** A consumer that can't tell yet whether its work took effect — a call that timed out may still have
- * gone through. Redeliver the message no sooner than {@link #delay()}, by which time the answer should
- * be known, instead of on the usual short backoff that would just repeat the work. */
+/** Thrown when a consumer can't tell yet whether its work took effect (a timed-out call may still have
+ * gone through). The message is redelivered after {@link #delay()} instead of the short backoff. */
 public class RetryLaterException extends RuntimeException {
 
     private final Duration delay;

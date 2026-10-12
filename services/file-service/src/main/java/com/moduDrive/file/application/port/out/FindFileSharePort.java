@@ -21,25 +21,18 @@ public interface FindFileSharePort {
      * when resolving inherited access, or a folder's children when listing it. */
     List<FileShare> findBySharedWithUserIdAndFileIdIn(UUID sharedWithUserId, Collection<FileId> fileIds);
 
-    /** The counterpart of {@link #findByFileIdAndSharedWithUserId} for a guest who hasn't
-     * registered yet, whose only identity on the row is the invited email — see
-     * {@link FileShare#createPending}. Needed wherever a grantee has to be followed across files
-     * (revoking their ancestor grants too, see {@code RevokeFileShareService}), which the
-     * existing {@code existsByFileIdAndGranteeEmail} can't answer: that one only reports
-     * presence, not the row id to act on. */
+    /** {@link #findByFileIdAndSharedWithUserId} for a guest share, identified by its email. */
     Optional<FileShare> findByFileIdAndGranteeEmail(FileId fileId, String granteeEmail);
 
-    /** Resolves a pending guest share's own per-invite token (see {@link FileShare#createPending}) —
-     * independent of link sharing (issue #303), which is judged purely by scope, not a token.
-     * No expiry: the invite lasts until the share is revoked. */
+    /** A guest share by its invite token (see {@link FileShare#createPending}). No expiry: the
+     * invite lasts until the share is revoked. */
     Optional<FileShare> findByToken(UUID token);
 
     Optional<FileShare> findByShareId(FileShareId shareId);
 
     List<FileShare> findByFileId(FileId fileId);
 
-    /** Whether any of these files holds an active share — used to check a directory's whole
-     * subtree at once (see {@code ListFileSharesService}) rather than one query per descendant. */
+    /** Whether any of these files holds a share, in one query. */
     boolean existsByFileIdIn(List<FileId> fileIds);
 
     List<FileShare> findBySharedWithUserId(UUID sharedWithUserId);

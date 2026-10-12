@@ -43,13 +43,14 @@ out/
 !.docker/.env.example
 
 .temp
+__pycache__/
 ### Terraform ###
 .infra/.terraform/
 *.tfstate
 *.tfstate.*
 *.tfvars
 !*.tfvars.example
-# Sizing only, no secrets — committed: envs/{demo,staging,prod}.tfvars.
+# Sizing only, no secrets — committed: envs/{demo,prod}.tfvars.
 !.infra/envs/*.tfvars
 .infra/backend.hcl
 .infra/envs/*.backend.hcl

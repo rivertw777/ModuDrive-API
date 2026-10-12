@@ -11,10 +11,9 @@ import java.util.UUID;
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class Notification {
 
-    /** Null until the row is persisted — assigned by the database, like every other aggregate here. */
+    /** Null until the row is persisted. */
     private final UUID id;
-    /** The producing event's id, and the idempotency key: SQS is at-least-once, so the
-     * same share can arrive more than once and must still produce exactly one notification. */
+    /** The producing event's id; unique, so a redelivered share records one notification. */
     private final UUID eventId;
     private final UUID recipientId;
     private final UUID fileId;
@@ -27,7 +26,7 @@ public class Notification {
     private final String sharerEmail;
     /** Null while unread. */
     private final LocalDateTime readAt;
-    /** Null until the row is persisted — filled in by JPA auditing. */
+    /** Null until the row is persisted (JPA auditing). */
     private final LocalDateTime createdAt;
 
     public static Notification create(NotificationEventId eventId,
@@ -58,8 +57,7 @@ public class Notification {
                 readAt, createdAt);
     }
 
-    /** Returns a read copy; already-read notifications keep their original {@code readAt} so a
-     * repeated mark-read call never rewrites when the user actually read it. */
+    /** An already-read notification keeps its original {@code readAt}. */
     public Notification markRead(LocalDateTime readAt) {
         if (isRead()) {
             return this;
@@ -78,7 +76,6 @@ public class Notification {
     public record NotificationFileName(String value) {}
     public record NotificationRole(String value) {}
     public record NotificationDirectory(boolean value) {}
-    /** Nullable — see the {@code sharerName}/{@code sharerEmail} fields. */
     public record NotificationSharerName(String value) {}
     public record NotificationSharerEmail(String value) {}
 }

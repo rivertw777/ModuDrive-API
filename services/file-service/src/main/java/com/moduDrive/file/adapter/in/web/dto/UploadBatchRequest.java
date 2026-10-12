@@ -20,9 +20,8 @@ public record UploadBatchRequest(
         Map<String, @NotNull ConflictResolution> resolutions
 ) {
     public record Item(
-            /** Relative to {@code path}, "/"-separated, e.g. "사진/2024/a.jpg". Capped at the
-             * column length up front: it also bounds how deep one entry can nest, so a single
-             * "a/a/a/…" item can't make parsing blow up quadratically. */
+            /** Relative to {@code path}, "/"-separated, e.g. "사진/2024/a.jpg". The cap also bounds
+             * nesting depth, so one "a/a/a/…" item can't make parsing quadratic. */
             @NotBlank @Size(max = 255) String relativePath,
             @NotNull Boolean directory,
             /** Required for a file (checked by the service), ignored for a folder. */

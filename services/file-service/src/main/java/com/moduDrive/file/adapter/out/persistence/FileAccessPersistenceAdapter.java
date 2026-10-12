@@ -48,10 +48,8 @@ class FileAccessPersistenceAdapter implements SaveFileAccessPort, FindFileAccess
                 })
                 .orElseGet(() -> new FileAccessJpaEntity(
                         fileAccess.getUserId(), fileAccess.getFileId(), fileAccess.getAccessedAt()));
-        // saveAndFlush (not save): forces the uk_file_access_user_file violation from a
-        // concurrent insert-race to surface here, synchronously, instead of at commit time
-        // after the caller (RecordFileAccessService) has already returned — that's what lets
-        // its try/catch actually catch it instead of the exception leaking into the response.
+        // saveAndFlush: a concurrent insert's uk_file_access_user_file violation surfaces here,
+        // inside RecordFileAccessService's try/catch, not at commit time.
         fileAccessRepository.saveAndFlush(entity);
     }
 

@@ -28,10 +28,7 @@ class GetLatestFileVersionsService implements GetLatestFileVersionsUseCase {
     public List<FileVersion> getLatestFileVersions(GetLatestFileVersionsCommand command) {
         File file = findFilePort.findById(command.getFileId())
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_NOT_FOUND));
-        // This use case has exactly one caller: GetLatestFileVersionsController, the internal
-        // route storage-service hits to resolve what to stream for an actual download — so the
-        // permission checked here is DOWNLOAD, not READ (that's GetFileRevisionsService, the
-        // tenant-facing revision-history listing).
+        // DOWNLOAD, not READ: storage-service calls this to stream the file.
         fileAccessGuard.requirePermission(file, command.getCallerId(), Permission.DOWNLOAD);
 
         return findFileVersionsPort.findByFileIdOrderByCreatedAtDesc(command.getFileId(), command.getLimit());

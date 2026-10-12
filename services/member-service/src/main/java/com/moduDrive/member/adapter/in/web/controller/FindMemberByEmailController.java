@@ -21,9 +21,8 @@ class FindMemberByEmailController {
     private final FindMemberByEmailUseCase findMemberByEmailUseCase;
     private final MemberResponseMapper memberResponseMapper;
 
-    /** {@code email} is required, so a missing one is already a 400. An email that is present but
-     * malformed or unknown falls through to MEMBER_NOT_FOUND from the lookup — the same 400 answer,
-     * without a second validation path to keep in sync. */
+    /** A missing {@code email} is a 400. A malformed or unknown one is MEMBER_NOT_FOUND, also a 400,
+     * so there's no separate format validation. */
     @GetMapping("/api/v1/member/find-by-email")
     public ApiResponse<MemberResponse> findMemberByEmail(@RequestParam String email) {
         val command = new FindMemberByEmailCommand(new MemberEmail(email));

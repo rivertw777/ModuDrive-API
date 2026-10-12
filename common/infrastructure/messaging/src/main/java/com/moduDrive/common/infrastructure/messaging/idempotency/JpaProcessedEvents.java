@@ -10,8 +10,7 @@ import java.util.concurrent.TimeUnit;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /** For a consumer with its own database. The record is written in the caller's transaction, so it
- * commits with the business change and disappears with it on a rollback — a failed message is
- * processed again, a succeeded one never is. */
+ * commits or rolls back with the business change. */
 @Slf4j
 class JpaProcessedEvents implements ProcessedEvents {
 
@@ -24,9 +23,7 @@ class JpaProcessedEvents implements ProcessedEvents {
         this.transactionTemplate = transactionTemplate;
     }
 
-    /** The insert in {@link #markProcessed} is the real guard — it runs in the caller's transaction
-     * and {@code uk_processed_event} rejects the second one. This is the cheap pre-check that keeps a
-     * redelivery of something long since handled from doing the work again. */
+    /** Cheap pre-check only. The real guard is {@code uk_processed_event} on the insert in {@link #markProcessed}. */
     @Override
     public boolean claim(String queue, String deduplicationId) {
         return entityManager.createQuery(
@@ -38,8 +35,7 @@ class JpaProcessedEvents implements ProcessedEvents {
                 .getResultList().isEmpty();
     }
 
-    /** Nothing to give back: the record is written in the caller's transaction, which rolls back with
-     * the work that failed. */
+    /** No-op: the record rolls back with the caller's failed transaction. */
     @Override
     public void release(String queue, String deduplicationId) {
     }

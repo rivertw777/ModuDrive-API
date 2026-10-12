@@ -14,23 +14,16 @@ public class FileShare {
     private final UUID id;
     private final UUID fileId;
     private final UUID ownerId;
-    /** Null for a pending guest share (see {@link #createPending}) — there is no member to point
-     * at yet, only an invited email. Filled in later by {@link #claim} once that email signs up. */
+    /** Null for a pending guest share (see {@link #createPending}) until {@link #claim}. */
     private UUID sharedWithUserId;
     private Role role;
-    /** The per-invite capability token, minted per guest so each can be revoked independently —
-     * by removing the whole row (see {@code RevokeFileShareService}), never just this field; link
-     * sharing (a separate, independent setting — issue #303) never touches it either. Kept alive
-     * after {@link #claim} so the emailed link still resolves once they sign up. Null for a share
-     * created directly for an existing member, and for any row read back through a {@code withId}
-     * overload other than the persistence mapper's. */
+    /** Per-invite capability token of a guest share, revoked only by deleting the row. Kept after
+     * {@link #claim} so the emailed link still resolves. Null for a share made directly for a
+     * member. */
     private UUID token;
-    /** Non-null only while a guest share is still unclaimed — the invited address, kept so the
-     * owner's share list can display it without a member-service lookup. Cleared by
-     * {@link #claim} (the row is a real member grant from then on) and null for a direct member
-     * share. */
+    /** The invited address, only while a guest share is unclaimed; cleared by {@link #claim}. */
     private String granteeEmail;
-    /** Null until the row is persisted — filled in by JPA auditing. "Shared on" date. */
+    /** "Shared on" date, set by JPA auditing; null until persisted. */
     private LocalDateTime createdAt;
 
     public static FileShare create(FileShareFileId fileId,
@@ -41,10 +34,8 @@ public class FileShare {
                 null, null, null);
     }
 
-    /** A restricted share for an email nobody has registered yet. Kept as {@code RESTRICTED},
-     * unlike the old fallback that reused the file's "anyone with the link" mechanism: this
-     * grantee gets their own {@code token}, so nobody else who obtains it gets in, and revoking
-     * this one invite never touches anyone else's access. */
+    /** A share for an email nobody has registered yet, with its own {@code token}, so revoking
+     * it touches no other grant. */
     public static FileShare createPending(FileShareFileId fileId,
                                           FileShareOwnerId ownerId,
                                           FileShareGranteeEmail granteeEmail,
@@ -74,9 +65,7 @@ public class FileShare {
                 null, null, createdAt);
     }
 
-    /** Same as {@link #withId(FileShareId, FileShareFileId, FileShareOwnerId,
-     * FileShareSharedWithUserId, FileShareRole)}, plus the pending-guest-share columns — used only
-     * by the persistence mapper, which is the one caller that ever reads a guest row back out. */
+    /** Every column, including a guest share's — what the persistence mapper reads back. */
     public static FileShare withId(FileShareId id,
                             FileShareFileId fileId,
                             FileShareOwnerId ownerId,
@@ -93,10 +82,9 @@ public class FileShare {
         this.role = role.value();
     }
 
-    /** Links a pending guest share to the member who just signed up with its {@code granteeEmail}.
-     * Clears {@code granteeEmail} (there is a real member behind it now) but keeps {@code token}
-     * so the {@code /files/{fileId}?key=} link the guest was emailed keeps working. "Still
-     * unclaimed" is therefore {@code sharedWithUserId == null}. */
+    /** Links a pending guest share to the member who signed up with its email. Keeps
+     * {@code token} so the emailed {@code /files/{fileId}?key=} link keeps working; "still
+     * unclaimed" is {@code sharedWithUserId == null}. */
     public void claim(UUID memberId) {
         this.sharedWithUserId = memberId;
         this.granteeEmail = null;

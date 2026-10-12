@@ -3,8 +3,8 @@
 #   - `service` is the container name (otel-collector.yaml) rather than the scrape host (prometheus.yml)
 #   - hints point at CloudWatch Logs and X-Ray instead of docker logs, Loki and Tempo
 #   - a task that's gone is no `up` series at all rather than up = 0, hence ServiceNoTasks
-#   - the threshold sits inside the ratio's parentheses: `and` binds looser than `>`, so `A and B > x`
-#     would compare B (the request count), not the ratio
+# The threshold sits inside the ratio's parentheses (both sides): `and` binds looser than `>`, so
+# `A and B > x` would compare B (the request count), not the ratio.
 # Alert names stay ASCII (they become the SNS subject); `title` is what the message shows.
 # Rendered by Terraform (templatefile): $${...} is Terraform's, {{ ... }} the alert template's.
 groups:

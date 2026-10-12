@@ -55,8 +55,6 @@ public interface FindFilePort {
 
     List<File> findByNamespaceId(NamespaceId namespaceId);
 
-    /** Every not-yet-purged trashed file across every namespace that was trashed before
-     * {@code cutoff}. Used by the retention sweep; unlike the rest of this port, deliberately
-     * not scoped to one namespace. */
+    /** Every TRASHED file, across all namespaces, trashed before {@code cutoff}. */
     List<File> findExpiredTrash(LocalDateTime cutoff);
 }

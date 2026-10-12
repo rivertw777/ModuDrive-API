@@ -1,8 +1,7 @@
-# Shared by every SQS service (member/file produce via the outbox; file/mail/notification consume).
-# Connection comes from the environment: locally SPRING_CLOUD_AWS_SQS_ENDPOINT points at LocalStack with
-# dummy keys; on AWS both are unset, so the SDK's default chain (ECS task role, AWS_REGION) applies.
-# Queues, DLQs and retry counts (redrive policy) belong to the infrastructure, not the app:
-# .docker/localstack/init-aws.sh locally, Terraform on AWS.
+# Shared by every SQS service (member/file/auth produce via the outbox; file/mail/notification/storage consume).
+# Locally SPRING_CLOUD_AWS_SQS_ENDPOINT points at LocalStack with dummy keys; on AWS it is unset and the SDK's
+# default chain (ECS task role, AWS_REGION) applies. Queues, DLQs and redrive policies are defined in
+# .docker/localstack/init-aws.sh locally and Terraform on AWS.
 spring:
   cloud:
     aws:

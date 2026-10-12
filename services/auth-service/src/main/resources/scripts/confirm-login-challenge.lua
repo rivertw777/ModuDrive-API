@@ -1,9 +1,9 @@
 -- KEYS[1] = login-challenge:{sha256(id)}
 -- ARGV[1] = the code the user typed, ARGV[2] = wrong codes allowed before the code ends
--- Returns {memberId, roles, email} and ends the challenge on a match, {'mismatch'} on a wrong code,
--- (a guess before any code was sent counts as wrong), {'exhausted', email} once the wrong codes are used up (by this
--- guess or an earlier one — the challenge stays, so a resend is enough), nil when there's no challenge
--- (expired). Compare and count in one step, so guesses sent together can't slip past the limit.
+-- Returns {memberId, roles, email} and ends the challenge on a match; {'mismatch'} on a wrong code
+-- (a guess before any code was sent counts as wrong); {'exhausted', email} once the wrong guesses are
+-- used up (the challenge stays, so a resend is enough); nil when there's no challenge.
+-- Compare and count run in one script, so concurrent guesses can't slip past the limit.
 local fields = redis.call('HMGET', KEYS[1], 'memberId', 'roles', 'email', 'code', 'attempts')
 if not fields[1] then
   return nil

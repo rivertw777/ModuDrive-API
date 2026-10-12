@@ -103,10 +103,8 @@ class UpdateFileScopeServiceTest {
             assertThat(result.getLinkRole()).isNull();
         }
 
-        // Email invites (FileShare rows) are never touched by a scope change — link sharing and
-        // named invites are independent settings (issue #303). This service doesn't even depend
-        // on a FileShare port anymore, so there is no way for it to reach an invite row at all;
-        // the guarantee is structural, not something a mock interaction here could regress.
+        // Email invites (FileShare rows) are never touched by a scope change (issue #303). The service has no FileShare
+        // port, so the guarantee is structural and no mock interaction could regress it.
     }
 
     @Nested
@@ -149,16 +147,13 @@ class UpdateFileScopeServiceTest {
             assertThat(descendantWithOwnLink.getAccessScope()).isEqualTo(ShareScope.RESTRICTED);
             assertThat(descendantWithOwnLink.getLinkRole()).isNull();
             then(saveFilePort).should().saveFile(descendantWithOwnLink);
-            // Never had a scope of its own to clear — restricting `a` already cuts off its only
-            // (inherited) access path; nothing here needs to write to it.
+            // No scope of its own to clear; restricting `a` already cuts its only (inherited) access path.
             then(saveFilePort).should(never()).saveFile(alreadyRestrictedDescendant);
         }
 
         @Test
         void doesNotSweepWhenTheDirectoryWasAlreadyRestricted() {
-            // A no-op RESTRICTED->RESTRICTED request must not touch descendants — sweeping here
-            // would permanently kill their own independent link scopes for a request that changed
-            // nothing about this directory.
+            // A RESTRICTED->RESTRICTED request must not sweep descendants; that would kill their own link scopes for no change.
             File directory = File.withId(new FileId(fileId), new FileNamespaceId(namespaceId),
                     new FileName("a"), new FilePath("/"), new FileOwnerId(ownerId),
                     null, null, FileStatus.UPLOADED, new FileIsDirectory(true));
@@ -202,8 +197,7 @@ class UpdateFileScopeServiceTest {
 
         @Test
         void restrictsTheAncestorToo() {
-            // FileAccessGuard's link fallback keeps handing out VIEWER through the ancestor, so
-            // leaving it LINK would mean answering RESTRICTED for a file that is still public.
+            // FileAccessGuard's link fallback still gives VIEWER through the ancestor, so leaving it LINK would answer RESTRICTED for a public file.
             File linkedFile = makeFile();
             linkedFile.enableLinkSharing();
             File ancestor = makeLinkedAncestor("a", "/");
@@ -220,9 +214,7 @@ class UpdateFileScopeServiceTest {
 
         @Test
         void sweepsTheAncestorsOwnSubtreeToo() {
-            // Restricting the ancestor has to mean nothing under it is link-public anymore —
-            // including a sibling that opted into LINK on its own, same rule as restricting a
-            // folder directly.
+            // Restricting the ancestor must make everything under it non-public, including a sibling with its own LINK scope.
             File linkedFile = makeFile();
             linkedFile.enableLinkSharing();
             File ancestor = makeLinkedAncestor("a", "/");
@@ -245,17 +237,14 @@ class UpdateFileScopeServiceTest {
 
         @Test
         void sweepsOnlyTheRootMostLinkedAncestorsSubtree() {
-            // g(LINK) > p(LINK) > the file. Sweeping g already reaches p and everything under it,
-            // so walking on to p and sweeping again rewrites the same rows a second time — the end
-            // state is identical either way, but a chain near the drive root turns restricting one
-            // file into rewriting a large slice of it.
+            // g(LINK) > p(LINK) > the file. Sweeping g already reaches p and everything under it, so
+            // sweeping p again would rewrite the same rows twice.
             File linkedFile = makeFile();
             linkedFile.enableLinkSharing();
             File grandParent = makeLinkedAncestor("g", "/");
             File parent = makeLinkedAncestor("p", "/g");
-            // The row the sweep loads for p is a separate instance from the one the ancestor walk
-            // handed out, exactly as it is against a real repository — so the walk still sees p as
-            // LINK after the sweep has restricted it, which is what made the second pass fire.
+            // The row the sweep loads for p is a separate instance from the one the ancestor walk returned, as with a real
+            // repository, so the walk still sees p as LINK after the sweep restricted it.
             File parentAsLoadedBySweep = File.withId(new FileId(parent.getId()), new FileNamespaceId(namespaceId),
                     new FileName("p"), new FilePath("/g"), new FileOwnerId(ownerId),
                     null, null, FileStatus.UPLOADED, new FileIsDirectory(true));
@@ -279,10 +268,8 @@ class UpdateFileScopeServiceTest {
 
         @Test
         void cleansTheAncestorEvenWhenTheFileWasAlreadyRestricted() {
-            // The #311 reproduction: the file's stored scope never changes, so the request is a
-            // no-op for the file itself — but it is exactly the request a user makes after seeing
-            // the file is still public, and the ancestor check must not sit behind the
-            // wasLinkShared guard that (correctly) suppresses the descendant sweep here.
+            // The file's stored scope never changes, so the request is a no-op for the file itself, but the ancestor
+            // check must still run; it must not sit behind the wasLinkShared guard that suppresses the descendant sweep.
             File alreadyRestricted = makeFile();
             File ancestor = makeLinkedAncestor("a", "/");
             given(findFilePort.findById(new FileId(fileId))).willReturn(Optional.of(alreadyRestricted));

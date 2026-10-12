@@ -19,7 +19,7 @@ public class PrepareArchiveCommand extends SelfValidating<PrepareArchiveCommand>
 
     private final String key;
 
-    // ponytail: fixed cap on picked items (folders expand past it, bounded by the entry limit).
+    // Picked items only; folders expand past it, bounded by file-service's entry limit.
     @NotEmpty
     @Size(max = 1000)
     private final List<UUID> fileIds;

@@ -17,10 +17,8 @@ final class InlineResponses {
     private InlineResponses() {
     }
 
-    /** {@code bytes=start-[end]}, the only form a media element sends. Anything else — suffix,
-     * multi-range (answering only its first slice would report success while dropping the rest),
-     * malformed, or end before start — is treated as no Range and gets the whole body, since a
-     * botched seek shouldn't break plain playback. */
+    /** {@code bytes=start-[end]}, the only form a media element sends. Anything else (suffix,
+     * multi-range, malformed, end before start) is treated as no Range and gets the whole body. */
     record RequestedRange(long start, Long end) {
 
         static RequestedRange parse(String header) {

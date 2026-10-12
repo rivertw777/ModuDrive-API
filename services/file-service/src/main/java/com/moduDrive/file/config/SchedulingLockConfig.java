@@ -9,11 +9,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import javax.sql.DataSource;
 
-/** Cross-cutting, not owned by one adapter — the lock a {@code @SchedulerLock}-annotated method
- * anywhere in the app acquires, so this sits at the root like the other shared config classes.
- * {@code shedlock-provider-jdbc-template} works against any JDBC datasource (unlike a
- * Postgres-only {@code pg_advisory_lock}), so this survives swapping the database vendor —
- * only the {@code shedlock} table (created in db/migration/V1__init.sql) needs to exist. */
+/** The lock every {@code @SchedulerLock} method acquires. JDBC-based, so it needs only the
+ * {@code shedlock} table (V1__init.sql), not a Postgres advisory lock. */
 @Configuration
 @EnableSchedulerLock(defaultLockAtMostFor = "PT30M")
 class SchedulingLockConfig {

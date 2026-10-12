@@ -155,7 +155,7 @@ AWS 버킷(`modudrive-storage-<계정>`)은 Terraform이 만든다. storage-serv
 
 - 퍼블릭 액세스는 막혀 있고, HTTPS가 아닌 요청은 버킷 정책이 거절한다.
 - 블록은 앱이 암호화해서 올리고, 버킷이 그 위에 한 번 더 암호화한다. 버킷 쪽 키는 demo가 SSE-S3, prod가 KMS 고객 관리 키다.
-- 블록은 오래됐다고 지우지 않는다. 지우는 건 앱이다(`storage-blocks-purge-requested`). 수명 주기 규칙은 7일 넘게 끝나지 않은 multipart 업로드만 치운다.
+- 블록은 오래됐다고 지우지 않는다. 지우는 건 앱이다(`storage-blocks-purge-requested`). 수명 주기 규칙은 7일 넘게 끝나지 않은 multipart 업로드를 치우고, prod에서는 30일 지난 이전 버전도 지운다(4-4).
 
 ### 1-9. 메일
 
@@ -165,11 +165,13 @@ SMTP가 아니라 SES API(`spring-cloud-aws-starter-ses`, `SendRawEmail`)로 보
 
 - Configuration Set `mail-events`. 없으면 발송이 400(`ConfigurationSetDoesNotExist`)으로 실패한다.
 - `SEND` 이벤트 → SNS 토픽 `mail-ses-events` → SQS 큐 `mail-ses-events`(raw message delivery). 리스너는 SNS envelope가 없는 SES 이벤트 JSON을 읽는다. 큐가 없으면 mail-service가 기동하지 않는다.
-- `mail-ses-events` 큐 정책은 그 SNS 토픽(`aws:SourceArn`)이 보내는 `sqs:SendMessage`만 허용한다. 누가 Send 이벤트를 위조해서 안 보낸 메일을 보낸 것처럼 만들지 못하게 하려는 것이다.
+- (AWS만) `mail-ses-events` 큐 정책은 그 SNS 토픽(`aws:SourceArn`)이 보내는 `sqs:SendMessage`만 허용한다. 누가 Send 이벤트를 위조해서 안 보낸 메일을 보낸 것처럼 만들지 못하게 하려는 것이다.
 
 도메인이 있어야 만들어지는 것도 있다. SES 도메인 identity, DKIM, MAIL FROM 레코드는 `domain_name`이 비어 있으면 만들지 않는다(1-11).
 
 AWS 계정에서 손으로 할 일이 하나 있다. SES 샌드박스 해제 요청이다. 안 하면 인증된 주소로만 보낼 수 있다. 그리고 실제 SES로 처음 보낼 때 `deliveryId` 태그(`<queue>_<outboxId>`)가 거절되지 않는지 확인한다. LocalStack은 태그 값을 검사하지 않아서 로컬에서는 알 수 없다.
+
+샌드박스가 풀리기 전까지 demo는 Gmail SMTP로 보낸다. tfvars에 `smtp_username`(필요하면 `smtp_from`)을 넣으면 태스크에 `MAIL_TRANSPORT=smtp`가 들어가고 `SmtpMailAdapter`가 SES 대신 쓰인다. 앱 비밀번호는 SSM `/modudrive/SMTP_PASSWORD`에 손으로 넣는다. SMTP에는 Send 이벤트가 없어서, 서버가 메일을 받은 뒤 타임아웃이 나면 재시도로 두 번 갈 수 있다. 샌드박스가 풀리면 `smtp_username`을 지운다.
 
 ### 1-10. 시크릿
 
@@ -180,6 +182,7 @@ AWS 계정에서 손으로 할 일이 하나 있다. SES 샌드박스 해제 요
 | `REDIS_PASSWORD` | `.env` | SSM, 클러스터마다 |
 | `STORAGE_ENCRYPTION_KEY` | `.env` | SSM (`random_bytes`, 삭제 방지) |
 | Discord 웹후크 2개 | `.env` (LocalStack SSM으로 들어감) | SSM (값은 손으로 넣음, 1-13) |
+| `SMTP_PASSWORD` | 없음 | SSM, `smtp_username`을 넣은 환경만 (값은 손으로 넣음, 1-9) |
 | `SQS_*`, `SES_ENDPOINT`, `STORAGE_S3_*`, `LOCALSTACK_AUTH_TOKEN` | `.env` | 없음 (task role, 실제 endpoint) |
 
 값은 ECS 태스크 정의의 `secrets`로 환경 변수에 들어간다. 태스크가 뜰 때 SSM에서 읽어 오므로 태스크 정의에는 남지 않고, 앱은 로컬과 똑같이 `${...}`로 읽는다.
@@ -243,7 +246,7 @@ aws cloudfront create-invalidation --distribution-id $(terraform output -raw web
 
 - Feign이나 WebClient 호출을 새로 만들면 이 표와 Terraform 규칙을 같이 고친다. 빠뜨리면 로컬에서는 멀쩡하다가 AWS에서만 타임아웃이 난다. 호출 목록은 `grep -rn "@FeignClient\|clients\." services/*/src/main`으로 확인한다.
 - 관리 포트(9464)는 중앙 ADOT collector에만 열고, gateway만 예외로 ALB에도 연다.
-- 보안 그룹은 네트워크 수준이라, 허용된 서비스가 허용되지 않은 경로를 부르는 것까지는 못 막는다(예: file이 member의 로그인 확인 API를 부르는 경우). 경로 단위 권한이 필요해지면 VPC Lattice + IAM 인증(태스크 역할로 SigV4 서명)을 검토한다. 서비스별 요금이 붙고 Service Connect 설계도 바뀐다.
+- 보안 그룹은 네트워크 수준이라, 허용된 서비스가 허용되지 않은 경로를 부르는 것까지는 못 막는다(예: file이 member의 로그인 확인 API를 부르는 경우).
 
 ### 1-13. 모니터링과 알림
 
@@ -283,7 +286,7 @@ flowchart LR
 
 #### collector
 
-collector는 사이드카가 아니라 한 대만 띄운다. tail sampling(에러, 1초 초과, 나머지 5%)이 로컬처럼 동작하려면 한 trace의 span이 전부 같은 collector로 모여야 한다. 태스크마다 사이드카를 붙이면 span이 흩어져서 "에러 trace는 전부 남긴다"는 규칙이 깨진다. collector가 죽어도 그동안의 telemetry만 빠질 뿐 서비스에는 영향이 없다. 앱은 비동기로 내보내고 실패하면 버린다. 두 대 이상으로 늘려야 하면 앞단 collector가 `loadbalancing` exporter로 traceID 기준 라우팅을 하는 2단 구성으로 바꾼다.
+collector는 사이드카가 아니라 한 대만 띄운다. tail sampling(에러, 1초 초과, 나머지 5%)이 로컬처럼 동작하려면 한 trace의 span이 전부 같은 collector로 모여야 한다. 태스크마다 사이드카를 붙이면 span이 흩어져서 "에러 trace는 전부 남긴다"는 규칙이 깨진다. collector가 죽어도 그동안의 telemetry만 빠질 뿐 서비스에는 영향이 없다. 앱은 비동기로 내보내고 실패하면 버린다.
 
 - 로컬 `prometheus.yml`은 서비스 7개를 `static_configs`로 적어 두지만, ECS에서는 태스크 IP가 바뀌고 서비스마다 태스크가 여러 개다. 그래서 `ecs_observer`가 `ECS_PROMETHEUS_EXPORTER_PORT` 도커 라벨(`ecs.tf`)이 붙은 컨테이너를 찾고, 컨테이너 이름을 `service` 라벨로 붙인다. 로컬도 스크레이프 주소에서 같은 값의 `service` 라벨을 만들기 때문에 알림 규칙과 메시지가 양쪽에서 같다.
 - AMP는 샘플 수로 과금된다. 그래서 알림과 기본 화면에 쓰는 지표만 남기고 나머지는 버린다(`otel-collector.yaml`의 `metric_relabel_configs`). 새 지표로 알림을 만들려면 여기에 먼저 추가한다. 수집 주기는 `otel_collector.scrape_interval`로, demo는 60초, prod는 30초다.
@@ -329,7 +332,7 @@ aws ssm put-parameter --name /modudrive/DISCORD_SERVICE_WEBHOOK_URL --type Secur
 
 #### 비용
 
-비용은 대부분 로그에서 나온다. 보존을 14일로 두고 INFO 로그를 줄이는 것부터 한다. 그래도 많으면 FireLens(Fluent Bit)로 두 갈래로 나눈다. ERROR, WARN, 감사 로그는 CloudWatch Logs로, 전체는 S3로 보내 Athena로 조회한다.
+비용은 대부분 로그에서 나온다. 그래서 보존 기간을 14일로 둔다.
 
 X-Ray는 trace 건수로 과금되니 tail sampling 비율이 곧 비용이다.
 
@@ -360,13 +363,6 @@ cd .infra
 terraform init -reconfigure -backend-config=envs/demo.backend.hcl
 terraform plan -var-file=envs/demo.tfvars -var image_tag=<지금 배포된 커밋>
 # 계정 없이 문법만 볼 땐: terraform init -backend=false && terraform validate
-```
-
-계정이 없어도 두 환경을 plan까지 돌려 볼 수 있다(`tests/plan.tftest.hcl`, provider를 흉내 낸다). tfvars의 `for_each`, 파일 사이 참조, precondition까지 다 걸린다.
-
-```bash
-terraform init -backend=false
-for env in demo prod; do terraform test -var-file=envs/$env.tfvars; done
 ```
 
 ### 2-2. 첫 배포
@@ -452,6 +448,7 @@ tfvars의 값을 바꿀 때 데이터가 날아가거나 서비스가 끊기는 
 | ECS | Fargate Spot, 전부 0.5 vCPU / 1 GB, 서비스마다 1개 고정 (오토스케일 없음) |
 | DB | RDS 1대 (db.t4g.micro, 단일 AZ)에 DB 4개, 백업 1일(무료 플랜 한도) |
 | Redis | ElastiCache 1개 (cache.t4g.micro, 노드 1개), 모든 서비스가 같이 씀 |
+| 메일 | Gmail SMTP (SES 샌드박스 해제 전까지, 1-9) |
 | 암호화 | AWS 관리 키 (SSE-S3, SSE-SQS, `aws/ssm` 등) |
 | 보안 강화 (`hardened`) | 끔. WAF, Service Connect TLS, 감사 로그, GuardDuty 없음 |
 | 삭제 방지, Container Insights | 끔 |

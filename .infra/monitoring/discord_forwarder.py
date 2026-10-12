@@ -39,8 +39,8 @@ def text(message):
 
 
 def payload(message):
-    """The text as the message, plus the small coloured card Grafana used to add: the first line's title,
-    red while firing, green once resolved (the text starts with 🚨 / ✅), grey for anything else."""
+    """The text as the message, plus a small card titled with its first line: red while firing, green
+    once resolved (the text starts with 🚨 / ✅), grey for anything else."""
     body = text(message)
     first = body.split("\n", 1)[0]
     color = FIRING if first.startswith("🚨") else RESOLVED if first.startswith("✅") else OTHER

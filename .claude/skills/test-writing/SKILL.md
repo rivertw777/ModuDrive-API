@@ -13,15 +13,10 @@ optional.
 ## Coverage policy: 70% minimum
 
 70% is the bar for the classes that are actually in scope (see table below).
-This is a **documented policy today, not yet enforced by the build** — no
-JaCoCo gate is wired into `./gradlew build` or `check` yet. The exact recipe
-to wire it in later is in [JaCoCo gate](#jacoco-gate-recipe-apply-when-ready)
-below; it isn't applied yet because coverage is still uneven across services —
-`member-service` and `auth-service` are well covered, but `storage-service`
-and `notification-service` are thin (notification is barely started), so
-turning the gate on today would fail `./gradlew build` immediately. Until
-every service clears the bar, treat 70% as something a reviewer checks for,
-not something CI blocks on.
+It is **not enforced by the build**: no JaCoCo gate is wired into
+`./gradlew build` or `check`, so treat 70% as something a reviewer checks for,
+not something CI blocks on. The recipe to wire it in is in
+[JaCoCo gate](#jacoco-gate-recipe-apply-when-ready) below.
 
 **In scope for 70% (must be tested):**
 `domain/**`, `application/service/**`, `adapter/in/web/controller/**`,
@@ -58,9 +53,8 @@ test. When the adapter's real rules run inside Redis (a Lua script doing a
 read-check-extend atomically), mocking `RedisRepository` would only assert
 that the adapter passes certain arguments, not that expiry actually works —
 which is the entire behavior the adapter exists to provide. For these, test
-against a real Redis via Testcontainers as `RedisSessionStoreTest` does — this
-is the one `adapter/out/security` case where an integration-style test is
-correct, not a gap to fix.
+against a real Redis via Testcontainers, as the `Redis*StoreTest` classes do
+(`RedisSessionStoreTest`, `RedisUploadedBlockStoreTest`, ...).
 
 ## Tools
 
@@ -76,9 +70,9 @@ needed:
   instead of JUnit's `assertEquals`/`assertTrue`. Fluent chains read as the
   Then step and produce far more readable failure output.
 
-- **ArchUnit** — already added to every service's `build.gradle`
-  (`testImplementation 'com.tngtech.archunit:archunit-junit5:1.4.2'`) alongside
-  each service's `HexagonalArchitectureTest`. Must be `1.4.x`+, not `1.3.0` —
+- **ArchUnit** — in every service's `build.gradle`
+  (`testImplementation 'com.tngtech.archunit:archunit-junit5:1.4.2'`), used by
+  each service's architecture test. Must be `1.4.x`+, not `1.3.0` —
   `1.3.0` bundles an ASM version that cannot parse Java 25 class files (this
   project's `sourceCompatibility`). Symptom: `ClassFileImporter().importPackages(...)`
   silently returns **zero** classes (no exception), so every ArchUnit rule
@@ -88,7 +82,7 @@ needed:
 - **Testcontainers** — every JPA service's `@DataJpaTest`s run on Postgres
   through it (see [Persistence adapter tests](#persistence-adapter-tests-real-postgres-via-testcontainers)).
 
-**Spring Boot 4.0 test-slice annotations are no longer bundled in
+**Spring Boot 4 test-slice annotations are not bundled in
 `spring-boot-starter-test`.** `@WebMvcTest`, `@DataJpaTest`, etc. moved to
 per-technology artifacts with new package names. Add the ones a service
 needs explicitly:
@@ -215,8 +209,6 @@ class HexagonalArchitectureTest {
 }
 ```
 
-Add one of these the first time a service gets its first real test class —
-it costs one file and catches an entire class of review mistakes for free.
 
 ## Persistence adapter tests: real Postgres via Testcontainers
 
@@ -254,9 +246,8 @@ project's hexagonal conventions are already based on — see the
 
 ## Checklist: tests for a new use case
 
-1. `domain/model` — unit test any new business method or factory validation
-   (once `domain` VOs gain real invariants, per the hexagonal-architecture
-   review — test the rejection paths, not just the happy path).
+1. `domain/model` — unit test any new business method or factory validation;
+   test the rejection paths, not just the happy path.
 2. `application/service/<Verb><Entity>Service` — Mockito test, structured with
    `@Nested` per Given: one for success, one per `BusinessException` branch.
 3. `adapter/in/web/controller/<Verb><Entity>Controller` — `@WebMvcTest`, mock
@@ -268,17 +259,16 @@ project's hexagonal conventions are already based on — see the
    mocking the raw collaborator, asserting the translation to/from the
    domain object.
 6. New service with a `domain/application/adapter` split — add the `archunit-junit5`
-   dependency and a `HexagonalArchitectureTest`; member/auth/file/storage already have
+   dependency and a `HexagonalArchitectureTest`; every existing hexagonal service has
    one. `gateway-service` has an equivalent `GatewayArchitectureTest` scoped to its own
-   (non-hexagonal) layout; `notification-service` (barely started) doesn't have one yet.
+   (non-hexagonal) layout.
 7. Run `./gradlew :services:<service>:test` before opening a PR.
 
 ## JaCoCo gate recipe (apply when ready)
 
-Not applied to this repo's `build.gradle` yet — see [Coverage
-policy](#coverage-policy-70-minimum) for why. When enough existing services
-have tests that turning this on won't immediately break `./gradlew build`,
-add to the root `build.gradle`'s `subprojects {}` block:
+Not applied to this repo's `build.gradle` (see [Coverage
+policy](#coverage-policy-70-minimum)). To enforce the bar, add to the root
+`build.gradle`'s `subprojects {}` block:
 
 ```gradle
 apply plugin: 'jacoco'
