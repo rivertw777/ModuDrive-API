@@ -10,4 +10,4 @@ docker-compose -f "$OBSERVABILITY_COMPOSE_FILE" down -v --remove-orphans 2>/dev/
 docker-compose -f "$INFRA_COMPOSE_FILE" down -v --remove-orphans
 
 echo "➡️ Restarting..."
-./.scripts/start.sh
+./.scripts/local/start.sh

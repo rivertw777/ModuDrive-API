@@ -31,7 +31,7 @@ ROUNDS=1 SKIP_WAIT=1 .scripts/perf-test/scenario.sh cascade asis10k 10000
 .scripts/perf-test/scenario.sh down                       # pg_stat_statements 끄기
 ```
 
-스크립트는 `.scripts/perf-test/folder-share/`에 있고, 결과 원본은 그 아래 `results/`에 json으로 남는다.
+스크립트는 `.scripts/perf-test/001-folder-cascade/`에 있고(공용 헬퍼는 `.scripts/perf-test/bench.py`), 결과 원본은 그 아래 `results/`에 json으로 남는다.
 
 ## 2. 테스트 결과
 
@@ -80,7 +80,7 @@ ROUNDS=1 SKIP_WAIT=1 .scripts/perf-test/scenario.sh cascade asis10k 10000
 OPS=trash ROUNDS=1 .scripts/perf-test/scenario.sh index original 100 1000 10000   # 행 단위 코드는 휴지통만
 ```
 
-드라이브 파일 100만 개, 응답 시간 중앙값. 칸 값은 `SQL 수 / 시간`이다. 원본 json은 `.scripts/perf-test/folder-share/results/2026-10-12/`에 있다.
+드라이브 파일 100만 개, 응답 시간 중앙값. 칸 값은 `SQL 수 / 시간`이다. 원본 json은 `.scripts/perf-test/001-folder-cascade/results/2026-10-12/`에 있다.
 
 | 하위 파일 수 | 행 단위 (벌크 SQL 전) | 벌크 SQL, 인덱스 전 | 벌크 SQL, 인덱스 후 |
 |---|---|---|---|

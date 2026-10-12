@@ -28,7 +28,7 @@
 .scripts/perf-test/scenario.sh down
 ```
 
-스크립트는 `.scripts/perf-test/folder-share/perm.py`, 결과 원본은 그 아래 `results/`에 있다.
+스크립트는 `.scripts/perf-test/002-share-permission/perm.py`, 결과 원본은 그 아래 `results/`에 있다.
 
 ## 2. 테스트 결과
 

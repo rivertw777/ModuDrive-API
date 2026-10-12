@@ -1,25 +1,9 @@
 """Folder cascade benchmark (.docs/perf-test/001-folder-cascade.md): move / trash / restore / purge
-of a folder with N files — SQL count (pg_stat_statements) and latency. Also holds the shared helpers.
+of a folder with N files — SQL count (pg_stat_statements) and latency. Its seed() is shared by this folder's scripts.
 Run through scenario.sh, or inside the bench container: python cascade.py <label> [sizes...]"""
-import json, os, sys, threading, time, urllib.request, uuid, statistics
+import json, os, sys, threading, time, uuid, statistics
 import psycopg
-
-DB = os.environ.get("BENCH_DB", "host=postgres dbname=file_db user=modudrive password=changeme")
-API = "http://file-service:10012"
-NOISE = ("outbox", "shedlock", "processed_event", "pg_stat_statements")
-
-
-def http(method, path, user, body=None):
-    data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(API + path, data=data, method=method,
-                                 headers={"X_USER_ID": str(user), "Content-Type": "application/json"})
-    t = time.perf_counter()
-    try:
-        with urllib.request.urlopen(req, timeout=600) as r:
-            status, payload = r.status, r.read()
-    except urllib.error.HTTPError as e:
-        status, payload = e.code, e.read()
-    return status, (time.perf_counter() - t) * 1000, payload
+from bench import DB, http, reset_stats, read_stats
 
 
 def seed(cur, n):
@@ -39,17 +23,6 @@ def seed(cur, n):
     cur.execute("insert into file_version_block(version_id,idx,hash) select vid,k,md5(fid::text||k)||md5(k||fid::text) from t, generate_series(0,2) k")
     cur.execute("insert into block(owner_id,hash,size,ref_count) select %s,hash,1000,1 from file_version_block b join t on t.vid=b.version_id", (owner,))
     return ns, owner, root
-
-
-def reset_stats(cur):
-    cur.execute("select pg_stat_statements_reset()")
-
-
-def read_stats(cur):
-    cur.execute("select s.query, s.calls from pg_stat_statements s join pg_roles r on r.oid=s.userid "
-                "join pg_database d on d.oid=s.dbid where r.rolname='file_service' and d.datname='file_db'")
-    rows = [(q, c) for q, c in cur.fetchall() if not any(x in q.lower() for x in NOISE)]
-    return sum(c for _, c in rows), sorted(rows, key=lambda r: -r[1])[:8]
 
 
 def commit_empty(user, path):
@@ -122,7 +95,7 @@ def main():
             summary["move_top"] = res["move"][0]["top"]
             out[n] = summary
             print(n, json.dumps({k: {kk: vv for kk, vv in v.items()} for k, v in summary.items() if not k.endswith("top")}, ensure_ascii=False), flush=True)
-    json.dump(out, open(f"/w/results/cascade-{label}.json", "w"), ensure_ascii=False, indent=1, default=str)
+    json.dump(out, open(f"results/cascade-{label}.json", "w"), ensure_ascii=False, indent=1, default=str)
 
 
 if __name__ == "__main__":

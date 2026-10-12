@@ -4,7 +4,7 @@ SES가 장애를 일으킬 때 mail-service가 메일을 유실하거나 두 번
 
 ## 1. 테스트 시나리오
 
-LocalStack 무료 플랜에는 장애 주입 기능이 없어서, mail-service와 LocalStack 사이에 SES 장애를 흉내 내는 프록시(`.scripts/ses-fault/`)를 끼웠다.
+LocalStack 무료 플랜에는 장애 주입 기능이 없어서, mail-service와 LocalStack 사이에 SES 장애를 흉내 내는 프록시(`.scripts/fault-test/001-ses-mail-failure/`)를 끼웠다.
 
 | 장애 시나리오 | 프록시의 응답 | 확인할 것 |
 |---|---|---|
@@ -27,14 +27,14 @@ LocalStack 무료 플랜에는 장애 주입 기능이 없어서, mail-service�
 레포 루트에서, 인프라와 서비스가 떠 있는 상태로 실행한다.
 
 ```bash
-.scripts/ses-fault/scenario.sh up                  # 프록시를 띄우고 mail-service를 프록시 경유로 재시작
-.scripts/ses-fault/scenario.sh unavailable 45      # SES 서버 장애
-.scripts/ses-fault/scenario.sh throttle 45         # 초당 발송 한도 초과
-.scripts/ses-fault/scenario.sh rejected 30         # 발신 주소 미인증
-.scripts/ses-fault/scenario.sh slow 50 15          # 느리지만 결국 성공 (15초)
-.scripts/ses-fault/scenario.sh hang 150            # 응답 없음
-.scripts/ses-fault/scenario.sh unavailable 30 0 4  # 짧은 장애 후 복구 (4초 뒤 정상)
-.scripts/ses-fault/scenario.sh down                # 프록시를 지우고 mail-service를 LocalStack 직결로 되돌림
+.scripts/fault-test/001-ses-mail-failure/scenario.sh up                  # 프록시를 띄우고 mail-service를 프록시 경유로 재시작
+.scripts/fault-test/001-ses-mail-failure/scenario.sh unavailable 45      # SES 서버 장애
+.scripts/fault-test/001-ses-mail-failure/scenario.sh throttle 45         # 초당 발송 한도 초과
+.scripts/fault-test/001-ses-mail-failure/scenario.sh rejected 30         # 발신 주소 미인증
+.scripts/fault-test/001-ses-mail-failure/scenario.sh slow 50 15          # 느리지만 결국 성공 (15초)
+.scripts/fault-test/001-ses-mail-failure/scenario.sh hang 150            # 응답 없음
+.scripts/fault-test/001-ses-mail-failure/scenario.sh unavailable 30 0 4  # 짧은 장애 후 복구 (4초 뒤 정상)
+.scripts/fault-test/001-ses-mail-failure/scenario.sh down                # 프록시를 지우고 mail-service를 LocalStack 직결로 되돌림
 ```
 
 ## 2. 테스트 결과

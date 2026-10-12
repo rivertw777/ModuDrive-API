@@ -54,7 +54,7 @@ def main():
             out[n] = {k: {"ms_median": statistics.median(x["ms"] for x in v), "ms_all": [round(x["ms"]) for x in v],
                           "sql": [x["sql"] for x in v]} for k, v in res.items()}
             print(n, json.dumps(out[n]), flush=True)
-    json.dump(out, open(f"/w/results/index-{label}.json", "w"), ensure_ascii=False, indent=1, default=str)
+    json.dump(out, open(f"results/index-{label}.json", "w"), ensure_ascii=False, indent=1, default=str)
 
 
 if __name__ == "__main__":
