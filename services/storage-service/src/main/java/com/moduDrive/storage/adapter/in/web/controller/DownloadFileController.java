@@ -43,15 +43,18 @@ class DownloadFileController {
      * own, so the gateway resolves X_USER_ID for it like any other request.
      * {@code fileName} is caller-supplied display text, not trusted file identity — it only
      * ever feeds a response header via {@link FileMimeTypes}, never a storage lookup. Honors
-     * {@code Range} so a &lt;video&gt;/&lt;audio&gt; element can seek without pulling the whole
-     * (already fully in-memory) file over the wire again. */
+     * {@code Range} so a &lt;video&gt;/&lt;audio&gt; element can seek, reading only the blocks
+     * that range covers. */
     @GetMapping("/api/v1/storage/view/{fileId}")
     public ResponseEntity<byte[]> viewFile(
             @RequestHeader("X_USER_ID") UUID userId,
             @PathVariable String fileId,
             @RequestParam String fileName,
             @RequestHeader(value = HttpHeaders.RANGE, required = false) String rangeHeader) {
-        byte[] data = downloadFileUseCase.download(new DownloadFileCommand(fileId, userId, true));
-        return InlineResponses.inline(data, fileName, rangeHeader);
+        DownloadFileCommand command = new DownloadFileCommand(fileId, userId, true);
+        InlineResponses.RequestedRange range = InlineResponses.RequestedRange.parse(rangeHeader);
+        return range == null
+                ? InlineResponses.whole(downloadFileUseCase.download(command), fileName)
+                : InlineResponses.partial(downloadFileUseCase.viewRange(command, range.start(), range.end()), fileName);
     }
 }

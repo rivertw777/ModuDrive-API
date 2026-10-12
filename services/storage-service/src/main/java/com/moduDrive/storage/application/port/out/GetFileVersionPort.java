@@ -16,6 +16,7 @@ public interface GetFileVersionPort {
     VersionLocation getPublicVersion(String fileId, String key);
 
     /** {@code versionKey} identifies the version (the download quota counts per version);
-     * {@code blockKeys} are its blocks' S3 keys in order. */
-    record VersionLocation(String versionKey, List<String> blockKeys) {}
+     * {@code blockKeys} are its blocks' S3 keys in order; {@code fileSize} is its length in bytes
+     * (0 when file-service didn't say). */
+    record VersionLocation(String versionKey, List<String> blockKeys, long fileSize) {}
 }

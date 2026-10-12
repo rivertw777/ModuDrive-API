@@ -73,7 +73,7 @@ class PublicDownloadFileServiceTest {
         @Test
         void returnsAssembledBytes() {
             given(getFileVersionPort.getPublicVersion(fileId, key))
-                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", keys(2)));
+                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", keys(2), 0));
             given(retrieveBlocksPort.retrieveBlocks(anyList()))
                     .willReturn(List.of("hello ".getBytes(), "world".getBytes()));
 
@@ -109,7 +109,7 @@ class PublicDownloadFileServiceTest {
         @Test
         void delegatesToStreamBlocksWithoutAssemblingAByteArray() {
             given(getFileVersionPort.getPublicVersion(fileId, key))
-                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", keys(2)));
+                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", keys(2), 0));
 
             publicDownloadFileService.downloadPublicStream(command(), new ByteArrayOutputStream());
 
@@ -120,7 +120,7 @@ class PublicDownloadFileServiceTest {
         @Test
         void checksTheFileScopedQuotaBeforeStreamingAndRecordsWhatWasActuallySent() {
             given(getFileVersionPort.getPublicVersion(fileId, key))
-                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", keys(2)));
+                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", keys(2), 0));
             willAnswer(inv -> { ((OutputStream) inv.getArgument(1)).write(new byte[300]); return null; })
                     .given(retrieveBlocksPort).streamBlocks(anyList(), any());
 
@@ -133,7 +133,7 @@ class PublicDownloadFileServiceTest {
         @Test
         void stillRecordsWhatWasSentWhenStreamingAbortsPartway() {
             given(getFileVersionPort.getPublicVersion(fileId, key))
-                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", keys(2)));
+                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", keys(2), 0));
             willAnswer(inv -> {
                 ((OutputStream) inv.getArgument(1)).write(new byte[128]);
                 throw new UncheckedIOException(new IOException("client gone"));
@@ -148,7 +148,7 @@ class PublicDownloadFileServiceTest {
         @Test
         void rejectsBeforeStreamingWhenTheFileIsOverItsDownloadQuota() {
             given(getFileVersionPort.getPublicVersion(fileId, key))
-                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", keys(2)));
+                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", keys(2), 0));
             willThrow(new BusinessException(StorageExceptionCase.DOWNLOAD_QUOTA_EXCEEDED))
                     .given(downloadQuotaPort).checkWithinQuota(anyString(), anyString());
 
@@ -170,7 +170,7 @@ class PublicDownloadFileServiceTest {
         @Test
         void alsoMetersTheQuotaSoTheViewRouteCannotBypassTheLimit() {
             given(getFileVersionPort.getPublicVersion(fileId, key))
-                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", keys(1)));
+                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", keys(1), 0));
             given(retrieveBlocksPort.retrieveBlocks(anyList())).willReturn(List.of("data".getBytes()));
 
             publicDownloadFileService.downloadPublic(previewCommand());
@@ -183,7 +183,7 @@ class PublicDownloadFileServiceTest {
         @DisplayName("key 없이(LINK 스코프) 미리보기해도 같은 방식으로 계량한다 (issue #312)")
         void alsoMetersAKeylessPreview() {
             given(getFileVersionPort.getPublicVersion(fileId, null))
-                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", keys(1)));
+                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", keys(1), 0));
             given(retrieveBlocksPort.retrieveBlocks(anyList())).willReturn(List.of("data".getBytes()));
 
             publicDownloadFileService.downloadPublic(new PublicDownloadFileCommand(fileId, null, true));
@@ -200,7 +200,7 @@ class PublicDownloadFileServiceTest {
         @Test
         void resolvesItThroughTheSameKeyedLookup() {
             given(getFileVersionPort.getPublicVersion(fileId, key))
-                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", keys(2)));
+                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", keys(2), 0));
             given(retrieveBlocksPort.retrieveBlocks(anyList()))
                     .willReturn(List.of("hello ".getBytes(), "world".getBytes()));
 
@@ -217,7 +217,7 @@ class PublicDownloadFileServiceTest {
         @Test
         void meterQuotaByFileIdInsteadOfCrashing() {
             given(getFileVersionPort.getPublicVersion(fileId, null))
-                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", keys(2)));
+                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", keys(2), 0));
             given(retrieveBlocksPort.retrieveBlocks(anyList()))
                     .willReturn(List.of("hello ".getBytes(), "world".getBytes()));
 
@@ -231,7 +231,7 @@ class PublicDownloadFileServiceTest {
         @Test
         void alsoWorksOnTheStreamingPath() {
             given(getFileVersionPort.getPublicVersion(fileId, null))
-                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", keys(2)));
+                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", keys(2), 0));
             willAnswer(inv -> { ((OutputStream) inv.getArgument(1)).write(new byte[300]); return null; })
                     .given(retrieveBlocksPort).streamBlocks(anyList(), any());
 
@@ -245,7 +245,7 @@ class PublicDownloadFileServiceTest {
         @DisplayName("빈 문자열 key도 keyless와 동일하게 취급한다")
         void treatsABlankKeyTheSameAsNoKey() {
             given(getFileVersionPort.getPublicVersion(fileId, ""))
-                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", keys(2)));
+                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", keys(2), 0));
             given(retrieveBlocksPort.retrieveBlocks(anyList()))
                     .willReturn(List.of("hello ".getBytes(), "world".getBytes()));
 
@@ -268,7 +268,7 @@ class PublicDownloadFileServiceTest {
             // always-empty buckets by attaching a fresh random UUID per request.
             String someUnrelatedKey = UUID.randomUUID().toString();
             given(getFileVersionPort.getPublicVersion(fileId, someUnrelatedKey))
-                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", keys(2)));
+                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", keys(2), 0));
             given(retrieveBlocksPort.retrieveBlocks(anyList()))
                     .willReturn(List.of("hello ".getBytes(), "world".getBytes()));
 
@@ -286,7 +286,7 @@ class PublicDownloadFileServiceTest {
         @Test
         void rejectsBeforeFetchingAnyBlocks() {
             given(getFileVersionPort.getPublicVersion(fileId, key))
-                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", keys(30)));
+                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", keys(30), 0));
 
             Throwable thrown = catchThrowable(() ->
                     publicDownloadFileService.downloadPublic(previewCommand()));

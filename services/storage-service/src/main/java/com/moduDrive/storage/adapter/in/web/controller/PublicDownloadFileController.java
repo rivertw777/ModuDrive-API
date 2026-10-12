@@ -45,7 +45,10 @@ class PublicDownloadFileController {
             @RequestParam(required = false) String key,
             @RequestParam String fileName,
             @RequestHeader(value = HttpHeaders.RANGE, required = false) String rangeHeader) {
-        byte[] data = publicDownloadFileUseCase.downloadPublic(new PublicDownloadFileCommand(fileId, key, true));
-        return InlineResponses.inline(data, fileName, rangeHeader);
+        PublicDownloadFileCommand command = new PublicDownloadFileCommand(fileId, key, true);
+        InlineResponses.RequestedRange range = InlineResponses.RequestedRange.parse(rangeHeader);
+        return range == null
+                ? InlineResponses.whole(publicDownloadFileUseCase.downloadPublic(command), fileName)
+                : InlineResponses.partial(publicDownloadFileUseCase.viewPublicRange(command, range.start(), range.end()), fileName);
     }
 }
