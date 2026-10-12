@@ -16,7 +16,7 @@ class OutboxMailEventPublisher implements SendLoginVerificationMailPort {
 
     @Override
     public void sendLoginVerificationMail(MemberEmail memberEmail, String code) {
-        outboxEventRecorder.record(AuthQueues.LOGIN_VERIFICATION_MAIL_REQUESTED, memberEmail.value(),
+        outboxEventRecorder.record(AuthQueues.LOGIN_VERIFICATION_MAIL_REQUESTED,
                 new LoginVerificationMailRequested(memberEmail.value(), code));
     }
 }

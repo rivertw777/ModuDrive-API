@@ -28,13 +28,13 @@ class OutboxMemberEventPublisherTest {
     class WhenPublishingSignedUp {
 
         @Test
-        void sendsPayloadToSignedUpQueueKeyedByEmail() {
+        void sendsPayloadToSignedUpQueue() {
             UUID memberId = UUID.randomUUID();
 
             publisher.publishSignedUp(memberId, "river@modudrive.com");
 
             then(outboxEventRecorder).should().record(
-                    MemberQueues.SIGNED_UP, "river@modudrive.com",
+                    MemberQueues.SIGNED_UP,
                     new MemberSignedUp(memberId, "river@modudrive.com"));
         }
     }

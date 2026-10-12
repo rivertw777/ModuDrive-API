@@ -33,11 +33,11 @@ class OutboxStorageEventPublisherTest {
     class WhenThereAreHashes {
 
         @Test
-        @DisplayName("해시와 결정 시각을 담아 ownerId를 키로 기록한다")
-        void recordsHashesKeyedByOwnerId() {
+        @DisplayName("해시와 결정 시각을 담아 기록한다")
+        void recordsHashes() {
             publisher.purgeBlocks(ownerId, List.of("h1", "h2"), decidedAt);
 
-            then(outboxEventRecorder).should().record(FileQueues.BLOCKS_PURGE_REQUESTED, ownerId.toString(),
+            then(outboxEventRecorder).should().record(FileQueues.BLOCKS_PURGE_REQUESTED,
                     new BlocksPurgeRequested(ownerId, List.of("h1", "h2"), decidedAt));
         }
     }

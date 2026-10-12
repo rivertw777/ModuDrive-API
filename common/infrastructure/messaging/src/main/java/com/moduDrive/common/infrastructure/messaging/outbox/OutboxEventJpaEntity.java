@@ -35,9 +35,6 @@ class OutboxEventJpaEntity {
     @Column(nullable = false)
     private String queue;
 
-    @Column(name = "message_key")
-    private String messageKey;
-
     /** Fully-qualified event class, so the relay can rebuild the object. */
     @Column(nullable = false)
     private String payloadType;
@@ -65,10 +62,9 @@ class OutboxEventJpaEntity {
     @Column(length = FAILURE_REASON_COLUMN_LENGTH)
     private String failureReason;
 
-    OutboxEventJpaEntity(String queue, String messageKey, String payloadType, String payload,
+    OutboxEventJpaEntity(String queue, String payloadType, String payload,
                          String traceHeaders) {
         this.queue = queue;
-        this.messageKey = messageKey;
         this.payloadType = payloadType;
         this.payload = payload;
         this.traceHeaders = traceHeaders;

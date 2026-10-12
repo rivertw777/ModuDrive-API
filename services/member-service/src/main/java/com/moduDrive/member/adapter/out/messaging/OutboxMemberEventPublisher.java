@@ -17,6 +17,6 @@ class OutboxMemberEventPublisher implements PublishMemberEventPort {
 
     @Override
     public void publishSignedUp(UUID memberId, String email) {
-        outboxEventRecorder.record(MemberQueues.SIGNED_UP, email, new MemberSignedUp(memberId, email));
+        outboxEventRecorder.record(MemberQueues.SIGNED_UP, new MemberSignedUp(memberId, email));
     }
 }
