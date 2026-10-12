@@ -29,21 +29,16 @@ class ListFavoritesService implements ListFavoritesUseCase {
     private final FileFavoritePort fileFavoritePort;
     private final FileAccessGuard fileAccessGuard;
 
-    // ponytail: one findById per starred file (N+1); fine at this scale, batch-fetch by id if a
-    // user's favorites grow large enough to matter.
+    // One findById per starred file (N+1).
     @Transactional(readOnly = true)
     @Override
     public List<FileView> listFavorites(ListFavoritesCommand command) {
         UUID userId = command.getUserId().value();
-        // A namespace is still required — a user with no drive has no favorites either.
         findNamespacePort.findByUserId(command.getUserId())
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.NAMESPACE_NOT_FOUND));
 
-        // Every star — the caller's own and the ones on files shared with them — is one
-        // file_favorite row now, most recently starred first. Re-check each still resolves: not
-        // trashed, and (for a file the caller doesn't own) still reachable — a star outlives a
-        // revoked share, and "즐겨찾기" must reflect what they can open now. effectiveRole honours
-        // an inherited folder grant, matching the READ check the favorite was written under.
+        // Most recently starred first. A star outlives a revoked share, so each file is checked
+        // again: not removed, and still reachable for a file the caller doesn't own.
         record Starred(File file, LocalDateTime favoritedAt) {}
 
         return fileFavoritePort.favoritesByRecency(userId).stream()

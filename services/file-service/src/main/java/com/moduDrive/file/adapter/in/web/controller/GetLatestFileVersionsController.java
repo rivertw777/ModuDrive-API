@@ -16,16 +16,12 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 import java.util.UUID;
 
-/** Service-to-service only: storage-service resolves the latest version to stream for download
- * through this route. Kept off {@code /api/v1/files/**} (the gateway only proxies that prefix,
- * see gateway RouteConfig) so the caller here is another trusted service, not an end user
- * directly — but the original caller's id still rides along as {@code userId} so
- * FileAccessGuard can verify that user actually holds DOWNLOAD permission before the download
- * proceeds (see #152). Same response shape as the tenant-facing {@code GET /api/v1/files/{fileId}/revisions}
- * so storage-service's DTO didn't need to change.
+/** Service-to-service only (the gateway proxies {@code /api/v1/files/**}, not this): storage-service
+ * resolves the version to stream. {@code userId} is the original caller, so the DOWNLOAD check
+ * still runs. Same response shape as {@code GET /api/v1/files/{fileId}/revisions}.
  *
- * <p>Callers opt into recent-access tracking with {@code markAccessed} (default off): storage-service
- * sets it only on the inline-preview path, so a plain download doesn't touch "recent". */
+ * <p>{@code markAccessed} records "recent"; storage-service sets it only for an inline preview,
+ * not a plain download. */
 @WebAdapter
 @RestController
 @RequiredArgsConstructor
@@ -45,11 +41,7 @@ class GetLatestFileVersionsController {
                 .stream()
                 .map(FileVersionResponse::from)
                 .toList();
-        // Both storage-service's download and preview/view endpoints resolve the version through
-        // this one route, but only an inline preview counts as "opening" the file (Google
-        // Drive-style: a plain download doesn't touch "recent") — storage-service passes
-        // markAccessed=true only from the preview path. RecordFileAccessUseCase never throws
-        // (see RecordFileAccessService), so a tracking failure can't turn this into a 500.
+        // recordAccess never throws.
         if (markAccessed) {
             recordFileAccessUseCase.recordAccess(new RecordFileAccessCommand(userId, fileId));
         }

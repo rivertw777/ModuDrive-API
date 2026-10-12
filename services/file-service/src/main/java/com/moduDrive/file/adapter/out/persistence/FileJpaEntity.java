@@ -18,17 +18,12 @@ import java.util.UUID;
 @Getter
 @NoArgsConstructor
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
-// Constrained on (namespace_id, path, active_slot_name) rather than plain `name`: a unique index
-// treats NULLs as distinct from one another (standard SQL/Postgres behavior), so any number of
-// TRASHED/DELETED rows — active_slot_name always NULL for those, see activeSlotName() below — can
-// share a namespace/path/name with each other and with one live row. A trashed file therefore
-// never blocks (or gets silently resurrected by) a fresh upload at its old name; only two *active*
-// rows at the same slot collide.
+// Unique on active_slot_name, not name: it is NULL for TRASHED/DELETED rows, and NULLs never
+// collide, so a trashed file doesn't block a new one at its old name. Only two active rows do.
 @Table(name = "file", uniqueConstraints = {
         @UniqueConstraint(name = "uk_file_namespace_path_active_name", columnNames = {"namespace_id", "path", "active_slot_name"})
 }, indexes = {
-        // Backs the trash-retention sweep (findExpiredTrash: status + trashed_at), which scans
-        // every namespace — without this it's a full table scan every night.
+        // The trash-retention sweep (findExpiredTrash) across every namespace.
         @Index(name = "ix_file_status_trashed_at", columnList = "status, trashed_at")
 })
 @Entity
@@ -62,7 +57,6 @@ class FileJpaEntity extends BaseTimeEntity {
     @Column(nullable = false)
     private FileStatus status;
 
-    // Column is `is_directory`; the Java side stays `directory` / `isDirectory()`.
     @Column(name = "is_directory", nullable = false)
     private boolean directory;
 
@@ -74,15 +68,13 @@ class FileJpaEntity extends BaseTimeEntity {
     @Enumerated(EnumType.STRING)
     private Role linkRole;
 
-    /** {@code name}, mirrored — except NULL while {@code status} is TRASHED or DELETED. Exists
-     * purely to give {@code uk_file_namespace_path_active_name} something that goes NULL on
-     * soft-delete; never read from Java, never exposed on the domain model. */
+    /** {@code name}, but NULL while TRASHED or DELETED — only for
+     * {@code uk_file_namespace_path_active_name}. */
     @Column(name = "active_slot_name")
     private String activeSlotName;
 
-    /** Set when the file is sent to trash, cleared on restore. Distinct from {@code BaseTimeEntity}'s
-     * {@code deletedAt}, which this project only stamps on a *purge* (tombstone) — see
-     * {@code SpringDataFileRepository.markPurged}. */
+    /** Set on trash, cleared on restore. {@code BaseTimeEntity.deletedAt} is the purge time
+     * ({@code SpringDataFileRepository.markPurged}). */
     private LocalDateTime trashedAt;
 
     FileJpaEntity(UUID namespaceId, String name, String path, UUID ownerId, FileStatus status, boolean directory) {

@@ -11,11 +11,9 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Reached through the gateway's permitAll list, so there is no authenticated caller and
- * deliberately no X_USER_ID parameter — {@code fileId} alone authorizes a LINK-scoped entry,
- * {@code key} authorizes a guest invite. Both {@code fileId} and {@code key} are bound as String
- * (not UUID) so a malformed value 404s like any other wrong one instead of 500ing via Spring's
- * type conversion. */
+/** Anonymous (the gateway's permitAll list), so no X_USER_ID. {@code fileId} alone authorizes a
+ * LINK-scoped entry, {@code key} a guest invite. Bound as String so a malformed value 404s like a
+ * wrong one instead of failing type conversion. */
 @WebAdapter
 @RestController
 @RequiredArgsConstructor

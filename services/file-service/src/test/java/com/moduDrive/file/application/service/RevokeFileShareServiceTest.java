@@ -107,8 +107,7 @@ class RevokeFileShareServiceTest {
 
         @Test
         void deletesTheAncestorGrantTooSoTheGranteeIsNotPromoted() {
-            // The whole point of issue #310: dropping only the direct VIEWER grant would uncover
-            // the parent's EDITOR one, handing the grantee *more* access than before the revoke.
+            // Issue #310: dropping only the direct VIEWER grant would uncover the parent's EDITOR one and give the grantee more access.
             File parent = directory("projects", "/");
             UUID parentShareId = UUID.randomUUID();
             given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(file));
@@ -128,8 +127,7 @@ class RevokeFileShareServiceTest {
 
         @Test
         void deletesEveryAncestorGrantNotJustTheNearest() {
-            // A single surviving ancestor re-grants access on its own, so the walk can't stop at
-            // the first hit the way FileAccessGuard's nearest-wins lookup does.
+            // One surviving ancestor re-grants access on its own, so the walk can't stop at the first hit.
             File grandParent = directory("work", "/");
             File parent = directory("projects", "/work");
             UUID grandParentShareId = UUID.randomUUID();
@@ -151,8 +149,7 @@ class RevokeFileShareServiceTest {
 
         @Test
         void deletesAPendingGuestsAncestorInviteByEmail() {
-            // An unclaimed guest invite has no member id at all — only the invited email identifies
-            // them, so the ancestor lookup has to switch to that column or the guest keeps access.
+            // An unclaimed guest invite has no member id; only the invited email identifies them, so the lookup must use that column.
             File parent = directory("projects", "/");
             UUID parentShareId = UUID.randomUUID();
             FileShare pendingGuestShare = FileShare.withId(new FileShareId(shareId),
@@ -169,21 +166,16 @@ class RevokeFileShareServiceTest {
             revokeFileShareService.revokeFileShare(command);
 
             then(deleteFileSharePort).should().deleteFileShare(new FileShareId(parentShareId));
-            // A pending-row revoke has no member id to fall back from — the fallback path
-            // (member-service lookup) is only ever reached from a member-id row.
+            // A pending-row revoke has no member id; the member-service fallback is only reached from a member-id row.
             then(findMemberByIdPort).shouldHaveNoInteractions();
         }
 
         @Test
         void fallsBackToTheEmailWhenTheAncestorInviteWasNeverClaimed() {
-            // The direct grant names a member (no email column of its own — FileShare.claim()
-            // always clears it), but the ancestor's invite for the same person is still an
-            // unclaimed, email-only row — the claim that would have converted it never went
-            // through (a lost MemberSignedUp event, or the invite's own email not matching the
-            // member's, so ClaimPendingFileSharesService.ownsEmail rejected it). Looking up by
-            // member id alone finds nothing above; the fallback has to resolve this person's
-            // email via member-service instead of reading it off the revoked row (which never has
-            // one).
+            // The direct grant names a member (claim() clears the email column), but the ancestor's invite for the same
+            // person is still an unclaimed, email-only row (the claim never went through, e.g. a lost MemberSignedUp event or
+            // ClaimPendingFileSharesService.ownsEmail rejecting it). Lookup by member id finds nothing, so the fallback
+            // resolves the person's email via member-service.
             File parent = directory("projects", "/");
             UUID parentShareId = UUID.randomUUID();
             given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(file));
@@ -246,8 +238,7 @@ class RevokeFileShareServiceTest {
         }
     }
 
-    // Lenient because the point of this scenario is a port the correct code must NOT call: the
-    // grantee-blind listing a regression would reach for has to be stubbed to be observable at all.
+    // Lenient: the grantee-blind listing a regression would reach for must be stubbed to be observable, and correct code never calls it.
     @Nested
     @MockitoSettings(strictness = Strictness.LENIENT)
     @DisplayName("조상 폴더가 다른 사람에게만 공유되어 있을 때")
@@ -255,9 +246,7 @@ class RevokeFileShareServiceTest {
 
         @Test
         void leavesTheOtherGranteesAncestorGrantAlone() {
-            // Spec 5: rows are independent per grantee. Revoking this person must not turn into
-            // "clear every share on the folders above", which would silently cut off everyone the
-            // owner ever shared that folder with.
+            // Spec 5: rows are independent per grantee. Revoking one person must not clear every share on the folders above.
             File parent = File.withId(new FileId(UUID.randomUUID()), new FileNamespaceId(UUID.randomUUID()),
                     new FileName("projects"), new FilePath("/"), new FileOwnerId(ownerId),
                     null, null, FileStatus.UPLOADED, new FileIsDirectory(true));
@@ -290,10 +279,8 @@ class RevokeFileShareServiceTest {
 
         @Test
         void succeedsWithoutThrowing() {
-            // A concurrent caller can win the race — e.g. a client that fires the direct and
-            // ancestor revokes together, rather than waiting for the first to land, before the
-            // ancestor cascade added for #310 reaches this row itself. Either way the row is
-            // already gone, so this must not surface as an error.
+            // A concurrent revoke (e.g. a client firing the direct and ancestor revokes together) may already have
+            // removed the row; that must not surface as an error.
             given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(file));
             given(findFileSharePort.findByShareId(command.getShareId())).willReturn(Optional.empty());
 

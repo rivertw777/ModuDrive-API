@@ -182,9 +182,7 @@ class ListFileSharesServiceTest {
             FileSharesView result = listFileSharesService.listFileShares(command);
 
             assertThat(result.inheritedShares()).hasSize(2);
-            // containsExactly, not …InAnyOrder: root-most-first is a real contract the web layer
-            // depends on (MemberAccessList picks the *last* matching row as "nearest ancestor"),
-            // not just incidental ordering — see FileAccessListResponse.shares.
+            // containsExactly: root-most-first is a contract the web layer relies on (FileAccessListResponse.shares).
             assertThat(result.inheritedShares())
                     .extracting(s -> s.source().getId(), s -> s.share().getRole())
                     .containsExactly(tuple(parentId, Role.VIEWER), tuple(nearId, Role.EDITOR));

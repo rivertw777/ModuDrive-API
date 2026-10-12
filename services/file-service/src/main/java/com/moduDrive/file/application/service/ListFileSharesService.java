@@ -31,9 +31,7 @@ class ListFileSharesService implements ListFileSharesUseCase {
     private final FindMemberByIdPort findMemberByIdPort;
     private final FileAccessGuard fileAccessGuard;
 
-    // Deliberately not @Transactional: findFilePort/findFileSharePort each run their own
-    // short-lived read (Spring Data's default per-method transaction is enough for these simple
-    // lookups), so no DB connection sits open across the N sequential member-service calls below.
+    // Not @Transactional: no DB connection is held across the member-service calls below.
     @Override
     public FileSharesView listFileShares(ListFileSharesCommand command) {
         File file = findFilePort.findById(command.getFileId())
@@ -42,42 +40,23 @@ class ListFileSharesService implements ListFileSharesUseCase {
 
         List<FileShare> shares = findFileSharePort.findByFileId(command.getFileId());
 
-        // A share on a directory above this file is inherited by it. Show those grants too so the
-        // owner sees who really has access. Kept even for someone already granted directly on
-        // this file — removing just the direct row would otherwise look like it revoked their
-        // access when the ancestor grant still lets them in (see RevokeInheritedDialog on the
-        // web side, which needs this row to warn about and cascade that removal); the web layer
-        // is the one that hides the redundant row when both exist, not this service.
-        //
-        // One row per (ancestor, grantee) pair — deliberately NOT collapsed to a single "nearest"
-        // or "most generous" winner per grantee. Two independent ancestors (say a grandparent and
-        // a parent directory) can each separately share the same person; a full revoke needs to
-        // clear every one of those grants, not just whichever one would win a display tie-break —
-        // otherwise the grant this service didn't mention keeps letting them in. (Attribution for
-        // a *viewer's* "공유한 사용자" listing is a separate concern, resolved by
-        // FileAccessGuard.access, which does pick a single nearest/most-generous grant —
-        // that's unaffected by this.)
+        // Every ancestor grant, one row per (ancestor, grantee), even for a grantee with a direct
+        // row: the web needs them all to warn about and cascade a revoke, and hides redundant
+        // rows itself.
         List<File> inheritedLinkSources = new ArrayList<>();
         List<InheritedShare> inheritedShares = new ArrayList<>();
         for (File ancestor : fileAccessGuard.ancestorDirectories(file)) {
             if (ancestor.getAccessScope() == ShareScope.LINK) {
                 inheritedLinkSources.add(ancestor);
             }
-            // A pending guest invite (issue #313) belongs here just as much as a claimed member's
-            // grant: PublicFileResolver already lets it reach this whole subtree (see
-            // mintedForTargetOrAnAncestor), so hiding it from the owner would leave them unable to
-            // even find, let alone revoke, an invite that's already granting access.
+            // Guest invites too: PublicFileResolver lets them reach the whole subtree.
             for (FileShare ancestorShare : findFileSharePort.findByFileId(new File.FileId(ancestor.getId()))) {
                 inheritedShares.add(new InheritedShare(ancestorShare, ancestor));
             }
         }
 
-        // Enrichment is member-service display data, not the file/share data itself — a lookup
-        // failure (member deleted, member-service briefly down) must degrade that one row to
-        // "unknown", never take down the whole share list an owner needs to see to revoke access.
-        // A pending guest share has no sharedWithUserId to look up at all — it already carries its
-        // own granteeEmail, so it's excluded here and read directly from the share row instead
-        // (see FileAccessListResponse).
+        // A guest share has no member to look up; its granteeEmail is shown instead
+        // (FileAccessListResponse).
         var memberSummaries = Stream.concat(
                         shares.stream().map(FileShare::getSharedWithUserId),
                         inheritedShares.stream().map(i -> i.share().getSharedWithUserId()))
@@ -97,8 +76,7 @@ class ListFileSharesService implements ListFileSharesUseCase {
                 .stream()
                 .map(descendant -> new File.FileId(descendant.getId()))
                 .toList();
-        // existsByFileIdIn on an empty id list is never called — an IN () clause is invalid SQL
-        // on some drivers, and an empty subtree obviously has nothing shared in it anyway.
+        // An empty IN () is invalid SQL on some drivers.
         return !descendantIds.isEmpty() && findFileSharePort.existsByFileIdIn(descendantIds);
     }
 }

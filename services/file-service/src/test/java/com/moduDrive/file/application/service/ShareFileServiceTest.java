@@ -124,7 +124,7 @@ class ShareFileServiceTest {
             Optional<FileShare> result = shareFileService.shareFile(command);
 
             assertThat(result).isEmpty();
-            // Unlike the old fallback, a guest invite must never flip the file itself to LINK.
+            // A guest invite must never flip the file itself to LINK.
             assertThat(file.getAccessScope()).isEqualTo(ShareScope.RESTRICTED);
 
             ArgumentCaptor<FileShare> captor = ArgumentCaptor.forClass(FileShare.class);

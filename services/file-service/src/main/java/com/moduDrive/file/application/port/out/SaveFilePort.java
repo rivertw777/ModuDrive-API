@@ -6,21 +6,14 @@ import com.moduDrive.file.domain.model.Namespace.NamespaceId;
 
 import java.time.LocalDateTime;
 import java.util.Collection;
-import java.util.List;
 import java.util.UUID;
 
 public interface SaveFilePort {
 
     File saveFile(File file);
 
-    /** Inserts brand-new rows (null id) all at once — one flush instead of one per row, which a
-     * 5,000-entry upload batch needs. Same slot-conflict translation as {@link #saveFile}; the
-     * result is in input order. */
-    List<File> saveNewFiles(List<File> files);
-
-    /** Purge from trash: drop blocks/versions/shares/favorites, keep the metadata row as a
-     * tombstone with {@code deletedAt} stamped. {@code deletedBy} is null for a system-triggered
-     * purge (the retention sweep) — there's no caller to attribute it to. */
+    /** Purge from trash: drop versions/shares/favorites, keep the row as a tombstone with
+     * {@code deletedAt} stamped. {@code deletedBy} is null for the retention sweep. */
     void purgeFile(FileId fileId, UUID deletedBy);
 
     /** {@link #purgeFile} for many files at once — a folder's subtree. A constant number of
@@ -39,8 +32,4 @@ public interface SaveFilePort {
 
     /** {@link File#restore} on every still-trashed row. */
     void restoreSubtree(NamespaceId namespaceId, String prefix);
-
-    /** Hard delete — everything, row included. Not used by the trash flow (see {@link #purgeFile});
-     * for a future tombstone-cleanup job. */
-    void deleteFile(FileId fileId);
 }

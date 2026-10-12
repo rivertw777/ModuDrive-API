@@ -30,7 +30,7 @@ class NamespaceJpaEntity extends BaseTimeEntity {
     @Column(nullable = false)
     private long quotaBytes;
 
-    /** Changed only by bulk UPDATEs (SpringDataNamespaceRepository), never through this entity. */
+    /** Changed only by SpringDataNamespaceRepository's bulk UPDATEs. */
     @Column(nullable = false)
     private long usedBytes;
 

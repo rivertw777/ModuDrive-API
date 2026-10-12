@@ -12,10 +12,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
-/** No caller id and no direct {@code FileAccessGuard} check — {@code fileId}/{@code key} are the
- * whole credential between them, and {@link PublicFileResolver} deciding one of them still
- * authorizes this entry is the authorization. Download is the only thing this enables, and every
- * link role includes it. */
+/** No caller: {@link PublicFileResolver} accepting {@code fileId}/{@code key} is the
+ * authorization. Every role includes DOWNLOAD. */
 @UseCase
 @RequiredArgsConstructor
 class GetPublicFileRevisionsService implements GetPublicFileRevisionsUseCase {

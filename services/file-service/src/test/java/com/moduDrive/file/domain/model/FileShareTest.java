@@ -29,9 +29,8 @@ class FileShareTest {
             pending.claim(memberId);
 
             assertThat(pending.getSharedWithUserId()).isEqualTo(memberId);
-            // granteeEmail is cleared (there's a real member behind it now), but the token is
-            // kept so the /files/{fileId}?key= link the guest was emailed keeps working. "Still
-            // pending" is now sharedWithUserId == null (see UpdateFileScopeService).
+            // claim() clears granteeEmail but keeps the token, so the emailed /files/{fileId}?key= link keeps working.
+            // Still pending means sharedWithUserId == null.
             assertThat(pending.getToken()).isEqualTo(token);
             assertThat(pending.getGranteeEmail()).isNull();
         }

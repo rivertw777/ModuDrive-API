@@ -1,7 +1,6 @@
 package com.moduDrive.file.application.port.in.usecase;
 
-/** Driven by {@code TrashRetentionScheduler}, not a controller — sweeps every namespace's trash,
- * not just one caller's, so it takes no per-request input. */
+/** Driven by {@code TrashRetentionScheduler}; sweeps every namespace's trash. */
 public interface PurgeExpiredTrashUseCase {
 
     void purgeExpiredTrash();

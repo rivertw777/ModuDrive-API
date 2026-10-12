@@ -12,10 +12,9 @@ import java.util.UUID;
 
 interface SpringDataFileShareRepository extends JpaRepository<FileShareJpaEntity, UUID> {
 
-    /** Bulk JPQL delete instead of {@link #deleteById}: concurrent revokes of the same grantee's
-     * ancestor shares (see RevokeFileShareService#revokeAncestorGrants) can race to delete the
-     * same row, and the entity-based deleteById throws ObjectOptimisticLockingFailureException
-     * when 0 rows remain by flush time. A bulk delete is a no-op instead. */
+    /** Bulk delete, not {@link #deleteById}: concurrent revokes can race to delete the same
+     * ancestor share, and deleteById throws ObjectOptimisticLockingFailureException when the row is
+     * already gone. */
     @Modifying
     @Query("delete from FileShareJpaEntity f where f.id = :id")
     void deleteByIdBulk(@Param("id") UUID id);

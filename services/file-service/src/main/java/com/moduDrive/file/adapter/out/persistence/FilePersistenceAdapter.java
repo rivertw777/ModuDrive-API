@@ -13,7 +13,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.AuditorAware;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.ScrollPosition;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.domain.Window;
 import org.springframework.data.jpa.domain.Specification;
@@ -27,10 +26,10 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+/** Files, folders and their versions. A purge also clears the file's share and favorite rows
+ * (see deleteAttachments). */
 @PersistenceAdapter
 @RequiredArgsConstructor
-/** The File aggregate — files/folders and their versions. Share and favorite rows are other
- * aggregates' tables, but a purge still has to clear them (see cascadeDeleteAttachments). */
 class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVersionPort, FindFileVersionsPort,
         DeleteFileVersionsPort {
 
@@ -49,54 +48,25 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
                     file.getNamespaceId(), file.getName(), file.getPath(),
                     file.getOwnerId(), file.getStatus(), file.isDirectory()
             );
-            // CommitFileUploadService/CreateDirectoryService's own same-name pre-check (where
-            // they have one) isn't atomic with this insert, so a concurrent request for the same
-            // new name can still slip through between them.
+            // Callers' same-name pre-checks aren't atomic with this insert; the slot constraint is.
             return fileMapper.mapFileToDomain(saveAndTranslateSlotConflict(entity));
         }
 
         FileJpaEntity entity = fileRepository.findById(file.getId())
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_NOT_FOUND));
 
-        // deletedAt isn't passed: it is only ever stamped by a purge (markPurged), never by a
-        // domain-driven save.
+        // deletedAt isn't passed: only a purge (markPurged) stamps it.
         entity.applyChanges(file.getName(), file.getPath(), file.getCurrentVersionId(), file.getFileSize(),
                 file.getStatus(), file.getAccessScope(), file.getLinkRole(),
                 file.getTrashedAt());
 
-        // Same conflict, different door: rename/move/restore land here, and none of their callers
-        // pre-check the destination slot either (e.g. RestoreFileService can restore a file back
-        // onto a slot a later upload already took over) — this used to throw a raw
-        // DataIntegrityViolationException out through the transaction commit as a 500.
+        // Rename/move/restore can collide too (a restore onto a slot a later upload took).
         return fileMapper.mapFileToDomain(saveAndTranslateSlotConflict(entity));
     }
 
-    @Override
-    public List<File> saveNewFiles(List<File> files) {
-        List<FileJpaEntity> entities = files.stream()
-                .map(file -> new FileJpaEntity(file.getNamespaceId(), file.getName(), file.getPath(),
-                        file.getOwnerId(), file.getStatus(), file.isDirectory()))
-                .toList();
-        try {
-            List<FileJpaEntity> saved = fileRepository.saveAll(entities);
-            // One flush for the whole list, still inside this try — same reason saveAndFlush is
-            // used below: the slot violation must surface here to be translated.
-            fileRepository.flush();
-            return saved.stream().map(fileMapper::mapFileToDomain).toList();
-        } catch (DataIntegrityViolationException e) {
-            if (isActiveSlotConflict(e)) {
-                throw new BusinessException(FileExceptionCase.FILE_ALREADY_EXISTS);
-            }
-            throw e;
-        }
-    }
-
-    /** saveAndFlush (not save): forces uk_file_namespace_path_active_name's violation to surface
-     * here, synchronously — a plain save() only persists to the session and defers the actual
-     * insert/update to a later, uncontrolled flush, which this catch would never see. Same
-     * reasoning as FileAccessPersistenceAdapter.recordAccess. Only that specific constraint is translated to a business
-     * error — a NOT NULL/FK/other integrity violation is a real bug and should surface as-is
-     * rather than being reported to the caller as "already exists". */
+    /** saveAndFlush, so a uk_file_namespace_path_active_name violation surfaces inside this catch
+     * rather than at a later flush. Only that constraint becomes FILE_ALREADY_EXISTS; any other
+     * integrity violation is a bug and surfaces as is. */
     private FileJpaEntity saveAndTranslateSlotConflict(FileJpaEntity entity) {
         try {
             return fileRepository.saveAndFlush(entity);
@@ -112,15 +82,6 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
         Throwable cause = e.getMostSpecificCause();
         return cause.getMessage() != null
                 && cause.getMessage().toLowerCase().contains("uk_file_namespace_path_active_name");
-    }
-
-    /** Hard delete — no caller in the trash flow anymore (purgeFile keeps a tombstone), kept for
-     * a future job that clears out tombstones older than the recovery window. Tombstones only: it
-     * doesn't touch namespace.used_bytes, which a live file still counts in. */
-    @Override
-    public void deleteFile(FileId fileId) {
-        deleteAttachments(new UUID[]{fileId.value()});
-        fileRepository.deleteById(fileId.value());
     }
 
     @Override
@@ -141,9 +102,7 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
         if (ids.length == 0) {
             return;
         }
-        // Tombstone purge: drop everything that costs storage, keep the metadata rows with deletedAt
-        // stamped. markPurged is a plain UPDATE (not a JPA save) so it doesn't bump updatedAt —
-        // DirectoryCascader.purge's sibling check relies on trash-time timestamps staying put.
+        // markPurged is a plain UPDATE, not a JPA save, so updatedAt isn't bumped.
         fileRepository.markPurged(ids, LocalDateTime.now(), deletedBy);
         deleteAttachments(ids);
         // In the same transaction as the tombstones, last, like the commit's usage update: one
@@ -151,11 +110,8 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
         namespaceRepository.releaseUsedBytesOf(ids);
     }
 
-    // The files' versions would otherwise dangle forever, holding block references that
-    // FilePurger/DirectoryCascader already released. Their share and favorite rows likewise — no
-    // FK cascade, so a grant or a star on a purged file/folder would linger and only ever get
-    // filtered out at read time (ListSharedWithMeService / ListFavoritesService). Bulk deletes,
-    // one per table however many files.
+    // No FK cascades: the versions (whose block references the caller already released), shares
+    // and favorites would otherwise linger. One bulk delete per table.
     private void deleteAttachments(UUID[] fileIds) {
         fileVersionRepository.deleteBlocklistsByFileIds(fileIds);
         fileVersionRepository.deleteByFileIds(fileIds);

@@ -4,8 +4,7 @@ import lombok.Getter;
 
 import java.util.List;
 
-/** Raw Strings for the same reason as {@link GetPublicFileRevisionsCommand}: a malformed id from
- * the anonymous relay must 404 like a wrong one, not 500. */
+/** Raw Strings for the same reason as {@link GetPublicFileCommand}. */
 @Getter
 public class ResolvePublicArchiveEntriesCommand {
 

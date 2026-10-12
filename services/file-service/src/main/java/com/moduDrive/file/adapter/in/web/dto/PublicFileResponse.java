@@ -5,8 +5,8 @@ import com.moduDrive.file.domain.model.File;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
-/** Deliberately narrower than {@link FileResponse}: an anonymous link visitor has no business
- * seeing namespaceId, ownerId, path, or the internal version id. */
+/** Narrower than {@link FileResponse}: no namespaceId, ownerId, path or version id for an
+ * anonymous visitor. */
 public record PublicFileResponse(
         UUID fileId,
         String name,

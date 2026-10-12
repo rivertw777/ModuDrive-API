@@ -31,9 +31,7 @@ class RestoreFileService implements RestoreFileUseCase {
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_NOT_FOUND));
         fileAccessGuard.requireOwner(file, command.getCallerId());
 
-        // A purged file is a tombstone (status DELETED) — its content is gone; to the caller it
-        // no longer exists, so this deliberately doesn't tell that case apart from "no such file"
-        // with FILE_NOT_DELETED, the way a merely-live (never-trashed) file does.
+        // A purged file is a tombstone: to the caller it no longer exists.
         if (file.getStatus() == FileStatus.DELETED) {
             throw new BusinessException(FileExceptionCase.FILE_NOT_FOUND);
         }

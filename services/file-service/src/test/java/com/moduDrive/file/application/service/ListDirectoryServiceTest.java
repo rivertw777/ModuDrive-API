@@ -12,7 +12,6 @@ import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.Namespace;
 import com.moduDrive.file.domain.model.Namespace.*;
 import com.moduDrive.file.exception.FileExceptionCase;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -33,7 +32,6 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
-import static org.mockito.Mockito.lenient;
 
 @ExtendWith(MockitoExtension.class)
 class ListDirectoryServiceTest {

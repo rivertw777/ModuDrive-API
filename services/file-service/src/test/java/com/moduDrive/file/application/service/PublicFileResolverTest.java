@@ -56,10 +56,8 @@ class PublicFileResolverTest {
         given(findFilePort.findById(new FileId(f.getId()))).willReturn(Optional.of(f));
     }
 
-    /** The ancestor walk is computed once up front now (issue #320) and handed to both the LINK
-     * check and the guest-invite check, so every scenario below has to stub it even when its own
-     * assertions only care about one of the two — an unstubbed mock returns null, not an empty
-     * list, and the real (non-mocked) matchesGuestInvite would NPE on that. */
+    /** The ancestor walk is computed once up front (issue #320) and shared by the LINK check and the guest-invite
+     * check, so every scenario must stub it: an unstubbed mock returns null and matchesGuestInvite would NPE. */
     private void givenAncestors(File f, List<File> ancestors) {
         given(fileAccessGuard.ancestorDirectories(f)).willReturn(ancestors);
     }

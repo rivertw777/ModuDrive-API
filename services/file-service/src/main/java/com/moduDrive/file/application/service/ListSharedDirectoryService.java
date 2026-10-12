@@ -44,8 +44,6 @@ class ListSharedDirectoryService implements ListSharedDirectoryUseCase {
         UUID callerId = command.getCallerId();
         File directory = findFilePort.findById(command.getDirectoryId())
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_NOT_FOUND));
-        // READ is enough to list contents; requirePermission already honours an inherited grant
-        // from a directory further up, so a caller who was shared an ancestor can browse here too.
         FileAccessGuard.Access access = fileAccessGuard.requirePermission(directory, callerId, Permission.READ);
 
         if (!directory.isDirectory()) {
@@ -53,13 +51,8 @@ class ListSharedDirectoryService implements ListSharedDirectoryUseCase {
         }
 
         Set<UUID> favoriteIds = fileFavoritePort.favoriteFileIds(callerId);
-        // Children of a shared folder inherit the caller's role *and* the "공유한 사용자"/"공유된
-        // 날짜" attribution from that folder's own grant — 공유 문서함 shows the same columns whether
-        // you're at the root or three folders deep, so resolve both once here rather than per row.
-        // The permission check's own result: from a child's point of view `directory` is just its
-        // nearest ancestor, so the directory's resolved role is what a child inherits — its own
-        // grant wins outright over a grandparent's, same rule as a file's own direct grant. (The
-        // owner gets Access.NONE here, but every child of theirs is FileView.owned below anyway.)
+        // Children inherit the directory's resolved role and its grant's "공유한 사용자/날짜"; the
+        // directory is every child's nearest ancestor.
         Role inheritedRole = access.role();
         Optional<FileShare> grant = Optional.ofNullable(access.grant());
         MemberSummary sharedBy = findMemberByIdPort.findMemberByIdOrUnknown(directory.getOwnerId());
@@ -70,8 +63,7 @@ class ListSharedDirectoryService implements ListSharedDirectoryUseCase {
                 .stream()
                 .filter(child -> !child.isRemoved())
                 .toList();
-        // A child can also hold its own direct share to the caller (see ShareFileService) — every
-        // child's in one query, not one per row.
+        // A child's own direct grant to the caller, all children in one query.
         Map<UUID, FileShare> directGrants = findFileSharePort
                 .findBySharedWithUserIdAndFileIdIn(callerId, children.stream().map(child -> new FileId(child.getId())).toList())
                 .stream()
@@ -83,11 +75,7 @@ class ListSharedDirectoryService implements ListSharedDirectoryUseCase {
                     if (child.getOwnerId().equals(callerId)) {
                         return FileView.owned(child);
                     }
-                    // The direct grant, if any, wins outright (matches FileAccessGuard.access — a
-                    // grant on the exact file is a deliberate, file-specific decision by the owner
-                    // and is never overridden by an inherited one, more generous or not); the date
-                    // is the direct grant's own, since that's the row the caller was actually
-                    // notified about.
+                    // A direct grant wins outright, as in FileAccessGuard.access.
                     Optional<FileShare> direct = Optional.ofNullable(directGrants.get(child.getId()));
                     Role role = direct.map(FileShare::getRole).orElse(inheritedRole);
                     LocalDateTime sharedOn = direct.map(FileShare::getCreatedAt).orElse(sharedAt);

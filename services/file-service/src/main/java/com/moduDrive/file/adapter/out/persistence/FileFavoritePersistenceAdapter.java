@@ -22,19 +22,16 @@ class FileFavoritePersistenceAdapter implements FileFavoritePort {
     @Transactional
     @Override
     public void favorite(UUID userId, UUID fileId) {
-        // existsBy covers the common case (re-starring an already-starred file). It does NOT
-        // fully cover a concurrent first-star race: JpaRepository.save only persist()s, so the
-        // uk_file_favorite_user_file violation surfaces at the outer transaction's commit, past
-        // this catch — the loser gets a 500 that a retry then resolves. H2 (test) has no
-        // INSERT..ON CONFLICT and Postgres MERGE would fork the SQL, so this stays a documented
-        // rough edge rather than a native upsert.
+        // existsBy covers re-starring. Two concurrent first stars still race: save only persists,
+        // so the loser's uk_file_favorite_user_file violation surfaces at commit, past this catch,
+        // as a 500 that a retry resolves.
         if (fileFavoriteRepository.existsByUserIdAndFileId(userId, fileId)) {
             return;
         }
         try {
             fileFavoriteRepository.save(new FileFavoriteJpaEntity(userId, fileId));
         } catch (DataIntegrityViolationException e) {
-            // Only reached if the flush happens inside this call (it usually doesn't) — harmless.
+            // Only reached if the flush happens inside this call; already starred.
         }
     }
 
@@ -51,8 +48,6 @@ class FileFavoritePersistenceAdapter implements FileFavoritePort {
 
     @Override
     public Set<UUID> favoriteFileIds(UUID userId) {
-        // LinkedHashSet so the most-recently-starred-first order from the query survives — the
-        // favorites list relies on it; the membership-check callers don't care.
         return fileFavoriteRepository.findByUserIdOrderByRecency(userId).stream()
                 .map(FileFavoriteJpaEntity::getFileId)
                 .collect(Collectors.toCollection(LinkedHashSet::new));

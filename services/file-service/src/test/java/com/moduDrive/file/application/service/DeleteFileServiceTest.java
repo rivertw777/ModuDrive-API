@@ -26,7 +26,6 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 
-import com.moduDrive.file.domain.model.Role;
 
 import static org.mockito.BDDMockito.willThrow;
 

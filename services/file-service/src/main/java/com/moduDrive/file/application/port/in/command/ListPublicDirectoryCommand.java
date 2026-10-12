@@ -2,11 +2,9 @@ package com.moduDrive.file.application.port.in.command;
 
 import lombok.Getter;
 
-/** {@code fileId} kept as a raw String for the same reason as {@link GetPublicFileCommand}: an
- * unauthenticated caller supplies it, so a malformed value must 404 like a wrong one. The
- * directory to list — the link's own folder or any folder nested under it. {@code key} is the
- * same optional guest-invite token {@link GetPublicFileCommand} carries: a folder invite reaches
- * everything nested under the invited folder, so listing needs it too, not just LINK scope. */
+/** Raw Strings for the same reason as {@link GetPublicFileCommand}. {@code fileId} is the
+ * directory to list; {@code key} is the optional guest-invite token, since a folder invite reaches
+ * everything under the folder. */
 @Getter
 public class ListPublicDirectoryCommand {
 

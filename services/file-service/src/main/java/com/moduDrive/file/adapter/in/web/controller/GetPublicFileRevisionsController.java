@@ -13,10 +13,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
-/** Service-to-service counterpart of {@link GetLatestFileVersionsController} for anonymous link
- * visitors: storage-service resolves the blocks to stream through this route. Same response shape
- * and {@code limit} parameter, but no {@code userId} — {@code fileId} alone authorizes a
- * LINK-scoped entry, {@code key} authorizes a guest invite (see {@code PublicFileResolver}). */
+/** {@link GetLatestFileVersionsController} for anonymous visitors: no {@code userId};
+ * {@code fileId} or {@code key} authorizes (see {@code PublicFileResolver}). */
 @WebAdapter
 @RestController
 @RequiredArgsConstructor

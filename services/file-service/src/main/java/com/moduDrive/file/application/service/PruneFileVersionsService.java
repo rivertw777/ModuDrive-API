@@ -14,16 +14,13 @@ import java.util.List;
 import java.util.UUID;
 
 /** Spec 001: a file keeps its current version, and of the others only those under 30 days old and
- * among its newest 100 (Google Drive's rule). Without this, every overwrite's blocks stayed in S3 for
- * the file's whole life — not downloadable, and not counted against the quota (which sums current
- * versions only). A dropped version releases its blocks; the unreferenced-block sweep deletes the
- * ones no other version uses, a day later. */
+ * among its newest 100 (Google Drive's rule). A dropped version releases its blocks; the
+ * unreferenced-block sweep deletes the ones no other version uses, a day later. */
 @Slf4j
 @UseCase
 @RequiredArgsConstructor
 class PruneFileVersionsService implements PruneFileVersionsUseCase {
 
-    // ponytail: hardcoded like TRASH_RETENTION_DAYS — make them properties if a deployment needs its own.
     static final Duration RETENTION = Duration.ofDays(30);
     static final int KEEP = 100;
     static final int BATCH_SIZE = 500;
@@ -57,8 +54,8 @@ class PruneFileVersionsService implements PruneFileVersionsUseCase {
         try {
             return fileVersionPruner.prune(fileId, cutoff, KEEP);
         } catch (PessimisticLockingFailureException e) {
-            // Postgres broke a lock cycle (e.g. a purge of this file landing between our reads): the
-            // next run retries — expected now and then, not an error.
+            // Postgres broke a lock cycle (e.g. a purge of this file between our reads); expected
+            // now and then, the next run retries.
             log.warn("Pruning versions of fileId={} lost a lock race; retried next run", fileId.value());
             return 0;
         } catch (RuntimeException e) {

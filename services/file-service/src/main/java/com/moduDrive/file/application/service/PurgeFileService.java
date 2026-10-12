@@ -18,17 +18,14 @@ class PurgeFileService implements PurgeFileUseCase {
     private final FileAccessGuard fileAccessGuard;
     private final FilePurger filePurger;
 
-    // Not @Transactional here on purpose — see EmptyTrashService/PurgeExpiredTrashService:
-    // filePurger.purgeRoot opens its own REQUIRES_NEW transaction, so wrapping this in another
-    // one would just hold a second pooled connection for no benefit (nothing here can roll it back).
+    // Not @Transactional: filePurger.purgeRoot opens its own (REQUIRES_NEW); an outer one would
+    // only hold a second connection.
     @Override
     public void purgeFile(PurgeFileCommand command) {
         File file = findFilePort.findById(command.getFileId())
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_NOT_FOUND));
         fileAccessGuard.requireOwner(file, command.getCallerId());
 
-        // Only a currently-trashed file is purge-eligible — never trashed at all, or already a
-        // tombstone (status DELETED) from a prior purge.
         if (file.getStatus() != FileStatus.TRASHED) {
             throw new BusinessException(FileExceptionCase.FILE_NOT_DELETED);
         }

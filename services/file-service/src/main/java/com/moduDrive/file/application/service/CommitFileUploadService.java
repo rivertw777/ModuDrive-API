@@ -320,9 +320,9 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
         FileOwnerId fileOwnerId = new FileOwnerId(ownerId);
         String parent = "/";
         File folder = null;
-        // ponytail: one lookup per path segment; uploads are a handful deep. Two commits creating
-        // the same missing folder at once would make the second fail on the unique slot
-        // (400 FILE_ALREADY_EXISTS) for that file alone, and its retry finds the folder.
+        // One lookup per path segment. Two commits creating the same missing folder at once: the
+        // second fails on the unique slot (FILE_ALREADY_EXISTS) for that file alone, and its retry
+        // finds the folder.
         for (String segment : "/".equals(path) ? new String[0] : path.substring(1).split("/")) {
             // Locked top-down, like a trash locks a subtree: the folder can't be trashed while a file
             // goes in under it, and one trashed meanwhile isn't found — a new one is made instead.
@@ -339,8 +339,7 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
     }
 
     /** How much the drive grows if this file is committed: its size, less the current size of the
-     * file it replaces at that spot — counted only where the usage sum counts it (not a folder, not a
-     * PENDING row an old upload flow left). */
+     * file it replaces (a folder or a PENDING row counts as 0). */
     private long growthOf(CommitFileUploadCommand command, NamespaceId namespaceId) {
         long replaced = findFilePort.findActiveByNamespaceIdAndPathAndName(namespaceId, command.getPath(), command.getName())
                 .filter(file -> !file.isDirectory() && file.getStatus() != FileStatus.PENDING && file.getFileSize() != null)

@@ -10,9 +10,8 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Fills the transient {@code favorite} flag on a list of files for one caller. Favorites live
- * only in {@code file_favorite} now (see {@code FileFavoritePort}), so every owner-facing listing
- * that shows the star has to resolve it here — one batched query per page, not a lookup per row.
+ * Fills the transient {@code favorite} flag for one caller from {@code file_favorite}, one query
+ * per list.
  */
 @Component
 @RequiredArgsConstructor
@@ -30,8 +29,7 @@ class FavoriteEnricher {
         return files;
     }
 
-    /** Single file — for the echo a mutation (rename/move/restore) returns, whose favorite state
-     * is unchanged by the operation but still has to be on the response. */
+    /** Single file, for the response of a rename/move/restore. */
     File withFavorite(UUID userId, File file) {
         file.markFavorite(fileFavoritePort.isFavorite(userId, file.getId()));
         return file;

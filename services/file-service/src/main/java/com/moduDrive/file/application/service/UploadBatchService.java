@@ -132,8 +132,7 @@ class UploadBatchService implements UploadBatchUseCase {
                 name = node.name();
                 reused = null;
                 if (mergedFolderPaths.contains(parent)) {
-                    // ponytail: one children query per merged folder; fine for hand-picked
-                    // uploads, batch it if merging deep trees ever shows up in latency.
+                    // One children query per merged folder.
                     Map<String, File> children = mergedChildren.computeIfAbsent(parent, path ->
                             findFilePort.findByNamespaceIdAndPath(namespaceId, path).stream()
                                     .collect(Collectors.toMap(File::getName, Function.identity(), (a, b) -> a)));
@@ -167,8 +166,8 @@ class UploadBatchService implements UploadBatchUseCase {
         return planned;
     }
 
-    /** "/" always exists; anything else has to be an active folder in the caller's own drive —
-     * which also rules out uploading into someone else's shared folder, same as today. */
+    /** "/" always exists; anything else has to be an active folder in the caller's own drive, so
+     * nobody uploads into someone else's shared folder. */
     private void requireTargetDirectory(NamespaceId namespaceId, String target) {
         if ("/".equals(target)) {
             return;
