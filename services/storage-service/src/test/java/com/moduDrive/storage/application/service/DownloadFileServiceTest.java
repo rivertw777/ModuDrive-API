@@ -2,6 +2,7 @@ package com.moduDrive.storage.application.service;
 
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.storage.application.port.in.command.DownloadFileCommand;
+import com.moduDrive.storage.application.port.in.usecase.RangeContent;
 import com.moduDrive.storage.application.port.out.DownloadQuotaPort;
 import com.moduDrive.storage.application.port.out.GetFileVersionPort;
 import com.moduDrive.storage.application.port.out.GetFileVersionPort.VersionLocation;
@@ -60,7 +61,7 @@ class DownloadFileServiceTest {
 
         @Test
         void returnsAssembledBytes() {
-            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(2)));
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(2), 0));
             given(retrieveBlocksPort.retrieveBlocks(anyList()))
                     .willReturn(List.of("hello ".getBytes(), "world".getBytes()));
 
@@ -71,7 +72,7 @@ class DownloadFileServiceTest {
 
         @Test
         void assembleSingleBlockCorrectly() {
-            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(1)));
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(1), 0));
             given(retrieveBlocksPort.retrieveBlocks(anyList()))
                     .willReturn(List.of("data".getBytes()));
 
@@ -87,7 +88,7 @@ class DownloadFileServiceTest {
 
         @Test
         void delegatesToStreamBlocksWithoutAssemblingAByteArray() {
-            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(2)));
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(2), 0));
 
             downloadFileService.downloadStream(new DownloadFileCommand(fileId, userId), new ByteArrayOutputStream());
 
@@ -97,7 +98,7 @@ class DownloadFileServiceTest {
 
         @Test
         void doesNotMarkTheFileAsRecentlyAccessed() {
-            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(2)));
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(2), 0));
 
             downloadFileService.downloadStream(new DownloadFileCommand(fileId, userId), new ByteArrayOutputStream());
 
@@ -106,7 +107,7 @@ class DownloadFileServiceTest {
 
         @Test
         void checksTheUserScopedQuotaBeforeStreaming() {
-            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(2)));
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(2), 0));
 
             downloadFileService.downloadStream(new DownloadFileCommand(fileId, userId), new ByteArrayOutputStream());
 
@@ -115,7 +116,7 @@ class DownloadFileServiceTest {
 
         @Test
         void recordsOnlyTheBytesThatActuallyReachedTheClient() {
-            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(2)));
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(2), 0));
             willAnswer(inv -> { ((OutputStream) inv.getArgument(1)).write(new byte[512]); return null; })
                     .given(retrieveBlocksPort).streamBlocks(anyList(), any());
 
@@ -126,7 +127,7 @@ class DownloadFileServiceTest {
 
         @Test
         void stillRecordsWhatWasSentWhenStreamingAbortsPartway() {
-            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(2)));
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(2), 0));
             willAnswer(inv -> {
                 ((OutputStream) inv.getArgument(1)).write(new byte[100]);
                 throw new UncheckedIOException(new IOException("client gone"));
@@ -140,7 +141,7 @@ class DownloadFileServiceTest {
 
         @Test
         void rejectsBeforeStreamingWhenTheFileIsOverItsDownloadQuota() {
-            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(2)));
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(2), 0));
             willThrow(new BusinessException(StorageExceptionCase.DOWNLOAD_QUOTA_EXCEEDED))
                     .given(downloadQuotaPort).checkWithinQuota(anyString(), anyString());
 
@@ -161,7 +162,7 @@ class DownloadFileServiceTest {
 
         @Test
         void alsoMetersTheQuotaByRealSizeSoItCannotBeUsedToBypassTheLimit() {
-            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(1)));
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(1), 0));
             given(retrieveBlocksPort.retrieveBlocks(anyList())).willReturn(List.of("data".getBytes()));
 
             downloadFileService.download(new DownloadFileCommand(fileId, userId, true));
@@ -172,7 +173,7 @@ class DownloadFileServiceTest {
 
         @Test
         void marksTheFileAsRecentlyAccessed() {
-            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(1)));
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(1), 0));
             given(retrieveBlocksPort.retrieveBlocks(anyList())).willReturn(List.of("data".getBytes()));
 
             downloadFileService.download(new DownloadFileCommand(fileId, userId, true));
@@ -182,7 +183,7 @@ class DownloadFileServiceTest {
 
         @Test
         void rejectsWithoutFetchingBlocksWhenOverQuota() {
-            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(1)));
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(1), 0));
             willThrow(new BusinessException(StorageExceptionCase.DOWNLOAD_QUOTA_EXCEEDED))
                     .given(downloadQuotaPort).checkWithinQuota(anyString(), anyString());
 
@@ -202,7 +203,7 @@ class DownloadFileServiceTest {
 
         @Test
         void rejectsBeforeFetchingAnyBlocks() {
-            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(30)));
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(30), 0));
 
             Throwable thrown = catchThrowable(() ->
                     downloadFileService.download(new DownloadFileCommand(fileId, userId, true)));
@@ -210,6 +211,75 @@ class DownloadFileServiceTest {
             assertThat(thrown).isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
                     .isEqualTo(StorageExceptionCase.PREVIEW_TOO_LARGE);
+            then(retrieveBlocksPort).shouldHaveNoInteractions();
+        }
+    }
+
+    @Nested
+    @DisplayName("Range로 미리보기할 때 (블록 크기 4, 파일 \"0123456789\")")
+    class WhenViewingARange {
+
+        private final VersionLocation version = new VersionLocation("v1", keys(3), 10);
+        private DownloadFileService service;
+
+        @BeforeEach
+        void setUp() {
+            service = new DownloadFileService(getFileVersionPort, retrieveBlocksPort, downloadQuotaPort, 4);
+            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(version);
+        }
+
+        @Test
+        void readsOnlyTheBlockCoveringTheRange() {
+            given(retrieveBlocksPort.retrieveBlocks(List.of("blocks/owner/h1"))).willReturn(List.of("4567".getBytes()));
+
+            RangeContent result = service.viewRange(new DownloadFileCommand(fileId, userId, true), 5, 6L);
+
+            assertThat(new String(result.data())).isEqualTo("56");
+            assertThat(result.start()).isEqualTo(5);
+            assertThat(result.totalLength()).isEqualTo(10);
+            then(downloadQuotaPort).should().recordUsage(userId.toString(), "v1", 2);
+        }
+
+        @Test
+        void capsAnOpenEndedRangeAtOneBlockOfBytes() {
+            given(retrieveBlocksPort.retrieveBlocks(List.of("blocks/owner/h0", "blocks/owner/h1")))
+                    .willReturn(List.of("0123".getBytes(), "4567".getBytes()));
+
+            RangeContent result = service.viewRange(new DownloadFileCommand(fileId, userId, true), 2, null);
+
+            assertThat(new String(result.data())).isEqualTo("2345");
+            assertThat(result.start()).isEqualTo(2);
+        }
+
+        @Test
+        void clampsTheEndToTheLastByteOfTheFile() {
+            given(retrieveBlocksPort.retrieveBlocks(List.of("blocks/owner/h2"))).willReturn(List.of("89".getBytes()));
+
+            RangeContent result = service.viewRange(new DownloadFileCommand(fileId, userId, true), 8, 100L);
+
+            assertThat(new String(result.data())).isEqualTo("89");
+        }
+
+        @Test
+        void fallsBackToTheWholeFileForAStartPastTheEnd() {
+            given(retrieveBlocksPort.retrieveBlocks(keys(3)))
+                    .willReturn(List.of("0123".getBytes(), "4567".getBytes(), "89".getBytes()));
+
+            RangeContent result = service.viewRange(new DownloadFileCommand(fileId, userId, true), 10, null);
+
+            assertThat(new String(result.data())).isEqualTo("0123456789");
+            assertThat(result.start()).isZero();
+        }
+
+        @Test
+        void fetchesNoBlocksWhenOverQuota() {
+            willThrow(new BusinessException(StorageExceptionCase.DOWNLOAD_QUOTA_EXCEEDED))
+                    .given(downloadQuotaPort).checkWithinQuota(anyString(), anyString());
+
+            Throwable thrown = catchThrowable(() ->
+                    service.viewRange(new DownloadFileCommand(fileId, userId, true), 0, null));
+
+            assertThat(thrown).isInstanceOf(BusinessException.class);
             then(retrieveBlocksPort).shouldHaveNoInteractions();
         }
     }

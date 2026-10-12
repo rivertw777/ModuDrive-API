@@ -48,7 +48,7 @@ class FileClientAdapterTest {
             VersionLocation result = adapter.getLatestVersion(fileId, userId, true);
 
             assertThat(result).isEqualTo(new VersionLocation(VERSION_ID.toString(), List.of(
-                    "blocks/" + OWNER_ID + "/h1", "blocks/" + OWNER_ID + "/h2", "blocks/" + OWNER_ID + "/h1")));
+                    "blocks/" + OWNER_ID + "/h1", "blocks/" + OWNER_ID + "/h2", "blocks/" + OWNER_ID + "/h1"), 10L));
             then(fileClient).should().getFileRevisions(fileId.toString(), userId.toString(), 1, true);
         }
     }
@@ -84,7 +84,7 @@ class FileClientAdapterTest {
 
             VersionLocation result = adapter.getPublicVersion(fileId.toString(), key);
 
-            assertThat(result).isEqualTo(new VersionLocation(VERSION_ID.toString(), List.of("blocks/" + OWNER_ID + "/h9")));
+            assertThat(result).isEqualTo(new VersionLocation(VERSION_ID.toString(), List.of("blocks/" + OWNER_ID + "/h9"), 42L));
             then(fileClient).should().getPublicFileRevisions(fileId.toString(), key, 1);
         }
 

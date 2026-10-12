@@ -3,6 +3,7 @@ package com.moduDrive.storage.adapter.in.web.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.moduDrive.common.core.web.GlobalExceptionHandler;
 import com.moduDrive.storage.application.port.in.usecase.DownloadFileUseCase;
+import com.moduDrive.storage.application.port.in.usecase.RangeContent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -21,6 +22,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willAnswer;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
@@ -168,8 +170,8 @@ class DownloadFileControllerTest {
 
         @Test
         void returnsPartialContentForARangeRequest() throws Exception {
-            byte[] data = "0123456789".getBytes();
-            given(downloadFileUseCase.download(any())).willReturn(data);
+            given(downloadFileUseCase.viewRange(any(), eq(2L), eq(4L)))
+                    .willReturn(new RangeContent("234".getBytes(), 2, 10));
 
             mockMvc.perform(get("/api/v1/storage/view/" + UUID.randomUUID())
                             .header("X_USER_ID", USER_ID)
@@ -180,6 +182,20 @@ class DownloadFileControllerTest {
                     .andExpect(header().string(HttpHeaders.ACCEPT_RANGES, "bytes"))
                     .andExpect(result -> assertThat(result.getResponse().getContentAsByteArray())
                             .isEqualTo("234".getBytes()));
+        }
+
+        @Test
+        @DisplayName("bytes=0- 는 끝을 비워 서비스에 넘기고, 돌아온 조각만큼만 206으로 응답한다")
+        void passesAnOpenEndedRangeThroughAndReportsTheShortenedSlice() throws Exception {
+            given(downloadFileUseCase.viewRange(any(), eq(0L), eq(null)))
+                    .willReturn(new RangeContent("0123".getBytes(), 0, 10));
+
+            mockMvc.perform(get("/api/v1/storage/view/" + UUID.randomUUID())
+                            .header("X_USER_ID", USER_ID)
+                            .header(HttpHeaders.RANGE, "bytes=0-")
+                            .param("fileName", "clip.mp4"))
+                    .andExpect(status().isPartialContent())
+                    .andExpect(header().string(HttpHeaders.CONTENT_RANGE, "bytes 0-3/10"));
         }
 
         @Test
