@@ -7,10 +7,7 @@ import feign.FeignException;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.dao.DataAccessResourceFailureException;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -21,6 +18,7 @@ import org.springframework.validation.BindingResult;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestHeaderException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -34,9 +32,8 @@ public class GlobalExceptionHandler {
 
     private static final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
-    /** Sent with every 503 — the gateway's own too: how long a circuit stays open
-     * (waitDurationInOpenState), so a client that waits this long tries again just as the circuit
-     * lets a probe through. */
+    /** Retry-After on every 503, the gateway's included. Matches the circuit breaker's
+     * waitDurationInOpenState, so a client that waits this long retries as the circuit lets a probe through. */
     public static final String RETRY_AFTER_SECONDS = "10";
 
     private final ObjectMapper objectMapper;
@@ -105,8 +102,7 @@ public class GlobalExceptionHandler {
                 .body(response);
     }
 
-    // The DB (or Redis) is unreachable — not a bug in this request, and it may come back. 503 lets a
-    // caller's circuit breaker count it and its retry resend it; a 500 would be read as a bug and ignored.
+    // DB or Redis unreachable. 503, not 500, so a caller's circuit breaker counts it and its retry resends it.
     @ExceptionHandler({CannotCreateTransactionException.class, DataAccessResourceFailureException.class})
     public ResponseEntity<ApiResponse<Object>> handleInfrastructureUnavailable(Exception e) {
         logger.error("Infrastructure unavailable", e);
@@ -119,8 +115,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Object>> handleGlobalException(Exception e) {
-        // Never echo e.getMessage() here — it can carry raw infra detail (DB constraint names,
-        // connection failures, etc, CWE-209). Full detail goes to the log only.
+        // Never echo e.getMessage(): it can carry infra detail like DB constraint names (CWE-209).
         logger.error("Unhandled exception", e);
         ApiResponse<Object> response = ApiResponse.error(
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -142,13 +137,11 @@ public class GlobalExceptionHandler {
                 .body(response);
     }
 
-    @ExceptionHandler(org.springframework.web.bind.MissingServletRequestParameterException.class)
-    public ResponseEntity<ApiResponse<Object>> handleMissingServletRequestParameterException(
-            org.springframework.web.bind.MissingServletRequestParameterException e) {
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ApiResponse<Object>> handleMissingServletRequestParameterException(MissingServletRequestParameterException e) {
         ApiResponse<Object> response = ApiResponse.error(HttpStatus.BAD_REQUEST, e.getMessage());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
     }
-
 
     private static ResponseEntity<ApiResponse<Object>> withRetryAfter(ApiResponse<Object> response) {
         ResponseEntity.BodyBuilder builder = ResponseEntity.status(response.getStatus());

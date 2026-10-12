@@ -16,15 +16,12 @@ import reactor.core.publisher.Mono;
 import java.util.Set;
 
 /**
- * Every request is authenticated by the session cookie, which the browser attaches on its own —
- * so every state-changing request is a CSRF target, login included (logging a victim into the
- * attacker's account). SameSite=Strict is the first line; this is the second, in case that
- * attribute is ever loosened or ignored. Browsers set Origin on state-changing requests themselves
- * and don't let a page spoof it, so the SPA needs no CSRF token (#205).
+ * Rejects state-changing requests whose Origin isn't the client, login included (login CSRF).
+ * Backs up SameSite=Strict on the session cookie. Browsers set Origin themselves and pages can't
+ * spoof it, so the SPA needs no CSRF token (#205).
  *
- * <p>A {@link WebFilter} ordered ahead of Spring Security, so a forged request is refused before
- * its cookie is ever looked up — it can't even refresh the session's idle timeout. One step behind
- * {@link TraceIdResponseFilter}, so a refused request still gets its trace id.
+ * <p>Runs before Spring Security, so a forged request never looks up (or refreshes) the session,
+ * and after {@link TraceIdResponseFilter}, so the 403 still carries a trace id.
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 1)
@@ -54,9 +51,8 @@ class CsrfOriginGuardFilter implements WebFilter {
         if (origin != null) {
             return origin.equals(clientUrl);
         }
-        // Origin can be legitimately absent on some older clients — Referer is a fallback the
-        // request itself can't fabricate either. Match on a path boundary so
-        // https://app.example.com.attacker.example doesn't pass as https://app.example.com.
+        // Some older clients omit Origin; Referer can't be forged by a page either. Match on a path
+        // boundary so https://app.example.com.attacker.example doesn't pass as https://app.example.com.
         String referer = request.getHeaders().getFirst(HttpHeaders.REFERER);
         return referer != null && (referer.equals(clientUrl) || referer.startsWith(clientUrl + "/"));
     }

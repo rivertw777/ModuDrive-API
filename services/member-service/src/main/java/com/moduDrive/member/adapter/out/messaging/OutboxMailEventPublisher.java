@@ -15,7 +15,7 @@ class OutboxMailEventPublisher implements PublishMailEventPort {
 
     @Override
     public void publishVerificationRequested(String email, String verificationCode) {
-        outboxEventRecorder.record(MemberQueues.SIGN_UP_VERIFICATION_MAIL_REQUESTED, email,
+        outboxEventRecorder.record(MemberQueues.SIGN_UP_VERIFICATION_MAIL_REQUESTED,
                 new SignUpVerificationMailRequested(email, verificationCode));
     }
 }

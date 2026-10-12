@@ -40,5 +40,5 @@ case ${1:-} in
   wait)
     until [ "$(psql_su -d file_db -tA < "$DIR/sql/06-long-transactions.sql" | wc -l)" = 0 ]; do sleep 5; done ;;
   cleanup) psql_su -d file_db < "$DIR/sql/05-cleanup-bench-data.sql" ;;
-  *) sed -n 2,13p "$0"; exit 1 ;;
+  *) sed -n 2,12p "$0"; exit 1 ;;
 esac

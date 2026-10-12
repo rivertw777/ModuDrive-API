@@ -15,12 +15,12 @@ import java.util.UUID;
 
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-// One star per (user, file); the unique constraint makes a double-favorite a no-op at the DB.
+// One star per (user, file).
 @Table(name = "file_favorite", uniqueConstraints = {
         @UniqueConstraint(name = "uk_file_favorite_user_file", columnNames = {"user_id", "file_id"})
 })
 @Entity
-// createdAt/createdBy from CreatedAtEntity — createdAt is when the star was created.
+// createdAt (CreatedAtEntity) is when the file was starred.
 class FileFavoriteJpaEntity extends CreatedAtEntity {
 
     @Id

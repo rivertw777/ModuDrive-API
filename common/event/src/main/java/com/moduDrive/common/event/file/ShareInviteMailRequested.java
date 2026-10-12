@@ -3,13 +3,11 @@ package com.moduDrive.common.event.file;
 import java.util.UUID;
 
 /** Published by file-service (queue {@link FileQueues#SHARE_INVITE_MAIL_REQUESTED}) after a share invite commits.
- * {@code inviteToken} is only set when the invite went to an email with no ModuDrive member (a "guest"
- * invite) — it is that pending share's own capability token, and mail-service turns it into a no-login
- * link; a registered member gets null and signs in instead. {@code message} is the optional note the
- * granter typed into the share dialog (Drive-style); null/blank when they left it empty. {@code category}
- * is file-service's {@code FileCategory} name (IMAGE/VIDEO/AUDIO/DOCUMENT/OTHER) so the invite mail can
- * pick a matching file-type icon without reimplementing the extension-to-category mapping itself. */
+ * {@code inviteToken} is set only for a guest invite (no member with that email): it is the pending
+ * share's capability token, which mail-service turns into a no-login link. {@code message} is the
+ * granter's optional note, null or blank if empty. {@code category} is a file-service {@code FileCategory}
+ * name, used to pick the mail's file-type icon. */
 public record ShareInviteMailRequested(
-        UUID fileId, String granteeEmail, String fileName, boolean directory, String category, String role,
+        UUID fileId, String granteeEmail, String fileName, boolean directory, String category,
         String granterName, String granterEmail, String message, UUID inviteToken) {
 }

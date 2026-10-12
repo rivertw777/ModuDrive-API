@@ -1,6 +1,7 @@
 package com.moduDrive.file.adapter.in.web.dto;
 
 import com.moduDrive.file.application.port.in.usecase.ListFileSharesUseCase.FileSharesView;
+import com.moduDrive.file.application.port.out.FindMemberByIdPort;
 import com.moduDrive.file.application.port.out.FindMemberByIdPort.MemberSummary;
 import com.moduDrive.file.domain.model.FileShare;
 import com.moduDrive.file.domain.model.Role;
@@ -14,41 +15,29 @@ public record FileAccessListResponse(
         UUID fileId,
         UUID ownerId,
         ShareScope scope,
-        /** Direct rows first, then inherited rows — inherited rows are root-most ancestor first
-         * (see {@code ListFileSharesService}/{@code FileAccessGuard.ancestorDirectories}). The web
-         * layer relies on this order: when the same grantee has no direct row but is listed via
-         * two independent ancestors, it picks the *last* matching inherited row as "nearest
-         * ancestor" (see {@code MemberAccessList}), which is now the actual effective role, not
-         * just a display tie-break — don't reorder these without updating that. */
+        /** Direct rows first, then inherited rows root-most ancestor first. WEB's
+         * {@code MemberAccessList} relies on this order: it takes the last inherited row of a
+         * grantee as the nearest ancestor's, which is the effective role. */
         List<FileShareResponse> shares,
         /** Directories above this file that are currently "anyone with the link" — this file is
          * reachable through them. Empty unless an ancestor folder is link-shared. */
         List<InheritedLinkResponse> inheritedLinks,
         /** See {@link FileSharesView#hasSharedDescendant()}. */
         boolean hasSharedDescendant,
-        /** So the client can word a confirmation ("이 파일에" vs "이 폴더에") without guessing —
-         * see MemberAccessList's guest role-pick confirm. */
+        /** So the client can word a confirmation ("이 파일에" vs "이 폴더에"). */
         boolean directory
 ) {
-    /** A directory above this file that is currently link-shared — this file's own scope stays
-     * whatever it is, but it's reachable through this ancestor's LINK scope regardless (see
-     * {@code FileAccessGuard.linkRoleFallback} / {@code PublicFileResolver}, issue #303). */
+    /** A link-shared directory above this file, through which it is reachable whatever its own
+     * scope. */
     public record InheritedLinkResponse(UUID fileId, String name, Role role) {}
 
-    /** #313: this branch used to live in the direct loop below only — an ancestor's pending guest
-     * invite fell through to the member lookup instead and would have NPE'd the moment
-     * {@code ListFileSharesService} started including it. One shared branch means the two loops
-     * can't drift apart on this again. */
-    private static final MemberSummary UNKNOWN_MEMBER = new MemberSummary(null, null);
-
+    /** Shared by direct and inherited rows. A guest share has no member: its own email shows. */
     private static MemberSummary display(FileSharesView view, FileShare share) {
         UUID memberId = share.getSharedWithUserId();
         if (memberId == null) {
-            // A pending guest share has no member to look up — its own granteeEmail is the
-            // display email, and it has no member display name.
             return new MemberSummary(null, share.getGranteeEmail());
         }
-        return view.memberSummaries().getOrDefault(memberId, UNKNOWN_MEMBER);
+        return view.memberSummaries().getOrDefault(memberId, FindMemberByIdPort.UNKNOWN_MEMBER);
     }
 
     public static FileAccessListResponse from(FileSharesView view) {

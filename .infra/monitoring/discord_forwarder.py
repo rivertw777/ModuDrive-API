@@ -12,6 +12,8 @@ import urllib.request
 
 DISCORD_LIMIT = 2000
 FIRING, RESOLVED, OTHER = 0xE5484D, 0x2EA043, 0x8B949E
+# A blank line between the text and the card. Discord trims trailing newlines, so a zero-width space holds it.
+CARD_GAP = "\n\u200b"
 _webhooks = {}
 
 
@@ -39,14 +41,14 @@ def text(message):
 
 
 def payload(message):
-    """The text as the message, plus the small coloured card Grafana used to add: the first line's title,
-    red while firing, green once resolved (the text starts with 🚨 / ✅), grey for anything else."""
+    """The text as the message, plus a small card titled with its first line: red while firing, green
+    once resolved (the text starts with 🚨 / ✅), grey for anything else."""
     body = text(message)
     first = body.split("\n", 1)[0]
     color = FIRING if first.startswith("🚨") else RESOLVED if first.startswith("✅") else OTHER
     title = first.lstrip("🚨✅ ").replace("**", "").strip()
     return {
-        "content": body[:DISCORD_LIMIT],
+        "content": body[: DISCORD_LIMIT - len(CARD_GAP)] + CARD_GAP,
         "embeds": [{"title": title[:256], "color": color, "footer": {"text": "ModuDrive · Alertmanager"}}],
     }
 
@@ -79,4 +81,6 @@ if __name__ == "__main__":
     card = payload(json.dumps({**alarm, "NewStateValue": "OK"}))["embeds"][0]
     assert (card["title"], card["color"]) == ("ALB 5xx (해제)", RESOLVED)
     assert payload("plain budget text")["embeds"][0]["color"] == OTHER
+    assert payload("plain budget text")["content"] == "plain budget text\n\u200b"
+    assert len(payload("x" * 3000)["content"]) == DISCORD_LIMIT
     print("ok")

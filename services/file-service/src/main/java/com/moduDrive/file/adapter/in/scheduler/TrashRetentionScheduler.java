@@ -6,15 +6,8 @@ import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-/** Inbound adapter triggered by the clock instead of HTTP — the scheduler equivalent of a
- * controller, so it does nothing but map the trigger onto the use case.
- *
- * file-service runs as multiple instances behind the gateway, and {@code @Scheduled}
- * fires independently on every one of them — without a lock, every instance would run the same
- * sweep at 3am and race to purge the same rows. {@code @SchedulerLock} (ShedLock) makes only one
- * instance's invocation actually run per tick; the rest see the lock held and skip. Vendor-
- * agnostic on purpose (see {@code SchedulingLockConfig}) — a Postgres-only advisory lock would
- * have been simpler but breaks the moment the database is swapped. */
+/** Clock-triggered inbound adapter. {@code @Scheduled} fires on every instance; ShedLock (see
+ * {@code SchedulingLockConfig}) lets only one run the sweep per tick. */
 @Component
 @RequiredArgsConstructor
 class TrashRetentionScheduler {

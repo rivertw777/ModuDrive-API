@@ -14,7 +14,6 @@ public enum FileExceptionCase implements ExceptionCase {
     FILE_NOT_FOUND(HttpStatus.NOT_FOUND, "파일을 찾을 수 없습니다."),
     FILE_ALREADY_DELETED(HttpStatus.BAD_REQUEST, "이미 휴지통에 있는 항목입니다."),
     FILE_NOT_DELETED(HttpStatus.BAD_REQUEST, "휴지통에 있는 항목이 아닙니다."),
-    FILE_NOT_UPLOADED(HttpStatus.BAD_REQUEST, "업로드 완료되지 않은 파일입니다."),
     FILE_ALREADY_EXISTS(HttpStatus.BAD_REQUEST, "같은 위치에 같은 이름의 항목이 이미 존재합니다."),
     DIRECTORY_NOT_FOUND(HttpStatus.NOT_FOUND, "디렉토리를 찾을 수 없습니다."),
     FILE_SHARE_ALREADY_EXISTS(HttpStatus.BAD_REQUEST, "이미 공유된 파일입니다."),
@@ -29,7 +28,7 @@ public enum FileExceptionCase implements ExceptionCase {
     FILE_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "파일 크기는 5GB를 초과할 수 없습니다."),
     /** The blocklist doesn't fit the declared size, or the uploadId belongs to another file. */
     INVALID_BLOCKLIST(HttpStatus.BAD_REQUEST, "업로드한 파일 정보가 올바르지 않습니다."),
-    /** One commit request's blocklists add up to more than 1,280 hashes (spec 001 3-3). */
+    /** One commit request's blocklists add up to more than 1,280 hashes. */
     COMMIT_TOO_LARGE(HttpStatus.BAD_REQUEST, "한 번에 확정할 수 있는 블록 수를 초과했습니다."),
     QUOTA_EXCEEDED(HttpStatus.PAYLOAD_TOO_LARGE, "저장 공간이 부족합니다.");
 

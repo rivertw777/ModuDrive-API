@@ -23,31 +23,24 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Sends PENDING {@code outbox_event} rows to the broker in id order and marks each one SENT
- * after the broker accepts it. SENT rows are purged once they're older than {@link #SENT_RETENTION}. If a send fails because SQS is unreachable (or throttling, 5xx, access denied), the batch
- * stops there. The failed row and everything after it stay put for the next tick, so nothing is lost.
- * If the broker instead rejects that one message ({@link PermanentPublishException}), the row is
- * parked like an unreadable one and the batch carries on. Ids are assigned at insert, not at commit, so two
- * concurrent transactions can commit out of id order. No current event relies on cross-transaction
- * ordering.
+ * Sends PENDING {@code outbox_event} rows in id order and marks each SENT once the broker accepts it.
+ * A transient send failure stops the batch; that row and the rest wait for the next tick. A
+ * {@link PermanentPublishException} parks the row as FAILED and the batch carries on. Ids are assigned at
+ * insert, not commit, so concurrent transactions can commit out of id order; no event relies on that order.
  * <p>
- * Runs on its own thread, not Boot's shared one-thread scheduler. Otherwise a send blocked by a
- * broker outage would stall other {@code @Scheduled} jobs (file-service's trash sweep), and a long
- * sweep would stall event delivery.
+ * Runs on its own thread so a send blocked by a broker outage can't stall the services' {@code @Scheduled}
+ * jobs on Boot's shared scheduler, and the other way round.
  * <p>
- * The row id is the deduplication id, so a resend of the same row — the broker accepted it but marking
- * the row SENT didn't commit — carries the same id as the first send and the consumer recognises it.
- * Delivery is at-least-once, which consumers handle with {@link ProcessedEvents}.
+ * The row id is the deduplication id, so a resend after an uncommitted markSent carries the same id.
+ * Delivery is at-least-once; consumers deduplicate with {@link ProcessedEvents}.
  * <p>
- * {@code FOR UPDATE SKIP LOCKED} lets several instances run this at once without sending a row
- * twice. Each instance takes a different batch, so order holds within an instance's batch, not
- * across instances.
+ * {@code FOR UPDATE SKIP LOCKED} lets several instances run at once without sending a row twice; order
+ * holds within one instance's batch only.
  */
 @Slf4j
 class OutboxRelay {
 
     static final int BATCH_SIZE = 100;
-    // ponytail: fixed 7 days. Make it a property if a service needs longer (audit) or shorter (volume).
     static final Duration SENT_RETENTION = Duration.ofDays(7);
     // Hibernate's value for SKIP LOCKED (org.hibernate.Timeouts.SKIP_LOCKED_MILLI).
     private static final int SKIP_LOCKED = -2;
@@ -72,14 +65,12 @@ class OutboxRelay {
         this.metrics = metrics;
     }
 
-    // ponytail: 1s polling, so an event waits up to ~1s. Wake the relay after commit if that's too slow.
+    // Polls every second, so an event waits up to ~1s.
     void start() {
         executor = Executors.newSingleThreadScheduledExecutor(Thread.ofPlatform().name("outbox-relay").factory());
         executor.scheduleWithFixedDelay(() -> {
             try {
                 relay();
-                // Here rather than on scrape: both gauges are one series per queue, and which queues
-                // have rows waiting or parked changes as rows pile up, drain and are fixed.
                 metrics.refresh();
             } catch (Exception e) {
                 // An escaped exception would cancel the schedule for good.
@@ -117,8 +108,7 @@ class OutboxRelay {
                     event = jsonMapper.readValue(row.getPayload(),
                             ClassUtils.forName(row.getPayloadType(), ClassUtils.getDefaultClassLoader()));
                 } catch (Exception e) {
-                    // Not transient: retrying won't fix it (e.g. the event class was renamed while the
-                    // row was waiting). Park the row for a human and keep draining the rest.
+                    // Retrying won't fix it (e.g. the event class was renamed while the row waited).
                     log.error("Outbox row can't be rebuilt, parking it: id={}, type={}", row.getId(), row.getPayloadType(), e);
                     row.markFailed(e);
                     continue;
@@ -126,8 +116,6 @@ class OutboxRelay {
                 try {
                     send(row, event);
                 } catch (PermanentPublishException e) {
-                    // The broker rejected this message itself: resending never helps, and stopping here
-                    // would block every row behind it.
                     log.error("Outbox row rejected by the broker, parking it: id={}, queue={}",
                             row.getId(), row.getQueue(), e);
                     row.markFailed(rootCause(e));
@@ -156,10 +144,8 @@ class OutboxRelay {
     private void send(OutboxEventJpaEntity row, Object event) {
         Map<String, String> traceHeaders = row.getTraceHeaders() == null
                 ? Map.of() : jsonMapper.readValue(row.getTraceHeaders(), TRACE_HEADERS);
-        // Resumes the recording request's trace from the stored headers. It has to be an Observation,
-        // not a bare span in scope: the publisher parents its send span on the current Observation, and
-        // a client that finishes the send on its own thread wouldn't see a thread-local span — that
-        // message would start a new trace.
+        // Resumes the recording request's trace. Must be an Observation, not a span in scope: the publisher
+        // parents its send span on the current Observation, and the async client wouldn't see a thread-local span.
         ReceiverContext<Map<String, String>> context = new ReceiverContext<>(Map::get);
         context.setCarrier(traceHeaders);
         Observation.createNotStarted("outbox.relay", () -> context, observationRegistry)
@@ -175,5 +161,4 @@ class OutboxRelay {
         }
         return cause;
     }
-
 }

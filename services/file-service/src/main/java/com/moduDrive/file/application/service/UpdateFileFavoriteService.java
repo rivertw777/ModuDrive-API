@@ -26,14 +26,12 @@ class UpdateFileFavoriteService implements UpdateFileFavoriteUseCase {
         File file = findFilePort.findById(command.getFileId())
                 .orElseThrow(() -> new BusinessException(FileExceptionCase.FILE_NOT_FOUND));
 
-        // Anyone who can read the file may star it — for themselves only. A non-owner needs a
-        // share; the owner always passes.
+        // Anyone who can read the file may star it, for themselves only.
         if (!file.getOwnerId().equals(command.getCallerId())) {
             fileAccessGuard.requirePermission(file, command.getCallerId(), Permission.READ);
         }
 
-        // Every star — owner's or not — is one file_favorite row. Nothing on the file itself
-        // changes, so no saveFile: markFavorite here only echoes the new state into the response.
+        // A star is a file_favorite row; markFavorite only echoes it into the response.
         if (command.isFavorite()) {
             fileFavoritePort.favorite(command.getCallerId(), file.getId());
         } else {

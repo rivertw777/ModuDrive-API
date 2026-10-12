@@ -13,9 +13,8 @@ import java.io.OutputStream;
 import java.util.List;
 import java.util.UUID;
 
-/** The anonymous sibling of {@link DownloadFileService}: identical block assembly, but the file
- * is resolved by {@code (fileId, key)} instead of by id + caller, and file-service is the one
- * that decides whether that key still grants access. */
+/** Anonymous counterpart of {@link DownloadFileService}: the file is resolved by {@code (fileId, key)}
+ * and file-service decides whether that still grants access. */
 @UseCase
 class PublicDownloadFileService implements PublicDownloadFileUseCase {
 
@@ -41,9 +40,6 @@ class PublicDownloadFileService implements PublicDownloadFileUseCase {
             BlockAssembler.requireWithinInlinePreviewLimit(version.blockKeys().size(), blockSize);
         }
         String scope = quotaScope(command);
-        // Anonymous fetches meter per file: every visitor who reaches it — however they got in —
-        // draws on the same window, but a stranger's traffic can't spend the owner's own
-        // (user-scoped) quota.
         downloadQuotaPort.checkWithinQuota(scope, version.versionKey());
         List<byte[]> blocks = retrieveBlocksPort.retrieveBlocks(version.blockKeys());
         byte[] assembled = BlockAssembler.assemble(blocks);
@@ -74,19 +70,11 @@ class PublicDownloadFileService implements PublicDownloadFileUseCase {
         return getFileVersionPort.getPublicVersion(command.getFileId(), command.getKey());
     }
 
-    /** Always the file itself, never {@code key} — only file-service knows which grant actually
-     * authorized a given request, and for a LINK-scoped file it never even looks at {@code key}
-     * (see {@code PublicFileResolver.resolve}, which short-circuits on {@code linkRole} before
-     * {@code matchesGuestInvite} is evaluated). Trusting a present {@code key} as a per-person
-     * meter would let anyone mint a fresh, always-empty bucket on every request just by attaching
-     * a random well-formed UUID as {@code ?key=} — the other half of issue #312's root cause (the
-     * first half was the plain NPE on a missing key; this is what patching only that half would
-     * have left standing). Metering by {@code fileId} instead is unforgeable: every anonymous
-     * visitor of one file, however they got in, draws on the same window. {@code locate()} has
-     * already round-tripped {@code fileId} through file-service by the time this runs, so it is a
-     * well-formed UUID; re-casing or dropping leading zeros — both of which {@code UUID.fromString}
-     * accepts and file-service authorizes identically — can't mint a second bucket for the same
-     * file either. */
+    /** Always the file, never {@code key}: file-service ignores {@code key} for a LINK-scoped file, so
+     * metering by key would let anyone get a fresh bucket per request with a random {@code ?key=}.
+     * Every anonymous visitor of one file shares one window, and the owner's user-scoped quota is
+     * separate. {@code locate()} has already validated {@code fileId}; normalizing it through
+     * {@code UUID.fromString} keeps re-cased spellings from minting a second bucket. */
     private static String quotaScope(PublicDownloadFileCommand command) {
         return "public:" + UUID.fromString(command.getFileId());
     }

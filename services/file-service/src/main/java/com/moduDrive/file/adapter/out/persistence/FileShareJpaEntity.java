@@ -14,11 +14,9 @@ import java.util.UUID;
 @Getter
 @NoArgsConstructor
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
-// The unique constraints (not just the app-layer existsBy checks) are what actually close the
-// TOCTOU window where two concurrent invites for the same grantee both pass the check. Postgres
-// treats each NULL as distinct, so the (file_id, shared_with_user_id) constraint never fires
-// between two pending guest rows (both null), and the (file_id, granteeEmail) one never fires
-// between two member-grant rows (both null) — each constraint only ever polices its own kind.
+// The unique constraints, not the existsBy checks, stop two concurrent invites for the same
+// grantee. NULLs never collide, so each constraint only polices its own kind of row (member or
+// guest).
 @Table(name = "file_share", uniqueConstraints = {
         @UniqueConstraint(name = "uk_file_share_file_user", columnNames = {"file_id", "shared_with_user_id"}),
         @UniqueConstraint(name = "uk_file_share_file_email", columnNames = {"file_id", "granteeEmail"}),
@@ -44,9 +42,8 @@ class FileShareJpaEntity extends CreatedAtEntity {
     @Column(nullable = false)
     private Role grantedRole;
 
-    /** The per-invite capability token resolved by the public routes (see {@code PublicFileResolver}).
-     * Kept alive after {@link #applyClaim} so an emailed link survives the invitee signing up.
-     * Null only for a share created directly for an existing member. */
+    /** A guest share's invite token (see {@code PublicFileResolver}), kept after
+     * {@link #applyClaim}. Null for a share made directly for a member. */
     private UUID token;
 
     /** Non-null only while a guest share is unclaimed — the invited email. Cleared by
@@ -71,10 +68,7 @@ class FileShareJpaEntity extends CreatedAtEntity {
         this.grantedRole = grantedRole;
     }
 
-    /** Mirrors {@link com.moduDrive.file.domain.model.FileShare#claim}: fills
-     * {@code sharedWithUserId} and clears {@code granteeEmail}, but keeps {@code token} so the
-     * emailed link keeps resolving. "Still unclaimed" is {@code sharedWithUserId == null} from
-     * here on. */
+    /** Mirrors {@link com.moduDrive.file.domain.model.FileShare#claim}. */
     void applyClaim(UUID sharedWithUserId) {
         this.sharedWithUserId = sharedWithUserId;
         this.granteeEmail = null;

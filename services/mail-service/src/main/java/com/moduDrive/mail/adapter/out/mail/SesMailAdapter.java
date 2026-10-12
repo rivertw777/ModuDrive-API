@@ -19,9 +19,8 @@ import software.amazon.awssdk.core.exception.ApiCallTimeoutException;
 import software.amazon.awssdk.services.ses.SesClient;
 import software.amazon.awssdk.services.ses.model.MessageTag;
 
-/** Sends through the SES API (SendRawEmail) directly rather than Spring Cloud AWS's JavaMailSender,
- * which can't set message tags: every mail carries its delivery id as the {@link #DELIVERY_TAG} tag, and
- * the configuration set publishes SES's Send event with it — the proof that a timed-out send went out. */
+/** Uses SendRawEmail directly because Spring Cloud AWS's JavaMailSender can't set message tags. Each mail
+ * carries its delivery id as the {@link #DELIVERY_TAG} tag, which comes back in SES's Send event. */
 @Component
 @ConditionalOnProperty(name = "modudrive.mail.transport", havingValue = "ses", matchIfMissing = true)
 class SesMailAdapter implements SendMailPort {
@@ -51,10 +50,10 @@ class SesMailAdapter implements SendMailPort {
             throw new MailRejectedException(e.getClass().getName());
         }
 
-        // Three outcomes besides success, and only the last is a plain retry:
-        //  - a 400 that isn't throttling: SES refused this request (MessageRejected, MailFromDomainNotVerified,
-        //    AccountSendingPaused...) and would refuse it again — mirrors SqsFailures on the publish side;
-        //  - a timeout: we stopped waiting, SES may not have — the request can still be accepted and sent;
+        // Failure outcomes:
+        //  - 400 other than throttling: SES refused the request (MessageRejected, MailFromDomainNotVerified,
+        //    AccountSendingPaused...) and would refuse it again;
+        //  - timeout: SES may still accept and send it;
         //  - anything else (5xx, throttling, never reached): nothing went out, so a retry is safe.
         try {
             sesClient.sendRawEmail(r -> r

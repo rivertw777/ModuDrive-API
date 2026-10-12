@@ -31,8 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
 @DataJpaTest
-// AuditingConfig is a third-party auto-configuration, so the @DataJpaTest slice drops it —
-// without it @CreatedDate never fires and createdAt reads back null, unlike production.
+// The @DataJpaTest slice drops AuditingConfig; without it @CreatedDate never fires and createdAt reads back null.
 @Import({FilePersistenceAdapter.class, FileSharePersistenceAdapter.class, FileAccessPersistenceAdapter.class,
         FileMapper.class, AuditingConfig.class})
 class FilePersistenceAdapterTest {
@@ -152,37 +151,6 @@ class FilePersistenceAdapterTest {
             Throwable thrown = catchThrowable(() -> filePersistenceAdapter.saveFile(File.create(
                     new FileNamespaceId(namespaceIdValue), new FileName("report.pdf"),
                     new FilePath("/1/docs"), new FileOwnerId(UUID.randomUUID()), new FileIsDirectory(false))));
-
-            assertThat(thrown)
-                    .isInstanceOf(BusinessException.class)
-                    .extracting(e -> ((BusinessException) e).getExceptionCase())
-                    .isEqualTo(FileExceptionCase.FILE_ALREADY_EXISTS);
-        }
-
-        @Test
-        @DisplayName("새 파일 여러 개를 한 번에 저장하면 입력 순서대로 id가 붙어 돌아온다")
-        void savesNewFilesInBulkInInputOrder() {
-            var result = filePersistenceAdapter.saveNewFiles(List.of(
-                    File.createDirectory(new FileNamespaceId(namespaceIdValue), new FileName("사진"),
-                            new FilePath("/"), new FileOwnerId(UUID.randomUUID())),
-                    File.create(new FileNamespaceId(namespaceIdValue), new FileName("a.jpg"),
-                            new FilePath("/사진"), new FileOwnerId(UUID.randomUUID()), new FileIsDirectory(false))));
-
-            assertThat(result).extracting(File::getName).containsExactly("사진", "a.jpg");
-            assertThat(result).allSatisfy(file -> assertThat(file.getId()).isNotNull());
-            assertThat(springDataFileRepository.findAll()).hasSize(2);
-        }
-
-        @Test
-        @DisplayName("한 번에 저장하는 중 활성 파일과 자리가 겹치면 비즈니스 예외로 변환된다")
-        void translatesASlotConflictInABulkSave() {
-            save("/1/docs", "report.pdf");
-
-            Throwable thrown = catchThrowable(() -> filePersistenceAdapter.saveNewFiles(List.of(
-                    File.create(new FileNamespaceId(namespaceIdValue), new FileName("other.pdf"),
-                            new FilePath("/1/docs"), new FileOwnerId(UUID.randomUUID()), new FileIsDirectory(false)),
-                    File.create(new FileNamespaceId(namespaceIdValue), new FileName("report.pdf"),
-                            new FilePath("/1/docs"), new FileOwnerId(UUID.randomUUID()), new FileIsDirectory(false)))));
 
             assertThat(thrown)
                     .isInstanceOf(BusinessException.class)
@@ -347,8 +315,7 @@ class FilePersistenceAdapterTest {
             assertThat(created.getSharedWithUserId()).isNull();
             assertThat(created.getToken()).isNotNull();
             assertThat(fileSharePersistenceAdapter.existsByFileIdAndGranteeEmail(fileId, "guest@example.com")).isTrue();
-            // Revoking a guest's grants has to follow them across ancestor directories, so the row
-            // itself — not just its presence — has to be reachable by email (see RevokeFileShareService).
+            // The row itself, not just its presence, must be reachable by email (see RevokeFileShareService).
             assertThat(fileSharePersistenceAdapter.findByFileIdAndGranteeEmail(fileId, "guest@example.com"))
                     .get().extracting(FileShare::getId).isEqualTo(created.getId());
             assertThat(fileSharePersistenceAdapter.findByToken(created.getToken()))
@@ -383,10 +350,9 @@ class FilePersistenceAdapterTest {
             assertThat(fileSharePersistenceAdapter.findPendingByGranteeEmail("guest@example.com")).isEmpty();
             assertThat(fileSharePersistenceAdapter.findByFileIdAndSharedWithUserId(new FileId(fileIdValue), memberId))
                     .get().extracting(FileShare::getRole).isEqualTo(Role.VIEWER);
-            // token survives the claim so the emailed /public link still resolves
+            // the token survives the claim so the emailed /public link still resolves
             assertThat(fileSharePersistenceAdapter.findByToken(token)).isPresent();
-            // claim() clears granteeEmail (RevokeFileShareService.findGranteeShareByOwnIdentity
-            // depends on this row no longer being reachable by its old email once claimed).
+            // claim() clears granteeEmail, so the row is no longer reachable by its old email (RevokeFileShareService relies on this)
             assertThat(fileSharePersistenceAdapter.findByFileIdAndGranteeEmail(new FileId(fileIdValue), "guest@example.com"))
                     .isEmpty();
         }
@@ -498,53 +464,6 @@ class FilePersistenceAdapterTest {
     @Nested
     @DisplayName("파일을 영구 삭제할 때")
     class WhenDeletingAFile {
-
-        @Test
-        @DisplayName("파일 행과 함께 그 파일의 버전 행도 모두 지워진다")
-        void deletesFileVersionsToo() {
-            FileJpaEntity saved = springDataFileRepository.save(new FileJpaEntity(
-                    namespaceIdValue, "report.pdf", "/1", UUID.randomUUID(), FileStatus.DELETED, false));
-            UUID fileIdValue = saved.getId();
-            springDataFileVersionRepository.save(version(fileIdValue, UUID.randomUUID(), List.of("h1")));
-            springDataFileVersionRepository.save(version(fileIdValue, UUID.randomUUID(), List.of("h1")));
-
-            filePersistenceAdapter.deleteFile(new FileId(fileIdValue));
-
-            assertThat(springDataFileVersionRepository.findByFileIdOrderByCreatedAtDesc(
-                    fileIdValue, org.springframework.data.domain.PageRequest.of(0, 10))).isEmpty();
-            assertThat(springDataFileRepository.findById(fileIdValue)).isEmpty();
-        }
-
-        @Test
-        @DisplayName("파일 행과 함께 그 파일의 공유 행도 모두 지워진다 (고아 방지)")
-        void deletesFileSharesToo() {
-            FileJpaEntity saved = springDataFileRepository.save(new FileJpaEntity(
-                    namespaceIdValue, "report.pdf", "/1", UUID.randomUUID(), FileStatus.DELETED, false));
-            UUID fileIdValue = saved.getId();
-            springDataFileShareRepository.save(
-                    new FileShareJpaEntity(fileIdValue, UUID.randomUUID(), UUID.randomUUID(), Role.VIEWER));
-            springDataFileShareRepository.save(
-                    new FileShareJpaEntity(fileIdValue, UUID.randomUUID(), UUID.randomUUID(), Role.EDITOR));
-
-            filePersistenceAdapter.deleteFile(new FileId(fileIdValue));
-
-            assertThat(springDataFileShareRepository.findByFileId(fileIdValue)).isEmpty();
-            assertThat(springDataFileRepository.findById(fileIdValue)).isEmpty();
-        }
-
-        @Test
-        @DisplayName("파일 행과 함께 그 파일의 즐겨찾기 행도 모두 지워진다 (고아 방지)")
-        void deletesFileFavoritesToo() {
-            UUID fileIdValue = springDataFileRepository.save(new FileJpaEntity(
-                    namespaceIdValue, "report.pdf", "/1", UUID.randomUUID(), FileStatus.DELETED, false)).getId();
-            springDataFileFavoriteRepository.save(new FileFavoriteJpaEntity(UUID.randomUUID(), fileIdValue));
-            springDataFileFavoriteRepository.save(new FileFavoriteJpaEntity(UUID.randomUUID(), fileIdValue));
-
-            filePersistenceAdapter.deleteFile(new FileId(fileIdValue));
-
-            assertThat(springDataFileFavoriteRepository.count()).isZero();
-            assertThat(springDataFileRepository.findById(fileIdValue)).isEmpty();
-        }
 
         @Test
         @DisplayName("purge는 파일 행을 tombstone(deleted_at)으로 남기고 버전/공유/즐겨찾기만 지운다")
@@ -992,8 +911,7 @@ class FilePersistenceAdapterTest {
 
             var picked = filePersistenceAdapter.findVersionsToPrune(new FileId(fileId), cutoff, 100);
 
-            // 60 and 40 days old go; 5 days stays; the 45-day one is current (the newest row in the
-            // real flow is always current — here only the current-version rule keeps it).
+            // 60 and 40 days old go; 5 days stays; the 45-day one is current and kept by the current-version rule.
             assertThat(picked).hasSize(2);
             assertThat(createdAtOf(picked)).allMatch(at -> at.isBefore(cutoff));
         }

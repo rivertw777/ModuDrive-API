@@ -1,4 +1,3 @@
-# Read by step 2 (ECS task definitions) — the env values the app expects.
 output "name_servers" {
   description = "Set these at the domain registrar"
   value       = var.domain_name == null ? [] : aws_route53_zone.main[0].name_servers

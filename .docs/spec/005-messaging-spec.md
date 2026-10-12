@@ -33,7 +33,7 @@
 ### 1-1. SQS 사용 이유
 
 AWS SQS는 완전관리형 큐 서비스로 시간당 과금이 아닌 월 100만 요청까지 무료로 사용할 수 있다.
-**현재 시스템의 메시징은 "한 서비스가 보내고 한 서비스가 받는" 작은 작업 큐 뿐이며, 비용 및 운영 부담이 적은 SQS 도입한다.**
+**현재 시스템의 메시징은 "한 서비스가 보내고 한 서비스가 받는" 작은 작업 큐 뿐이며, 비용 및 운영 부담이 적은 SQS를 도입한다.**
 
 #### 1-1-1. 다른 선택지와 비교
 
@@ -233,7 +233,7 @@ Publisher는 이벤트를 만들어 큐로 내보낸다.
 
 #### 3-2-1. 이벤트 기록
 
-- 비즈니스 코드는 SQS로 직접 보내지 않고 `OutboxEventRecorder.record(queue, key, event)`를 부른다 → `outbox_event` 행 insert.
+- 비즈니스 코드는 SQS로 직접 보내지 않고 `OutboxEventRecorder.record(queue, event)`를 부른다 → `outbox_event` 행 insert.
 - 기록은 **유스케이스 서비스가 자기 `@Transactional` 안에서 이벤트 포트를 직접 호출**해서 한다. 
   비즈니스 데이터 저장과 같은 트랜잭션이라 같이 커밋되거나 같이 롤백된다.
 - 호출자 트랜잭션이 없으면(예: 가입 인증 메일 요청 — 인증 코드는 Redis) 기록기가 outbox insert만 담은 트랜잭션을 스스로 연다.
@@ -428,7 +428,7 @@ sequenceDiagram
 | `mail-login-verification-requested` | auth-service — 새 기기 로그인 챌린지를 Redis에 넣고 기록 | mail-service — 로그인 인증 코드 메일 발송 | 처음 보는 기기에서 로그인 |
 | `mail-share-invite-requested` | file-service — 공유 행 저장과 같은 트랜잭션 | mail-service — 초대 메일 발송 | 파일/폴더를 이메일로 공유 (비회원이면 로그인 없이 여는 링크) |
 | `notification-file-shared` | file-service — 초대 메일 이벤트와 같이 기록 | notification-service — 알림 행 저장 | 공유 대상이 **회원**일 때 벨 아이콘 알림 |
-| `storage-blocks-purge-requested` | file-service — 참조 없는 블록 정리 작업(1시간마다)이 `block` 행을 지우는 트랜잭션 (소유자·해시 목록·결정 시각을 담는다) | storage-service — `blocks/{ownerId}/{hash}` 삭제. 결정 시각 뒤에 다시 올라온 블록은 남김 | 영구 삭제로 참조 수가 0이 된 블록이 24시간 지남 ([001](001-file-upload-spec.md)) |
+| `storage-blocks-purge-requested` | file-service — 참조 없는 블록 정리 작업(1시간마다)이 `block` 행을 지우는 트랜잭션 (소유자·해시 목록·결정 시각을 담는다) | storage-service — `blocks/{ownerId}/{hash}` 삭제. 결정 시각 뒤에 다시 올라온 블록은 남김 | 영구 삭제로 참조 수가 0이 된 블록이 24시간 지남 ([001 11](001-file-upload-spec.md#11-블록-정리)) |
 | `mail-ses-events` | SES — Configuration Set `mail-events`의 Send 이벤트 (SNS 경유, raw) | mail-service — 태그의 `deliveryId`를 처리 완료로 기록 | 메일을 보낼 때마다 (시간 제한에 걸린 발송이 실제로 나갔는지 확인용) |
 | `member-signed-up` | member-service — 가입 트랜잭션 안에서 기록 | file-service — 네임스페이스 생성(자기 트랜잭션으로 먼저 커밋) → 대기 공유를 새 회원에게 연결 | 새 회원의 드라이브가 생기고, 가입 전에 받은 초대가 "공유 문서함"에 나타남 |
 

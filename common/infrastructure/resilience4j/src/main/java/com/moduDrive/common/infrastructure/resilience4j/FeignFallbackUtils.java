@@ -8,7 +8,6 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.net.SocketTimeoutException;
 
-
 @Slf4j
 public class FeignFallbackUtils {
 
@@ -39,5 +38,4 @@ public class FeignFallbackUtils {
             throw new BusinessException(CircuitBreakerExceptionCase.SERVICE_UNAVAILABLE);
         }
     }
-
 }

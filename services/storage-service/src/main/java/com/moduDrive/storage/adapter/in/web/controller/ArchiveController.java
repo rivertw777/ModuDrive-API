@@ -56,7 +56,7 @@ class ArchiveController {
     }
 
     /** Under the public prefix (gateway permitAll) for both flavors: the single-use token is the
-     * whole credential, since a navigated link can't carry a Bearer header. */
+     * whole credential. */
     @GetMapping("/api/v1/storage/public/archive/{token}")
     public ResponseEntity<StreamingResponseBody> downloadArchive(@PathVariable String token) {
         Archive archive = openArchiveUseCase.open(token);

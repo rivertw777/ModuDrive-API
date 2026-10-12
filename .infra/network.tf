@@ -59,7 +59,6 @@ resource "aws_vpc_endpoint" "interface" {
 # Only outbound control traffic passes here (SQS, SES, logs, secrets, image pulls); user traffic comes
 # in through the ALB and S3 through its gateway endpoint. If it stops, running services keep serving,
 # but events and mail wait and new tasks can't pull their image until it's back (EC2 auto-recovery).
-# ponytail: one instance in one AZ — fck-nat's HA mode (ASG + static ENI) if demo ever needs it.
 data "aws_ami" "fck_nat" {
   count = var.nat == "instance" ? 1 : 0
 

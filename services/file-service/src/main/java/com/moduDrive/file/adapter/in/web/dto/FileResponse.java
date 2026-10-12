@@ -22,10 +22,9 @@ public record FileResponse(
         boolean favorite,
         FileCategory category,
         LocalDateTime updatedAt,
-        /** When the file was sent to trash — null unless it is in the trash. The trash view reads
-         * this for "휴지통에 버린 날짜" (not {@code updatedAt}, which any edit bumps). */
+        /** When the file was sent to trash ("휴지통에 버린 날짜"); null unless it is in the trash. */
         LocalDateTime trashedAt,
-        /** "Shared with me" context — all null when the caller owns the file. See {@link FileView}. */
+        /** "Shared with me" context, all null when the caller owns the file (see {@link FileView}). */
         Role role,
         String sharedByName,
         String sharedByEmail,

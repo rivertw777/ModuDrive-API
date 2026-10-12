@@ -70,8 +70,7 @@ class EmptyTrashServiceTest {
 
             then(filePurger).should().purgeRoot(file, userId);
             then(filePurger).should().purgeRoot(directory, userId);
-            // nestedFile is under the purged directory, not a root — DirectoryCascader.purge
-            // (inside FilePurger) handles it, EmptyTrashService never touches it directly.
+            // nestedFile is under the purged directory, not a root; DirectoryCascader.purge (inside FilePurger) handles it.
             then(filePurger).should(Mockito.never()).purgeRoot(eq(nestedFile), any());
         }
     }

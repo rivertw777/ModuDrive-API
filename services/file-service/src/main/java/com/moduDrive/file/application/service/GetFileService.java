@@ -39,23 +39,14 @@ class GetFileService implements GetFileUseCase {
             throw new BusinessException(FileExceptionCase.FILE_ALREADY_DELETED);
         }
 
-        // Per-viewer star (owner's or a grantee's — same file_favorite lookup either way).
         file.markFavorite(fileFavoritePort.isFavorite(command.getCallerId(), file.getId()));
         if (file.getOwnerId().equals(command.getCallerId())) {
             return FileView.owned(file);
         }
 
-        // The caller doesn't own it: the detail panel shows the full "shared with me" context —
-        // same as 공유 문서함 — wherever it opens. Their access can come from a grant on this file
-        // itself or, for a file only reachable by browsing into a shared folder, one inherited
-        // from an ancestor (see ListSharedDirectoryService) — the guard's access() covers both so
-        // "공유된 날짜" isn't blank just because this particular file was never shared directly.
-        //
-        // No grant at all means the caller only got here through the LINK fallback in
-        // FileAccessGuard.access — nobody shared this file *with them*, so there is no
-        // "공유한 사용자" to name. Spec 3 gives a link-only visitor viewer access, not the owner's
-        // identity: a link forwarded to a stranger must not leak whose drive it came from (#319).
-        // The permission check above already resolved both; reused rather than walked again.
+        // The grant behind the access, direct or inherited, gives "공유한 사용자/날짜". No grant
+        // means access through a LINK scope: the owner's identity is not shown to a link-only
+        // visitor.
         Optional<FileShare> grant = Optional.ofNullable(access.grant());
         MemberSummary sharedBy = grant.isPresent()
                 ? findMemberByIdPort.findMemberByIdOrUnknown(file.getOwnerId())

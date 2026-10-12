@@ -17,7 +17,7 @@ public enum FileCategory {
         this.extensions = extensions;
     }
 
-    public boolean matches(String fileName) {
+    boolean matches(String fileName) {
         int dotIndex = fileName.lastIndexOf('.');
         if (dotIndex < 0 || dotIndex == fileName.length() - 1) {
             return false;
@@ -25,7 +25,7 @@ public enum FileCategory {
         return extensions.contains(fileName.substring(dotIndex + 1).toLowerCase());
     }
 
-    /** 확장자가 어느 카테고리에도 속하지 않으면 OTHER로 분류한다. */
+    /** OTHER when the extension belongs to no category. */
     public static FileCategory of(String fileName) {
         return Arrays.stream(values())
                 .filter(category -> category != OTHER && category.matches(fileName))

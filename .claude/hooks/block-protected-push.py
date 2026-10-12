@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""PreToolUse hook: block direct `git push` to protected branches (dev, prod).
+"""PreToolUse hook: block direct `git push` to protected branches (dev, prod, demo).
 
 CONTRIBUTING.md requires all changes to go through a PR - no direct push to
-dev or prod. This inspects Bash tool calls for `git push` invocations and
+dev, prod or demo. This inspects Bash tool calls for `git push` invocations and
 denies ones that target a protected branch directly (explicitly, or
 implicitly via the currently checked-out branch).
 """
@@ -12,7 +12,7 @@ import shlex
 import subprocess
 import sys
 
-PROTECTED_BRANCHES = {"dev", "prod"}
+PROTECTED_BRANCHES = {"dev", "prod", "demo"}
 
 
 def strip_ref_prefix(ref):

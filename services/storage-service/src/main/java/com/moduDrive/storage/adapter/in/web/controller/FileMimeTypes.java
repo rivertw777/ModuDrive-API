@@ -8,13 +8,8 @@ import java.util.Map;
 
 /**
  * Extension &rarr; MIME type for the inline preview endpoints. Mirrors file-service's
- * {@code FileCategory.java} IMAGE/AUDIO/VIDEO sets plus DOCUMENT's txt. This map only decides
- * whether the browser recognizes the response as playable media at all — the heap/size concern
- * that used to keep video out of it is handled server-side by
- * {@link com.moduDrive.storage.application.service.BlockAssembler#requireWithinInlinePreviewLimit},
- * not by this map. {@code svg} is the deliberate exception: it stays octet-stream because
- * it's active content (executes {@code <script>} when rendered as a top-level document, unlike
- * an {@code <img>}-embedded one), so no safe inline preview exists for it regardless of size.
+ * {@code FileCategory} IMAGE/AUDIO/VIDEO sets plus txt/md. {@code svg} is left out on purpose: as a
+ * top-level document it runs {@code <script>}, so it stays octet-stream.
  */
 final class FileMimeTypes {
 
@@ -48,9 +43,8 @@ final class FileMimeTypes {
                 : BY_EXTENSION.getOrDefault(ext, MediaType.APPLICATION_OCTET_STREAM);
     }
 
-    /** RFC 6266 {@code filename*}: plain {@code filename=} can't carry non-ASCII (Korean file
-     * names are the common case here) correctly across browsers, so both are sent — the ASCII
-     * fallback for user agents that ignore filename*, the UTF-8 percent-encoded form for the rest. */
+    /** Sends both an ASCII {@code filename=} fallback and the RFC 6266 UTF-8 {@code filename*}, since
+     * plain {@code filename=} can't carry non-ASCII (Korean) names reliably. */
     static String inlineDisposition(String fileName) {
         String encoded = URLEncoder.encode(fileName, StandardCharsets.UTF_8).replace("+", "%20");
         String asciiFallback = fileName.replaceAll("[^\\x20-\\x7E]", "_");

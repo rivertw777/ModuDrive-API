@@ -35,14 +35,14 @@ class OutboxNotificationEventPublisherTest {
     class WhenPublishingFileShared {
 
         @Test
-        void sendsPayloadToFileSharedQueueKeyedByRecipientId() {
+        void sendsPayloadToFileSharedQueue() {
             UUID fileId = UUID.randomUUID();
             UUID recipientId = UUID.randomUUID();
 
             publisher.publishFileShared(fileId, recipientId, "report.pdf", "EDITOR", true, "홍길동", "owner@modudrive.com");
 
             then(outboxEventRecorder).should().record(
-                    eq(FileQueues.FILE_SHARED), eq(recipientId.toString()), payloadCaptor.capture());
+                    eq(FileQueues.FILE_SHARED), payloadCaptor.capture());
             assertThat(payloadCaptor.getValue())
                     .isInstanceOf(FileSharedNotified.class)
                     .satisfies(payload -> {
@@ -68,7 +68,7 @@ class OutboxNotificationEventPublisherTest {
             publisher.publishFileShared(fileId, recipientId, "report.pdf", "EDITOR", true, "홍길동", "owner@modudrive.com");
 
             then(outboxEventRecorder).should(org.mockito.Mockito.times(2)).record(
-                    eq(FileQueues.FILE_SHARED), eq(recipientId.toString()), payloadCaptor.capture());
+                    eq(FileQueues.FILE_SHARED), payloadCaptor.capture());
             assertThat(payloadCaptor.getAllValues())
                     .extracting(payload -> ((FileSharedNotified) payload).eventId())
                     .doesNotHaveDuplicates();

@@ -45,7 +45,7 @@ class MemberClientAdapterTest {
         @Test
         void returnsMemberAuthData() {
             AuthenticateMemberResponse response = new AuthenticateMemberResponse(
-                    "member-id", "river", "river@modudrive.com", true, List.of("MEMBER"));
+                    "member-id", true, List.of("MEMBER"));
             given(memberClient.authenticateMember(request)).willReturn(ApiResponse.success(response));
 
             MemberAuthData result = memberClientAdapter.authenticateMember(new MemberEmail("river@modudrive.com"), new MemberPassword("raw-password"));
@@ -62,7 +62,7 @@ class MemberClientAdapterTest {
         @Test
         void throwsBusinessException() {
             AuthenticateMemberResponse response = new AuthenticateMemberResponse(
-                    "member-id", "river", "river@modudrive.com", false, List.of("MEMBER"));
+                    "member-id", false, List.of("MEMBER"));
             given(memberClient.authenticateMember(request)).willReturn(ApiResponse.success(response));
 
             Throwable thrown = catchThrowable(() -> memberClientAdapter.authenticateMember(new MemberEmail("river@modudrive.com"), new MemberPassword("raw-password")));

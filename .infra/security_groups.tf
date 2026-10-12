@@ -211,8 +211,7 @@ resource "aws_vpc_security_group_ingress_rule" "vpc_endpoints" {
   to_port                      = 443
 }
 
-# ponytail: outbound open on every group — inbound rules carry the isolation. Narrow egress to the
-# endpoint group + NAT (SES, Discord) if outbound control is ever required (003-aws-migration.md 1-12).
+# Outbound is open on every group; the inbound rules carry the isolation (003-aws-migration.md 1-12).
 resource "aws_vpc_security_group_egress_rule" "all" {
   for_each = merge(
     { for name, sg in aws_security_group.service : name => sg.id },

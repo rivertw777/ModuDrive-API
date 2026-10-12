@@ -40,15 +40,6 @@ public class RedisRepository {
         redisTemplate.delete(key);
     }
 
-    public boolean hasKey(String key) {
-        return Boolean.TRUE.equals(redisTemplate.hasKey(key));
-    }
-
-    /** Restarts the key's TTL; false when the key doesn't exist (so nothing was extended). */
-    public boolean expire(String key, Duration ttl) {
-        return Boolean.TRUE.equals(redisTemplate.expire(key, ttl));
-    }
-
     /** Adds the member, or moves it to {@code score} if it is already there. */
     public void addToSortedSet(String key, String member, double score) {
         redisTemplate.opsForZSet().add(key, member, score);
@@ -58,10 +49,7 @@ public class RedisRepository {
         return redisTemplate.execute(script, keys, args);
     }
 
-    /**
-     * Loads a Lua script from a classpath resource (e.g. "scripts/my-script.lua")
-     * in the CALLING service's own resources.
-     */
+    /** Loads a Lua script from the calling service's classpath (e.g. "scripts/my-script.lua"). */
     public static <T> RedisScript<T> loadScript(String classpathLocation, Class<T> resultType) {
         DefaultRedisScript<T> script = new DefaultRedisScript<>();
         script.setLocation(new ClassPathResource(classpathLocation));

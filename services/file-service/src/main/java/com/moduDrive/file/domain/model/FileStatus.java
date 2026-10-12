@@ -3,19 +3,15 @@ package com.moduDrive.file.domain.model;
 import java.util.Set;
 
 public enum FileStatus {
-    /** Upload started, not yet completed — no committed content/size. */
+    /** Created, no committed version yet. */
     PENDING,
-    /** Live, in the file tree. */
     UPLOADED,
-    /** In the trash — soft-deleted, still recoverable via restore. {@code File.trashedAt} is set. */
+    /** In the trash, restorable. {@code File.trashedAt} is set. */
     TRASHED,
-    /** Purged from the trash — a tombstone row. Blocks/versions/shares/favorites are gone;
-     * {@code File.deletedAt} is set and never un-sets. Not reachable from TRASHED except through
-     * a purge. */
+    /** Purged from the trash: a tombstone row, reached only from TRASHED. {@code File.deletedAt}
+     * is set. */
     DELETED;
 
-    /** TRASHED or DELETED — anything no longer part of the live file tree. Used wherever a query
-     * or check needs "show me only what's actually there" (excluding both) in one place, so the
-     * two statuses stay in sync as a pair rather than duplicated at every call site. */
+    /** No longer part of the live file tree. */
     public static final Set<FileStatus> REMOVED = Set.of(TRASHED, DELETED);
 }

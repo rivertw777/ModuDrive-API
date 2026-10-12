@@ -18,9 +18,7 @@ import java.util.UUID;
 @Getter
 @NoArgsConstructor
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
-// The unique constraint on event_id (not just the app-layer existsByEventId check) is what
-// actually closes the TOCTOU window where two concurrent consumers of the same at-least-once
-// SQS redelivery both pass that check and both insert.
+// The event_id unique constraint stops two concurrent consumers that both passed existsByEventId.
 @Table(name = "notification", uniqueConstraints = {
         @UniqueConstraint(name = "uk_notification_event_id", columnNames = "event_id")
 })

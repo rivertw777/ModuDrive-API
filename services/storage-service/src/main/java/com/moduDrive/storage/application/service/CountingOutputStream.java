@@ -4,10 +4,8 @@ import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 
-/** Wraps a stream and tallies the bytes written through it, so a download can be metered by what
- * actually reached the client rather than by the file's nominal size — an aborted transfer then
- * only spends what really left. Not thread-safe: {@code StreamingResponseBody} runs the whole
- * write on one thread, which is the only context this is used in. */
+/** Counts the bytes written through it, so a download is metered by what was actually sent. Not
+ * thread-safe: {@code StreamingResponseBody} writes on one thread. */
 final class CountingOutputStream extends FilterOutputStream {
 
     private long count;
@@ -27,9 +25,8 @@ final class CountingOutputStream extends FilterOutputStream {
 
     @Override
     public void write(byte[] b, int off, int len) throws IOException {
-        // FilterOutputStream's default fans this out to write(int) per byte; delegate straight
-        // through instead, both for speed and so the count stays exact. Count in a finally: a
-        // write that throws partway still cost us the upstream fetch and the wire, so charge it.
+        // FilterOutputStream's default writes byte by byte; delegate directly. Counted in finally: a
+        // write that throws partway still cost the fetch and the wire.
         try {
             out.write(b, off, len);
         } finally {

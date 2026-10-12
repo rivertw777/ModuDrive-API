@@ -17,21 +17,12 @@ class RecordFileAccessService implements RecordFileAccessUseCase {
 
     private final SaveFileAccessPort saveFileAccessPort;
 
-    // Recency tracking is a side effect of "opening" a file — inline preview/view, upload, and
-    // fetching its detail metadata (Google Drive-style: a plain download or a metadata edit like
-    // rename/move/share does NOT touch "recent"). It is never the reason that action fails — a
-    // lost upsert race or any other runtime error here must not turn an otherwise-successful
-    // call into a 500. Losing an individual access record just means one action doesn't move
-    // that file to the top of "recent"; harmless for this feature. Catching RuntimeException
-    // broadly (not just DataAccessException) is what lets every caller add this as a single line
-    // with no try/catch of its own — see GetFileController and GetLatestFileVersionsController
-    // (the storage-service preview path).
+    // Recording "recent" never fails the call that opened the file (detail view, preview): any
+    // RuntimeException, e.g. a lost upsert race, is logged and dropped, so callers need no
+    // try/catch.
     //
-    // Deliberately NOT @Transactional: the adapter's saveAndFlush already runs in its own
-    // Spring Data-managed transaction, and wrapping this method in another one means a
-    // constraint violation marks *that* transaction rollback-only — the catch below swallows
-    // the exception, but the @Transactional proxy then throws UnexpectedRollbackException at
-    // commit time, from outside this try block. That defeats the whole point of catching here.
+    // Not @Transactional: a constraint violation would mark the outer transaction rollback-only,
+    // and its commit would then throw UnexpectedRollbackException outside this catch.
     @Override
     public void recordAccess(RecordFileAccessCommand command) {
         try {

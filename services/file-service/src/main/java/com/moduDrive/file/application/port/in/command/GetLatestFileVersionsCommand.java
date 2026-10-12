@@ -5,10 +5,8 @@ import lombok.Getter;
 
 import java.util.UUID;
 
-/** This is the internal, service-to-service counterpart of {@link GetFileRevisionsCommand} used
- * by storage-service to resolve the latest version for download. Kept off the tenant-facing
- * {@code /api/v1/files/**} prefix, but still carries the original caller's id so FileAccessGuard
- * can enforce the same VIEWER check the tenant-facing read path does (see #152). */
+/** The internal counterpart of {@link GetFileRevisionsCommand}: storage-service resolving the
+ * version to download. Carries the original caller's id so FileAccessGuard can check DOWNLOAD. */
 @Getter
 public class GetLatestFileVersionsCommand {
 

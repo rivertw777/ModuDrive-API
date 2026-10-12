@@ -1,5 +1,5 @@
 # SES fault proxy: mail-service -> :8080 -> localstack:4566, failure mode switched on :8081 (/?m=<mode>&s=<sec>)
-import http.server, socketserver, threading, time, urllib.request, urllib.error, sys
+import http.server, socketserver, threading, time, urllib.request, urllib.error
 
 UPSTREAM = "http://localstack:4566"
 state = {"mode": "pass", "sec": 0}

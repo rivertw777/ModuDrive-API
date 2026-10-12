@@ -5,13 +5,11 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 
-/** Mail bodies live as one HTML file per mail under {@code resources/templates}; this reads them
- * and the images they reference. */
+/** Loads the mail templates under {@code resources/templates} and the images they reference. */
 final class MailTemplates {
 
-    /** Referenced from the templates as {@code cid:logo}: the web home page header's icon +
-     * "ModuDrive" wordmark (MarketingHeader, Quicksand font), captured at 3x — re-capture it if the
-     * brand changes, since mail clients can't load the web font to draw the text themselves. */
+    /** {@code cid:logo}: the web MarketingHeader icon + wordmark (Quicksand font) captured at 3x. Mail
+     * clients can't load the web font, so re-capture it if the brand changes. */
     static final byte[] LOGO_PNG = image("logo.png");
     /** Referenced from the templates' warning boxes as {@code cid:warning} (icons.tsx's AlertCircleIcon). */
     static final byte[] WARNING_PNG = image("warning.png");
@@ -19,7 +17,6 @@ final class MailTemplates {
     private MailTemplates() {
     }
 
-    /** Called once per service at construction — the files never change at runtime. */
     static String load(String path) {
         try (InputStream in = MailTemplates.class.getResourceAsStream(path)) {
             if (in == null) {
@@ -31,8 +28,7 @@ final class MailTemplates {
         }
     }
 
-    /** A PNG under {@code resources/mail-images}, rendered at 3x its display size from the
-     * frontend's icons (icons.tsx) so it stays sharp on high-DPI screens. */
+    /** A PNG under {@code resources/mail-images}, rendered at 3x from the web icons for high-DPI screens. */
     static byte[] image(String name) {
         String path = "/mail-images/" + name;
         try (InputStream in = MailTemplates.class.getResourceAsStream(path)) {

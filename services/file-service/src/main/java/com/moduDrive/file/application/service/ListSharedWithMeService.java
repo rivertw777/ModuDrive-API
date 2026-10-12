@@ -9,7 +9,6 @@ import com.moduDrive.file.application.port.out.FindFilePort;
 import com.moduDrive.file.application.port.out.FindFileSharePort;
 import com.moduDrive.file.application.port.out.FindMemberByIdPort;
 import com.moduDrive.file.application.port.out.FindMemberByIdPort.MemberSummary;
-import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.FileId;
 import lombok.RequiredArgsConstructor;
 
@@ -26,24 +25,17 @@ class ListSharedWithMeService implements ListSharedWithMeUseCase {
     private final FindMemberByIdPort findMemberByIdPort;
     private final FileFavoritePort fileFavoritePort;
 
-    // Not @Transactional: findFilePort runs its own short read per share, so no DB connection
-    // sits open across the sequential member-service lookups that enrich each row.
-    // ponytail: one findById + one member lookup per share (N+1); fine at this scale.
+    // Not @Transactional: no DB connection is held across the member-service lookups. One
+    // findById and one member lookup per share (N+1).
     @Override
     public List<FileView> listSharedWithMe(ListSharedWithMeCommand command) {
         Set<UUID> favoriteIds = fileFavoritePort.favoriteFileIds(command.getSharedWithUserId());
-        // Flat, matching Drive: every item this user has a *direct* share on shows up here, even
-        // one nested under another of their own directly-shared folders — a stays listed here
-        // even after its ancestor b is also shared to the same person (verified against real
-        // Drive). ListSharedDirectoryService is the one that keeps b's own listing from
-        // double-showing a — see the note there.
+        // Flat, like Drive: every item with a direct share, even one inside another shared folder.
         return findFileSharePort.findBySharedWithUserId(command.getSharedWithUserId())
                 .stream()
                 .flatMap(share -> findFilePort.findById(new FileId(share.getFileId()))
                         .filter(file -> !file.isRemoved())
                         .map(file -> {
-                            // The caller never owns a shared-with-me file, so their star is
-                            // always the per-user one.
                             file.markFavorite(favoriteIds.contains(file.getId()));
                             MemberSummary sharedBy = findMemberByIdPort.findMemberByIdOrUnknown(file.getOwnerId());
                             return new FileView(file, share.getRole(), sharedBy.name(), sharedBy.email(),

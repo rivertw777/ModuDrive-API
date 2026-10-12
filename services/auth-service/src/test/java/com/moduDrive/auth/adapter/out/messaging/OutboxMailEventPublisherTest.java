@@ -27,11 +27,11 @@ class OutboxMailEventPublisherTest {
     class WhenSendingLoginVerificationMail {
 
         @Test
-        void recordsToLoginVerificationQueueKeyedByEmail() {
+        void recordsToLoginVerificationQueue() {
             publisher.sendLoginVerificationMail(new MemberEmail("river@modudrive.com"), "042917");
 
             then(outboxEventRecorder).should().record(
-                    AuthQueues.LOGIN_VERIFICATION_MAIL_REQUESTED, "river@modudrive.com",
+                    AuthQueues.LOGIN_VERIFICATION_MAIL_REQUESTED,
                     new LoginVerificationMailRequested("river@modudrive.com", "042917"));
         }
     }

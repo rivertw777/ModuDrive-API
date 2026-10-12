@@ -48,7 +48,8 @@ class AuthenticateMemberControllerTest {
 
         @Test
         void returnsAuthenticatedMemberResponse() throws Exception {
-            Member member = MemberTestFixture.aMemberWithId(new MemberId(UUID.randomUUID()));
+            UUID memberId = UUID.randomUUID();
+            Member member = MemberTestFixture.aMemberWithId(new MemberId(memberId));
             given(authenticateMemberUseCase.authenticateMember(any(AuthenticateMemberCommand.class)))
                     .willReturn(member);
 
@@ -56,7 +57,7 @@ class AuthenticateMemberControllerTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(REQUEST_JSON))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.data.email").value("river@modudrive.com"))
+                    .andExpect(jsonPath("$.data.id").value(memberId.toString()))
                     .andExpect(jsonPath("$.data.roles[0]").value(Role.MEMBER.name()));
         }
     }

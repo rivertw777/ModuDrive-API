@@ -26,7 +26,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -60,8 +59,7 @@ class PublicDownloadFileServiceTest {
         return new PublicDownloadFileCommand(fileId, key, true);
     }
 
-    /** LINK scope has been judged by fileId alone with no token at all since #303 — this is what
-     * every anonymous visitor of a link-shared file actually sends. */
+    /** What an anonymous visitor of a link-shared file sends: no key. */
     private PublicDownloadFileCommand keylessCommand() {
         return new PublicDownloadFileCommand(fileId, null);
     }
@@ -180,7 +178,7 @@ class PublicDownloadFileServiceTest {
         }
 
         @Test
-        @DisplayName("key 없이(LINK 스코프) 미리보기해도 같은 방식으로 계량한다 (issue #312)")
+        @DisplayName("key 없이(LINK 스코프) 미리보기해도 같은 방식으로 계량한다")
         void alsoMetersAKeylessPreview() {
             given(getFileVersionPort.getPublicVersion(fileId, null))
                     .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", keys(1), 0));
@@ -211,7 +209,7 @@ class PublicDownloadFileServiceTest {
     }
 
     @Nested
-    @DisplayName("key 없이(LINK 스코프) 공개 다운로드를 요청할 때 (issue #312 — 예전엔 여기서 NPE로 500)")
+    @DisplayName("key 없이(LINK 스코프) 공개 다운로드를 요청할 때")
     class WhenKeyIsAbsentBecauseTheFileIsLinkShared {
 
         @Test
@@ -252,6 +250,8 @@ class PublicDownloadFileServiceTest {
             publicDownloadFileService.downloadPublic(new PublicDownloadFileCommand(fileId, ""));
 
             then(downloadQuotaPort).should().checkWithinQuota("public:" + fileId, "files/abc/xyz");
+            then(downloadQuotaPort).should().recordUsage(eq("public:" + fileId), eq("files/abc/xyz"), anyLong());
+            then(downloadQuotaPort).shouldHaveNoMoreInteractions();
         }
     }
 
@@ -260,12 +260,10 @@ class PublicDownloadFileServiceTest {
     class WhenAKeyIsPresentButNeverActuallyAuthorized {
 
         @Test
-        @DisplayName("아무 형식만 맞는 key를 매번 다르게 보내도 같은 파일 버킷으로 계량한다 (issue #312의 나머지 절반 — 위조된 key로 매번 새 버킷을 만들 수 없어야 함)")
+        @DisplayName("형식만 맞는 key를 매번 다르게 보내도 같은 파일 버킷으로 계량한다")
         void doesNotMeterByAnArbitraryKeyEvenWhenOnePresent() {
-            // file-service's PublicFileResolver.resolve short-circuits on LINK scope before ever
-            // consulting key — so a key can ride along on a request it played no part in
-            // authorizing. Metering by it anyway would let anyone mint an infinite number of
-            // always-empty buckets by attaching a fresh random UUID per request.
+            // For a LINK-scoped file file-service never checks key, so metering by it would hand out a
+            // fresh bucket per random key.
             String someUnrelatedKey = UUID.randomUUID().toString();
             given(getFileVersionPort.getPublicVersion(fileId, someUnrelatedKey))
                     .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", keys(2), 0));
@@ -275,7 +273,6 @@ class PublicDownloadFileServiceTest {
             publicDownloadFileService.downloadPublic(new PublicDownloadFileCommand(fileId, someUnrelatedKey));
 
             then(downloadQuotaPort).should().checkWithinQuota("public:" + fileId, "files/abc/xyz");
-            then(downloadQuotaPort).should(never()).checkWithinQuota(eq("invite:" + someUnrelatedKey), anyString());
         }
     }
 

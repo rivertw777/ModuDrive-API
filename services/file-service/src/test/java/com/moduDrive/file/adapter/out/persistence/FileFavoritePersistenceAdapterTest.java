@@ -15,8 +15,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @DataJpaTest
-// AuditingConfig is a third-party auto-configuration the @DataJpaTest slice drops — without it
-// @CreatedDate never fires and the recency ordering can't be exercised.
+// The @DataJpaTest slice drops AuditingConfig; without it @CreatedDate never fires and the recency ordering is untestable.
 @Import({FileFavoritePersistenceAdapter.class, AuditingConfig.class})
 class FileFavoritePersistenceAdapterTest {
 

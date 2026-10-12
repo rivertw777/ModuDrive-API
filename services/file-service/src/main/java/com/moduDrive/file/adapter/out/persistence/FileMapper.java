@@ -43,9 +43,7 @@ class FileMapper {
         file.markTrashedAt(entity.getTrashedAt());
         file.markDeletedAt(entity.getDeletedAt());
         if (entity.getAccessScope() == ShareScope.LINK) {
-            // link_role is deliberately not read back: a link is viewer-only by domain invariant
-            // (see File#enableLinkSharing, spec 2), so a null link_role and one somehow carrying
-            // EDITOR resolve the same viewer-only way (#318).
+            // link_role isn't read back: a link is always VIEWER (File#enableLinkSharing).
             file.enableLinkSharing();
         }
         return file;

@@ -6,17 +6,13 @@ import org.springframework.data.redis.core.script.RedisScript;
 import java.time.Duration;
 import java.util.List;
 
-/** For a consumer without a database (mail-service). Nothing to join a transaction with — sending a
- * mail can't be rolled back — so the claim is taken before the send and given back if it fails.
- * {@code SETNX} makes that one atomic step: two copies of the same message arriving together can't
- * both find the key missing, which is what a plain read-then-write allowed. */
+/** For a consumer without a database (mail-service). A sent mail can't be rolled back, so the claim is
+ * taken with {@code SETNX} before the send and given back if it fails. */
 class RedisProcessedEvents implements ProcessedEvents {
 
-    /** How long a claim survives without being confirmed or given back — a process that dies mid-send
-     * leaves one. Kept at the queues' visibility timeout so it lapses about when SQS hands the message
-     * to someone else: a second mail is better than none. */
-    // ponytail: hardcoded to match .docker/localstack/init-aws.sh; make it a property if a queue
-    // ever needs a different visibility timeout.
+    /** How long an unconfirmed claim survives (a process that died mid-send leaves one). Must match the
+     * queues' visibility timeout (.docker/localstack/init-aws.sh, Terraform) so it lapses when SQS
+     * redelivers: a second mail is better than none. */
     private static final Duration CLAIM_LEASE = Duration.ofSeconds(10);
 
     /** A claim's value, distinct from a processed record's, so giving a claim back can't erase a record

@@ -34,7 +34,7 @@ class MemberClientAdapterTest {
     private static final String EMAIL = "river@modudrive.com";
 
     private static Request request() {
-        return Request.create(Request.HttpMethod.GET, "/api/v1/member/find-by-email",
+        return Request.create(Request.HttpMethod.GET, "/internal/v1/member/by-email",
                 Map.of(), null, StandardCharsets.UTF_8, new RequestTemplate());
     }
 

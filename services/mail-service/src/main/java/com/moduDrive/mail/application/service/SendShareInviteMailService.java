@@ -14,8 +14,7 @@ class SendShareInviteMailService implements SendShareInviteMailUseCase {
 
     private final SendMailPort sendMailPort;
     private final String clientUrl;
-    /** A guest (no ModuDrive account) gets the no-login link plus a warning about forwarding it;
-     * a member gets neither — so each has its own file. */
+    /** Only the guest mail carries the no-login link and the forwarding warning. */
     private final String guestTemplate = MailTemplates.load("/templates/share-invite-guest-mail.html");
     private final String memberTemplate = MailTemplates.load("/templates/share-invite-member-mail.html");
 
@@ -26,29 +25,20 @@ class SendShareInviteMailService implements SendShareInviteMailUseCase {
 
     @Override
     public void sendShareInviteMail(SendShareInviteMailCommand command) {
-        // command.getGranterName()/getGranterEmail() are null when file-service's
-        // FindMemberByIdPort#findMemberByIdOrUnknown degraded to UNKNOWN_MEMBER (member-service
-        // hiccup, or the granter's account is gone by the time this mail is processed) — that
-        // degradation is meant to let the invite still go out, so it must not crash here.
-        // sanitizeGranterName also strips <, >, @, " and control/format characters: a member's
-        // signup name is free text with no such restriction, so without this a name like
-        // "ModuDrive Security <security@modudrive.com>" would render in the From display name
-        // exactly like a spoofed sender.
+        // Granter name/email are null when file-service couldn't resolve the member
+        // (FindMemberByIdPort#findMemberByIdOrUnknown); the invite must still go out.
         String rawName = sanitizeGranterName(command.getGranterName());
         String rawEmail = command.getGranterEmail() == null ? "" : command.getGranterEmail();
         String granterName = HtmlUtils.htmlEscape(rawName);
         String granterEmail = HtmlUtils.htmlEscape(rawEmail);
         String fileName = HtmlUtils.htmlEscape(command.getFileName());
         String granterInitial = HtmlUtils.htmlEscape(new String(Character.toChars(rawName.codePointAt(0))));
-        // headerSafe: these two also land in mail headers (Subject / From personal), not just the
-        // HTML body — htmlEscape alone wouldn't stop a CR/LF from injecting an extra header line.
+        // The subject is a mail header: htmlEscape doesn't stop CR/LF header injection.
         String subject = "[ModuDrive] \"%s\" 항목이 나와 공유되었습니다".formatted(headerSafe(command.getFileName()));
 
-        // /files/{fileId} is the one canonical file address for every visitor (spec 3): a signed-in
-        // member lands on the file, a signed-out one goes through login and back to it. A guest
-        // invite (no ModuDrive account for this email) also carries key, the capability that
-        // opens it without logging in and survives them signing up. Mails outlive redirect
-        // aliases, so never emit the legacy /public/{fileId} form here.
+        // /files/{fileId} is the one file address for every visitor; a signed-out member goes through
+        // login and back. A guest invite adds key, which opens it without logging in. Mails outlive
+        // redirect aliases, so don't emit the /public/{fileId} alias.
         boolean isGuestInvite = command.getInviteToken() != null;
         String fileLink = "%s/files/%s".formatted(clientUrl, command.getFileId());
         String link = isGuestInvite ? fileLink + "?key=" + command.getInviteToken() : fileLink;
@@ -65,15 +55,9 @@ class SendShareInviteMailService implements SendShareInviteMailUseCase {
                 .replace("{{FILE_NAME}}", fileName)
                 .replace("{{LINK}}", link);
 
-        // Shows as e.g. "홍길동 (ModuDrive에서 공유)" in the recipient's inbox, even though the
-        // mailbox itself is the shared modudrive.mail.from address. Deliberately the granter's
-        // *name*, not their email — a display name containing an address that differs from the
-        // real From address is exactly the pattern phishing filters (Naver's "안전하지 않은 메일"
-        // warning included) flag as spoofing. rawName is already sanitized above, so this can't
-        // reintroduce that same pattern via a crafted signup name.
+        // The granter's name, not email: a display name holding an address other than the real From
+        // is what phishing filters (Naver's "안전하지 않은 메일" included) flag as spoofing.
         String fromDisplayName = "%s (ModuDrive에서 공유)".formatted(rawName);
-        // Referenced from the template as cid:logo / cid:fileIcon — see SendMailPort.sendHtml's
-        // doc comment for why these ride as MIME attachments instead of raw <svg> in the body.
         byte[] fileIcon = FileIcon.of(command.getCategory(), command.isDirectory()).png;
         Map<String, byte[]> inlineImages = isGuestInvite
                 ? Map.of("logo", MailTemplates.LOGO_PNG, "fileIcon", fileIcon, "warning", MailTemplates.WARNING_PNG)
@@ -81,11 +65,10 @@ class SendShareInviteMailService implements SendShareInviteMailUseCase {
         sendMailPort.sendHtml(command.getDeliveryId(), command.getEmail(), subject, html, fromDisplayName, inlineImages);
     }
 
-    /** A member's signup name is free text with no character/format restriction beyond
-     * {@code @NotBlank} — this is the one place it crosses into a mail header (From personal
-     * name), so it's sanitized here rather than trusting the source. Strips angle brackets, {@code
-     * @}, quotes, and control/format characters (this also closes CR/LF header-injection and
-     * Unicode bidi-override tricks), caps length, and never returns blank. */
+    /** A signup name is free text and lands in the From header, so a name like
+     * "ModuDrive Security <security@modudrive.com>" would look like a spoofed sender. Strips angle
+     * brackets, {@code @}, quotes and control/format characters (CR/LF injection, bidi overrides),
+     * caps the length, and never returns blank. */
     private static String sanitizeGranterName(String name) {
         if (name == null) {
             return "ModuDrive 사용자";
@@ -97,16 +80,13 @@ class SendShareInviteMailService implements SendShareInviteMailUseCase {
         return cleaned.length() > 40 ? cleaned.substring(0, 40) : cleaned;
     }
 
-    /** Strips CR/LF/NUL so a value can't inject an extra header line when it lands in Subject or
-     * the From personal name — htmlEscape alone only protects the HTML body, not mail headers. */
+    /** Strips CR/LF/NUL so a value can't inject an extra header line. */
     private static String headerSafe(String value) {
         return value == null ? "" : value.replaceAll("[\\r\\n\\u0000]", " ");
     }
 
-    /** Same per-type icons/colors as the frontend's entry-icon.tsx, pre-rendered to PNG. Which
-     * category a file falls into is NOT decided here: file-service (the one source of truth, via
-     * FileCategory.of) computes it and hands it over as {@code command.getCategory()}, so these
-     * names must keep matching file-service's FileCategory names exactly. */
+    /** The web entry-icon.tsx icons as PNGs. Names must match file-service's {@code FileCategory},
+     * which decides the category. */
     enum FileIcon {
         IMAGE, VIDEO, AUDIO, DOCUMENT, OTHER, FOLDER;
 
@@ -119,8 +99,7 @@ class SendShareInviteMailService implements SendShareInviteMailUseCase {
             try {
                 return valueOf(category);
             } catch (IllegalArgumentException | NullPointerException e) {
-                // Unknown/missing category (e.g. file-service added one this enum doesn't know
-                // yet) — fall back rather than break the whole mail over an icon.
+                // Unknown or missing category: fall back rather than fail the mail over an icon.
                 return OTHER;
             }
         }

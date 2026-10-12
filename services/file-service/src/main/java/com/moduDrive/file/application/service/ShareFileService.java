@@ -51,8 +51,6 @@ class ShareFileService implements ShareFileUseCase {
             return Optional.empty();
         }
 
-        // The owner has no FileShare row of their own (ownership is file.ownerId, not a grant), so
-        // inviting yourself would just be a pointless, confusing entry in your own sharing dialog.
         if (granteeId.get().equals(command.getOwnerId().value())) {
             throw new BusinessException(FileExceptionCase.FILE_SHARE_SELF_NOT_ALLOWED);
         }
@@ -72,11 +70,8 @@ class ShareFileService implements ShareFileUseCase {
         return Optional.of(saved);
     }
 
-    /** No member owns the invited email, so there is no id to attach a normal {@link FileShare}
-     * row to. Stays a {@code RESTRICTED} grant, scoped to just this one email, via
-     * {@link FileShare#createPending}: the invite gets its own token, independent of the file's
-     * access scope, so it never turns the file into "anyone with the link" and can be revoked on
-     * its own without touching any other grant. */
+    /** No member owns the email: a pending share with its own token (see
+     * {@link FileShare#createPending}), independent of the file's scope. */
     private void inviteGuest(File file, ShareFileCommand command) {
         if (findFileSharePort.existsByFileIdAndGranteeEmail(command.getFileId(), command.getEmail())) {
             throw new BusinessException(FileExceptionCase.FILE_SHARE_ALREADY_EXISTS);
@@ -93,14 +88,13 @@ class ShareFileService implements ShareFileUseCase {
         publishInvite(file, saved, command, null, saved.getToken());
     }
 
-    /** Written to the outbox inside this @Transactional, so the mail (and, for a member, the in-app
-     * notification) commits or rolls back with the share row. A guest ({@code granteeId} null) has no
-     * account to notify in-app and gets only the mail, carrying its no-login {@code inviteToken}. */
+    /** Outbox writes, so the mail and (for a member) the in-app notification commit with the
+     * share row. A guest ({@code granteeId} null) gets only the mail, with its {@code inviteToken}. */
     private void publishInvite(File file, FileShare saved, ShareFileCommand command, UUID granteeId, UUID inviteToken) {
         MemberSummary granter = findMemberByIdPort.findMemberByIdOrUnknown(saved.getOwnerId());
         publishMailEventPort.publishShareInviteRequested(
                 saved.getFileId(), command.getEmail(), file.getName(), file.isDirectory(),
-                FileCategory.of(file.getName()).name(), saved.getRole().name(), granter.name(), granter.email(),
+                FileCategory.of(file.getName()).name(), granter.name(), granter.email(),
                 command.getMessage(), inviteToken);
         if (granteeId != null) {
             publishNotificationEventPort.publishFileShared(

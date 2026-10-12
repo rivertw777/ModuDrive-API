@@ -32,9 +32,8 @@ class AuthClientTest {
 
         @Test
         void failsWithTimeoutInsteadOfHangingForever() {
-            // A response that starts but never completes — the same shape as an auth-service GC
-            // pause or a stalled Redis lookup; without AuthClient's own .timeout(), this Mono
-            // would simply never terminate.
+            // A response that never completes, like an auth-service GC pause or a stalled Redis
+            // lookup. Without AuthClient's TimeLimiter this Mono would never terminate.
             WebClient stallingClient = WebClient.builder()
                     .exchangeFunction(request -> Mono.never())
                     .build();

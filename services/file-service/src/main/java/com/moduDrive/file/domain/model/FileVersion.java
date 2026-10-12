@@ -14,8 +14,8 @@ import java.util.UUID;
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class FileVersion {
 
-    // ponytail: must equal storage-service's storage.block-size (and WEB's CHUNK_SIZE) — the
-    // blocklist's shape is checked against it. Make it shared config if it ever needs to change.
+    // Must equal storage-service's storage.block-size and WEB's CHUNK_SIZE: the blocklist's shape
+    // is checked against it.
     public static final int BLOCK_SIZE = 4 * 1024 * 1024;
 
     private final UUID id;

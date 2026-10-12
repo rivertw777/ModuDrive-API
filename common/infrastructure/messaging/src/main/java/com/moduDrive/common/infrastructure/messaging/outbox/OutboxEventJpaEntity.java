@@ -14,45 +14,35 @@ import lombok.NoArgsConstructor;
 
 import java.time.Instant;
 
-/** One message, from recording to delivery ({@link OutboxEventStatus}). Sent rows stay for
- * {@link OutboxRelay#SENT_RETENTION} as an audit trail and possible resend source, then get purged.
- * Old PENDING rows mean sending is behind (the oldest {@code created_at} shows how far); FAILED rows
- * need a human. Each service has its own database, so each has its own table. */
+/** One message, from recording to delivery ({@link OutboxEventStatus}). SENT rows are purged after
+ * {@link OutboxRelay#SENT_RETENTION}; FAILED rows need a human. */
 @Getter
 @Entity
 @Table(name = "outbox_event")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 class OutboxEventJpaEntity {
 
-    /** What the column can hold. Left wide so the cut below can be raised without a migration. */
+    /** Must match the {@code failure_reason} column in each service's migration. */
     static final int FAILURE_REASON_COLUMN_LENGTH = 1000;
-    /** What is actually kept: enough for the exception's own message, which is all the alert shows and
-     * all a human reads before opening the logs. The class name is the simple one for the same reason —
-     * a package path would eat most of this. */
+    /** Enough for the simple class name and message the alert shows; the full error is in the logs. */
     static final int FAILURE_REASON_LENGTH = 100;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    /** Logical name of the queue this event goes to, as {@code common:event} declares it —
-     * without the suffix SQS adds of its own. */
+    /** Queue name as {@code common:event} declares it. */
     @Column(nullable = false)
     private String queue;
 
-    @Column(name = "message_key")
-    private String messageKey;
-
-    /** Fully-qualified class of the event record, so the relay can rebuild the exact object and
-     * hand it to the publisher, which serializes it. */
+    /** Fully-qualified event class, so the relay can rebuild the object. */
     @Column(nullable = false)
     private String payloadType;
 
     @Column(nullable = false, length = 65_535)
     private String payload;
 
-    /** W3C trace headers of the request that recorded the event, as JSON. The relay picks them up
-     * again so the consumer's spans still join the original trace in Tempo. */
+    /** W3C trace headers of the recording request, as JSON, so the consumer's spans join that trace. */
     @Column(length = 65_535)
     private String traceHeaders;
 
@@ -65,19 +55,16 @@ class OutboxEventJpaEntity {
 
     private Instant sentAt;
 
-    /** Set with FAILED: the payload can't be turned back into its event class, or SQS rejected the
-     * message itself. The relay only picks up PENDING rows, so a pile of these can't fill every batch
-     * and block the rows behind them. */
+    /** Set with FAILED: the payload can't be rebuilt, or the broker rejected the message. */
     private Instant failedAt;
 
     /** Why it became FAILED: exception class and message, cut to {@link #FAILURE_REASON_LENGTH}. */
     @Column(length = FAILURE_REASON_COLUMN_LENGTH)
     private String failureReason;
 
-    OutboxEventJpaEntity(String queue, String messageKey, String payloadType, String payload,
+    OutboxEventJpaEntity(String queue, String payloadType, String payload,
                          String traceHeaders) {
         this.queue = queue;
-        this.messageKey = messageKey;
         this.payloadType = payloadType;
         this.payload = payload;
         this.traceHeaders = traceHeaders;

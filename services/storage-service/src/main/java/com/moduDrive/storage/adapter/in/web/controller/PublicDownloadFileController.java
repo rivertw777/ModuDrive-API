@@ -21,10 +21,9 @@ class PublicDownloadFileController {
 
     private final PublicDownloadFileUseCase publicDownloadFileUseCase;
 
-    /** Reached through the gateway's permitAll list, so there is deliberately no X_USER_ID —
-     * {@code fileId} alone authorizes a LINK-scoped entry, {@code key} authorizes a guest invite,
-     * and file-service (not this service) is what decides which, if either, applies. Streamed for
-     * the same reason as {@link DownloadFileController#downloadFile}. */
+    /** Gateway permitAll, so no X_USER_ID: {@code fileId} authorizes a LINK-scoped entry, {@code key} a
+     * guest invite, and file-service decides which applies. Streamed like
+     * {@link DownloadFileController#downloadFile}. */
     @GetMapping("/api/v1/storage/public/{fileId}/download")
     public ResponseEntity<StreamingResponseBody> publicDownloadFile(@PathVariable String fileId,
                                                                     @RequestParam(required = false) String key) {
@@ -36,9 +35,7 @@ class PublicDownloadFileController {
                 .body(body);
     }
 
-    /** Inline counterpart to {@link #publicDownloadFile}, same relationship as
-     * {@link DownloadFileController#viewFile} is to {@link DownloadFileController#downloadFile}. {@code fileId}/{@code key} are already the whole credential
-     * between them, so it goes straight in the URL. */
+    /** Inline counterpart to {@link #publicDownloadFile}, like {@link DownloadFileController#viewFile}. */
     @GetMapping("/api/v1/storage/public/{fileId}/view")
     public ResponseEntity<byte[]> viewPublicFile(
             @PathVariable String fileId,

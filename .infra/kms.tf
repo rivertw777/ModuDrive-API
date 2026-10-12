@@ -1,7 +1,7 @@
 # One customer-managed key for data at rest (hardened, i.e. prod): Aurora, MemoryDB, the S3 blocks,
 # SQS, the SSM secrets, CloudWatch Logs, CloudTrail and the RDS-managed admin passwords. Unlike the AWS-managed
 # keys, its policy and every use are ours to control and audit (CloudTrail), and it rotates yearly.
-# Without hardened everything stays on the AWS-managed/service-owned encryption it had.
+# Without hardened everything uses AWS-managed/service-owned encryption.
 resource "aws_kms_key" "data" {
   count = var.hardened ? 1 : 0
 

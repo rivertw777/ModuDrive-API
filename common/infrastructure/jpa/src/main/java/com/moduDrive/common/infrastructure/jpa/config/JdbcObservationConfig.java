@@ -12,9 +12,8 @@ import org.springframework.context.annotation.Configuration;
 @ConditionalOnClass(DataSourceBaseContext.class)
 public class JdbcObservationConfig {
 
-    /** JDBC spans only inside something already traced — a request, a consumer, a relayed event.
-     * The outbox relay polls every second outside any trace (and Flyway runs at startup); without
-     * this each poll would start a one-span trace of its own and bury the real ones. */
+    /** JDBC spans only inside an existing trace. The outbox relay polls every second outside any trace
+     * (as does Flyway at startup), and each poll would otherwise start its own one-span trace. */
     @Bean
     public ObservationPredicate jdbcOnlyWithinTrace(ObjectProvider<ObservationRegistry> registry) {
         return (name, context) -> !(context instanceof DataSourceBaseContext)

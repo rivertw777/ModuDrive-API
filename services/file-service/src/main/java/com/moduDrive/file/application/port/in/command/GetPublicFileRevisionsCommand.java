@@ -2,9 +2,7 @@ package com.moduDrive.file.application.port.in.command;
 
 import lombok.Getter;
 
-/** Same reason as {@link GetPublicFileCommand} for keeping {@code fileId}/{@code key} raw
- * Strings: the caller is the unauthenticated storage-service relay, so a malformed value must
- * 404 like a wrong one rather than 500. */
+/** Raw Strings for the same reason as {@link GetPublicFileCommand}. */
 @Getter
 public class GetPublicFileRevisionsCommand {
 

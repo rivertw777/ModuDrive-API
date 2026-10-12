@@ -91,7 +91,7 @@ resource "aws_ssm_parameter" "discord_webhook" {
 }
 
 # Gmail app password for SMTP mail (var.smtp_username), made in the Google account and set by hand
-# like the webhooks. Goes with SES production access.
+# like the webhooks.
 resource "aws_ssm_parameter" "smtp_password" {
   count = var.smtp_username == null ? 0 : 1
 

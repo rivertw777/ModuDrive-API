@@ -27,13 +27,8 @@ class NotificationPersistenceAdapter implements SaveNotificationPort, FindNotifi
     private final SpringDataNotificationRepository springDataNotificationRepository;
     private final NotificationMapper notificationMapper;
 
-    /** REQUIRES_NEW, and the {@code DataIntegrityViolationException} from a concurrent duplicate
-     * {@code event_id} is deliberately left uncaught here: once a flush fails, Hibernate marks
-     * that transaction unable to commit, so catching the exception inside the same transactional
-     * boundary would just move the failure to this method's own commit. Letting it propagate out
-     * of this REQUIRES_NEW proxy makes Spring roll back only this isolated insert — the caller's
-     * transaction was suspended, never touched the failing flush, and can safely catch it. See
-     * {@link com.moduDrive.notification.application.service.RecordFileSharedNotificationService}. */
+    /** REQUIRES_NEW: a failed flush marks its transaction rollback-only, so a duplicate {@code event_id}
+     * must fail in its own transaction for the caller to be able to catch it and still commit. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     @Override
     public Notification insertNotification(Notification notification) {
@@ -41,9 +36,7 @@ class NotificationPersistenceAdapter implements SaveNotificationPort, FindNotifi
                 springDataNotificationRepository.saveAndFlush(notificationMapper.mapToEntity(notification)));
     }
 
-    /** Updates the row in place rather than mapping to a detached entity, so mutable fields
-     * (currently just {@code readAt}) change without touching {@code id}/{@code eventId}/
-     * {@code createdAt}. */
+    /** Updates the loaded row in place so {@code createdAt} and the other immutable columns are kept. */
     @Override
     public Notification saveNotification(Notification notification) {
         NotificationJpaEntity entity = springDataNotificationRepository.findById(notification.getId())

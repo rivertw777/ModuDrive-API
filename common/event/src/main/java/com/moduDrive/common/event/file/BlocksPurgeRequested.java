@@ -5,10 +5,9 @@ import java.util.List;
 import java.util.UUID;
 
 /** Published by file-service (queue {@link FileQueues#BLOCKS_PURGE_REQUESTED}) in the transaction that
- * drops blocks nothing has referenced for a while — the same one that deletes their {@code block}
- * rows, so the hashes travel in the event: once it commits, file-service no longer knows them.
- * storage-service deletes {@code blocks/{ownerId}/{hash}} for each, but only an object last written
- * at or before {@code decidedAt}: one uploaded again after the decision belongs to a new upload.
- * Deleting an object that is already gone is a no-op, so a redelivery needs no idempotency check. */
+ * deletes the unreferenced {@code block} rows, so the hashes must travel in the event.
+ * storage-service deletes {@code blocks/{ownerId}/{hash}} only if last written at or before
+ * {@code decidedAt}; a later write belongs to a new upload. Deleting a missing object is a no-op, so
+ * redeliveries need no idempotency check. */
 public record BlocksPurgeRequested(UUID ownerId, List<String> hashes, Instant decidedAt) {
 }

@@ -42,9 +42,9 @@ class SendShareInviteMailServiceTest {
     class WhenRequestedForAMember {
 
         @Test
-        void sendsHtmlMailContainingGranterAndFileNameButNoRole() {
+        void sendsHtmlMailContainingGranterAndFileName() {
             SendShareInviteMailCommand command = new SendShareInviteMailCommand(
-                    "grantee@modudrive.com", "report.pdf", false, "DOCUMENT", "VIEWER", UUID.randomUUID(),
+                    "grantee@modudrive.com", "report.pdf", false, "DOCUMENT", UUID.randomUUID(),
                     "홍길동", "owner@modudrive.com", null, null, "d1");
 
             sendShareInviteMailService.sendShareInviteMail(command);
@@ -55,7 +55,6 @@ class SendShareInviteMailServiceTest {
                             && html.contains("owner@modudrive.com")
                             && html.contains("cid:logo") // logo attached inline, referenced by cid
                             && html.contains("cid:fileIcon")
-                            && !html.contains("VIEWER") // role display removed
                             && !html.contains("로그인하지 않아도") // member invite: no guest warning
                             && !html.contains("{{")), // no leftover placeholder tokens
                     eq("홍길동 (ModuDrive에서 공유)"),
@@ -66,13 +65,11 @@ class SendShareInviteMailServiceTest {
         void linksToTheFileItselfWithoutAKey() {
             UUID fileId = UUID.randomUUID();
             SendShareInviteMailCommand command = new SendShareInviteMailCommand(
-                    "grantee@modudrive.com", "report.pdf", false, "DOCUMENT", "VIEWER", fileId,
+                    "grantee@modudrive.com", "report.pdf", false, "DOCUMENT", fileId,
                     "홍길동", "owner@modudrive.com", null, null, "d1");
 
             sendShareInviteMailService.sendShareInviteMail(command);
 
-            // /files/{fileId} opens the file for a signed-in member and routes a signed-out one
-            // through login and back — not the site root, which always lands on login.
             then(sendMailPort).should().sendHtml(eq("d1"), eq("grantee@modudrive.com"), contains("공유"),
                     argThat(html -> html.contains("href=\"" + CLIENT_URL + "/files/" + fileId + "\"")
                             && !html.contains("?key=")),
@@ -83,13 +80,11 @@ class SendShareInviteMailServiceTest {
         @Test
         void picksTheFileIconByCategoryFromFileService() {
             SendShareInviteMailCommand command = new SendShareInviteMailCommand(
-                    "grantee@modudrive.com", "report.pdf", false, "DOCUMENT", "VIEWER", UUID.randomUUID(),
+                    "grantee@modudrive.com", "report.pdf", false, "DOCUMENT", UUID.randomUUID(),
                     "홍길동", "owner@modudrive.com", null, null, "d1");
 
             sendShareInviteMailService.sendShareInviteMail(command);
 
-            // The category comes straight from file-service (FileCategory.of), not from mail-service
-            // guessing the extension itself.
             then(sendMailPort).should().sendHtml(eq("d1"), eq("grantee@modudrive.com"), contains("공유"),
                     org.mockito.ArgumentMatchers.any(), eq("홍길동 (ModuDrive에서 공유)"),
                     argThat(images -> hasFileIcon(images, SendShareInviteMailService.FileIcon.DOCUMENT)));
@@ -98,13 +93,11 @@ class SendShareInviteMailServiceTest {
         @Test
         void fallsBackToTheOtherIconForAnUnrecognizedCategory() {
             SendShareInviteMailCommand command = new SendShareInviteMailCommand(
-                    "grantee@modudrive.com", "archive.zip", false, "ARCHIVE", "VIEWER", UUID.randomUUID(),
+                    "grantee@modudrive.com", "archive.zip", false, "ARCHIVE", UUID.randomUUID(),
                     "홍길동", "owner@modudrive.com", null, null, "d1");
 
             sendShareInviteMailService.sendShareInviteMail(command);
 
-            // "ARCHIVE" isn't a category this enum knows (e.g. file-service added it first) —
-            // must fall back to OTHER's icon rather than blow up the whole mail.
             then(sendMailPort).should().sendHtml(eq("d1"), eq("grantee@modudrive.com"), contains("공유"),
                     org.mockito.ArgumentMatchers.any(), eq("홍길동 (ModuDrive에서 공유)"),
                     argThat(images -> hasFileIcon(images, SendShareInviteMailService.FileIcon.OTHER)));
@@ -113,7 +106,7 @@ class SendShareInviteMailServiceTest {
         @Test
         void picksTheFolderIconForADirectoryShareRegardlessOfCategory() {
             SendShareInviteMailCommand command = new SendShareInviteMailCommand(
-                    "grantee@modudrive.com", "team-photos", true, "OTHER", "VIEWER", UUID.randomUUID(),
+                    "grantee@modudrive.com", "team-photos", true, "OTHER", UUID.randomUUID(),
                     "홍길동", "owner@modudrive.com", null, null, "d1");
 
             sendShareInviteMailService.sendShareInviteMail(command);
@@ -126,7 +119,7 @@ class SendShareInviteMailServiceTest {
         @Test
         void escapesAUserSuppliedMessageIntoTheHtmlBody() {
             SendShareInviteMailCommand command = new SendShareInviteMailCommand(
-                    "grantee@modudrive.com", "report.pdf", false, "DOCUMENT", "VIEWER", UUID.randomUUID(),
+                    "grantee@modudrive.com", "report.pdf", false, "DOCUMENT", UUID.randomUUID(),
                     "홍길동", "owner@modudrive.com", "<script>alert(1)</script>", null, "d1");
 
             sendShareInviteMailService.sendShareInviteMail(command);
@@ -138,11 +131,9 @@ class SendShareInviteMailServiceTest {
 
         @Test
         void stillSendsWhenGranterNameAndEmailAreNull() {
-            // FindMemberByIdPort#findMemberByIdOrUnknown degrades to (null, null) when
-            // member-service can't resolve the granter — the mail must still go out, not crash
-            // and get lost to the DLT.
+            // file-service sends (null, null) when it can't resolve the granter.
             SendShareInviteMailCommand command = new SendShareInviteMailCommand(
-                    "grantee@modudrive.com", "report.pdf", false, "DOCUMENT", "VIEWER", UUID.randomUUID(),
+                    "grantee@modudrive.com", "report.pdf", false, "DOCUMENT", UUID.randomUUID(),
                     null, null, null, null, "d1");
 
             sendShareInviteMailService.sendShareInviteMail(command);
@@ -154,11 +145,8 @@ class SendShareInviteMailServiceTest {
 
         @Test
         void stripsAnEmbeddedAddressFromTheGranterNameInTheFromDisplayName() {
-            // A signup name is free text with no restriction beyond @NotBlank — without
-            // sanitizing it, a name like this would make the From display name look exactly like
-            // it's spoofing a different sender address than the mailbox actually used.
             SendShareInviteMailCommand command = new SendShareInviteMailCommand(
-                    "grantee@modudrive.com", "report.pdf", false, "DOCUMENT", "VIEWER", UUID.randomUUID(),
+                    "grantee@modudrive.com", "report.pdf", false, "DOCUMENT", UUID.randomUUID(),
                     "ModuDrive Security <security@modudrive.com>", "owner@modudrive.com", null, null, "d1");
 
             sendShareInviteMailService.sendShareInviteMail(command);
@@ -181,7 +169,7 @@ class SendShareInviteMailServiceTest {
             UUID fileId = UUID.randomUUID();
             UUID inviteToken = UUID.randomUUID();
             SendShareInviteMailCommand command = new SendShareInviteMailCommand(
-                    "grantee@modudrive.com", "report.pdf", false, "DOCUMENT", "VIEWER", fileId, "홍길동",
+                    "grantee@modudrive.com", "report.pdf", false, "DOCUMENT", fileId, "홍길동",
                     "owner@modudrive.com", null, inviteToken, "d1");
 
             sendShareInviteMailService.sendShareInviteMail(command);
@@ -197,7 +185,7 @@ class SendShareInviteMailServiceTest {
             UUID fileId = UUID.randomUUID();
             UUID inviteToken = UUID.randomUUID();
             SendShareInviteMailCommand command = new SendShareInviteMailCommand(
-                    "grantee@modudrive.com", "report.pdf", false, "DOCUMENT", "VIEWER", fileId, "홍길동",
+                    "grantee@modudrive.com", "report.pdf", false, "DOCUMENT", fileId, "홍길동",
                     "owner@modudrive.com", null, inviteToken, "d1");
 
             sendShareInviteMailService.sendShareInviteMail(command);

@@ -30,9 +30,7 @@ class ClaimPendingFileSharesService implements ClaimPendingFileSharesUseCase {
     @Transactional
     @Override
     public void claimPendingFileShares(ClaimPendingFileSharesCommand command) {
-        // The queue is internal-only, but a listener still shouldn't trust a payload's own claim of
-        // "this memberId owns this email" — confirm it against member-service, the system of
-        // record, before granting anything.
+        // Don't trust the event's own claim that this member owns this email; ask member-service.
         if (!ownsEmail(command.getMemberId(), command.getGranteeEmail())) {
             log.warn("Rejected claim: memberId {} does not currently own email {}",
                     command.getMemberId(), command.getGranteeEmail());
@@ -43,11 +41,9 @@ class ClaimPendingFileSharesService implements ClaimPendingFileSharesUseCase {
         for (FileShare share : pending) {
             if (findFileSharePort.existsByFileIdAndSharedWithUserId(
                     new FileId(share.getFileId()), command.getMemberId())) {
-                // The owner already separately shared this same file with this member in the
-                // meantime — one stale pending invite losing the race must not fail the rest of
-                // this signup's claims. Drop the row rather than leaving it: an unclaimed invite
-                // keeps a live token and its granteeEmail, so revoking the real grant later would
-                // not actually cut this person off (spec 5).
+                // The owner shared the file with this member directly meanwhile. Drop the invite
+                // instead of failing the other claims: left unclaimed, its live token would survive
+                // a later revoke of the real grant.
                 log.warn("Deleting pending share {}: member {} already has a grant on this file",
                         share.getId(), command.getMemberId());
                 deleteFileSharePort.deleteFileShare(new FileShareId(share.getId()));

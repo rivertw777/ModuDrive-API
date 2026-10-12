@@ -46,8 +46,8 @@ resource "aws_elasticache_replication_group" "redis" {
   transit_encryption_enabled = true
   at_rest_encryption_enabled = true
   auth_token                 = random_password.redis[each.key].result
-  # A changed token (storage's, when it got its own) is rotated in: old and new both work until the
-  # tasks restart with the new one, then the old one is dropped on the next change.
+  # A changed token is rotated in: old and new both work until the tasks restart with the new one,
+  # then the old one is dropped on the next change.
   auth_token_update_strategy = "ROTATE"
 }
 

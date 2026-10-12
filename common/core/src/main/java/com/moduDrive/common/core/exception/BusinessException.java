@@ -6,10 +6,8 @@ import lombok.Getter;
 public class BusinessException extends RuntimeException {
 
     private final ExceptionCase exceptionCase;
-    /** Optional extra context for the error response body (e.g. FileAccessGuard attaching
-     * isDirectory to a FILE_ACCESS_DENIED so the client can word its message accordingly) — null
-     * for the overwhelming majority of call sites that need nothing beyond the case's own
-     * status/message. */
+    /** Optional extra body for the error response (e.g. FileAccessGuard attaches isDirectory to
+     * FILE_ACCESS_DENIED); null otherwise. */
     private final Object data;
 
     public BusinessException(ExceptionCase exceptionCase) {

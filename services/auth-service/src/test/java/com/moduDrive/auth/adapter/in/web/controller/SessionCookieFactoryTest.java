@@ -91,7 +91,7 @@ class SessionCookieFactoryTest {
 
         @Test
         @DisplayName("확인 쿠키는 5분 수명으로 내려주고, 지울 때는 수명 0으로 내려준다")
-        void issuesAndClearsATenMinuteChallengeCookie() {
+        void issuesAndClearsAFiveMinuteChallengeCookie() {
             factory.setLoginChallengeId(response, new LoginChallengeId("challenge-id"));
             factory.clearLoginChallengeId(response);
 

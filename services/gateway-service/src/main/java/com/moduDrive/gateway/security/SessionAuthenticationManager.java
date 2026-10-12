@@ -24,9 +24,9 @@ import java.util.concurrent.TimeoutException;
 
 /**
  * Asks auth-service whether the session is alive. Every failure becomes a
- * {@link SessionAuthenticationException} — anything else would escape AuthenticationWebFilter as a 500:
- * 401 when auth-service rejected the session; when it couldn't be asked, the same answers a route
- * gives (2-1-3 of the resilience spec) — never a 401, which would send every user to the login screen (#447).
+ * {@link SessionAuthenticationException}, since anything else escapes AuthenticationWebFilter as a 500.
+ * A rejected session is a 401. If auth-service couldn't be asked, the answer is the route's 503/504
+ * (spec 006 2-1-3), never a 401, which would send every user to the login screen (#447).
  */
 @Slf4j
 @Component

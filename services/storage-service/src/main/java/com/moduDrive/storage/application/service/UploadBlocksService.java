@@ -13,10 +13,9 @@ import org.springframework.beans.factory.annotation.Value;
 
 import java.util.List;
 
-/** Spec 001 3-4: several blocks per request, each stored in the caller's own space under its
- * hash. The hash is recomputed from the bytes — trusting the client's would let it put any bytes
- * under any hash, and every file that shares that hash would then read them. Every block is checked
- * before any is stored, so a bad one leaves nothing behind. */
+/** Spec 001 6: several blocks per request, each stored in the caller's own space under its hash. The
+ * hash is recomputed from the bytes, since a wrong one would serve those bytes to every file sharing
+ * that hash. Every block is checked before any is stored. */
 @UseCase
 class UploadBlocksService implements UploadBlocksUseCase {
 
@@ -62,7 +61,7 @@ class UploadBlocksService implements UploadBlocksUseCase {
             if (!recordUploadedBlockPort.tryCountUpload(command.getUserId(), uploadLimit)) {
                 throw new BusinessException(StorageExceptionCase.UPLOAD_LIMIT_EXCEEDED);
             }
-            // Schedule → store → record (spec 001 3-4): see RecordUploadedBlockPort for why.
+            // Schedule → store → record (spec 001 6-1): see RecordUploadedBlockPort for why.
             recordUploadedBlockPort.scheduleSweep(command.getUserId(), block.hash());
             storeBlocksPort.storeBlock(Blocks.key(command.getUserId(), block.hash()), block.data());
             recordUploadedBlockPort.recordUploaded(command.getUserId(), block.hash(), block.data().length);

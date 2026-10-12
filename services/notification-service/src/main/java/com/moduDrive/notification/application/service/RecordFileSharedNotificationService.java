@@ -19,15 +19,9 @@ class RecordFileSharedNotificationService implements RecordFileSharedNotificatio
     private final FindNotificationPort findNotificationPort;
     private final SaveNotificationPort saveNotificationPort;
 
-    /**
-     * SQS delivers at-least-once, so the same share event can arrive more than once. The
-     * {@code existsByEventId} check catches the ordinary redelivery; the {@code event_id} unique
-     * constraint closes the TOCTOU window where two concurrent consumers both pass that check.
-     * {@code insertNotification} runs in its own REQUIRES_NEW transaction precisely so that
-     * constraint violation can be caught here, in a transaction it never touched, and swallowed
-     * as "already recorded" rather than rethrown — which would otherwise send a duplicate
-     * straight to the dead-letter queue.
-     */
+    /** SQS delivers at-least-once. {@code existsByEventId} skips a plain redelivery; a concurrent duplicate
+     * hits the {@code event_id} unique constraint in {@code insertNotification}'s own transaction and is
+     * swallowed here instead of going to the DLQ. */
     @Transactional
     @Override
     public void recordFileSharedNotification(RecordFileSharedNotificationCommand command) {
@@ -43,9 +37,7 @@ class RecordFileSharedNotificationService implements RecordFileSharedNotificatio
         try {
             saveNotificationPort.insertNotification(notification);
         } catch (DuplicateKeyException e) {
-            // Narrowed to the unique-key subtype on purpose: a NOT NULL or length violation on a
-            // malformed event is a real failure and must keep propagating to the dead-letter
-            // queue, not get swallowed under the same "already recorded" assumption.
+            // Only the unique-key violation: other constraint failures mean a malformed event and must propagate.
             log.debug("Notification already recorded concurrently: eventId={}", command.getEventId().value());
         }
     }

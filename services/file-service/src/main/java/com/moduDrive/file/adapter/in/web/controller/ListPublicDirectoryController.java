@@ -13,13 +13,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
-/** Reached through the gateway's {@code GET /api/v1/files/public/**} permitAll list — no
- * X_USER_ID. {@code fileId} is the directory to list (the link's own folder or one nested under
- * it), bound as String so a malformed value 404s out of the resolver rather than 500ing on type
- * conversion. Listing works via the folder itself (or an ancestor) being LINK-scoped (issue
- * #303), or via {@code key} matching a guest invite minted for the folder (or an ancestor of
- * it) — a guest invited to a folder can browse everything nested under it, same as any other
- * inherited share. */
+/** Anonymous, like {@link GetPublicFileController}. {@code fileId} is the directory to list,
+ * reached through a LINK scope or a guest invite on it or an ancestor. */
 @WebAdapter
 @RestController
 @RequiredArgsConstructor
