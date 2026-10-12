@@ -14,17 +14,14 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Lets a consumer skip a message it already handled. Opt-in per service
- * ({@code modudrive.messaging.idempotency.enabled: true}), so a service that only publishes isn't asked
- * for a {@code processed_event} table it doesn't have. The backend follows what the service has: its own
- * database, else Redis.
+ * Lets a consumer skip a message it already handled. Opt-in ({@code modudrive.messaging.idempotency.enabled}),
+ * so a publish-only service needs no {@code processed_event} table. Backed by the service's database, else Redis.
  */
 @AutoConfiguration
 @ConditionalOnBooleanProperty("modudrive.messaging.idempotency.enabled")
 public class IdempotencyAutoConfiguration {
 
-    /** Switching this on is what maps {@code processed_event}; the service creates it in its own
-     * Flyway migration. */
+    /** Maps {@code processed_event}; the service creates it in its own Flyway migration. */
     @Configuration(proxyBeanMethods = false)
     @AutoConfigurationPackage
     @ConditionalOnClass(EntityManagerFactory.class)

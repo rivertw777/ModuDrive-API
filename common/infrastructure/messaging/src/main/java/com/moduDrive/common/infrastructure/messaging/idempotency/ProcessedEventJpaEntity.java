@@ -13,8 +13,7 @@ import lombok.NoArgsConstructor;
 
 import java.time.Instant;
 
-/** One handled message. The unique constraint is the real guard: it rejects a second row for the
- * same event even if two consumers check at the same moment. */
+/** One handled message. The unique constraint rejects a second row even if two consumers check at once. */
 @Getter
 @Entity
 @Table(name = "processed_event", uniqueConstraints =

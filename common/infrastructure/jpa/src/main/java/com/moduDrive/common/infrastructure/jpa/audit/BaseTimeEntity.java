@@ -21,8 +21,7 @@ public class BaseTimeEntity {
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
-    /** Auto-stamped from the caller's {@code X_USER_ID} header — see AuditingConfig#auditorAware.
-     * Nullable: a background job/queue consumer write has no HTTP request to read the caller from. */
+    /** From the {@code X_USER_ID} header (AuditingConfig#auditorAware); null outside an HTTP request. */
     @CreatedBy
     @Column(updatable = false)
     private UUID createdBy;
@@ -38,11 +37,8 @@ public class BaseTimeEntity {
     @Column
     private LocalDateTime deletedAt;
 
-    /** No {@code @DeletedBy} auditing hook exists in Spring Data — a caller that soft-deletes a
-     * row must set {@code deletedAt}/{@code deletedBy} itself. (The one real soft-delete flow,
-     * {@code FileJpaEntity}'s trash/purge, does this via a dedicated JPQL {@code UPDATE} —
-     * {@code SpringDataFileRepository.markPurged} — rather than through this entity, since it
-     * also needs to skip the {@code @LastModifiedDate} bump a normal save would trigger.) */
+    /** Spring Data has no {@code @DeletedBy}: whoever soft-deletes sets {@code deletedAt}/{@code deletedBy}
+     * itself (file-service does it in {@code SpringDataFileRepository.markPurged}). */
     @Column
     private UUID deletedBy;
 

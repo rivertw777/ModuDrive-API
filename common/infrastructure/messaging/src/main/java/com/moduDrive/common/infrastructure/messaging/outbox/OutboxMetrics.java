@@ -13,19 +13,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Publishes the two numbers that say whether the outbox is healthy: how far behind sending is, as the
- * age in seconds of the oldest row still waiting, and how many rows are parked for a human, per queue.
- * <p>
- * Neither state turns red on its own. {@link OutboxRelay} retries a failure that isn't the message's
- * own fault without a limit, on purpose — a limit would park healthy rows by the hundred during an
- * outage and leave a human to put them back — so a broker outage leaves nothing behind but rows that
- * look, in the table, exactly like rows that arrived a second ago. And a {@code FAILED} row stays
- * until someone deals with it, silently. Alert on these instead: the lag sits near a second in normal
- * running and climbs for as long as sending is stuck, and the failed count is 0 or a problem.
- * <p>
- * Both carry the queue as a tag so an alert can name the events that are stuck instead of only the
- * service. Neither can be read on scrape, because the set of queues changes as rows pile up and drain,
- * so the relay refreshes them on its tick.
+ * Per-queue outbox health: age of the oldest PENDING row (lag) and the FAILED row count. The relay retries
+ * transient failures without limit, so a broker outage only shows up as growing lag, and a FAILED row stays
+ * silent until someone looks; alerts read these. The relay refreshes them on its tick because the set of
+ * queues changes as rows pile up and drain.
  */
 class OutboxMetrics {
 
@@ -58,13 +49,10 @@ class OutboxMetrics {
         refreshFailed();
     }
 
-    /**
-     * Republishes one series per queue that has something waiting. A queue that drains drops out and
-     * its series is removed, which resolves the alert — the same way the parked count works.
-     */
+    /** One series per queue with rows waiting; a drained queue's series is removed, resolving the alert. */
     void refreshLag() {
         if (lagByQueue == null) {
-            return; // No registry, so nothing is published and there's nothing to refresh.
+            return; // no MeterRegistry
         }
         lagByQueue.register(pendingLag().stream()
                 .map(group -> MultiGauge.Row.of(Tags.of("queue", group.queue()), group.ageSeconds()))
@@ -84,26 +72,18 @@ class OutboxMetrics {
                 .toList();
     }
 
-    /**
-     * Republishes one series per queue and failure. A group whose rows were fixed drops out of the
-     * result and {@link MultiGauge} removes its series, which is what resolves the alert.
-     */
+    /** One series per queue and failure; a fixed group's series is removed, resolving the alert. */
     void refreshFailed() {
         if (failedByQueue == null) {
-            return; // No registry, so nothing is published and there's nothing to refresh.
+            return; // no MeterRegistry
         }
         failedByQueue.register(failedGroups().stream()
                 .map(group -> MultiGauge.Row.of(group.tags(), group.count()))
                 .toList(), true);
     }
 
-    /**
-     * Parked rows counted per queue and failure. The alert can name the queue and what went wrong; the
-     * rows themselves are read with the query it carries.
-     */
-    // ponytail: reads the parked rows rather than grouping in SQL, because the reason has to be cut
-    // down to the exception class first. They're a handful — permanent failures are per-message, not
-    // per-outage — and the cap keeps a pathological case from being read every second.
+    /** FAILED rows counted per queue and failure. Grouped in Java because the reason must be cut down to
+     * the exception class first; the cap keeps a pathological pile from being read every second. */
     List<FailedGroup> failedGroups() {
         List<Object[]> rows = entityManager
                 .createQuery("select e.queue, e.failureReason from OutboxEventJpaEntity e "
@@ -133,13 +113,8 @@ class OutboxMetrics {
         return type.substring(type.lastIndexOf('.') + 1);
     }
 
-    /**
-     * The exception's own message, so the alert can say <em>message rejected</em> rather than only the
-     * type. Cut short because it ends up as a label value: a message that carries an id or a byte count
-     * would otherwise start a new series for every row. The AWS SDK appends {@code (Service: Sqs, Status
-     * Code: 400, Request ID: …)} to every message; that tail is dropped for the same reason — the request id
-     * differs per row. The row's {@code failure_reason} keeps it for whoever looks the row up.
-     */
+    /** The exception message, cut short because it becomes a label value. The AWS SDK's
+     * {@code (Service: Sqs, ... Request ID: …)} tail is dropped since the request id differs per row. */
     private static String detail(String failureReason) {
         if (failureReason == null || !failureReason.contains(":")) {
             return "";

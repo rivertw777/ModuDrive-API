@@ -11,9 +11,8 @@ import org.springframework.web.filter.ServerHttpObservationFilter;
 
 import java.io.IOException;
 
-/** Puts the caller's id on the request's server span ({@code user.id}) and on every log line it
- * writes ({@code userId}), so "user X says it failed around 10:00" can be found without an error
- * code. Never a metric tag — one series per user would explode Prometheus. */
+/** Puts the caller's id on the server span ({@code user.id}) and the request's log lines ({@code userId}).
+ * Never a metric tag: one series per user would explode Prometheus. */
 class UserIdObservationFilter extends OncePerRequestFilter {
 
     static final String USER_ID_HEADER = "X_USER_ID";

@@ -18,21 +18,11 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Publishes how many messages are sitting in the DLQ of each queue this service consumes, so an alert
- * can say that a consumer gave up on something.
- * <p>
- * Nothing else notices. {@link DeadLetteringErrorHandler} moves a message and logs a line, the source
- * queue goes back to looking empty, and the message then waits in the DLQ for a human to read its
- * {@code DeadLetterReason}, fix the cause and redrive it — until SQS's retention (4 days by default)
- * throws it away. The count is 0 or a problem; there is no healthy non-zero value.
- * <p>
- * Published per source queue rather than per DLQ, so the label matches every other messaging metric
- * and alert. The DLQ itself is whatever the source queue's {@link RedrivePolicy} points at, resolved
- * once per queue: a service consuming nothing publishes nothing and makes no calls.
+ * Publishes the DLQ depth of each queue this service consumes, so an alert fires when a consumer gave up
+ * on a message (otherwise it sits there silently until SQS retention drops it). Any non-zero value is a
+ * problem. Tagged by source queue, like the other messaging metrics; the DLQ is resolved once per queue
+ * from its {@link RedrivePolicy}. Polls GetQueueAttributes because the consumer never sees the DLQ.
  */
-// ponytail: polls GetQueueAttributes, because the depth isn't something the consumer can observe —
-// it never sees the DLQ. On AWS a CloudWatch alarm on ApproximateNumberOfMessagesVisible would do the
-// same without the app, but the alerting pipeline is Prometheus for now, and it has to work locally too.
 @Slf4j
 class DeadLetterQueueMetrics {
 
@@ -58,16 +48,14 @@ class DeadLetterQueueMetrics {
 
     void start() {
         if (meterRegistry == null) {
-            return; // No registry (a test context): nothing would be published, so don't poll either.
+            return; // no MeterRegistry: nothing to publish, so don't poll
         }
         messages = MultiGauge.builder(METER_NAME)
                 .description("Messages parked in a consumed queue's dead letter queue")
                 .register(meterRegistry);
-        // Own thread rather than Boot's shared scheduler: a blocked SQS call would stall whatever
-        // else is scheduled, and this one blocks on purpose (see refresh).
+        // Own thread, not Boot's shared scheduler: the SQS calls below block.
         executor = Executors.newSingleThreadScheduledExecutor(Thread.ofPlatform().name("dlq-metrics").factory());
-        // The first tick waits an interval: listener containers register during context refresh, so
-        // right now this service may not know yet which queues it consumes.
+        // First tick waits an interval: listener containers may not be registered yet.
         executor.scheduleWithFixedDelay(() -> {
             try {
                 refresh();
@@ -84,11 +72,8 @@ class DeadLetterQueueMetrics {
         }
     }
 
-    /**
-     * Republishes one series per consumed queue, including the zeroes — unlike the outbox gauges, the
-     * set of queues is fixed at startup, so a series that stays at 0 is the normal state and also shows
-     * the poll is alive. A queue whose DLQ can't be read is skipped rather than reported as 0.
-     */
+    /** One series per consumed queue, zeroes included (they show the poll is alive). A queue whose DLQ
+     * can't be read is skipped rather than reported as 0. */
     void refresh() {
         List<MultiGauge.Row<?>> rows = new ArrayList<>();
         for (String queue : consumedQueues()) {

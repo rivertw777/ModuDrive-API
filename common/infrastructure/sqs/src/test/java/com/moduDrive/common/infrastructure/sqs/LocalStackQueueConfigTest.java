@@ -23,7 +23,6 @@ import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.utility.MountableFile;
 import software.amazon.awssdk.services.sqs.SqsAsyncClient;
 import software.amazon.awssdk.services.sqs.model.Message;
-import software.amazon.awssdk.services.sqs.model.MessageAttributeValue;
 
 import java.nio.file.Path;
 import java.time.Duration;
@@ -163,13 +162,10 @@ class LocalStackQueueConfigTest {
     @DisplayName("DLQ에 메시지가 쌓이면")
     class WhenMessagesPileUpInTheDlq {
 
-        // The whole point of the gauge: once a message is moved the source queue looks empty again,
-        // so without this number nothing anywhere says a consumer gave up.
         @Test
         @DisplayName("소비하는 큐 이름을 단 게이지로 DLQ 건수가 나온다")
         void publishesTheDeadLetterCountTaggedWithTheConsumedQueue() {
-            // Not read back from the DLQ here: receiving makes a message invisible, and the count is
-            // what's waiting to be read — exactly what it should say while nobody has looked yet.
+            // Not read back from the DLQ: receiving would hide the message from the count.
             MemberSignedUp event = new MemberSignedUp(UUID.randomUUID(), "invalid-gauge@modudrive.com");
 
             send(event, "outbox-4");

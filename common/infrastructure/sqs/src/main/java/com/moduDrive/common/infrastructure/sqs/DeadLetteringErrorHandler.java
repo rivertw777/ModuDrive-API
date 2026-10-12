@@ -17,21 +17,12 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Listener error handling for every SQS consumer. The message goes to the queue's DLQ with the
- * original body plus a {@code DeadLetterReason} attribute, and is deleted from the source queue, when
- * <ul>
- *   <li>the failure is permanent ({@link PermanentFailures}): retrying can't fix it, so it moves now
- *       instead of burning the queue's receive budget;</li>
- *   <li>it's the last receive the queue's redrive policy allows: retries are used up, so move it now
- *       with the reason instead of letting SQS redrive it on the next receive without one.</li>
- * </ul>
- * Anything else backs off exponentially (visibility 1s, 2s, 4s...), unless it's a {@link RetryLaterException},
- * which comes back after the delay it names. The DLQ and the receive limit come
- * from the queue's own {@link RedrivePolicy}, so they're set in one place (init-aws.sh / Terraform).
- * The redrive policy still catches what never reaches this handler (a crashed consumer, a body that
- * isn't JSON). If moving to the DLQ fails, the message falls back to the retry path rather than being lost.
- * <p>
- * Nothing here tells anyone a message was parked — that's {@link DeadLetterQueueMetrics}' job.
+ * Listener error handling for every SQS consumer. The message is copied to the queue's DLQ with a
+ * {@code DeadLetterReason} attribute when the failure is permanent ({@link PermanentFailures}) or on the
+ * last receive the queue's {@link RedrivePolicy} allows (so SQS's own redrive doesn't move it without a
+ * reason). Anything else backs off exponentially, or after the delay of a {@link RetryLaterException}.
+ * If the move fails, the message takes the retry path instead of being lost. The redrive policy still
+ * catches what never reaches this handler (a crashed consumer, a body that isn't JSON).
  */
 @Slf4j
 class DeadLetteringErrorHandler implements AsyncErrorHandler<Object> {

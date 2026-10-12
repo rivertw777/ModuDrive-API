@@ -6,8 +6,7 @@ import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.core.Ordered;
 
-/** Servlet services only — the gateway (WebFlux) sets {@code X_USER_ID}, it doesn't read it, and has
- * no servlet classes to load this with. */
+/** Servlet services only: the gateway (WebFlux) sets {@code X_USER_ID} rather than reading it. */
 @AutoConfiguration
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 public class ObservabilityAutoConfiguration {

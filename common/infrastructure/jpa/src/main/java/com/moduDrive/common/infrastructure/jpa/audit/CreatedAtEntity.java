@@ -10,8 +10,7 @@ import org.springframework.data.annotation.CreatedBy;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
-/** For an append-only/log-style table that only ever needs "who created this row and when" —
- * no update/soft-delete lifecycle, so no {@link BaseTimeEntity}. */
+/** For append-only tables that need only creation auditing, not {@link BaseTimeEntity}'s update/soft-delete columns. */
 @Getter
 @MappedSuperclass
 @EntityListeners(AuditingEntityListener.class)
@@ -21,8 +20,7 @@ public class CreatedAtEntity {
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
-    /** Auto-stamped from the caller's {@code X_USER_ID} header — see AuditingConfig#auditorAware.
-     * Nullable: a background job/queue consumer write has no HTTP request to read the caller from. */
+    /** From the {@code X_USER_ID} header (AuditingConfig#auditorAware); null outside an HTTP request. */
     @CreatedBy
     @Column(updatable = false)
     private UUID createdBy;

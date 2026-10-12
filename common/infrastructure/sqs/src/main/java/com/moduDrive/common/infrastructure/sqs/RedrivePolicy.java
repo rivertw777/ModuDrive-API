@@ -11,13 +11,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * A queue's redrive settings, read from the queue itself: which DLQ its failures go to and how many
- * receives it allows before SQS moves a message there. The app never writes either down — they're set
- * once in {@code .docker/localstack/init-aws.sh} and Terraform, and both
- * {@link DeadLetteringErrorHandler} (to move a message with a reason) and {@link DeadLetterQueueMetrics}
- * (to watch the DLQ) ask the queue.
- * <p>
- * Fields are null when the queue has no redrive policy at all.
+ * A queue's redrive settings (DLQ and maxReceiveCount), read from the queue itself so they are defined
+ * only in {@code .docker/localstack/init-aws.sh} and Terraform. Fields are null when the queue has none.
  */
 @Slf4j
 record RedrivePolicy(Integer maxReceiveCount, String deadLetterQueue) {
@@ -37,16 +32,12 @@ record RedrivePolicy(Integer maxReceiveCount, String deadLetterQueue) {
                 arn.find() ? arn.group(1).substring(arn.group(1).lastIndexOf(':') + 1) : null);
     }
 
-    /** The DLQ this queue redrives to, falling back to the {@code <name>-dlq} convention both our
-     * queue definitions follow when the queue has no policy (or it couldn't be read). */
+    /** The DLQ this queue redrives to, else the {@code <name>-dlq} convention. */
     String deadLetterQueueOr(String queue) {
         return deadLetterQueue != null ? deadLetterQueue : queue + "-dlq";
     }
 
-    /**
-     * Reads the policy of every queue asked for, at most once each. A failed lookup isn't cached and
-     * counts as {@link #NONE} this time, so the next call tries again.
-     */
+    /** Reads each queue's policy once. A failed lookup returns {@link #NONE} and isn't cached. */
     static final class Cache {
 
         private final SqsAsyncClient sqsAsyncClient;
