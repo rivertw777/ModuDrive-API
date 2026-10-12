@@ -82,9 +82,8 @@ class PublicDownloadFileControllerTest {
                     .andExpect(request().asyncStarted())
                     .andReturn();
 
-            // The quota check runs inside the StreamingResponseBody lambda, before any byte is
-            // written — so the response is still uncommitted and GlobalExceptionHandler can replace
-            // the staged 200/attachment with a real 429 JSON body.
+            // The quota check throws before any byte is written, so the handler can still replace the
+            // staged 200/attachment with a 429 JSON body.
             mockMvc.perform(asyncDispatch(asyncResult))
                     .andExpect(status().isTooManyRequests())
                     .andExpect(header().string(HttpHeaders.CONTENT_TYPE, startsWith("application/json")))

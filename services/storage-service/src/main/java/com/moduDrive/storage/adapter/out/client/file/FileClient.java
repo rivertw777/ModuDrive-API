@@ -16,9 +16,8 @@ import java.util.List;
 @FeignClient(name = "file-service", url = "${clients.file-service.url}")
 interface FileClient {
 
-    // Internal, service-to-service route (see file-service's GetLatestFileVersionsController) —
-    // not the tenant-facing /api/v1/files/{fileId}/revisions. userId is the original caller,
-    // forwarded so file-service's FileAccessGuard can still enforce VIEWER access (see #152).
+    // file-service's GetLatestFileVersionsController. userId is the original caller, forwarded so
+    // FileAccessGuard can enforce DOWNLOAD access.
     @GetMapping("/internal/files/{fileId}/revisions")
     @CircuitBreaker(name = "fileServiceCircuitBreaker")
     @Retry(name = "fileServiceRetry", fallbackMethod = "getFileRevisionsFallback")
@@ -32,10 +31,8 @@ interface FileClient {
         return FeignFallbackUtils.handleFallback(cause);
     }
 
-    // Anonymous link-share download: no userId, because there is no authenticated caller.
-    // fileId alone is the credential for a LINK-scoped entry (or one nested under one); key is
-    // the credential for a guest invite instead. Either way file-service (PublicFileResolver) is
-    // what decides which, if any, actually authorizes this fileId.
+    // Anonymous download: fileId authorizes a LINK-scoped entry (or one nested under it), key a guest
+    // invite. file-service's PublicFileResolver decides.
     @GetMapping("/internal/files/public/{fileId}/revisions")
     @CircuitBreaker(name = "fileServiceCircuitBreaker")
     @Retry(name = "fileServiceRetry", fallbackMethod = "getPublicFileRevisionsFallback")
@@ -48,8 +45,8 @@ interface FileClient {
         return FeignFallbackUtils.handleFallback(cause);
     }
 
-    // Zip download layout (see file-service's ResolveArchiveEntriesController): checks DOWNLOAD
-    // on every picked item and expands folders into their contents.
+    // Zip layout (file-service's ResolveArchiveEntriesController): checks DOWNLOAD on every picked
+    // item and expands folders.
     @PostMapping("/internal/files/archive")
     @CircuitBreaker(name = "fileServiceCircuitBreaker")
     @Retry(name = "fileServiceRetry", fallbackMethod = "resolveArchiveEntriesFallback")
@@ -59,7 +56,7 @@ interface FileClient {
         return FeignFallbackUtils.handleFallback(cause);
     }
 
-    // Anonymous counterpart — each picked item is authorized the way a single public download is.
+    // Anonymous counterpart: each picked item is authorized like a single public download.
     @PostMapping("/internal/files/public/archive")
     @CircuitBreaker(name = "fileServiceCircuitBreaker")
     @Retry(name = "fileServiceRetry", fallbackMethod = "resolvePublicArchiveEntriesFallback")

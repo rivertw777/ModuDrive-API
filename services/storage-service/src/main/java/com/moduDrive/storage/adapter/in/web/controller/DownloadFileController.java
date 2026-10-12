@@ -23,9 +23,7 @@ class DownloadFileController {
 
     private final DownloadFileUseCase downloadFileUseCase;
 
-    /** Streamed block-by-block instead of assembled into one byte[] — a regular download has no
-     * size cap (unlike inline preview), so holding the whole file in memory would let a handful
-     * of concurrent large downloads exhaust the heap. */
+    /** Streamed block by block: a regular download has no size cap, so buffering it could exhaust the heap. */
     @GetMapping("/api/v1/storage/download/{fileId}")
     public ResponseEntity<StreamingResponseBody> downloadFile(
             @RequestHeader("X_USER_ID") UUID userId,
@@ -37,14 +35,9 @@ class DownloadFileController {
                 .body(body);
     }
 
-    /** Inline counterpart to {@link #downloadFile}: same permission check (reuses
-     * {@link DownloadFileUseCase} as-is), but a real Content-Type and {@code inline} disposition.
-     * A native &lt;video&gt;/&lt;audio&gt; {@code src} request carries the session cookie on its
-     * own, so the gateway resolves X_USER_ID for it like any other request.
-     * {@code fileName} is caller-supplied display text, not trusted file identity — it only
-     * ever feeds a response header via {@link FileMimeTypes}, never a storage lookup. Honors
-     * {@code Range} so a &lt;video&gt;/&lt;audio&gt; element can seek, reading only the blocks
-     * that range covers. */
+    /** Inline counterpart to {@link #downloadFile}, with a real Content-Type and {@code Range} support so
+     * a &lt;video&gt;/&lt;audio&gt; element can seek. {@code fileName} is caller-supplied display text: it
+     * only feeds response headers via {@link FileMimeTypes}, never a storage lookup. */
     @GetMapping("/api/v1/storage/view/{fileId}")
     public ResponseEntity<byte[]> viewFile(
             @RequestHeader("X_USER_ID") UUID userId,

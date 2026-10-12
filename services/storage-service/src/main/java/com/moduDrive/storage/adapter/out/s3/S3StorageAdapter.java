@@ -51,8 +51,8 @@ class S3StorageAdapter implements StoreBlocksPort, RetrieveBlocksPort, DeleteBlo
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final int GCM_IV_LENGTH = 12;
     private static final int GCM_TAG_LENGTH_BITS = 128;
-    // ponytail: hardcoded ceiling, not a config value. 5GB max file / 4MB blocks is 1,280 blocks;
-    // this only guards against a malformed version pre-allocating an oversized list.
+    // A real version has at most 1,280 blocks (5GB / 4MB); this only stops a malformed one from
+    // pre-allocating an oversized list.
     private static final int MAX_BLOCK_COUNT = 100_000;
 
     private final S3Client s3Client;
@@ -167,9 +167,7 @@ class S3StorageAdapter implements StoreBlocksPort, RetrieveBlocksPort, DeleteBlo
             SECURE_RANDOM.nextBytes(iv);
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
             cipher.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(GCM_TAG_LENGTH_BITS, iv));
-            // Binds the ciphertext to the S3 key it's stored under — without this, a block
-            // copied from one object's location to another's would still decrypt cleanly, since
-            // GCM's tag authenticates only the plaintext (#216).
+            // Binds the ciphertext to its S3 key, so a block copied to another key fails to decrypt.
             cipher.updateAAD(objectKey.getBytes(StandardCharsets.UTF_8));
             byte[] ciphertext = cipher.doFinal(data);
             return ByteBuffer.allocate(iv.length + ciphertext.length).put(iv).put(ciphertext).array();

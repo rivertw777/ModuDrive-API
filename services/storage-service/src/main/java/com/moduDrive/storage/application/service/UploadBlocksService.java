@@ -13,10 +13,9 @@ import org.springframework.beans.factory.annotation.Value;
 
 import java.util.List;
 
-/** Spec 001 6: several blocks per request, each stored in the caller's own space under its
- * hash. The hash is recomputed from the bytes — trusting the client's would let it put any bytes
- * under any hash, and every file that shares that hash would then read them. Every block is checked
- * before any is stored, so a bad one leaves nothing behind. */
+/** Spec 001 6: several blocks per request, each stored in the caller's own space under its hash. The
+ * hash is recomputed from the bytes, since a wrong one would serve those bytes to every file sharing
+ * that hash. Every block is checked before any is stored. */
 @UseCase
 class UploadBlocksService implements UploadBlocksUseCase {
 

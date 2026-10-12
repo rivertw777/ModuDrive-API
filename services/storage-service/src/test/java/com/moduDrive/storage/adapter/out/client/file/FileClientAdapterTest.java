@@ -43,7 +43,7 @@ class FileClientAdapterTest {
         void mapsTheLatestVersionAndForwardsMarkAccessed() {
             given(fileClient.getFileRevisions(anyString(), anyString(), anyInt(), anyBoolean()))
                     .willReturn(ApiResponse.success(List.of(
-                            new FileVersionDto(VERSION_ID, fileId, 10L, OWNER_ID, List.of("h1", "h2", "h1")))));
+                            new FileVersionDto(VERSION_ID, 10L, OWNER_ID, List.of("h1", "h2", "h1")))));
 
             VersionLocation result = adapter.getLatestVersion(fileId, userId, true);
 
@@ -80,7 +80,7 @@ class FileClientAdapterTest {
         void forwardsFileIdAndKeyToTheInternalRouteAndMapsTheVersion() {
             given(fileClient.getPublicFileRevisions(anyString(), anyString(), anyInt()))
                     .willReturn(ApiResponse.success(List.of(
-                            new FileVersionDto(VERSION_ID, fileId, 42L, OWNER_ID, List.of("h9")))));
+                            new FileVersionDto(VERSION_ID, 42L, OWNER_ID, List.of("h9")))));
 
             VersionLocation result = adapter.getPublicVersion(fileId.toString(), key);
 
