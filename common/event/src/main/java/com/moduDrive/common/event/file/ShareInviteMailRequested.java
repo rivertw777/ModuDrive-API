@@ -8,6 +8,6 @@ import java.util.UUID;
  * granter's optional note, null or blank if empty. {@code category} is a file-service {@code FileCategory}
  * name, used to pick the mail's file-type icon. */
 public record ShareInviteMailRequested(
-        UUID fileId, String granteeEmail, String fileName, boolean directory, String category, String role,
+        UUID fileId, String granteeEmail, String fileName, boolean directory, String category,
         String granterName, String granterEmail, String message, UUID inviteToken) {
 }

@@ -32,13 +32,13 @@ class OutboxMailEventPublisherTest {
             UUID fileId = UUID.randomUUID();
 
             publisher.publishShareInviteRequested(
-                    fileId, "grantee@modudrive.com", "report.pdf", false, "DOCUMENT", "VIEWER", "홍길동",
+                    fileId, "grantee@modudrive.com", "report.pdf", false, "DOCUMENT", "홍길동",
                     "owner@modudrive.com", "확인 부탁드려요", null);
 
             then(outboxEventRecorder).should().record(
                     FileQueues.SHARE_INVITE_MAIL_REQUESTED, "grantee@modudrive.com",
                     new ShareInviteMailRequested(fileId, "grantee@modudrive.com", "report.pdf", false, "DOCUMENT",
-                            "VIEWER", "홍길동", "owner@modudrive.com", "확인 부탁드려요", null));
+                            "홍길동", "owner@modudrive.com", "확인 부탁드려요", null));
         }
 
         @Test
@@ -47,13 +47,13 @@ class OutboxMailEventPublisherTest {
             UUID inviteToken = UUID.randomUUID();
 
             publisher.publishShareInviteRequested(
-                    fileId, "grantee@modudrive.com", "report.pdf", false, "DOCUMENT", "VIEWER", "홍길동",
+                    fileId, "grantee@modudrive.com", "report.pdf", false, "DOCUMENT", "홍길동",
                     "owner@modudrive.com", null, inviteToken);
 
             then(outboxEventRecorder).should().record(
                     FileQueues.SHARE_INVITE_MAIL_REQUESTED, "grantee@modudrive.com",
                     new ShareInviteMailRequested(fileId, "grantee@modudrive.com", "report.pdf", false, "DOCUMENT",
-                            "VIEWER", "홍길동", "owner@modudrive.com", null, inviteToken));
+                            "홍길동", "owner@modudrive.com", null, inviteToken));
         }
     }
 }
