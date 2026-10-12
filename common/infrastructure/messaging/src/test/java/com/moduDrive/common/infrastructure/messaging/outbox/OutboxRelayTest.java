@@ -113,7 +113,7 @@ class OutboxRelayTest {
         @DisplayName("호출자의 트랜잭션이 롤백되면 이벤트도 남지 않는다")
         void rollsBackWithTheCallersTransaction() {
             transactionTemplate.executeWithoutResult(status -> {
-                recorder.record("queue", "key", new OutboxTestEvent(UUID.randomUUID(), "a"));
+                recorder.record("queue", new OutboxTestEvent(UUID.randomUUID(), "a"));
                 status.setRollbackOnly();
             });
 
@@ -130,8 +130,8 @@ class OutboxRelayTest {
         void sendsTheOriginalEventsInOrderThenMarksTheRowsSent() {
             OutboxTestEvent first = new OutboxTestEvent(UUID.randomUUID(), "first");
             OutboxTestEvent second = new OutboxTestEvent(UUID.randomUUID(), "second");
-            recorder.record("queue-a", "k1", first);
-            recorder.record("queue-b", "k2", second);
+            recorder.record("queue-a", first);
+            recorder.record("queue-b", second);
 
             relay.relay();
 
@@ -145,8 +145,8 @@ class OutboxRelayTest {
         @Test
         @DisplayName("행 id를 중복 제거 id로 붙여, 재전송된 행을 컨슈머가 알아볼 수 있게 한다")
         void usesTheRowIdAsTheDeduplicationId() {
-            recorder.record("queue", "k1", new OutboxTestEvent(UUID.randomUUID(), "a"));
-            recorder.record("queue", "k1", new OutboxTestEvent(UUID.randomUUID(), "b"));
+            recorder.record("queue", new OutboxTestEvent(UUID.randomUUID(), "a"));
+            recorder.record("queue", new OutboxTestEvent(UUID.randomUUID(), "b"));
 
             relay.relay();
 
@@ -160,8 +160,8 @@ class OutboxRelayTest {
         void stopsAtTheFirstFailedSendAndKeepsTheRest() {
             OutboxTestEvent first = new OutboxTestEvent(UUID.randomUUID(), "first");
             OutboxTestEvent second = new OutboxTestEvent(UUID.randomUUID(), "second");
-            recorder.record("queue", "k1", first);
-            recorder.record("queue", "k2", second);
+            recorder.record("queue", first);
+            recorder.record("queue", second);
             willThrow(new RuntimeException("broker down")).given(messagePublisher)
                     .publish(anyString(), anyString(), any());
 
@@ -176,8 +176,8 @@ class OutboxRelayTest {
         void parksARowSqsRejectsAndKeepsSending() {
             OutboxTestEvent rejected = new OutboxTestEvent(UUID.randomUUID(), "too-large");
             OutboxTestEvent next = new OutboxTestEvent(UUID.randomUUID(), "next");
-            recorder.record("queue", "k1", rejected);
-            recorder.record("queue", "k2", next);
+            recorder.record("queue", rejected);
+            recorder.record("queue", next);
             willAnswer(invocation -> {
                 if (invocation.getArgument(2).equals(rejected)) {
                     throw new PermanentPublishException(new IllegalStateException("message rejected"));
@@ -197,7 +197,7 @@ class OutboxRelayTest {
         @Test
         @DisplayName("실패 사유는 길어도 잘라서 남긴다 — SDK 메시지는 한 문단씩 오고, 알람에 실리는 건 앞부분뿐이다")
         void cutsALongFailureReasonDownToSize() {
-            recorder.record("queue", "k1", new OutboxTestEvent(UUID.randomUUID(), "rejected"));
+            recorder.record("queue", new OutboxTestEvent(UUID.randomUUID(), "rejected"));
             willThrow(new PermanentPublishException(new IllegalStateException("x".repeat(500))))
                     .given(messagePublisher).publish(anyString(), anyString(), any());
 
@@ -211,9 +211,9 @@ class OutboxRelayTest {
         @DisplayName("복원할 수 없는 행은 실패로 표시해 이후 배치에서 빼고 나머지를 보낸다")
         void skipsARowThatCannotBeRebuilt() {
             transactionTemplate.executeWithoutResult(status -> entityManager.persist(
-                    new OutboxEventJpaEntity("queue", "k0", "com.example.Gone", "{}", null)));
+                    new OutboxEventJpaEntity("queue", "com.example.Gone", "{}", null)));
             OutboxTestEvent event = new OutboxTestEvent(UUID.randomUUID(), "ok");
-            recorder.record("queue", "k1", event);
+            recorder.record("queue", event);
 
             relay.relay();
             relay.relay();
@@ -247,7 +247,7 @@ class OutboxRelayTest {
             }).given(messagePublisher).publish(anyString(), anyString(), any());
 
             new OutboxEventRecorder(entityManager, transactionTemplate, jsonMapper, tracer, propagator)
-                    .record("queue", "k1", new OutboxTestEvent(UUID.randomUUID(), "traced"));
+                    .record("queue", new OutboxTestEvent(UUID.randomUUID(), "traced"));
             new OutboxRelay(entityManager, transactionTemplate, messagePublisher, jsonMapper, registry,
                     new OutboxMetrics(entityManager)).relay();
 
@@ -262,7 +262,7 @@ class OutboxRelayTest {
         @Test
         @DisplayName("다른 인스턴스가 잠근 행은 기다리지 않고 건너뛴다")
         void skipsRowsLockedByAnotherInstance() throws Exception {
-            recorder.record("queue", "k1", new OutboxTestEvent(UUID.randomUUID(), "locked"));
+            recorder.record("queue", new OutboxTestEvent(UUID.randomUUID(), "locked"));
             CountDownLatch locked = new CountDownLatch(1);
             CountDownLatch release = new CountDownLatch(1);
             Thread otherInstance = Thread.ofVirtual().start(() -> transactionTemplate.executeWithoutResult(status -> {
@@ -299,16 +299,16 @@ class OutboxRelayTest {
         @Test
         @DisplayName("보관 기간이 지난 SENT 행만 지우고, 최근 SENT·PENDING·FAILED 행은 남긴다")
         void deletesOnlySentRowsPastRetention() {
-            recorder.record("queue", "old", new OutboxTestEvent(UUID.randomUUID(), "old"));
-            recorder.record("queue", "recent", new OutboxTestEvent(UUID.randomUUID(), "recent"));
+            recorder.record("old", new OutboxTestEvent(UUID.randomUUID(), "old"));
+            recorder.record("recent", new OutboxTestEvent(UUID.randomUUID(), "recent"));
             relay.relay();
             transactionTemplate.executeWithoutResult(status -> entityManager
-                    .createQuery("update OutboxEventJpaEntity e set e.sentAt = :old where e.messageKey = 'old'")
+                    .createQuery("update OutboxEventJpaEntity e set e.sentAt = :old where e.queue = 'old'")
                     .setParameter("old", Instant.now().minus(OutboxRelay.SENT_RETENTION).minusSeconds(60))
                     .executeUpdate());
-            recorder.record("queue", "pending", new OutboxTestEvent(UUID.randomUUID(), "pending"));
+            recorder.record("pending", new OutboxTestEvent(UUID.randomUUID(), "pending"));
             transactionTemplate.executeWithoutResult(status -> entityManager.persist(
-                    new OutboxEventJpaEntity("queue", "failed", "com.example.Gone", "{}", null)));
+                    new OutboxEventJpaEntity("failed", "com.example.Gone", "{}", null)));
             willThrow(new RuntimeException("broker down")).given(messagePublisher)
                     .publish(anyString(), anyString(), any());
             relay.relay();
@@ -316,7 +316,7 @@ class OutboxRelayTest {
             relay.purgeSent();
 
             List<String> left = transactionTemplate.execute(status -> entityManager
-                    .createQuery("select e.messageKey from OutboxEventJpaEntity e order by e.id", String.class)
+                    .createQuery("select e.queue from OutboxEventJpaEntity e order by e.id", String.class)
                     .getResultList());
             assertThat(left).containsExactly("recent", "pending", "failed");
         }
@@ -351,9 +351,9 @@ class OutboxRelayTest {
         @Test
         @DisplayName("큐마다 가장 오래 기다린 행의 나이를 재고, 보내고 나면 그 큐가 사라진다 — 알람이 어느 큐가 막혔는지 말해야 한다")
         void measuresTheOldestWaitingRowPerQueueThenDropsTheQueue() {
-            recorder.record("queue-a", "k1", new OutboxTestEvent(UUID.randomUUID(), "old"));
-            recorder.record("queue-a", "k2", new OutboxTestEvent(UUID.randomUUID(), "new"));
-            recorder.record("queue-b", "k3", new OutboxTestEvent(UUID.randomUUID(), "fresh"));
+            recorder.record("queue-a", new OutboxTestEvent(UUID.randomUUID(), "old"));
+            recorder.record("queue-a", new OutboxTestEvent(UUID.randomUUID(), "new"));
+            recorder.record("queue-b", new OutboxTestEvent(UUID.randomUUID(), "fresh"));
             backdateOldestPendingBy(Duration.ofMinutes(5));
 
             assertThat(metrics.pendingLag())
@@ -377,7 +377,7 @@ class OutboxRelayTest {
         void keepsClimbingWhileSendingIsStuck() {
             willThrow(new IllegalStateException("sqs unreachable"))
                     .given(messagePublisher).publish(anyString(), anyString(), any());
-            recorder.record("queue-a", "k1", new OutboxTestEvent(UUID.randomUUID(), "stuck"));
+            recorder.record("queue-a", new OutboxTestEvent(UUID.randomUUID(), "stuck"));
             backdateOldestPendingBy(Duration.ofMinutes(10));
 
             relay.relay();
@@ -394,9 +394,9 @@ class OutboxRelayTest {
         @DisplayName("사람이 처리해야 하는 FAILED 행을 큐·사유별로 센다 — 알람이 어느 이벤트가 왜 멈췄는지 말해야 한다")
         void countsRowsParkedForAHumanByQueueAndReason() {
             assertThat(metrics.failedGroups()).isEmpty();
-            recorder.record("queue-a", "k1", new OutboxTestEvent(UUID.randomUUID(), "rejected"));
-            recorder.record("queue-a", "k2", new OutboxTestEvent(UUID.randomUUID(), "rejected"));
-            recorder.record("queue-b", "k3", new OutboxTestEvent(UUID.randomUUID(), "rejected"));
+            recorder.record("queue-a", new OutboxTestEvent(UUID.randomUUID(), "rejected"));
+            recorder.record("queue-a", new OutboxTestEvent(UUID.randomUUID(), "rejected"));
+            recorder.record("queue-b", new OutboxTestEvent(UUID.randomUUID(), "rejected"));
             willThrow(new PermanentPublishException(new IllegalStateException("message rejected")))
                     .given(messagePublisher).publish(anyString(), anyString(), any());
 
@@ -410,8 +410,8 @@ class OutboxRelayTest {
         @Test
         @DisplayName("AWS SDK가 메시지 끝에 붙이는 요청 정보는 사유에서 뗀다 — 행마다 다른 Request ID가 라벨에 들어가면 행마다 시계열이 생긴다")
         void dropsTheAwsSdkRequestDetailsFromTheReason() {
-            recorder.record("queue-a", "k1", new OutboxTestEvent(UUID.randomUUID(), "rejected"));
-            recorder.record("queue-a", "k2", new OutboxTestEvent(UUID.randomUUID(), "rejected"));
+            recorder.record("queue-a", new OutboxTestEvent(UUID.randomUUID(), "rejected"));
+            recorder.record("queue-a", new OutboxTestEvent(UUID.randomUUID(), "rejected"));
             willThrow(new PermanentPublishException(new IllegalStateException(
                     "The specified queue does not exist. (Service: Sqs, Status Code: 400, Request ID: a1)")))
                     .willThrow(new PermanentPublishException(new IllegalStateException(

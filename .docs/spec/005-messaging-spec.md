@@ -233,7 +233,7 @@ Publisher는 이벤트를 만들어 큐로 내보낸다.
 
 #### 3-2-1. 이벤트 기록
 
-- 비즈니스 코드는 SQS로 직접 보내지 않고 `OutboxEventRecorder.record(queue, key, event)`를 부른다 → `outbox_event` 행 insert.
+- 비즈니스 코드는 SQS로 직접 보내지 않고 `OutboxEventRecorder.record(queue, event)`를 부른다 → `outbox_event` 행 insert.
 - 기록은 **유스케이스 서비스가 자기 `@Transactional` 안에서 이벤트 포트를 직접 호출**해서 한다. 
   비즈니스 데이터 저장과 같은 트랜잭션이라 같이 커밋되거나 같이 롤백된다.
 - 호출자 트랜잭션이 없으면(예: 가입 인증 메일 요청 — 인증 코드는 Redis) 기록기가 outbox insert만 담은 트랜잭션을 스스로 연다.

@@ -22,7 +22,7 @@ class OutboxStorageEventPublisher implements PurgeStorageBlocksPort {
         if (hashes.isEmpty()) {
             return;
         }
-        outboxEventRecorder.record(FileQueues.BLOCKS_PURGE_REQUESTED, ownerId.toString(),
+        outboxEventRecorder.record(FileQueues.BLOCKS_PURGE_REQUESTED,
                 new BlocksPurgeRequested(ownerId, List.copyOf(hashes), decidedAt));
     }
 }
