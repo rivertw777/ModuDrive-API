@@ -17,12 +17,12 @@ class OutboxMailEventPublisher implements PublishMailEventPort {
 
     @Override
     public void publishShareInviteRequested(
-            UUID fileId, String granteeEmail, String fileName, boolean directory, String category, String role,
+            UUID fileId, String granteeEmail, String fileName, boolean directory, String category,
             String granterName, String granterEmail, String message, UUID inviteToken) {
         // Keyed by the recipient, not the file: the key says who the mail is for, which is how one
         // person's pending mails are found in outbox_event.
         outboxEventRecorder.record(FileQueues.SHARE_INVITE_MAIL_REQUESTED, granteeEmail,
-                new ShareInviteMailRequested(fileId, granteeEmail, fileName, directory, category, role,
+                new ShareInviteMailRequested(fileId, granteeEmail, fileName, directory, category,
                         granterName, granterEmail, message, inviteToken));
     }
 }

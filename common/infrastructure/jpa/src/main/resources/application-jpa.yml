@@ -8,11 +8,6 @@ spring:
     hibernate:
       # Flyway owns the schema (db/migration in each service); Hibernate only checks it matches.
       ddl-auto: validate
-    properties:
-      hibernate:
-        show_sql: true
-        format_sql: true
-        use_sql_comments: true
   flyway:
     postgresql:
       # Session-level advisory lock. A non-transactional migration (create index concurrently,
@@ -32,3 +27,10 @@ spring:
       on-profile: dev
   flyway:
     locations: classpath:db/migration,classpath:db/seed
+  # Printed to stdout, not through the logger — local only.
+  jpa:
+    properties:
+      hibernate:
+        show_sql: true
+        format_sql: true
+        use_sql_comments: true

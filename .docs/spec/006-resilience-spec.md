@@ -51,39 +51,41 @@ sequenceDiagram
     CB->>S: 호출
     S-->>CB: 응답 / 실패
     CB-->>C: 응답 / 실패
-    Note over CB: 최근 100번 중 실패 50% 이상 → OPEN
+    Note over CB: 최근 10번 중 실패 50% 이상 → OPEN
     end
 
     rect rgba(239, 68, 68, 0.15)
     Note over C,S: OPEN
     C->>CB: 호출
     CB-->>C: 바로 실패 (CallNotPermittedException)
-    Note over CB: 60초 지남 → HALF_OPEN
+    Note over CB: 10초 지남 → HALF_OPEN
     end
 
     rect rgba(249, 115, 22, 0.15)
     Note over C,S: HALF_OPEN
-    C->>CB: 호출 1~10번째
+    C->>CB: 호출 1~3번째
     CB->>S: 시험 호출
     S-->>CB: 응답 / 실패
     CB-->>C: 응답 / 실패
-    C->>CB: 호출 11번째부터
+    C->>CB: 호출 4번째부터
     CB-->>C: 바로 실패 (CallNotPermittedException)
-    Note over CB: 시험 10번 실패율 50% 미만 → CLOSED<br/>50% 이상 → OPEN
+    Note over CB: 시험 3번 실패율 50% 미만 → CLOSED<br/>50% 이상 → OPEN
     end
 ```
 
 #### 1-1-2. 설정값
 
-| 항목 | 기본값 | 뜻 |
+모든 서킷이 `default` 설정을 쓴다 (`application-resilience4j.yml`, gateway는 자기 `application.yml`에 같은 값).
+
+| 항목 | 값 | 뜻 |
 |---|---|---|
-| `slidingWindowType` / `slidingWindowSize` | `COUNT_BASED` / 100 | 실패율을 **최근 호출 100번** 기준으로 계산한다 (시간 기준이 아니라 횟수 기준) |
-| `minimumNumberOfCalls` | 100 | 호출이 100번 쌓이기 전에는 실패율을 계산하지 않는다 — 처음 몇 번 실패로 바로 열리지 않게 |
-| `failureRateThreshold` | 50% | 최근 100번 중 절반 이상 실패하면 `OPEN` |
-| `slowCallDurationThreshold` / `slowCallRateThreshold` | 60초 / 100% | 60초 넘긴 호출은 "느린 호출"로 센다. 최근 100번이 **전부** 느리면 실패가 없어도 `OPEN` |
-| `waitDurationInOpenState` | 60초 | `OPEN`으로 60초 쉰 뒤 `HALF_OPEN`으로 바뀐다 |
-| `permittedNumberOfCallsInHalfOpenState` | 10 | `HALF_OPEN`에서 시험 삼아 보내는 호출 수. 이 10번의 실패율로 `CLOSED`/`OPEN`을 정한다 |
-| `registerHealthIndicator` | `false` | `true`면 서킷 상태가 `/actuator/health`에 나온다 |
+| `slidingWindowType` / `slidingWindowSize` | `COUNT_BASED` / 10 | 실패율을 **최근 호출 10번** 기준으로 계산한다 (시간 기준이 아니라 횟수 기준) |
+| `minimumNumberOfCalls` | 10 | 호출이 10번 쌓이기 전에는 실패율을 계산하지 않는다 — 처음 몇 번 실패로 바로 열리지 않게 |
+| `failureRateThreshold` | 50% | 최근 10번 중 절반 이상 실패하면 `OPEN` |
+| `slowCallDurationThreshold` / `slowCallRateThreshold` | 10초 / 100% | 10초 넘긴 호출은 "느린 호출"로 센다. 최근 10번이 **전부** 느리면 실패가 없어도 `OPEN` |
+| `waitDurationInOpenState` | 10초 | `OPEN`으로 10초 쉰 뒤 `HALF_OPEN`으로 바뀐다 |
+| `permittedNumberOfCallsInHalfOpenState` | 3 | `HALF_OPEN`에서 시험 삼아 보내는 호출 수. 이 3번의 실패율로 `CLOSED`/`OPEN`을 정한다 |
+| `registerHealthIndicator` | `true` | 서킷 상태가 `/actuator/health`에 나온다 |
 
 ### 1-2. 재시도
 
@@ -403,10 +405,10 @@ Redis를 용도별 클러스터로 나눈다 (`.infra/redis.tf`, 어느 서비�
 
 | 클러스터 | 쓰는 서비스 · 키 | `prod` (MemoryDB) | `demo` (ElastiCache) |
 |---|---|---|---|
-| `auth` | auth — 세션, 로그인 시도 제한, 새 기기 인증 코드 | 전용, 샤드 1 × 노드 3(AZ마다) | 모든 서비스 공용, 노드 1개 |
-| `member` | member — 회원가입 이메일 인증 코드 | 전용, 샤드 1 × 노드 3 | (`auth`에) |
-| `mail` | mail — SQS 소비 멱등성(`processed:*`) | 전용, 샤드 1 × 노드 3 | (`auth`에) |
-| `storage` | storage — 업로드 기록·업로드 수·다운로드 한도·zip 토큰 | 전용, **샤드 2** × 노드 3 | (`auth`에) |
+| `auth` | auth — 세션, 로그인 시도 제한, 새 기기 인증 코드 | 전용, 샤드 1 × 노드 2(주 1 + 복제본 1, AZ 둘) | 모든 서비스 공용, 노드 1개 |
+| `member` | member — 회원가입 이메일 인증 코드 | 전용, 샤드 1 × 노드 2 | (`auth`에) |
+| `mail` | mail — SQS 소비 멱등성(`processed:*`) | 전용, 샤드 1 × 노드 2 | (`auth`에) |
+| `storage` | storage — 업로드 기록·업로드 수·다운로드 한도·zip 토큰 | 전용, **샤드 2** × 노드 2 | (`auth`에) |
 
 - **`prod`는 MemoryDB for Valkey**(`redis_engine = "memorydb"`)다. 쓰기는 AZ 여러 곳에 걸친 트랜잭션 로그에 남은 뒤에야 확인되므로, 주 노드를 잃거나 그 노드와 끊겨 복제본이 넘겨받아도 **확인된 쓰기를 잃지 않는다** — 세션·인증 코드·업로드 기록·한도가 쓴 그대로다. ElastiCache는 복제가 비동기라 장애 조치 순간 직전 쓰기 몇 건이 사라질 수 있다(재로그인, 블록 재전송) — `demo`는 이걸 감수한다.
 - MemoryDB는 **클러스터 모드**다. 키 여러 개를 한 명령·스크립트에서 쓰려면 같은 해시 슬롯에 있어야 해서(아니면 `CROSSSLOT`), 함께 쓰는 키는 공통 부분을 `{}` 해시 태그로 감싼다 — 단일 Redis(로컬·`demo`)에서는 그냥 키 이름의 일부다.

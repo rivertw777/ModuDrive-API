@@ -83,7 +83,7 @@ class ShareFileServiceTest {
             assertThat(result.get().getSharedWithUserId()).isEqualTo(granteeId);
             assertThat(result.get().getRole()).isEqualTo(Role.VIEWER);
             then(publishMailEventPort).should().publishShareInviteRequested(
-                    fileId, EMAIL, "report.pdf", false, "DOCUMENT", "VIEWER", OWNER_NAME, OWNER_EMAIL, MESSAGE, null);
+                    fileId, EMAIL, "report.pdf", false, "DOCUMENT", OWNER_NAME, OWNER_EMAIL, MESSAGE, null);
             then(publishNotificationEventPort).should().publishFileShared(
                     fileId, granteeId, "report.pdf", "VIEWER", false, OWNER_NAME, OWNER_EMAIL);
         }
@@ -135,7 +135,7 @@ class ShareFileServiceTest {
             assertThat(pending.getToken()).isNotNull();
             // A guest has no account to notify in-app: only the mail, carrying its no-login token.
             then(publishMailEventPort).should().publishShareInviteRequested(
-                    fileId, EMAIL, "report.pdf", false, "DOCUMENT", "VIEWER", OWNER_NAME, OWNER_EMAIL, MESSAGE, pending.getToken());
+                    fileId, EMAIL, "report.pdf", false, "DOCUMENT", OWNER_NAME, OWNER_EMAIL, MESSAGE, pending.getToken());
             then(publishNotificationEventPort).shouldHaveNoInteractions();
         }
     }

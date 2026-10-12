@@ -15,7 +15,7 @@ public enum StorageExceptionCase implements ExceptionCase {
     /** More than 64 blocks or 8MB in one upload request (spec 001 6). */
     BLOCK_BATCH_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "한 번에 보낼 수 있는 블록 양을 초과했습니다."),
     /** The owner already uploaded {@code storage.upload-blocks-per-window} blocks in the last 24h. */
-    UPLOAD_LIMIT_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, "24시간 업로드 한도(100GB)를 초과했습니다. 나중에 다시 시도해 주세요."),
+    UPLOAD_LIMIT_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, "24시간 업로드 한도를 초과했습니다. 나중에 다시 시도해 주세요."),
     FILE_NOT_FOUND_IN_STORAGE(HttpStatus.NOT_FOUND, "스토리지에서 파일을 찾을 수 없습니다."),
     STORAGE_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "스토리지 오류가 발생했습니다."),
     /** S3's circuit is open or its bulkhead is full — answered at once, without waiting on S3

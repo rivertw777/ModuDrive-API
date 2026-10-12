@@ -2,7 +2,6 @@ package com.moduDrive.member.adapter.in.web.controller;
 
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.common.core.web.GlobalExceptionHandler;
-import com.moduDrive.member.adapter.in.web.mapper.MemberResponseMapper;
 import com.moduDrive.member.application.port.in.command.FindMemberByEmailCommand;
 import com.moduDrive.member.application.port.in.usecase.FindMemberByEmailUseCase;
 import com.moduDrive.member.domain.model.Member;
@@ -28,7 +27,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(FindMemberByEmailController.class)
-@Import({GlobalExceptionHandler.class, MemberResponseMapper.class})
+@Import(GlobalExceptionHandler.class)
 class FindMemberByEmailControllerTest {
 
     @Autowired
@@ -43,18 +42,14 @@ class FindMemberByEmailControllerTest {
     class WhenMemberExists {
 
         @Test
-        void returnsIdNameEmailOnly() throws Exception {
+        void answersOkWithoutExposingTheMember() throws Exception {
             Member member = MemberTestFixture.aMemberWithId(new MemberId(memberId));
             given(findMemberByEmailUseCase.findMemberByEmail(any(FindMemberByEmailCommand.class)))
                     .willReturn(member);
 
             mockMvc.perform(get("/api/v1/member/find-by-email").param("email", "river@modudrive.com"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.data.id").value(memberId.toString()))
-                    .andExpect(jsonPath("$.data.name").value("river"))
-                    .andExpect(jsonPath("$.data.email").value("river@modudrive.com"))
-                    .andExpect(jsonPath("$.data.password").doesNotExist())
-                    .andExpect(jsonPath("$.data.isValid").doesNotExist());
+                    .andExpect(jsonPath("$.data").doesNotExist());
         }
     }
 

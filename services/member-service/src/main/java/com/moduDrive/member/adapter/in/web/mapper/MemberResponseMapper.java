@@ -13,8 +13,6 @@ public class MemberResponseMapper {
     public AuthenticateMemberResponse toAuthenticateMemberResponse(Member member) {
         return new AuthenticateMemberResponse(
                 member.getId().toString(),
-                member.getName(),
-                member.getEmail(),
                 member.isValid(),
                 member.getRoles().stream()
                         .map(Role::name)

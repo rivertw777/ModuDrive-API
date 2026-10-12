@@ -94,7 +94,7 @@ class ShareFileService implements ShareFileUseCase {
         MemberSummary granter = findMemberByIdPort.findMemberByIdOrUnknown(saved.getOwnerId());
         publishMailEventPort.publishShareInviteRequested(
                 saved.getFileId(), command.getEmail(), file.getName(), file.isDirectory(),
-                FileCategory.of(file.getName()).name(), saved.getRole().name(), granter.name(), granter.email(),
+                FileCategory.of(file.getName()).name(), granter.name(), granter.email(),
                 command.getMessage(), inviteToken);
         if (granteeId != null) {
             publishNotificationEventPort.publishFileShared(
