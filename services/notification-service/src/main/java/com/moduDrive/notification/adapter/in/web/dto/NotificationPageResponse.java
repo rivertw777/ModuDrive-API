@@ -4,8 +4,7 @@ import com.moduDrive.notification.application.port.in.usecase.NotificationPage;
 
 import java.util.List;
 
-/** Keeps the field names of the Spring Data page this endpoint used to return, which the web
- * client reads ({@code content}, {@code number}, {@code last}, {@code totalElements}). */
+/** The web client reads these field names; they match Spring Data's {@code Page} JSON. */
 public record NotificationPageResponse(
         List<NotificationResponse> content,
         int number,

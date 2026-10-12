@@ -29,8 +29,7 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.assertj.core.api.Assertions.within;
 
 @DataJpaTest
-// AuditingConfig is a third-party auto-configuration, so the @DataJpaTest slice drops it —
-// without it @CreatedDate never fires and createdAt reads back null, unlike production.
+// The @DataJpaTest slice skips AuditingConfig; without it createdAt stays null.
 @Import({NotificationPersistenceAdapter.class, NotificationMapper.class, AuditingConfig.class})
 class NotificationPersistenceAdapterTest {
 
@@ -156,13 +155,8 @@ class NotificationPersistenceAdapterTest {
 
             assertThat(updated.getId()).isEqualTo(saved.getId());
             assertThat(updated.getEventId()).isEqualTo(saved.getEventId());
-            // insertNotification runs in its own REQUIRES_NEW transaction (see the adapter), so
-            // `saved.getCreatedAt()` is the raw in-memory, nanosecond-precision value the
-            // @CreatedDate listener set — while `updated` came back via a genuine SELECT in this
-            // test's own transaction, at the column's stored precision, which can round rather
-            // than truncate the in-memory value. A tolerance is correct here, not truncation on
-            // both sides: truncating the expected value can still land a microsecond below a
-            // value the column rounded up.
+            // saved holds the in-memory nanosecond value; updated was read back at the column's
+            // microsecond precision, which may round up, so compare with a tolerance.
             assertThat(updated.getCreatedAt()).isCloseTo(saved.getCreatedAt(), within(1, ChronoUnit.MILLIS));
             assertThat(updated.isRead()).isTrue();
 
