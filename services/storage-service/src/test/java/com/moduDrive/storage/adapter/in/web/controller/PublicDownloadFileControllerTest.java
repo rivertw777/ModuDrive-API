@@ -5,6 +5,7 @@ import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.common.core.web.GlobalExceptionHandler;
 import com.moduDrive.storage.exception.StorageExceptionCase;
 import com.moduDrive.storage.application.port.in.usecase.PublicDownloadFileUseCase;
+import com.moduDrive.storage.application.port.in.usecase.RangeContent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -23,6 +24,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willAnswer;
 import static org.mockito.BDDMockito.willDoNothing;
@@ -125,8 +127,8 @@ class PublicDownloadFileControllerTest {
 
         @Test
         void returnsPartialContentForARangeRequest() throws Exception {
-            byte[] data = "0123456789".getBytes();
-            given(publicDownloadFileUseCase.downloadPublic(any())).willReturn(data);
+            given(publicDownloadFileUseCase.viewPublicRange(any(), eq(2L), eq(4L)))
+                    .willReturn(new RangeContent("234".getBytes(), 2, 10));
 
             mockMvc.perform(get("/api/v1/storage/public/" + UUID.randomUUID() + "/view")
                             .header(HttpHeaders.RANGE, "bytes=2-4")

@@ -1,75 +1,59 @@
 package com.moduDrive.storage.adapter.in.web.controller;
 
+import com.moduDrive.storage.application.port.in.usecase.RangeContent;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpRange;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 
-import java.util.Arrays;
-import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-/** The inline (preview) response both view endpoints send — see {@link DownloadFileController#viewFile}
+/** The inline (preview) responses both view endpoints send — see {@link DownloadFileController#viewFile}
  * and {@link PublicDownloadFileController#viewPublicFile}. */
 final class InlineResponses {
+
+    private static final Pattern SINGLE_RANGE = Pattern.compile("bytes=(\\d{1,18})-(\\d{0,18})");
 
     private InlineResponses() {
     }
 
-    /** No Range header: the full body, exactly as before. With one: the requested byte slice as
-     * a {@code 206} — the file is already fully assembled in memory by the time this runs (see
-     * {@link com.moduDrive.storage.application.service.DownloadFileService}), so slicing the
-     * array is all a "region" means here; there's no lazily-read {@link org.springframework.core.io.Resource}
-     * underneath to justify {@code ResourceRegion}/{@code ResourceRegionHttpMessageConverter}.
-     * This only saves wire bytes and lets the browser seek, not server-side memory. A malformed
-     * Range is treated as no Range rather than rejected, since a botched seek shouldn't break
-     * plain playback. */
-    static ResponseEntity<byte[]> inline(byte[] data, String fileName, String rangeHeader) {
-        MediaType contentType = FileMimeTypes.contentType(fileName);
-        String disposition = FileMimeTypes.inlineDisposition(fileName);
-        HttpRange range = parseFirstRange(rangeHeader, data.length);
+    /** {@code bytes=start-[end]}, the only form a media element sends. Anything else — suffix,
+     * multi-range (answering only its first slice would report success while dropping the rest),
+     * malformed, or end before start — is treated as no Range and gets the whole body, since a
+     * botched seek shouldn't break plain playback. */
+    record RequestedRange(long start, Long end) {
 
-        if (range == null) {
-            return ResponseEntity.ok()
-                    .contentType(contentType)
-                    .header(HttpHeaders.CONTENT_DISPOSITION, disposition)
-                    .header(HttpHeaders.ACCEPT_RANGES, "bytes")
-                    .header(HttpHeaders.CACHE_CONTROL, "private, no-store")
-                    .header("X-Content-Type-Options", "nosniff")
-                    .body(data);
-        }
-
-        long start = range.getRangeStart(data.length);
-        long end = range.getRangeEnd(data.length);
-        byte[] slice = Arrays.copyOfRange(data, (int) start, (int) end + 1);
-        return ResponseEntity.status(HttpStatus.PARTIAL_CONTENT)
-                .contentType(contentType)
-                .header(HttpHeaders.CONTENT_DISPOSITION, disposition)
-                .header(HttpHeaders.ACCEPT_RANGES, "bytes")
-                .header(HttpHeaders.CONTENT_RANGE, "bytes " + start + "-" + end + "/" + data.length)
-                .header(HttpHeaders.CACHE_CONTROL, "private, no-store")
-                .header("X-Content-Type-Options", "nosniff")
-                .body(slice);
-    }
-
-    private static HttpRange parseFirstRange(String rangeHeader, int contentLength) {
-        if (rangeHeader == null) {
-            return null;
-        }
-        try {
-            List<HttpRange> ranges = HttpRange.parseRanges(rangeHeader);
-            // A multi-range request answered with only the first slice would report 206 success
-            // while silently dropping the rest — treating it as no-range returns the whole body
-            // instead, which the client can always re-seek against.
-            if (ranges.size() != 1) {
+        static RequestedRange parse(String header) {
+            if (header == null) {
                 return null;
             }
-            HttpRange range = ranges.get(0);
-            // A start beyond the actual content is a client bug (e.g. stale Range from a
-            // previous, different file), not a seek to honor as partial content.
-            return range.getRangeStart(contentLength) < contentLength ? range : null;
-        } catch (IllegalArgumentException malformed) {
-            return null;
+            Matcher m = SINGLE_RANGE.matcher(header.trim());
+            if (!m.matches()) {
+                return null;
+            }
+            long start = Long.parseLong(m.group(1));
+            Long end = m.group(2).isEmpty() ? null : Long.parseLong(m.group(2));
+            return end != null && end < start ? null : new RequestedRange(start, end);
         }
+    }
+
+    static ResponseEntity<byte[]> whole(byte[] data, String fileName) {
+        return headers(ResponseEntity.ok(), fileName).body(data);
+    }
+
+    static ResponseEntity<byte[]> partial(RangeContent content, String fileName) {
+        long end = content.start() + content.data().length - 1;
+        return headers(ResponseEntity.status(HttpStatus.PARTIAL_CONTENT), fileName)
+                .header(HttpHeaders.CONTENT_RANGE, "bytes " + content.start() + "-" + end + "/" + content.totalLength())
+                .body(content.data());
+    }
+
+    private static ResponseEntity.BodyBuilder headers(ResponseEntity.BodyBuilder builder, String fileName) {
+        return builder
+                .contentType(FileMimeTypes.contentType(fileName))
+                .header(HttpHeaders.CONTENT_DISPOSITION, FileMimeTypes.inlineDisposition(fileName))
+                .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+                .header(HttpHeaders.CACHE_CONTROL, "private, no-store")
+                .header("X-Content-Type-Options", "nosniff");
     }
 }

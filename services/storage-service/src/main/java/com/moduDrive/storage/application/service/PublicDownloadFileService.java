@@ -3,6 +3,7 @@ package com.moduDrive.storage.application.service;
 import com.moduDrive.common.core.annotation.UseCase;
 import com.moduDrive.storage.application.port.in.command.PublicDownloadFileCommand;
 import com.moduDrive.storage.application.port.in.usecase.PublicDownloadFileUseCase;
+import com.moduDrive.storage.application.port.in.usecase.RangeContent;
 import com.moduDrive.storage.application.port.out.DownloadQuotaPort;
 import com.moduDrive.storage.application.port.out.GetFileVersionPort;
 import com.moduDrive.storage.application.port.out.RetrieveBlocksPort;
@@ -48,6 +49,12 @@ class PublicDownloadFileService implements PublicDownloadFileUseCase {
         byte[] assembled = BlockAssembler.assemble(blocks);
         downloadQuotaPort.recordUsage(scope, version.versionKey(), assembled.length);
         return assembled;
+    }
+
+    @Override
+    public RangeContent viewPublicRange(PublicDownloadFileCommand command, long start, Long end) {
+        return BlockAssembler.readRange(retrieveBlocksPort, downloadQuotaPort,
+                quotaScope(command), locate(command), blockSize, start, end);
     }
 
     @Override

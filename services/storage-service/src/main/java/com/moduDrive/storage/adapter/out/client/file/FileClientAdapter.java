@@ -57,7 +57,8 @@ class FileClientAdapter implements GetFileVersionPort, GetArchiveEntriesPort, Fi
     }
 
     private static VersionLocation locate(FileVersionDto v) {
-        return new VersionLocation(v.versionId().toString(), blockKeys(v.ownerId(), v.hashes()));
+        return new VersionLocation(v.versionId().toString(), blockKeys(v.ownerId(), v.hashes()),
+                v.fileSize() == null ? 0 : v.fileSize());
     }
 
     private static List<String> blockKeys(UUID ownerId, List<String> hashes) {
