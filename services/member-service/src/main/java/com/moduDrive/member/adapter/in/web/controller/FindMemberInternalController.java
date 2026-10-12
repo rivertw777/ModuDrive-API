@@ -19,9 +19,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
 
-/** Member lookups for other services (file-service resolving share targets), behind the internal
- * token. Kept apart from the WEB's /api/v1/member/find — which only ever answers "who am I" off the
- * gateway-set X_USER_ID — so looking up an arbitrary member is never reachable from outside (#441). */
+/** Member lookups for other services (file-service resolving share targets). The gateway doesn't
+ * route /internal/**, so looking up an arbitrary member by id is never reachable from outside (#441). */
 @WebAdapter
 @RestController
 @RequiredArgsConstructor

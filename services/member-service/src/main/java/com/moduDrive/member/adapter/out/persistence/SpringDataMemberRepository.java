@@ -9,6 +9,4 @@ interface SpringDataMemberRepository extends JpaRepository<MemberJpaEntity, UUID
     boolean existsByEmail(String email);
 
     Optional<MemberJpaEntity> findByEmail(String email);
-
-    Optional<MemberJpaEntity> findById(UUID id);
 }

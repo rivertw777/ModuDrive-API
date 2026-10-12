@@ -1,12 +1,11 @@
--- KEYS[1] = email-verify-code:{email}, KEYS[2] = email-verify-attempts:{email},
--- KEYS[3] = email-verify-cooldown:{email}
+-- KEYS[1] = email-verify-code:{sha256(email)}, KEYS[2] = email-verify-attempts:{sha256(email)},
+-- KEYS[3] = email-verify-cooldown:{sha256(email)}
 -- ARGV[1] = the code the user typed, ARGV[2] = wrong codes allowed before the code ends,
 -- ARGV[3] = attempts TTL in ms
--- Returns 1 on a match, 0 on a wrong code that can still be retried, -1 when there is no code (expired
--- or never sent), -2 once the wrong
--- codes are used up (by this guess or an earlier one — the code is kept until it expires so later
--- guesses still get this answer). Once the code can't be used the resend cooldown goes with it, so a
--- new code can be asked for at once. Compare and count in one step, so guesses sent together can't
+-- Returns 1 on a match, 0 on a wrong code that can still be retried, -1 when there is no code
+-- (expired or never sent), -2 once the wrong guesses are used up. The code is kept until it expires
+-- so later guesses still get -2. Once the code can't be used, the resend cooldown is cleared so a new
+-- code can be requested at once. Compare and count run in one script, so concurrent guesses can't
 -- slip past the limit.
 local stored = redis.call('GET', KEYS[1])
 if not stored then
