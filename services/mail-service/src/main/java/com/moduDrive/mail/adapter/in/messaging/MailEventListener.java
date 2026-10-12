@@ -33,12 +33,11 @@ class MailEventListener {
 
     private final SendVerificationMailUseCase sendVerificationMailUseCase;
     private final SendShareInviteMailUseCase sendShareInviteMailUseCase;
-    /** Fed by the configuration set's Send events (SES → SNS → this queue). Not in common:event: SES,
-     * not a service of ours, produces it. */
+    /** SES Send events (SES → SNS → this queue). Not in common:event because SES produces it. */
     static final String SES_EVENTS_QUEUE = "mail-ses-events";
     // Must match SesMailAdapter.DELIVERY_TAG; adapters don't reference each other.
     private static final String DELIVERY_TAG = "deliveryId";
-    /** How long a timed-out send waits for its Send event before being tried again. SES publishes it
+    /** How long a timed-out send waits for its Send event before it is retried. SES publishes the event
      * within seconds of accepting a mail; this leaves room for a slow accept plus the SNS hop. */
     static final Duration SEND_EVENT_WAIT = Duration.ofSeconds(60);
 
@@ -67,15 +66,14 @@ class MailEventListener {
         sendOnce(FileQueues.SHARE_INVITE_MAIL_REQUESTED, deduplicationId, deliveryId ->
                 sendShareInviteMailUseCase.sendShareInviteMail(
                         new SendShareInviteMailCommand(event.granteeEmail(), event.fileName(), event.directory(),
-                                event.category(), event.role(), event.fileId(), event.granterName(), event.granterEmail(),
+                                event.category(), event.fileId(), event.granterName(), event.granterEmail(),
                                 event.message(), event.inviteToken(), deliveryId)));
     }
 
     /**
-     * SES's Send event for a mail this listener sent: SES accepted it, so it's going out. Recording it
-     * as processed is what makes a redelivery of a timed-out send skip it — see {@link #sendOnce}.
-     * Delivered raw (no SNS envelope); anything that isn't a tagged Send event is ignored, SNS's
-     * "Successfully validated" text on subscribe included.
+     * A Send event means SES accepted the mail. Marking it processed makes a redelivery of a timed-out
+     * send skip it (see {@link #sendOnce}). Delivered raw (no SNS envelope); anything that isn't a tagged
+     * Send event is ignored, including SNS's "Successfully validated" text on subscribe.
      */
     @SqsListener(SES_EVENTS_QUEUE)
     void onSesEvent(String body) {
@@ -94,29 +92,25 @@ class MailEventListener {
         processedEvents.markProcessed(deliveryId.substring(0, split), deliveryId.substring(split + 1));
     }
 
-    // Claim, send, then confirm. A mail can't be rolled back, so the claim goes first — two copies of
-    // one message can be in flight at once and a read-then-write would let both send. It only holds a
-    // short lease, so a process dying mid-send leaves the retry free to take it: a second mail is
-    // better than none. A send that fails hands the claim straight back.
+    // Claim, send, then mark processed. The claim goes first because two copies of one message can be
+    // in flight at once and a mail can't be rolled back. The claim is a short lease, so if the process
+    // dies mid-send the retry can take it (a second mail is better than none). A failed send releases it.
     //
-    // A send that timed out may still go out, so it's neither: retrying now would send it twice. The
-    // claim is left to lapse, and the message comes back once SES's Send event (onSesEvent) has had
-    // time to arrive — if it did, the claim is already a processed record and the retry skips it;
-    // if not, SES never took the mail and the retry sends it. A mail SES refused outright isn't retried
-    // at all.
+    // A timed-out send may still go out, so the claim is left to lapse and the message comes back after
+    // SEND_EVENT_WAIT. If the Send event arrived meanwhile, the retry skips it; otherwise it sends again.
+    // A mail SES refused is not retried.
     private void sendOnce(String queue, String deduplicationId, Consumer<String> send) {
         if (!processedEvents.claim(queue, deduplicationId)) {
             return;
         }
         try {
-            // The tag SES echoes back in the Send event. Tag values allow only [A-Za-z0-9_-]; queue names
-            // and outbox ids use only [a-z0-9-], so '_' splits it back apart unambiguously.
+            // SES echoes this tag in the Send event. Tag values allow only [A-Za-z0-9_-]; queue names and
+            // outbox ids use only [a-z0-9-], so '_' splits it back unambiguously.
             send.accept(queue + "_" + deduplicationId);
         } catch (MailOutcomeUnknownException e) {
             throw new RetryLaterException(SEND_EVENT_WAIT, e);
         } catch (MailRejectedException e) {
-            // Would be refused again on every retry: straight to the DLQ with SES's error code. The claim goes
-            // back so a redrive after the fix can send it.
+            // Would be refused on every retry, so straight to the DLQ. Release the claim so a redrive can send it.
             processedEvents.release(queue, deduplicationId);
             throw new PermanentConsumeException(e);
         } catch (RuntimeException e) {

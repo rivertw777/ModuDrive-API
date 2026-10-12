@@ -14,9 +14,7 @@ class HexagonalArchitectureTest {
 
     @Test
     void domainDoesNotDependOnApplicationOrAdapter() {
-        // mail-service has no domain/model package yet — it's a pure event-consuming
-        // mailer with no business invariants of its own. allowEmptyShould keeps the rule from
-        // failing on "checked zero classes" until a real domain model lands here.
+        // mail-service has no domain package; allowEmptyShould keeps the rule from failing on zero classes.
         ArchRule rule = noClasses().that().resideInAPackage("..domain..")
                 .should().dependOnClassesThat().resideInAnyPackage("..application..", "..adapter..")
                 .allowEmptyShould(true);
