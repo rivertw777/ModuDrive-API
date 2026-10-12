@@ -26,7 +26,7 @@ locals {
     "style-src 'self' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' blob: data:",
-    "media-src 'self' blob:",
+    "media-src 'self' blob: https://api.${var.domain_name}",
     "connect-src 'self' https://api.${var.domain_name}",
     "object-src 'none'",
     "base-uri 'self'",
