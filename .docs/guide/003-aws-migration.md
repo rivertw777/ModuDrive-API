@@ -172,9 +172,7 @@ SMTP가 아니라 SES API(`spring-cloud-aws-starter-ses`, `SendRawEmail`)로 보
 
 도메인이 있어야 만들어지는 것도 있다. SES 도메인 identity, DKIM, MAIL FROM 레코드는 `domain_name`이 비어 있으면 만들지 않는다(1-11).
 
-AWS 계정에서 손으로 할 일이 하나 있다. SES 샌드박스 해제 요청이다. 안 하면 인증된 주소로만 보낼 수 있다. 그리고 실제 SES로 처음 보낼 때 `deliveryId` 태그(`<queue>_<outboxId>`)가 거절되지 않는지 확인한다. LocalStack은 태그 값을 검사하지 않아서 로컬에서는 알 수 없다.
-
-샌드박스가 풀리기 전까지 demo는 Gmail SMTP로 보낸다. tfvars에 `smtp_username`(필요하면 `smtp_from`)을 넣으면 태스크에 `MAIL_TRANSPORT=smtp`가 들어가고 `SmtpMailAdapter`가 SES 대신 쓰인다. 앱 비밀번호는 SSM `/modudrive/SMTP_PASSWORD`에 손으로 넣는다. SMTP에는 Send 이벤트가 없어서, 서버가 메일을 받은 뒤 타임아웃이 나면 재시도로 두 번 갈 수 있다. 샌드박스가 풀리면 `smtp_username`을 지운다.
+AWS 계정에서 손으로 할 일이 하나 있다. SES 샌드박스 해제 요청이다. 안 하면 인증된 주소로만 보낼 수 있다(demo 계정은 2026-10 승인됨). 그리고 실제 SES로 처음 보낼 때 `deliveryId` 태그(`<queue>_<outboxId>`)가 거절되지 않는지 확인한다. LocalStack은 태그 값을 검사하지 않아서 로컬에서는 알 수 없다.
 
 ### 1-10. 시크릿
 
@@ -184,7 +182,6 @@ AWS 계정에서 손으로 할 일이 하나 있다. SES 샌드박스 해제 요
 | DB 관리자 비밀번호 | `.env`의 `POSTGRES_PASSWORD` | RDS가 Secrets Manager에서 관리 |
 | `REDIS_PASSWORD` | `.env` | SSM, 클러스터마다 |
 | Discord 웹후크 2개 | `.env` (LocalStack SSM으로 들어감) | SSM (값은 손으로 넣음, 1-13) |
-| `SMTP_PASSWORD` | 없음 | SSM, `smtp_username`을 넣은 환경만 (값은 손으로 넣음, 1-9) |
 | `SQS_*`, `SES_ENDPOINT`, `STORAGE_S3_*`, `LOCALSTACK_AUTH_TOKEN` | `.env` | 없음 (task role, 실제 endpoint) |
 
 값은 ECS 태스크 정의의 `secrets`로 환경 변수에 들어간다. 태스크가 뜰 때 SSM에서 읽어 오므로 태스크 정의에는 남지 않고, 앱은 로컬과 똑같이 `${...}`로 읽는다.
@@ -450,7 +447,7 @@ tfvars의 값을 바꿀 때 데이터가 날아가거나 서비스가 끊기는 
 | ECS | Fargate Spot, 전부 0.5 vCPU / 1 GB, 서비스마다 1개 고정 (오토스케일 없음) |
 | DB | RDS 1대 (db.t4g.micro, 단일 AZ)에 DB 4개, 백업 1일(무료 플랜 한도) |
 | Redis | ElastiCache 1개 (cache.t4g.micro, 노드 1개), 모든 서비스가 같이 씀 |
-| 메일 | Gmail SMTP (SES 샌드박스 해제 전까지, 1-9) |
+| 메일 | SES (`noreply@modudrive.help`, 1-9) |
 | 암호화 | AWS 관리 키 (SSE-S3, SSE-SQS, `aws/ssm` 등) |
 | 보안 강화 (`hardened`) | 끔. WAF, Service Connect TLS, 감사 로그, GuardDuty 없음 |
 | 삭제 방지, Container Insights | 끔 |

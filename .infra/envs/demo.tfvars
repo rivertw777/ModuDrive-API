@@ -10,11 +10,6 @@ environment = "demo"
 domain_name = "modudrive.help"
 account_id  = "569854554527" # this environment's AWS account — set it and other accounts' credentials are refused
 
-# SES is still in the sandbox (verified addresses only), so mail goes through Gmail SMTP.
-# App password: aws ssm put-parameter --name /modudrive/SMTP_PASSWORD --overwrite.
-smtp_username = "modudrive26@gmail.com"
-smtp_from     = "modudrive@gmail.com"
-
 nat                 = "instance"
 interface_endpoints = false # ~$110/month for six endpoints in two AZs; traffic goes out the NAT instance
 fargate_spot        = true

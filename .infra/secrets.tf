@@ -91,18 +91,3 @@ resource "aws_ssm_parameter" "discord_webhook" {
     ignore_changes = [value]
   }
 }
-
-# Gmail app password for SMTP mail (var.smtp_username), made in the Google account and set by hand
-# like the webhooks.
-resource "aws_ssm_parameter" "smtp_password" {
-  count = var.smtp_username == null ? 0 : 1
-
-  name   = "/${var.project}/SMTP_PASSWORD"
-  type   = "SecureString"
-  key_id = local.kms_key_arn
-  value  = "set-by-hand"
-
-  lifecycle {
-    ignore_changes = [value]
-  }
-}

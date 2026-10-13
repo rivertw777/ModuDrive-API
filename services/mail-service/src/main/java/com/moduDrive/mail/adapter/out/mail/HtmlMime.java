@@ -8,7 +8,7 @@ import java.util.Map;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.mail.javamail.MimeMessageHelper;
 
-/** The MIME message both transports send — see {@link com.moduDrive.mail.application.port.out.SendMailPort}. */
+/** The MIME message SesMailAdapter sends — see {@link com.moduDrive.mail.application.port.out.SendMailPort}. */
 final class HtmlMime {
 
     private HtmlMime() {

@@ -44,10 +44,7 @@ locals {
           STORAGE_S3_REGION  = var.region
           STORAGE_BLOCK_SIZE = "4194304"
         }
-        mail = merge(
-          { CLIENT_URL = local.client_url, MAIL_FROM = coalesce(var.smtp_from, var.smtp_username, local.mail_from) },
-          var.smtp_username == null ? {} : { MAIL_TRANSPORT = "smtp", SMTP_USERNAME = var.smtp_username },
-        )
+        mail = { CLIENT_URL = local.client_url, MAIL_FROM = local.mail_from }
       }, name, {}),
     )
   }
@@ -57,7 +54,6 @@ locals {
     for name, port in local.service_ports : name => merge(
       contains(keys(local.db_names), name) ? { SPRING_DATASOURCE_PASSWORD = aws_ssm_parameter.db_password[name].arn } : {},
       contains(local.redis_clients, name) ? { REDIS_PASSWORD = aws_ssm_parameter.redis_password[local.redis_cluster_of[name]].arn } : {},
-      name == "mail" && var.smtp_username != null ? { SMTP_PASSWORD = aws_ssm_parameter.smtp_password[0].arn } : {},
     )
   }
 
