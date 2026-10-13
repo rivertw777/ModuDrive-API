@@ -2,6 +2,7 @@ package com.moduDrive.storage.adapter.out.s3;
 
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.storage.config.StorageProperties;
+import com.moduDrive.storage.domain.model.Blocks;
 import com.moduDrive.storage.exception.StorageExceptionCase;
 import io.github.resilience4j.bulkhead.BulkheadConfig;
 import io.github.resilience4j.bulkhead.BulkheadRegistry;
@@ -16,28 +17,24 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.core.exception.SdkClientException;
-import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.ChecksumMode;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
-import software.amazon.awssdk.services.s3.model.PutObjectRequest;
-import software.amazon.awssdk.services.s3.model.PutObjectResponse;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Base64;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
@@ -46,100 +43,116 @@ import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willAnswer;
-import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
 
 @ExtendWith(MockitoExtension.class)
 class S3StorageAdapterTest {
 
     private static final String KEY = "blocks/owner/aaa";
+    private static final UUID OWNER = UUID.fromString("00000000-0000-0000-0000-000000000001");
+    private static final String HASH_A = "a".repeat(64);
+    private static final String HASH_B = "b".repeat(64);
     private static final Instant DECIDED_AT = Instant.parse("2026-10-08T12:00:00.500Z");
 
     @Mock
     private S3Client s3Client;
 
-    private final Map<String, byte[]> fakeBucket = new HashMap<>();
     private final CircuitBreakerRegistry circuitBreakers = CircuitBreakerRegistry.of(CircuitBreakerConfig.custom()
             .recordException(new S3Unavailable())
             .slidingWindowSize(2).minimumNumberOfCalls(2)
             .build());
     private final BulkheadRegistry bulkheads = BulkheadRegistry.of(BulkheadConfig.custom()
-            .maxConcurrentCalls(1).maxWaitDuration(Duration.ZERO).build());
+            .maxConcurrentCalls(S3StorageAdapter.LOOKUP_PARALLELISM).maxWaitDuration(Duration.ZERO).build());
     private S3StorageAdapter adapter;
 
     @BeforeEach
     void setUp() {
         StorageProperties properties = new StorageProperties();
         properties.getS3().setBucket("test-bucket");
-        properties.setEncryptionKey(Base64.getEncoder().encodeToString("0123456789abcdef".getBytes(StandardCharsets.UTF_8)));
         adapter = new S3StorageAdapter(s3Client, properties, circuitBreakers, bulkheads);
     }
 
     @Nested
-    @DisplayName("블록을 저장하고 다시 조회할 때")
-    class WhenStoringThenRetrieving {
+    @DisplayName("블록을 조회할 때")
+    class WhenRetrieving {
 
         @Test
-        void roundTripsToOriginalBytesInKeyOrder() throws IOException {
-            stubS3();
-            adapter.storeBlock("blocks/o/b", "world".getBytes());
-            adapter.storeBlock("blocks/o/a", "hello ".getBytes());
+        @DisplayName("S3에 있는 바이트를 그대로, 키 순서대로 돌려준다")
+        void returnsTheStoredBytesInKeyOrder() {
+            stubGet(Map.of("blocks/o/a", "hello ".getBytes(), "blocks/o/b", "world".getBytes()));
 
             assertThat(adapter.retrieveBlocks(List.of("blocks/o/a", "blocks/o/b", "blocks/o/a")))
                     .containsExactly("hello ".getBytes(), "world".getBytes(), "hello ".getBytes());
         }
 
         @Test
-        void streamsTheSameBytes() throws IOException {
-            stubS3();
-            adapter.storeBlock("blocks/o/a", "hello ".getBytes());
-            adapter.storeBlock("blocks/o/b", "world".getBytes());
+        @DisplayName("같은 바이트를 스트림으로도 쓴다")
+        void streamsTheSameBytes() {
+            stubGet(Map.of("blocks/o/a", "hello ".getBytes(), "blocks/o/b", "world".getBytes()));
             ByteArrayOutputStream out = new ByteArrayOutputStream();
 
             adapter.streamBlocks(List.of("blocks/o/a", "blocks/o/b"), out);
 
             assertThat(out.toByteArray()).isEqualTo("hello world".getBytes(StandardCharsets.UTF_8));
         }
-
-        @Test
-        void encryptsTheSameBlockDifferentlyEachTime() throws IOException {
-            stubPut();
-            adapter.storeBlock(KEY, new byte[32]);
-            byte[] first = fakeBucket.get(KEY);
-            adapter.storeBlock(KEY, new byte[32]);
-
-            assertThat(fakeBucket.get(KEY)).isNotEqualTo(first); // random IV, not ECB
-        }
     }
 
     @Nested
-    @DisplayName("암호화된 블록이 다른 위치로 복사되었을 때")
-    class WhenABlockIsCopiedToAnotherLocation {
+    @DisplayName("commit 전에 올라온 블록을 확인할 때 (spec 001 5)")
+    class WhenFindingUploaded {
 
-        @Test
-        void refusesToDecryptAtTheWrongLocation() throws IOException {
-            stubS3();
-            adapter.storeBlock("blocks/victim/h", "victim file contents".getBytes(StandardCharsets.UTF_8));
-            // Same ciphertext (and tag), planted at another owner's key — as if someone with bucket
-            // write access copied a block across.
-            fakeBucket.put("blocks/attacker/h", fakeBucket.get("blocks/victim/h"));
-
-            Throwable thrown = catchThrowable(() -> adapter.retrieveBlocks(List.of("blocks/attacker/h")));
-
-            assertThat(thrown).isInstanceOf(RuntimeException.class);
+        private void headReturns(String hash, Instant lastModified, String checksum, long size) {
+            given(s3Client.headObject(argThat((HeadObjectRequest r) -> r != null && r.key().equals(Blocks.key(OWNER, hash)))))
+                    .willReturn(HeadObjectResponse.builder()
+                            .lastModified(lastModified).checksumSHA256(checksum).contentLength(size).build());
         }
-    }
-
-    @Nested
-    @DisplayName("블록 저장이 실패했을 때")
-    class WhenStoringFails {
 
         @Test
-        void throwsStorageError() {
-            willThrow(SdkClientException.create("network blip"))
-                    .given(s3Client).putObject(any(PutObjectRequest.class), any(RequestBody.class));
+        @DisplayName("체크섬이 해시와 같으면 그 크기로 답한다")
+        void answersAFreshIntactBlockWithItsSize() {
+            headReturns(HASH_A, Instant.now().minusSeconds(60), Blocks.sha256Base64(HASH_A), 4);
+            headReturns(HASH_B, Instant.now().minusSeconds(60), Blocks.sha256Base64(HASH_B), 6);
 
-            Throwable thrown = catchThrowable(() -> adapter.storeBlock(KEY, "x".getBytes()));
+            assertThat(adapter.findUploaded(OWNER, List.of(HASH_A, HASH_B))).containsOnly(
+                    Map.entry(HASH_A, 4), Map.entry(HASH_B, 6));
+            then(s3Client).should(org.mockito.Mockito.times(2)).headObject(argThat((HeadObjectRequest r) ->
+                    r.bucket().equals("test-bucket") && r.checksumMode() == ChecksumMode.ENABLED));
+        }
+
+        @Test
+        @DisplayName("없는 블록(404)은 빼고 답한다")
+        void leavesOutAMissingBlock() {
+            headReturns(HASH_A, Instant.now(), Blocks.sha256Base64(HASH_A), 4);
+            given(s3Client.headObject(argThat((HeadObjectRequest r) -> r != null && r.key().equals(Blocks.key(OWNER, HASH_B)))))
+                    .willThrow(NoSuchKeyException.builder().statusCode(404).build());
+
+            assertThat(adapter.findUploaded(OWNER, List.of(HASH_A, HASH_B))).containsOnlyKeys(HASH_A);
+        }
+
+        @Test
+        @DisplayName("체크섬 없이 올라왔거나 다른 체크섬이면 뺀다 — URL 서명에만 기대지 않는다")
+        void leavesOutABlockWithoutTheMatchingChecksum() {
+            headReturns(HASH_A, Instant.now(), null, 4);
+            headReturns(HASH_B, Instant.now(), Blocks.sha256Base64(HASH_A), 4);
+
+            assertThat(adapter.findUploaded(OWNER, List.of(HASH_A, HASH_B))).isEmpty();
+        }
+
+        @Test
+        @DisplayName("빈 목록이면 S3에 묻지 않는다")
+        void asksNothingForNoHashes() {
+            assertThat(adapter.findUploaded(OWNER, List.of())).isEmpty();
+            then(s3Client).shouldHaveNoInteractions();
+        }
+
+        @Test
+        @DisplayName("HEAD 하나라도 실패하면 조회 전체를 STORAGE_ERROR로 끝낸다")
+        void failsTheWholeLookupOnAnyFailure() {
+            headReturns(HASH_A, Instant.now(), Blocks.sha256Base64(HASH_A), 4);
+            given(s3Client.headObject(argThat((HeadObjectRequest r) -> r != null && r.key().equals(Blocks.key(OWNER, HASH_B)))))
+                    .willThrow(S3Exception.builder().statusCode(403).build());
+
+            Throwable thrown = catchThrowable(() -> adapter.findUploaded(OWNER, List.of(HASH_A, HASH_B)));
 
             assertThat(((BusinessException) thrown).getExceptionCase()).isEqualTo(StorageExceptionCase.STORAGE_ERROR);
         }
@@ -248,10 +261,9 @@ class S3StorageAdapterTest {
         @Test
         @DisplayName("실패가 쌓여 서킷이 열리면 S3를 부르지 않고 바로 STORAGE_UNAVAILABLE")
         void opensTheCircuitAndAnswersAtOnce() {
-            given(s3Client.putObject(any(PutObjectRequest.class), any(RequestBody.class)))
-                    .willThrow(SdkClientException.create("timeout"));
+            given(s3Client.headObject(any(HeadObjectRequest.class))).willThrow(SdkClientException.create("timeout"));
             for (int i = 0; i < 2; i++) {
-                assertThat(((BusinessException) catchThrowable(() -> adapter.storeBlock(KEY, new byte[1])))
+                assertThat(((BusinessException) catchThrowable(() -> adapter.findUploaded(OWNER, List.of(HASH_A))))
                         .getExceptionCase()).isEqualTo(StorageExceptionCase.STORAGE_ERROR);
             }
 
@@ -274,41 +286,36 @@ class S3StorageAdapterTest {
         }
 
         @Test
-        @DisplayName("업로드 자리가 가득 차면 기다리지 않고 STORAGE_UNAVAILABLE")
+        @DisplayName("블록 확인 자리가 가득 차면 기다리지 않고 STORAGE_UNAVAILABLE")
         void refusesWhenTheBulkheadIsFull() {
-            bulkheads.bulkhead("s3Write").tryAcquirePermission();
+            fill(bulkheads.bulkhead("s3Lookup"));
 
-            Throwable thrown = catchThrowable(() -> adapter.storeBlock(KEY, new byte[1]));
+            Throwable thrown = catchThrowable(() -> adapter.findUploaded(OWNER, List.of(HASH_A)));
 
             assertThat(((BusinessException) thrown).getExceptionCase()).isEqualTo(StorageExceptionCase.STORAGE_UNAVAILABLE);
             then(s3Client).shouldHaveNoInteractions();
         }
 
         @Test
-        @DisplayName("업로드 자리가 가득 차도 다운로드는 자기 자리로 S3를 부른다")
-        void keepsReadsApartFromWrites() throws IOException {
-            stubS3();
-            adapter.storeBlock(KEY, "a".getBytes());
-            bulkheads.bulkhead("s3Write").tryAcquirePermission();
+        @DisplayName("블록 확인 자리가 가득 차도 다운로드는 자기 자리로 S3를 부른다")
+        void keepsReadsApartFromLookups() {
+            stubGet(Map.of(KEY, "a".getBytes()));
+            fill(bulkheads.bulkhead("s3Lookup"));
 
             assertThat(adapter.retrieveBlocks(List.of(KEY))).containsExactly("a".getBytes());
         }
+
+        private void fill(io.github.resilience4j.bulkhead.Bulkhead bulkhead) {
+            while (bulkhead.tryAcquirePermission()) {
+                // take every seat
+            }
+        }
     }
 
-    private void stubS3() throws IOException {
-        stubPut();
+    private void stubGet(Map<String, byte[]> bucket) {
         willAnswer(invocation -> {
             GetObjectRequest request = invocation.getArgument(0);
-            return ResponseBytes.fromByteArray(GetObjectResponse.builder().build(), fakeBucket.get(request.key()));
+            return ResponseBytes.fromByteArray(GetObjectResponse.builder().build(), bucket.get(request.key()));
         }).given(s3Client).getObjectAsBytes(any(GetObjectRequest.class));
-    }
-
-    private void stubPut() throws IOException {
-        willAnswer(invocation -> {
-            PutObjectRequest request = invocation.getArgument(0);
-            RequestBody body = invocation.getArgument(1);
-            fakeBucket.put(request.key(), body.contentStreamProvider().newStream().readAllBytes());
-            return PutObjectResponse.builder().build();
-        }).given(s3Client).putObject(any(PutObjectRequest.class), any(RequestBody.class));
     }
 }

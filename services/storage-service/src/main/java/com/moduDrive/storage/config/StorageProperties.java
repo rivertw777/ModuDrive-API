@@ -12,8 +12,6 @@ import java.time.Duration;
 public class StorageProperties {
 
     private S3Properties s3 = new S3Properties();
-    /** Base64-encoded AES key (16/24/32 raw bytes), e.g. generated via `openssl rand -base64 32`. */
-    private String encryptionKey;
     /** Per-file download volume allowed within {@link #downloadQuotaWindow} before further
      * downloads of that file are blocked. Default 10 GiB. */
     private long downloadQuotaPerFileBytes = 10L * 1024 * 1024 * 1024;
@@ -23,6 +21,9 @@ public class StorageProperties {
     @Setter
     public static class S3Properties {
         private String endpoint;
+        /** Where the browser reaches the same S3 — what presigned upload URLs point at (spec 001 6).
+         * Locally LocalStack as seen from the host; blank = real AWS S3, the same for both. */
+        private String publicEndpoint;
         private String bucket = "modudrive";
         private String accessKey;
         private String secretKey;

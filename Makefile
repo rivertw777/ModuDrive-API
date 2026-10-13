@@ -14,8 +14,8 @@ DEMO_COMPOSE_FILE := .docker/docker-compose.demo.yml
 
 service:
 	@echo "$(BLUE)🚀 Starting all services...$(NC)"
-	@chmod +x .scripts/start.sh
-	@./.scripts/start.sh
+	@chmod +x .scripts/local/start.sh
+	@./.scripts/local/start.sh
 
 network:
 	@docker network inspect modudrive_network >/dev/null 2>&1 || docker network create modudrive_network
@@ -38,8 +38,8 @@ demo:
 
 reset:
 	@echo "$(RED)🧨 Wiping all data volumes (infra + observability) and restarting everything...$(NC)"
-	@chmod +x .scripts/reset.sh
-	@./.scripts/reset.sh
+	@chmod +x .scripts/local/reset.sh
+	@./.scripts/local/reset.sh
 
 gateway:
 	@echo "$(BLUE)🚀 Starting Gateway Service...$(NC)"

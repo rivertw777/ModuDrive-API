@@ -4,8 +4,8 @@
 #   - Aurora/RDS: a daily AWS Backup snapshot, copied to a vault there (backup_copy_vault_arn)
 #   - storage blocks: S3 replication to a bucket there (backup_bucket_arn), Glacier IR
 # Both need the backup account set up first (003-aws-migration.md 4-7). MemoryDB isn't covered: AWS Backup
-# doesn't take it, and what it holds (sessions, codes, upload records) is re-creatable — a restore
-# logs everyone out. The block key, STORAGE_ENCRYPTION_KEY, is copied by hand once (same section).
+# doesn't take it, and what it holds (sessions, codes, upload sweep schedule) is re-creatable — a restore
+# logs everyone out.
 locals {
   backup_copy   = var.backup_copy_vault_arn != null
   backup_bucket = var.backup_bucket_arn != null
@@ -89,7 +89,7 @@ resource "aws_backup_selection" "databases" {
 # ---------------------------------------------------------------------------------------------------
 # Block replication. Deletes don't replicate (delete markers stay here), so a purge — by the app, a bug
 # or an intruder — leaves the copy whole; how long the copy keeps blocks is the backup account's
-# lifecycle rule. The copy is still ciphertext without STORAGE_ENCRYPTION_KEY.
+# lifecycle rule.
 resource "aws_iam_role" "replication" {
   count = local.backup_bucket ? 1 : 0
 

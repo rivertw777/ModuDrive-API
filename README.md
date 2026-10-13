@@ -2,9 +2,9 @@
 
 <br>
 
-모두드라이브는 파일을 안전하게 보관하고, 다른 사람과 공유할 수 있는 **클라우드 스토리지 서비스**입니다.
+모두드라이브는 파일을 안전하게 보관하고, 다른 사람과 공유할 수 있는 **클라우드 드라이브 서비스**입니다.
 
-파일을 블록 단위로 나눠 압축·암호화한 뒤 저장하고, 변경된 블록만 전송하는 **블록 기반 업로드**를 구현해 대용량 파일도 빠르고 효율적으로 올릴 수 있게 하였습니다.
+파일을 4MB 블록의 해시 목록으로 표현해 변경된 블록만 전송하고, 블록은 Presigned URL로 S3에 직접 올려 서버를 거치지 않는 **블록 기반 업로드**를 구현해 대용량 파일도 빠르고 효율적으로 올릴 수 있게 하였습니다.
 
 또한 비동기 메시징과 서킷 브레이커 기반 장애 격리를 적용해, 일부 서비스나 외부 시스템에 장애가 발생해도 안정적으로 서비스할 수 있는 시스템을 구축하였습니다.
 
@@ -56,7 +56,7 @@
   <tr><td align="center">auth-service</td><td align="center">로그인, Redis 서버 세션, 새 기기 이메일 인증</td></tr>
   <tr><td align="center">member-service</td><td align="center">회원가입, 회원 조회, 비밀번호 검증</td></tr>
   <tr><td align="center">file-service</td><td align="center">파일 메타데이터, 버전, 공유, 폴더 관리</td></tr>
-  <tr><td align="center">storage-service</td><td align="center">블록 분할·압축·암호화, S3 업로드/다운로드</td></tr>
+  <tr><td align="center">storage-service</td><td align="center">블록 업로드 URL 발급, 블록 확인, S3 다운로드</td></tr>
   <tr><td align="center">mail-service</td><td align="center">메일 발송 (SQS 소비)</td></tr>
   <tr><td align="center">notification-service</td><td align="center">인앱 알림 (SQS 소비)</td></tr>
 </table>
@@ -70,8 +70,7 @@
 
 <br>
 
-- [블록 기반 업로드](https://github.com/rivertw777/ModuDrive-API/wiki/%EB%B8%94%EB%A1%9D-%EA%B8%B0%EB%B0%98-%EC%97%85%EB%A1%9C%EB%93%9C)
-- [파일 메타데이터와 스토리지의 정합성 보장](https://github.com/rivertw777/ModuDrive-API/wiki/%ED%8C%8C%EC%9D%BC-%EB%A9%94%ED%83%80%EB%8D%B0%EC%9D%B4%ED%84%B0%EC%99%80-%EC%8A%A4%ED%86%A0%EB%A6%AC%EC%A7%80%EC%9D%98-%EC%A0%95%ED%95%A9%EC%84%B1-%EB%B3%B4%EC%9E%A5)
+- [파일 업로드 설계하기 (블록 기반)](https://nicky777.tistory.com/27)
 - [분산 트레이싱 도입](https://github.com/rivertw777/ModuDrive-API/wiki/%EB%B6%84%EC%82%B0-%ED%8A%B8%EB%A0%88%EC%9D%B4%EC%8B%B1-%EB%8F%84%EC%9E%85)
 
 <br>
@@ -82,8 +81,8 @@
 
 <br>
 
+- [외부 메일 API 장애 대응하기 (멱등성 보장하기)](https://nicky777.tistory.com/26)
 - [폴더 삭제 기능 성능 개선](https://github.com/rivertw777/ModuDrive-API/wiki/%ED%8F%B4%EB%8D%94-%EC%82%AD%EC%A0%9C-%EA%B8%B0%EB%8A%A5-%EC%84%B1%EB%8A%A5-%EA%B0%9C%EC%84%A0)
-- [외부 API 장애 대응하기](https://github.com/rivertw777/ModuDrive-API/wiki/%EC%99%B8%EB%B6%80-API-%EC%9E%A5%EC%95%A0-%EB%8C%80%EC%9D%91%ED%95%98%EA%B8%B0)
 
 <br>
 

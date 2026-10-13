@@ -6,6 +6,7 @@ import com.moduDrive.storage.application.port.out.ClaimStaleUploadsPort;
 import com.moduDrive.storage.application.port.out.ClaimStaleUploadsPort.UploadedBlock;
 import com.moduDrive.storage.application.port.out.DeleteBlocksPort;
 import com.moduDrive.storage.application.port.out.FindCommittedBlocksPort;
+import com.moduDrive.storage.application.port.out.FindScheduledUploadsPort;
 import com.moduDrive.storage.domain.model.Blocks;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -20,10 +21,10 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-/** Deletes blocks that were uploaded and never committed. Only uploads older than
- * {@link Blocks#UPLOAD_TTL} (plus a margin) are claimed — by then their upload record is gone, so no
- * commit can still use them. A block that did get committed is file-service's to delete, so it is
- * left alone. */
+/** Deletes blocks that were uploaded and never committed. Only blocks whose upload URL was last signed
+ * more than {@link Blocks#UPLOAD_TTL} + {@link #MARGIN} ago are claimed — a commit takes a block only
+ * within UPLOAD_TTL of that signing, and the URL itself is long expired, so nothing can still use or
+ * write them. A block that did get committed is file-service's to delete, so it is left alone. */
 @UseCase
 @RequiredArgsConstructor
 class PurgeUncommittedUploadsService implements PurgeUncommittedUploadsUseCase {
@@ -34,6 +35,7 @@ class PurgeUncommittedUploadsService implements PurgeUncommittedUploadsUseCase {
 
     private final ClaimStaleUploadsPort claimStaleUploadsPort;
     private final FindCommittedBlocksPort findCommittedBlocksPort;
+    private final FindScheduledUploadsPort findScheduledUploadsPort;
     private final DeleteBlocksPort deleteBlocksPort;
 
     @Override
@@ -47,7 +49,7 @@ class PurgeUncommittedUploadsService implements PurgeUncommittedUploadsUseCase {
                     UploadedBlock::ownerId, Collectors.mapping(UploadedBlock::hash, Collectors.toList())));
             List<UploadedBlock> failed = new ArrayList<>();
             hashesByOwner.forEach((ownerId, hashes) -> {
-                if (!purge(ownerId, hashes, decidedAt)) {
+                if (!purge(ownerId, hashes, cutoff, decidedAt)) {
                     hashes.forEach(hash -> failed.add(new UploadedBlock(ownerId, hash)));
                 }
             });
@@ -61,12 +63,15 @@ class PurgeUncommittedUploadsService implements PurgeUncommittedUploadsUseCase {
     }
 
     /** False if the owner's blocks couldn't all be dealt with — they are then released, and a
-     * retry is safe: a block already deleted is a no-op. */
-    private boolean purge(UUID ownerId, List<String> hashes, Instant decidedAt) {
+     * retry is safe: a block already deleted is a no-op. A block whose URL was signed again since it
+     * was claimed is left too, checked last: re-uploading a block already in S3 doesn't rewrite it
+     * (If-None-Match), so the object's age can't tell — only the schedule can. */
+    private boolean purge(UUID ownerId, List<String> hashes, Instant cutoff, Instant decidedAt) {
         try {
             Set<String> committed = findCommittedBlocksPort.findCommitted(ownerId, hashes);
+            Set<String> signedAgain = findScheduledUploadsPort.findScheduledSince(ownerId, hashes, cutoff);
             hashes.stream()
-                    .filter(hash -> !committed.contains(hash))
+                    .filter(hash -> !committed.contains(hash) && !signedAgain.contains(hash))
                     .forEach(hash -> deleteBlocksPort.deleteUnlessRewritten(Blocks.key(ownerId, hash), decidedAt));
             return true;
         } catch (RuntimeException e) {

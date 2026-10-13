@@ -151,10 +151,13 @@ SQS를 고른 이유(Kafka, RabbitMQ와 비교)와 큐 목록은 [005 메시징]
 
 `S3Config`는 환경에 따라 다르게 움직인다. endpoint가 있으면(로컬 LocalStack) `endpointOverride`와 path-style을 쓰고, 기동할 때 버킷이 없으면 만든다. access key가 없으면 SDK 기본 체인으로 task role을 쓴다.
 
-AWS 버킷(`modudrive-storage-<계정>`)은 Terraform이 만든다. storage-service의 task role은 객체 읽기·쓰기·삭제만 할 수 있고 버킷을 만들 권한은 없다.
+AWS 버킷(`modudrive-storage-<계정>`)은 Terraform이 만든다. storage-service의 task role은 `blocks/` 아래 객체 읽기·쓰기·삭제와 버킷 목록(`ListBucket`)만 할 수 있고 버킷을 만들 권한은 없다. 블록 PUT은 이 역할로 서명한 Presigned URL로 브라우저가 한다.
+
+- `ListBucket`이 없으면 S3는 없는 키의 HEAD에 404 대신 403을 준다. `s3:prefix` 조건도 걸지 않는다 — HEAD에는 prefix가 없어 조건이 맞지 않는다. commit의 블록 확인과 미커밋 블록 정리는 아직 안 올라온 블록에 HEAD를 보내므로 꼭 있어야 한다. LocalStack은 IAM을 검사하지 않아 로컬에서는 드러나지 않는다.
 
 - 퍼블릭 액세스는 막혀 있고, HTTPS가 아닌 요청은 버킷 정책이 거절한다.
-- 블록은 앱이 암호화해서 올리고, 버킷이 그 위에 한 번 더 암호화한다. 버킷 쪽 키는 demo가 SSE-S3, prod가 KMS 고객 관리 키다.
+- 블록은 받은 바이트 그대로 저장되고 버킷이 암호화한다. demo는 SSE-S3, prod는 KMS 고객 관리 키라 버킷 읽기 권한만으로는 원본을 읽지 못한다.
+- 버킷 CORS는 WEB 출처의 `PUT`과 서명된 헤더(`if-none-match`, `x-amz-checksum-sha256`)만 연다.
 - 블록은 오래됐다고 지우지 않는다. 지우는 건 앱이다(`storage-blocks-purge-requested`). 수명 주기 규칙은 7일 넘게 끝나지 않은 multipart 업로드를 치우고, prod에서는 30일 지난 이전 버전도 지운다(4-4).
 
 ### 1-9. 메일
@@ -169,9 +172,7 @@ SMTP가 아니라 SES API(`spring-cloud-aws-starter-ses`, `SendRawEmail`)로 보
 
 도메인이 있어야 만들어지는 것도 있다. SES 도메인 identity, DKIM, MAIL FROM 레코드는 `domain_name`이 비어 있으면 만들지 않는다(1-11).
 
-AWS 계정에서 손으로 할 일이 하나 있다. SES 샌드박스 해제 요청이다. 안 하면 인증된 주소로만 보낼 수 있다. 그리고 실제 SES로 처음 보낼 때 `deliveryId` 태그(`<queue>_<outboxId>`)가 거절되지 않는지 확인한다. LocalStack은 태그 값을 검사하지 않아서 로컬에서는 알 수 없다.
-
-샌드박스가 풀리기 전까지 demo는 Gmail SMTP로 보낸다. tfvars에 `smtp_username`(필요하면 `smtp_from`)을 넣으면 태스크에 `MAIL_TRANSPORT=smtp`가 들어가고 `SmtpMailAdapter`가 SES 대신 쓰인다. 앱 비밀번호는 SSM `/modudrive/SMTP_PASSWORD`에 손으로 넣는다. SMTP에는 Send 이벤트가 없어서, 서버가 메일을 받은 뒤 타임아웃이 나면 재시도로 두 번 갈 수 있다. 샌드박스가 풀리면 `smtp_username`을 지운다.
+AWS 계정에서 손으로 할 일이 하나 있다. SES 샌드박스 해제 요청이다. 안 하면 인증된 주소로만 보낼 수 있다(demo 계정은 2026-10 승인됨). 그리고 실제 SES로 처음 보낼 때 `deliveryId` 태그(`<queue>_<outboxId>`)가 거절되지 않는지 확인한다. LocalStack은 태그 값을 검사하지 않아서 로컬에서는 알 수 없다.
 
 ### 1-10. 시크릿
 
@@ -180,9 +181,7 @@ AWS 계정에서 손으로 할 일이 하나 있다. SES 샌드박스 해제 요
 | 서비스별 DB 비밀번호 | `.env`의 `*_DB_PASSWORD` | SSM SecureString (`random_password`) |
 | DB 관리자 비밀번호 | `.env`의 `POSTGRES_PASSWORD` | RDS가 Secrets Manager에서 관리 |
 | `REDIS_PASSWORD` | `.env` | SSM, 클러스터마다 |
-| `STORAGE_ENCRYPTION_KEY` | `.env` | SSM (`random_bytes`, 삭제 방지) |
 | Discord 웹후크 2개 | `.env` (LocalStack SSM으로 들어감) | SSM (값은 손으로 넣음, 1-13) |
-| `SMTP_PASSWORD` | 없음 | SSM, `smtp_username`을 넣은 환경만 (값은 손으로 넣음, 1-9) |
 | `SQS_*`, `SES_ENDPOINT`, `STORAGE_S3_*`, `LOCALSTACK_AUTH_TOKEN` | `.env` | 없음 (task role, 실제 endpoint) |
 
 값은 ECS 태스크 정의의 `secrets`로 환경 변수에 들어간다. 태스크가 뜰 때 SSM에서 읽어 오므로 태스크 정의에는 남지 않고, 앱은 로컬과 똑같이 `${...}`로 읽는다.
@@ -429,7 +428,7 @@ tfvars의 값을 바꿀 때 데이터가 날아가거나 서비스가 끊기는 
 
 - ECS 용량(Spot ↔ 일반)을 바꾸거나 서브넷이 바뀌면 서비스가 교체된다. DB 클래스를 바꾸면 재시작된다. 사용자가 없을 때 한다.
 - `db_engine`을 바꾸면(`rds` ↔ `aurora`) 기존 DB가 지워지고 빈 DB가 새로 생긴다. 스냅샷 복원이나 덤프로 데이터를 옮긴 뒤에 바꾼다. 인스턴스 하나에 모아 둔 DB를 서비스별로 나눌 때도 마찬가지다. 공용 인스턴스 이름이 `file`이라 file_db는 그 자리에 남지만, member, auth, notification DB는 새 클러스터로 옮겨야 한다.
-- `redis_engine`을 바꾸면(`elasticache` ↔ `memorydb`) 클러스터가 전부 새로 생긴다. 세션이 사라져 전원 로그아웃되고, 이메일 인증 토큰, 메일 소비 기록, 업로드 기록, 다운로드 한도, zip 토큰도 사라진다. 올리던 블록은 다시 보내면 된다.
+- `redis_engine`을 바꾸면(`elasticache` ↔ `memorydb`) 클러스터가 전부 새로 생긴다. 세션이 사라져 전원 로그아웃되고, 이메일 인증 토큰, 메일 소비 기록, 업로드 정리 대상, 다운로드 한도, zip 토큰도 사라진다. 정리 대상을 잃은 미커밋 블록은 S3에 남는다(비용만 든다).
 - MemoryDB 파라미터 그룹(`memorydb_valkey7`, 엔진 7.3)과 ElastiCache 파라미터 그룹(`valkey8`, 엔진 8.1)은 엔진 버전이 다르다. 기존 클러스터에 적용하기 전에 엔진 버전부터 확인한다.
 
 ---
@@ -448,7 +447,7 @@ tfvars의 값을 바꿀 때 데이터가 날아가거나 서비스가 끊기는 
 | ECS | Fargate Spot, 전부 0.5 vCPU / 1 GB, 서비스마다 1개 고정 (오토스케일 없음) |
 | DB | RDS 1대 (db.t4g.micro, 단일 AZ)에 DB 4개, 백업 1일(무료 플랜 한도) |
 | Redis | ElastiCache 1개 (cache.t4g.micro, 노드 1개), 모든 서비스가 같이 씀 |
-| 메일 | Gmail SMTP (SES 샌드박스 해제 전까지, 1-9) |
+| 메일 | SES (`noreply@modudrive.help`, 1-9) |
 | 암호화 | AWS 관리 키 (SSE-S3, SSE-SQS, `aws/ssm` 등) |
 | 보안 강화 (`hardened`) | 끔. WAF, Service Connect TLS, 감사 로그, GuardDuty 없음 |
 | 삭제 방지, Container Insights | 끔 |
@@ -569,7 +568,7 @@ ElastiCache는 복제가 비동기라 장애 조치 때 마지막 쓰기를 잃�
 | `auth` | db.r7g.large | 세션, 로그인 시도 제한 |
 | `member` | db.t4g.medium | 가입 인증 코드 |
 | `mail` | db.t4g.medium | 소비 기록 |
-| `storage` | db.r7g.xlarge, 샤드 2개 | 업로드 기록(사용자당 하루 최대 25,600키), 다운로드 한도, zip 토큰 |
+| `storage` | db.r7g.xlarge, 샤드 2개 | 업로드 정리 대상(사용자당 하루 최대 25,600항목), 다운로드 한도, zip 토큰 |
 
 - 스냅샷은 35일 보관한다.
 - 클러스터 모드라서 한 명령에서 함께 쓰는 키에는 해시 태그를 붙인다.
@@ -625,10 +624,9 @@ S3 버전 관리도 켠다. 지워지거나 덮어쓰인 블록을 30일 동안 
 | 규칙 | 설정 | 이유 |
 |---|---|---|
 | 공통 규칙의 본문 8KB 초과 차단 | 기록만 | commit 요청은 블록 해시를 전부 담아서 큰 파일이면 8KB를 넘는다. 본문 크기 제한은 앱이 맡는다 |
-| 공통 규칙, SQLi 규칙 | 블록 업로드(`/api/v1/storage/blocks`)는 제외 | 본문이 파일 바이트 그대로라 .html이나 .sql 파일을 올리면 XSS, SQLi 패턴에 걸린다 |
 | 알려진 악성 입력 중 본문 검사 2개 (Log4J, Java 역직렬화) | 기록만 | 로그 파일이나 .ser 파일을 올리면 걸린다. 헤더와 경로 검사는 그대로 막는다 |
 | 로그인·인증 경로 한도 | IP당 5분에 100회 | 아래 설명 |
-| 전체 요청 한도 | IP당 5분에 20,000회 | 업로드는 블록마다 요청을 하나씩 보내고, 회사망이나 통신사 NAT 뒤에는 사용자가 여럿 모여 있어서 넉넉히 잡았다 |
+| 전체 요청 한도 | IP당 5분에 20,000회 | 회사망이나 통신사 NAT 뒤에는 사용자가 여럿 모여 있어서 넉넉히 잡았다. 블록 PUT은 S3로 바로 가므로 여기 세지 않는다 |
 
 로그인·인증 경로 한도는 세션 없이 비밀번호나 코드를 확인하거나 메일을 보내는 경로에 건다. `/api/v1/auth/login`, `/api/v1/auth/verify-email/*`, `/api/v1/member/sign-up`, `/api/v1/member/verify-email/*`가 여기 해당한다. 앱은 계정과 기기 단위로만 시도를 제한하므로, 한 주소에서 여러 계정을 대입하거나 메일을 쏟아내는 건 여기서 막는다. 경로는 URL 디코딩과 정규화를 거친 뒤 비교하므로 `//`나 `%2F`로 비켜 갈 수 없다.
 
@@ -678,20 +676,12 @@ CloudTrail은 전 리전을 기록하지만 GuardDuty, Config, Security Hub는 �
 |---|---|---|
 | Aurora (서비스별 DB) | AWS Backup이 매일 05:00 스냅샷을 떠서 백업 계정 볼트로 복사 (`backup_copy_vault_arn`) | 90일 (이 계정 볼트에는 7일) |
 | storage 블록 (S3) | S3 복제로 백업 계정 버킷에, Glacier Instant Retrieval (`backup_bucket_arn`) | 백업 계정의 수명 주기 규칙 |
-| `STORAGE_ENCRYPTION_KEY` | 손으로 한 번 복사 (아래) | 영구 |
 | MemoryDB | 복사하지 않음 | |
 
 - 삭제는 복제하지 않는다. 앱의 블록 정리든 버그든 침입자든, prod에서 지운 블록은 사본에 그대로 남는다. 사본을 언제 지울지는 백업 계정의 수명 주기 규칙이 정한다.
-- 블록 사본은 앱이 이미 암호화한 바이트라서 `STORAGE_ENCRYPTION_KEY` 없이는 읽을 수 없다. 키를 잃으면 원본도 사본도 쓸모가 없으니 키도 백업 계정에 둔다. 키는 바뀌지 않으므로(`prevent_destroy`) 한 번만 복사하면 된다.
+- 블록은 원본 바이트 그대로라([001 1-2](../spec/001-file-upload-spec.md#1-2-저장-위치)) 사본만으로 복원할 수 있다. 사본 버킷의 암호화는 백업 계정 쪽 설정을 따른다.
 
-  ```bash
-  aws ssm get-parameter --name /modudrive/STORAGE_ENCRYPTION_KEY --with-decryption \
-    --query Parameter.Value --output text --profile prod \
-  | aws secretsmanager create-secret --name modudrive-prod/STORAGE_ENCRYPTION_KEY \
-    --secret-string file:///dev/stdin --profile backup
-  ```
-
-- MemoryDB는 AWS Backup이 지원하지 않는다. 담긴 것(세션, 인증 코드, 업로드 기록, 다운로드 한도)은 다시 생기는 값이라, 잃더라도 전원 다시 로그인하고 올리던 블록을 다시 보내면 된다.
+- MemoryDB는 AWS Backup이 지원하지 않는다. 담긴 것(세션, 인증 코드, 업로드 정리 대상, 다운로드 한도)은 다시 생기는 값이라, 잃더라도 전원 다시 로그인하면 된다.
 
 #### 백업 계정에 먼저 만들 것
 

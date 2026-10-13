@@ -54,8 +54,10 @@ moved {
   to   = aws_ssm_parameter.redis_password["auth"]
 }
 
-# AES-256 key for file blocks, Base64 as storage-service decodes it (S3StorageAdapter).
-# Losing or changing it makes every stored block unreadable — never regenerate.
+# Former AES-256 key for file blocks. Nothing reads it since blocks go to S3 as-is through presigned
+# URLs (spec 001 6), and blocks written with it are unreadable to the app (spec 001 1-2: reset). Kept
+# only because prevent_destroy refuses a plain removal — once no old block is left anywhere (backup
+# copies included), drop the lifecycle blocks in one apply, then the resources in the next.
 resource "random_bytes" "storage_encryption_key" {
   length = 32
 
@@ -81,21 +83,6 @@ resource "aws_ssm_parameter" "discord_webhook" {
   for_each = toset(["DISCORD_MESSAGING_WEBHOOK_URL", "DISCORD_SERVICE_WEBHOOK_URL"])
 
   name   = "/${var.project}/${each.key}"
-  type   = "SecureString"
-  key_id = local.kms_key_arn
-  value  = "set-by-hand"
-
-  lifecycle {
-    ignore_changes = [value]
-  }
-}
-
-# Gmail app password for SMTP mail (var.smtp_username), made in the Google account and set by hand
-# like the webhooks.
-resource "aws_ssm_parameter" "smtp_password" {
-  count = var.smtp_username == null ? 0 : 1
-
-  name   = "/${var.project}/SMTP_PASSWORD"
   type   = "SecureString"
   key_id = local.kms_key_arn
   value  = "set-by-hand"

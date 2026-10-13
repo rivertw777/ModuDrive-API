@@ -6,6 +6,6 @@ import java.util.UUID;
 
 public interface FindUploadedBlocksPort {
 
-    /** The blocks among {@code hashes} uploaded within {@code Blocks.UPLOAD_TTL} (hash → size). */
+    /** The blocks among {@code hashes} in S3 with the SHA-256 their hash names (hash → size). */
     Map<String, Integer> findUploaded(UUID ownerId, Collection<String> hashes);
 }

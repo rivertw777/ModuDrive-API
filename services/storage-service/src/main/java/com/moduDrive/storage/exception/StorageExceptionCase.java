@@ -9,12 +9,10 @@ import org.springframework.http.HttpStatus;
 @AllArgsConstructor
 public enum StorageExceptionCase implements ExceptionCase {
 
-    /** Empty, the bytes don't match the given hash, or hashes and blocks don't pair up. */
-    INVALID_BLOCK(HttpStatus.BAD_REQUEST, "블록 내용이 해시와 일치하지 않습니다."),
+    /** No blocks or over 64 in one URL request, a malformed hash, or an empty block (spec 001 6-2). */
+    INVALID_BLOCK(HttpStatus.BAD_REQUEST, "올바르지 않은 블록입니다."),
     BLOCK_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "블록 하나는 블록 크기를 초과할 수 없습니다."),
-    /** More than 64 blocks or 8MB in one upload request (spec 001 6). */
-    BLOCK_BATCH_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "한 번에 보낼 수 있는 블록 양을 초과했습니다."),
-    /** The owner already uploaded {@code storage.upload-blocks-per-window} blocks in the last 24h. */
+    /** The owner already got {@code storage.upload-blocks-per-window} upload URLs in the last 24h. */
     UPLOAD_LIMIT_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, "24시간 업로드 한도를 초과했습니다. 나중에 다시 시도해 주세요."),
     FILE_NOT_FOUND_IN_STORAGE(HttpStatus.NOT_FOUND, "스토리지에서 파일을 찾을 수 없습니다."),
     STORAGE_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "스토리지 오류가 발생했습니다."),

@@ -12,8 +12,10 @@ import software.amazon.awssdk.awscore.retry.AwsRetryStrategy;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.S3ClientBuilder;
+import software.amazon.awssdk.services.s3.S3Configuration;
 import software.amazon.awssdk.services.s3.model.BucketAlreadyOwnedByYouException;
 import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
 import java.net.URI;
 
@@ -51,6 +53,23 @@ public class S3Config {
             createBucketIfMissing(client, s3.getBucket(), s3.getRegion());
         }
         return client;
+    }
+
+    /** Signs block upload URLs (spec 001 6) with the same credentials as {@link #s3Client} — the
+     * task role on AWS, so the URL carries its session token. Signing is local: nothing is sent. */
+    @Bean(destroyMethod = "close")
+    public S3Presigner s3Presigner(StorageProperties properties) {
+        StorageProperties.S3Properties s3 = properties.getS3();
+        S3Presigner.Builder builder = S3Presigner.builder().region(Region.of(s3.getRegion()));
+        if (StringUtils.hasText(s3.getPublicEndpoint())) {
+            builder.endpointOverride(URI.create(s3.getPublicEndpoint()))
+                    .serviceConfiguration(S3Configuration.builder().pathStyleAccessEnabled(true).build());
+        }
+        if (StringUtils.hasText(s3.getAccessKey())) {
+            builder.credentialsProvider(StaticCredentialsProvider.create(
+                    AwsBasicCredentials.create(s3.getAccessKey(), s3.getSecretKey())));
+        }
+        return builder.build();
     }
 
     private void createBucketIfMissing(S3Client client, String bucket, String region) {

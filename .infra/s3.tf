@@ -1,5 +1,6 @@
-# File blocks (storage-service). The service encrypts blocks itself (STORAGE_ENCRYPTION_KEY); the
-# bucket encrypts again on top — with the customer KMS key when hardened (prod), SSE-S3 otherwise. Its task role gets object access only — no CreateBucket (003-aws-migration.md 1-8).
+# File blocks. The WEB PUTs them here directly through presigned URLs storage-service signs (spec 001
+# 6); the bucket encrypts them — with the customer KMS key when hardened (prod), SSE-S3 otherwise. The
+# task role gets object access only — no CreateBucket (003-aws-migration.md 1-8).
 resource "aws_s3_bucket" "storage" {
   bucket = "${var.project}-storage-${data.aws_caller_identity.current.account_id}"
 
@@ -27,6 +28,19 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "storage" {
     }
     # One data key per object batch instead of a KMS call per block.
     bucket_key_enabled = var.hardened
+  }
+}
+
+# The browser PUTs blocks cross-origin from the WEB (spec 001 6): only that origin, only PUT, only the
+# headers the URL is signed with.
+resource "aws_s3_bucket_cors_configuration" "storage" {
+  bucket = aws_s3_bucket.storage.id
+
+  cors_rule {
+    allowed_origins = [local.client_url]
+    allowed_methods = ["PUT"]
+    allowed_headers = ["content-type", "if-none-match", "x-amz-checksum-sha256"]
+    max_age_seconds = 3600
   }
 }
 
