@@ -164,18 +164,35 @@ jobs:
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
+          todo=()
           for svc in $SERVICES; do
-            repo="$PROJECT/$svc-service"
-            if aws ecr describe-images --repository-name "$repo" --image-ids imageTag="$TAG" >/dev/null 2>&1; then
-              echo "$repo:$TAG already pushed"
-              continue
+            if aws ecr describe-images --repository-name "$PROJECT/$svc-service" --image-ids imageTag="$TAG" >/dev/null 2>&1; then
+              echo "$PROJECT/$svc-service:$TAG already pushed"
+            else
+              todo+=("$svc")
             fi
-            ./gradlew -q ":services:$svc-service:prepareDockerContext"
-            dir="services/$svc-service/build/docker"
-            jar=$(basename "$(ls "$dir"/*.jar)")
-            docker build --build-arg JAR_FILE="$jar" -t "$REGISTRY/$repo:$TAG" "$dir"
-            docker push "$REGISTRY/$repo:$TAG"
           done
+          [ ${#todo[@]} -eq 0 ] && exit 0
+
+          # One Gradle run for every context (parallel ones would fight over the build), then the images in parallel.
+          ./gradlew -q $(printf ':services:%s-service:prepareDockerContext ' "${todo[@]}")
+          pids=()
+          for svc in "${todo[@]}"; do
+            (
+              set -e
+              image="$REGISTRY/$PROJECT/$svc-service:$TAG"
+              dir="services/$svc-service/build/docker"
+              docker build --build-arg JAR_FILE="$(basename "$(ls "$dir"/*.jar)")" -t "$image" "$dir"
+              docker push "$image"
+            ) > "push-$svc.log" 2>&1 &
+            pids+=($!)
+          done
+          failed=0
+          for i in "${!todo[@]}"; do
+            wait "${pids[$i]}" || { echo "::error::${todo[$i]}-service image failed"; failed=1; }
+            echo "::group::${todo[$i]}-service"; cat "push-${todo[$i]}.log"; echo "::endgroup::"
+          done
+          exit $failed
 
       # Starts from the family's latest revision, so a task-definition change Terraform registered
       # since the last deploy rolls out with this one. Schema changes must suit the old and the new
