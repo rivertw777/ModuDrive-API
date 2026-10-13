@@ -52,13 +52,13 @@
 <div align="center">
 <table align="center">
   <tr><th>서비스</th><th>역할</th></tr>
-  <tr><td align="center">gateway-service</td><td align="center">Spring Cloud Gateway, 세션 인증·CSRF 검사</td></tr>
-  <tr><td align="center">auth-service</td><td align="center">로그인, Redis 서버 세션, 새 기기 이메일 인증</td></tr>
-  <tr><td align="center">member-service</td><td align="center">회원가입, 회원 조회, 비밀번호 검증</td></tr>
-  <tr><td align="center">file-service</td><td align="center">파일 메타데이터, 버전, 공유, 폴더 관리</td></tr>
-  <tr><td align="center">storage-service</td><td align="center">블록 업로드 URL 발급, 블록 확인, S3 다운로드</td></tr>
-  <tr><td align="center">mail-service</td><td align="center">메일 발송 (SQS 소비)</td></tr>
-  <tr><td align="center">notification-service</td><td align="center">인앱 알림 (SQS 소비)</td></tr>
+  <tr><td><code>gateway-service</code></td><td>요청 진입점 · 세션 인증 · CSRF 차단</td></tr>
+  <tr><td><code>auth-service</code></td><td>로그인 · 세션 관리 · 새 기기 이메일 인증</td></tr>
+  <tr><td><code>member-service</code></td><td>회원가입 · 회원 정보 · 비밀번호 검증</td></tr>
+  <tr><td><code>file-service</code></td><td>파일·폴더 관리 · 버전 · 공유</td></tr>
+  <tr><td><code>storage-service</code></td><td>S3 블록 업로드 · 다운로드</td></tr>
+  <tr><td><code>mail-service</code></td><td>인증·공유 메일 발송</td></tr>
+  <tr><td><code>notification-service</code></td><td>인앱 알림</td></tr>
 </table>
 </div>
 
