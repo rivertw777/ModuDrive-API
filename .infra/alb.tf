@@ -31,11 +31,14 @@ resource "aws_lb_target_group" "gateway" {
   target_type = "ip"
   vpc_id      = module.vpc.vpc_id
 
-  # Actuator lives on the management port, not the app port (where /actuator/** is 404).
+  # Actuator lives on the management port, not the app port (where /actuator/** is 404). Two passes
+  # 10s apart put a new task in service — the default (5 × 30s) held every deploy for minutes.
   health_check {
-    port    = "9464"
-    path    = "/actuator/health"
-    matcher = "200"
+    port              = "9464"
+    path              = "/actuator/health"
+    matcher           = "200"
+    interval          = 10
+    healthy_threshold = 2
   }
 
   # Draining waits this long for in-flight requests on a stopping task. Uploads and downloads stream,

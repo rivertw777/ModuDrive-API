@@ -148,9 +148,10 @@ resource "aws_ecs_task_definition" "service" {
     }
 
     # A task that's up but no longer answering gets replaced. busybox wget ships in the alpine image.
+    # Every 10s: a started task counts as healthy (and the deploy moves on) within 10s of being up.
     healthCheck = {
       command  = ["CMD-SHELL", "wget -qO- http://localhost:9464/actuator/health || exit 1"]
-      interval = 30
+      interval = 10
       timeout  = 5
       retries  = 3
       # The most ECS allows: on demo's half vCPU, Spring Boot can take a couple of minutes to start.
