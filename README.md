@@ -82,8 +82,8 @@
 
 <br>
 
+- [외부 메일 API 장애 대응하기 (멱등성 보장하기)](https://nicky777.tistory.com/26)
 - [폴더 삭제 기능 성능 개선](https://github.com/rivertw777/ModuDrive-API/wiki/%ED%8F%B4%EB%8D%94-%EC%82%AD%EC%A0%9C-%EA%B8%B0%EB%8A%A5-%EC%84%B1%EB%8A%A5-%EA%B0%9C%EC%84%A0)
-- [외부 API 장애 대응하기](https://github.com/rivertw777/ModuDrive-API/wiki/%EC%99%B8%EB%B6%80-API-%EC%9E%A5%EC%95%A0-%EB%8C%80%EC%9D%91%ED%95%98%EA%B8%B0)
 
 <br>
 
