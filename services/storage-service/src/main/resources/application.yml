@@ -7,25 +7,20 @@ spring:
       - "classpath:application-redis.yml"
       - "classpath:application-sqs.yml"
       - "classpath:application-resilience4j.yml"
-  servlet:
-    multipart:
-      # Uploads come as up to 8MB of blocks per request, none over 4MB (spec 001 6); this
-      # only needs to cover that plus the multipart envelope (9MB request, 5MB part).
-      max-file-size: ${STORAGE_MULTIPART_MAX_FILE_SIZE}
-      max-request-size: ${STORAGE_MULTIPART_MAX_REQUEST_SIZE}
 
 storage:
   s3:
     endpoint: ${STORAGE_S3_ENDPOINT:}  # blank = real AWS S3
+    # What presigned upload URLs point at — the browser PUTs blocks there (spec 001 6). Blank = real AWS S3.
+    public-endpoint: ${STORAGE_S3_PUBLIC_ENDPOINT:}
     bucket: ${STORAGE_S3_BUCKET}
     access-key: ${STORAGE_S3_ACCESS_KEY:}  # blank = default credential chain (ECS task role)
     secret-key: ${STORAGE_S3_SECRET_KEY:}
     region: ${STORAGE_S3_REGION}
   block-size: ${STORAGE_BLOCK_SIZE}
-  # Block uploads per user per 24h (spec 001) — 25,600 × 4MB = 100GB. Caps what uncommitted
+  # Block upload URLs per user per 24h (spec 001 6-2) — 25,600 × 4MB = 100GB. Caps what uncommitted
   # uploads can pile up in S3 and Redis before the sweep.
   upload-blocks-per-window: ${STORAGE_UPLOAD_BLOCKS_PER_WINDOW:25600}
-  encryption-key: ${STORAGE_ENCRYPTION_KEY}
   # Per-file download volume per rolling window before that file is blocked (Google Drive style).
   # 0 or negative disables the quota.
   download-quota-per-file-bytes: ${STORAGE_DOWNLOAD_QUOTA_PER_FILE_BYTES:10737418240}
@@ -45,12 +40,13 @@ resilience4j:
         baseConfig: default
         record-failure-predicate: com.moduDrive.storage.adapter.out.s3.S3Unavailable
   # Spec 006 2-4-4: S3 never holds more request threads than these, so what doesn't touch S3
-  # (the commit's uploaded-block lookup) keeps answering while S3 is slow.
+  # (signing upload URLs) keeps answering while S3 is slow.
   bulkhead:
     instances:
-      s3Write:
+      # The commit's uploaded-block lookup: HEADs are short, so a moment's wait beats refusing.
+      s3Lookup:
         max-concurrent-calls: 40
-        max-wait-duration: 0
+        max-wait-duration: 1s
       s3Read:
         max-concurrent-calls: 40
         max-wait-duration: 0

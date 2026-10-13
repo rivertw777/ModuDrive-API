@@ -4,7 +4,7 @@
 
 모두드라이브는 파일을 안전하게 보관하고, 다른 사람과 공유할 수 있는 **클라우드 드라이브 서비스**입니다.
 
-파일을 블록 단위로 나눠 압축·암호화한 뒤 저장하고, 변경된 블록만 전송하는 **블록 기반 업로드**를 구현해 대용량 파일도 빠르고 효율적으로 올릴 수 있게 하였습니다.
+파일을 4MB 블록의 해시 목록으로 표현해 변경된 블록만 전송하고, 블록은 Presigned URL로 S3에 직접 올려 서버를 거치지 않는 **블록 기반 업로드**를 구현해 대용량 파일도 빠르고 효율적으로 올릴 수 있게 하였습니다.
 
 또한 비동기 메시징과 서킷 브레이커 기반 장애 격리를 적용해, 일부 서비스나 외부 시스템에 장애가 발생해도 안정적으로 서비스할 수 있는 시스템을 구축하였습니다.
 
@@ -56,7 +56,7 @@
   <tr><td align="center">auth-service</td><td align="center">로그인, Redis 서버 세션, 새 기기 이메일 인증</td></tr>
   <tr><td align="center">member-service</td><td align="center">회원가입, 회원 조회, 비밀번호 검증</td></tr>
   <tr><td align="center">file-service</td><td align="center">파일 메타데이터, 버전, 공유, 폴더 관리</td></tr>
-  <tr><td align="center">storage-service</td><td align="center">블록 분할·압축·암호화, S3 업로드/다운로드</td></tr>
+  <tr><td align="center">storage-service</td><td align="center">블록 업로드 URL 발급, 블록 확인, S3 다운로드</td></tr>
   <tr><td align="center">mail-service</td><td align="center">메일 발송 (SQS 소비)</td></tr>
   <tr><td align="center">notification-service</td><td align="center">인앱 알림 (SQS 소비)</td></tr>
 </table>

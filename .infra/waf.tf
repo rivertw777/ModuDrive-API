@@ -1,8 +1,6 @@
 # Edge filtering in front of the ALB (prod: hardened). AWS managed rules plus per-IP rate limits;
 # the app's own checks (session, login attempt limits, quotas) stay the real gate.
 locals {
-  # Raw file bytes: XSS/SQLi body patterns would block anyone uploading an .html or .sql file.
-  waf_upload_path = "/api/v1/storage/blocks"
   # Everything reachable without a session that checks a password or a code, or sends a mail.
   waf_login_paths = [
     "/api/v1/auth/login",
@@ -91,24 +89,6 @@ resource "aws_wafv2_web_acl" "main" {
             count {}
           }
         }
-
-        scope_down_statement {
-          not_statement {
-            statement {
-              byte_match_statement {
-                search_string         = local.waf_upload_path
-                positional_constraint = "EXACTLY"
-                field_to_match {
-                  uri_path {}
-                }
-                text_transformation {
-                  priority = 0
-                  type     = "NONE"
-                }
-              }
-            }
-          }
-        }
       }
     }
     visibility_config {
@@ -128,24 +108,6 @@ resource "aws_wafv2_web_acl" "main" {
       managed_rule_group_statement {
         vendor_name = "AWS"
         name        = "AWSManagedRulesSQLiRuleSet"
-
-        scope_down_statement {
-          not_statement {
-            statement {
-              byte_match_statement {
-                search_string         = local.waf_upload_path
-                positional_constraint = "EXACTLY"
-                field_to_match {
-                  uri_path {}
-                }
-                text_transformation {
-                  priority = 0
-                  type     = "NONE"
-                }
-              }
-            }
-          }
-        }
       }
     }
     visibility_config {

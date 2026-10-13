@@ -332,25 +332,26 @@ ApiResponse<AuthenticateMemberResponse> authenticateMember(AuthenticateMemberReq
 
 ### 2-4. S3 호출 (storage-service)
 
-S3가 느려지거나 멈춰도 **S3를 쓰지 않는 요청은 그대로 돌아가야 한다.** 특히 file-service의 commit이 부르는 `/internal/storage/blocks/uploaded`(Redis만 봄)가 S3 때문에 느려지면, file-service까지 장애가 번진다.
+S3가 느려지거나 멈춰도 **S3를 쓰지 않는 요청은 그대로 돌아가야 하고, S3를 쓰는 요청은 오래 기다리지 않고 실패해야 한다.** 특히 file-service의 commit이 부르는 `/internal/storage/blocks/uploaded`(S3 HEAD)가 S3 때문에 늘어지면, file-service까지 장애가 번진다.
 
 ```mermaid
 flowchart LR
-    U["블록 업로드<br/>POST /storage/blocks"] --> W["s3Write 벌크헤드 (40)"]
+    I["commit의 블록 확인<br/>/internal/storage/blocks/uploaded"] --> L["s3Lookup 벌크헤드 (40)"]
     D["다운로드 · zip · 미리보기"] --> R["s3Read 벌크헤드 (40)"]
     P["블록 삭제 (SQS · 정리 작업)"] --> X["s3Delete 벌크헤드 (5)"]
-    W --> C["s3CircuitBreaker"]
+    L --> C["s3CircuitBreaker"]
     R --> C
     X --> C
     C --> S3[("S3")]
-    I["/internal/storage/blocks/uploaded"] --> Redis[("Redis")]
+    U["블록 URL 발급<br/>POST /storage/blocks/upload-urls"] --> Redis[("Redis")]
 ```
 
-- S3 호출 하나하나(`PutObject`, `GetObject`, `HeadObject`, `DeleteObject`)를 **벌크헤드 → 서킷 브레이커** 순으로 감싼다 (`S3StorageAdapter`). 다운로드 하나가 블록을 여러 개 읽어도 자리는 블록을 읽는 동안만 잡는다. 느린 클라이언트가 응답을 받는 동안에는 자리를 잡지 않는다.
-- 업로드·다운로드·삭제의 자리를 나눠, 한쪽이 몰리거나 느려져도 다른 쪽 자리는 남는다. 세 벌크헤드 합(85)이 Tomcat 요청 스레드(200)보다 작아서, S3가 완전히 멈춰도 S3를 쓰지 않는 요청을 받을 스레드가 남는다.
+- S3 호출 하나하나(`GetObject`, `HeadObject`, `DeleteObject`)를 **벌크헤드 → 서킷 브레이커** 순으로 감싼다 (`S3StorageAdapter`). 다운로드 하나가 블록을 여러 개 읽어도 자리는 블록을 읽는 동안만 잡는다. 느린 클라이언트가 응답을 받는 동안에는 자리를 잡지 않는다.
+- 블록 바이트는 WEB이 S3에 직접 PUT한다 ([001 6](001-file-upload-spec.md#6-블록-전송)). storage-service는 `PutObject`를 부르지 않는다. URL 발급은 로컬 서명이라 S3를 부르지 않으므로 어느 벌크헤드도 거치지 않는다.
+- 블록 확인·다운로드·삭제의 자리를 나눠, 한쪽이 몰리거나 느려져도 다른 쪽 자리는 남는다. 세 벌크헤드 합(85)이 Tomcat 요청 스레드(200)보다 작아서, S3가 완전히 멈춰도 S3를 쓰지 않는 요청을 받을 스레드가 남는다.
 - 서킷은 하나다. 업로드든 다운로드든 S3 자체가 아프면 같이 막는다.
-- `/internal/storage/blocks/uploaded`는 어느 벌크헤드도 거치지 않는다. S3 쪽 자리가 다 차도 이 조회는 남은 요청 스레드로 바로 답한다.
-- file-service는 S3를 직접 부르지 않는다. commit은 storage-service의 Redis 조회만 쓰고, 그 조회를 **DB 트랜잭션 밖에서** 한다 ([001 5](001-file-upload-spec.md#5-commit)). 그래서 S3 장애가 file-service DB 잠금으로 번지지 않는다.
+- `/internal/storage/blocks/uploaded`는 24시간 안에 URL을 받은 해시마다 `HeadObject`를 보내고(commit 하나에 동시 8개), 그 자리는 `s3Lookup`에서 잡는다. 서킷이 열리면 바로, 자리가 차면 최대 1초 기다린 뒤 조회 전체가 503으로 끝나고 남은 HEAD는 보내지 않는다. URL을 받은 적 없는 해시는 S3에 묻지 않아서, 새 파일의 첫 commit은 S3가 아파도 영향이 없다.
+- file-service는 S3를 직접 부르지 않는다. commit은 storage-service 조회를 **DB 트랜잭션 밖에서** 한다 ([001 5](001-file-upload-spec.md#5-commit)). 그래서 S3 장애가 file-service DB 잠금으로 번지지 않는다.
 - storage-service 자체가 죽어 그 조회가 실패해도 commit 요청 전체가 실패하지 않는다. 이미 commit된 블록만으로 된 파일은 버전을 만들고, 나머지 파일만 그 503으로 답한다.
 
 #### 2-4-1. 시간 제한
@@ -381,11 +382,11 @@ SDK 표준 재시도에 맡기고, 최대 시도는 **2번**(처음 1 + 재시�
 
 | 벌크헤드 | 자리 | 기다림 | 감싸는 호출 |
 |---|---|---|---|
-| `s3Write` | 40 | 0 (바로 거절) | 블록 업로드 `PutObject` |
+| `s3Lookup` | 40 | 1초 | commit의 블록 확인 `HeadObject` |
 | `s3Read` | 40 | 0 | 다운로드·zip·미리보기 `GetObject` |
 | `s3Delete` | 5 | 1초 | 블록 삭제 `HeadObject` + `DeleteObject` |
 
-삭제는 사용자가 기다리는 요청이 아니라 SQS 소비·정리 작업이라, 자리가 날 때까지 조금 기다린다.
+삭제는 사용자가 기다리는 요청이 아니라 SQS 소비·정리 작업이라, 자리가 날 때까지 조금 기다린다. 블록 확인은 HEAD 하나가 짧게(수십 ms) 끝나므로, commit 여러 개가 겹쳐도 바로 거절하지 않고 1초까지 기다린다.
 
 #### 2-4-5. 응답
 
@@ -401,19 +402,19 @@ SDK 표준 재시도에 맡기고, 최대 시도는 **2번**(처음 1 + 재시�
 
 #### 2-4-6. Redis 분리
 
-Redis를 용도별 클러스터로 나눈다 (`.infra/redis.tf`, 어느 서비스가 어느 클러스터를 쓰는지는 `.infra/envs/*.tfvars`의 `redis_clusters`). 한 용도의 부하나 메모리 부족이 다른 용도로 번지지 않게 한다 — 예를 들어 업로드 기록은 사용자당 하루 최대 25,600개 키라, 세션과 같은 Redis에 두면 대량 업로드가 메모리를 채워 로그인까지 위협한다.
+Redis를 용도별 클러스터로 나눈다 (`.infra/redis.tf`, 어느 서비스가 어느 클러스터를 쓰는지는 `.infra/envs/*.tfvars`의 `redis_clusters`). 한 용도의 부하나 메모리 부족이 다른 용도로 번지지 않게 한다 — 예를 들어 업로드 정리 대상은 사용자당 하루 최대 25,600개 항목이라, 세션과 같은 Redis에 두면 대량 업로드가 메모리를 채워 로그인까지 위협한다.
 
 | 클러스터 | 쓰는 서비스 · 키 | `prod` (MemoryDB) | `demo` (ElastiCache) |
 |---|---|---|---|
 | `auth` | auth — 세션, 로그인 시도 제한, 새 기기 인증 코드 | 전용, 샤드 1 × 노드 2(주 1 + 복제본 1, AZ 둘) | 모든 서비스 공용, 노드 1개 |
 | `member` | member — 회원가입 이메일 인증 코드 | 전용, 샤드 1 × 노드 2 | (`auth`에) |
 | `mail` | mail — SQS 소비 멱등성(`processed:*`) | 전용, 샤드 1 × 노드 2 | (`auth`에) |
-| `storage` | storage — 업로드 기록·업로드 수·다운로드 한도·zip 토큰 | 전용, **샤드 2** × 노드 2 | (`auth`에) |
+| `storage` | storage — 업로드 정리 대상·URL 발급 수·다운로드 한도·zip 토큰 | 전용, **샤드 2** × 노드 2 | (`auth`에) |
 
-- **`prod`는 MemoryDB for Valkey**(`redis_engine = "memorydb"`)다. 쓰기는 AZ 여러 곳에 걸친 트랜잭션 로그에 남은 뒤에야 확인되므로, 주 노드를 잃거나 그 노드와 끊겨 복제본이 넘겨받아도 **확인된 쓰기를 잃지 않는다** — 세션·인증 코드·업로드 기록·한도가 쓴 그대로다. ElastiCache는 복제가 비동기라 장애 조치 순간 직전 쓰기 몇 건이 사라질 수 있다(재로그인, 블록 재전송) — `demo`는 이걸 감수한다.
+- **`prod`는 MemoryDB for Valkey**(`redis_engine = "memorydb"`)다. 쓰기는 AZ 여러 곳에 걸친 트랜잭션 로그에 남은 뒤에야 확인되므로, 주 노드를 잃거나 그 노드와 끊겨 복제본이 넘겨받아도 **확인된 쓰기를 잃지 않는다** — 세션·인증 코드·업로드 정리 대상·한도가 쓴 그대로다. ElastiCache는 복제가 비동기라 장애 조치 순간 직전 쓰기 몇 건이 사라질 수 있다(재로그인, 블록 재전송) — `demo`는 이걸 감수한다.
 - MemoryDB는 **클러스터 모드**다. 키 여러 개를 한 명령·스크립트에서 쓰려면 같은 해시 슬롯에 있어야 해서(아니면 `CROSSSLOT`), 함께 쓰는 키는 공통 부분을 `{}` 해시 태그로 감싼다 — 단일 Redis(로컬·`demo`)에서는 그냥 키 이름의 일부다.
   - member `email-verify-*:{<sha256(주소)>}`, auth `login-code-requests:{<sha256(주소)>}`·`login-code-cooldown:{<sha256(주소)>}` — 정규화한 주소(소문자·공백 제거)의 SHA-256을 태그로 쓴다. 주소에 중괄호가 있어도(`}a@x.com`도 유효한 주소) 태그가 깨지지 않고, 키에 주소가 그대로 남지 않는다.
-  - storage `uploaded-block:{<ownerId>}:<hash>` — commit의 조회(MGET)가 한 소유자의 키를 한 번에 읽는다. 정리 대상 목록은 해시 첫 글자로 나눈 16개 키(`uploaded-blocks:{0}` ~ `{f}`)라 슬롯이 16곳에 퍼진다. 꺼내기·되돌리기 스크립트는 키 하나씩 돈다.
+  - storage 정리 대상 목록은 해시 첫 글자로 나눈 16개 키(`uploaded-blocks:{0}` ~ `{f}`)라 슬롯이 16곳에 퍼진다. 꺼내기·되돌리기 스크립트는 키 하나씩 돈다.
   - 그 밖의 스크립트·명령은 키 하나만 쓴다. 테스트가 함께 쓰는 키의 슬롯이 같은지 확인한다(`SlotHash`).
   - 클라이언트는 환경 변수 두 개로 클러스터 모드가 된다: `SPRING_DATA_REDIS_CLUSTER_NODES`(클러스터 엔드포인트)·`SPRING_DATA_REDIS_USERNAME`(ACL 사용자). 장애 조치로 토폴로지가 바뀌면 MOVED·재연결 오류에 바로, 그 밖에는 30초마다 다시 읽는다(`application-redis.yml`).
 - 모두 `maxmemory-policy noeviction`이다. 메모리가 차면 쓰기가 실패한다. 기본값(`volatile-lru`)이면 TTL이 있는 키 — 세션, 인증 코드, 다운로드 한도, zip 토큰 — 가 소리 없이 밀려난다.

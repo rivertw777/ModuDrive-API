@@ -45,6 +45,11 @@ public class RedisRepository {
         redisTemplate.opsForZSet().add(key, member, score);
     }
 
+    /** Each member's score, in order — null where it isn't in the set (ZMSCORE). */
+    public List<Double> scoresInSortedSet(String key, List<String> members) {
+        return redisTemplate.opsForZSet().score(key, members.toArray());
+    }
+
     public <T> T executeScript(RedisScript<T> script, List<String> keys, Object... args) {
         return redisTemplate.execute(script, keys, args);
     }

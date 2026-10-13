@@ -37,7 +37,7 @@
 |---|---|
 | **WEB** | 파일 하나는 Blob으로 받아 저장, zip은 토큰 링크로 이동, 미리보기는 Blob 또는 `<video>`/`<audio>` `src` |
 | **gateway-service** | 세션을 확인하고 `X_USER_ID`를 붙여 요청을 넘긴다. 공개 링크·zip 받기 경로는 인증 없이 통과 |
-| **storage-service** | 바이트 조립 — S3에서 블록을 읽어 복호화·압축 해제 후 응답에 쓴다. 쿼터·zip 토큰 관리 |
+| **storage-service** | 바이트 조립 — S3에서 블록을 읽어 그대로 응답에 쓴다(블록은 원본 바이트, [001 1-2](001-file-upload-spec.md#1-2-저장-위치)). 쿼터·zip 토큰 관리 |
 | **file-service** | 권한 판단과 내려갈 버전의 블록 목록(`ownerId`, 해시들), zip 구성 계산 |
 | **S3** | 블록 (`blocks/{ownerId}/{hash}`, [001 1-2](001-file-upload-spec.md#1-2-저장-위치)) |
 | **Redis** | 다운로드 쿼터, zip 토큰 (storage 전용 Redis) |
@@ -84,7 +84,7 @@ sequenceDiagram
     S->>R: 쿼터 확인
     loop 블록 목록 순서대로
         S->>S3: GET blocks/{ownerId}/{hash}
-        S->>S: 복호화 → 압축 해제 → 응답 스트림에 씀
+        S->>S: 응답 스트림에 씀
     end
     S->>R: 실제로 내려간 바이트 기록
     S-->>U: 파일 바이트
@@ -95,7 +95,7 @@ sequenceDiagram
    - 로그인 사용자: `GET /internal/files/{fileId}/revisions?userId=&limit=1&markAccessed=`
    - 공개 링크: `GET /internal/files/public/{fileId}/revisions?key=&limit=1`
 3. **쿼터 확인** — 이 파일 버전을 이미 한도만큼 받았으면 거절한다 ([8](#8-다운로드-쿼터)).
-4. **조립** — 블록을 목록 순서대로 S3에서 읽어 복호화·압축 해제한다.
+4. **조립** — 블록을 목록 순서대로 S3에서 읽는다.
 5. **쿼터 기록** — 실제로 내려간 바이트만큼 기록한다.
 
 ---
@@ -136,7 +136,7 @@ sequenceDiagram
 `GET /api/v1/storage/download/{fileId}` (세션 쿠키로 인증)
 
 1. **요청** — WEB이 axios로 `responseType: 'blob'`, `withCredentials: true`로 보낸다 ([004 인증](004-auth-spec.md)).
-2. **스트리밍** — 서버가 S3에서 블록을 하나씩 가져와 복호화·압축 해제한 뒤 바로 응답 스트림에 쓴다(`StreamingResponseBody`). 파일 전체를 서버 메모리에 올리지 않으므로 크기 상한이 없다.
+2. **스트리밍** — 서버가 S3에서 블록을 하나씩 가져와 바로 응답 스트림에 쓴다(`StreamingResponseBody`). 파일 전체를 서버 메모리에 올리지 않으므로 크기 상한이 없다.
 3. **저장** — WEB이 응답 전체를 브라우저 메모리에 Blob으로 받은 뒤, `<a download="{파일명}">`을 만들어 저장한다. 파일 이름은 WEB이 목록에서 알고 있는 이름을 쓴다.
 
 **응답 헤더**

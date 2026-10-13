@@ -52,7 +52,7 @@ The active Spring profile (`dev`) is injected via `SPRING_PROFILES_ACTIVE` in `d
 | member-service        | 10010 | User signup, lookup, password validation |
 | auth-service          | 10011 | Login + server-side sessions (Redis)     |
 | file-service          | 10012 | File metadata, versioning, sharing, directory management |
-| storage-service       | 10013 | Block-level file storage — split, compress, encrypt, upload/download via S3 (LocalStack locally) |
+| storage-service       | 10013 | Block storage on S3 (LocalStack locally) — presigned block-upload URLs (the WEB PUTs blocks to S3 directly), uploaded-block lookup for commits, download/zip assembly |
 | mail-service           | 10014 | Async mail sending (SQS consumer)        |
 | notification-service   | 10015 | In-app notification feed — records file-share events (SQS consumer), list/mark-read API |
 

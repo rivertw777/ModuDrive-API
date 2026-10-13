@@ -2,7 +2,7 @@ package com.moduDrive.storage.adapter.out.redis;
 
 import com.moduDrive.common.infrastructure.redis.RedisRepository;
 import com.moduDrive.storage.application.port.out.ClaimStaleUploadsPort;
-import com.moduDrive.storage.application.port.out.FindUploadedBlocksPort;
+import com.moduDrive.storage.application.port.out.FindScheduledUploadsPort;
 import com.moduDrive.storage.application.port.out.RecordUploadedBlockPort;
 import com.moduDrive.storage.domain.model.Blocks;
 import lombok.RequiredArgsConstructor;
@@ -12,28 +12,26 @@ import org.springframework.stereotype.Component;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * Uploaded blocks waiting to be committed (spec 001). {@code uploaded-block:{<ownerId>}:<hash>} holds
- * the raw size and expires after {@link Blocks#UPLOAD_TTL}; {@code uploaded-blocks:{<c>}} is a sorted
- * set of {@code ownerId:hash} by upload time, so the sweep can still find a block whose record has
- * already expired. It is split 16 ways by the hash's first hex digit — one key would put every
- * upload's write on a single shard however many there are.
+ * The uncommitted-upload sweep's schedule (spec 001 6-1): {@code uploaded-blocks:{<c>}} is a sorted set
+ * of {@code ownerId:hash} by the time its upload URL was signed. It is split 16 ways by the hash's first
+ * hex digit — one key would put every upload's write on a single shard however many there are. The
+ * score is also what a commit's freshness check reads; whether a block actually landed is S3's to say
+ * ({@code S3StorageAdapter#findUploaded}), so nothing here records it.
  *
- * <p>Every command and script here touches a single key, or (the commit's lookup) one owner's keys,
- * which share a Redis Cluster hash slot through {@code {<ownerId>}} — so it runs unchanged on MemoryDB
- * (prod, cluster mode), where a multi-key command across slots fails with CROSSSLOT.
+ * <p>Every command and script here touches a single key — so it runs unchanged on MemoryDB (prod,
+ * cluster mode), where a multi-key command across slots fails with CROSSSLOT.
  */
 @Component
 @RequiredArgsConstructor
-class RedisUploadedBlockStore implements RecordUploadedBlockPort, FindUploadedBlocksPort, ClaimStaleUploadsPort {
+class RedisUploadedBlockStore implements RecordUploadedBlockPort, ClaimStaleUploadsPort, FindScheduledUploadsPort {
 
-    private static final String KEY_PREFIX = "uploaded-block:";
     private static final String INDEX_KEY_PREFIX = "uploaded-blocks:";
     private static final List<String> INDEX_KEYS = "0123456789abcdef".chars()
             .mapToObj(c -> INDEX_KEY_PREFIX + "{" + (char) c + "}").toList();
@@ -50,11 +48,6 @@ class RedisUploadedBlockStore implements RecordUploadedBlockPort, FindUploadedBl
     private final RedisRepository redisRepository;
 
     @Override
-    public void recordUploaded(UUID ownerId, String hash, int size) {
-        redisRepository.set(key(ownerId, hash), String.valueOf(size), Blocks.UPLOAD_TTL);
-    }
-
-    @Override
     public void scheduleSweep(UUID ownerId, String hash) {
         redisRepository.addToSortedSet(indexKey(hash), ownerId + ":" + hash, Instant.now().toEpochMilli());
     }
@@ -67,19 +60,19 @@ class RedisUploadedBlockStore implements RecordUploadedBlockPort, FindUploadedBl
     }
 
     @Override
-    public Map<String, Integer> findUploaded(UUID ownerId, Collection<String> hashes) {
-        List<String> ordered = List.copyOf(hashes);
-        if (ordered.isEmpty()) {
-            return Map.of();
-        }
-        List<String> sizes = redisRepository.multiGet(ordered.stream().map(hash -> key(ownerId, hash)).toList());
-        Map<String, Integer> uploaded = new HashMap<>();
-        for (int i = 0; i < ordered.size(); i++) {
-            if (sizes.get(i) != null) {
-                uploaded.put(ordered.get(i), Integer.parseInt(sizes.get(i)));
+    public Set<String> findScheduledSince(UUID ownerId, Collection<String> hashes, Instant since) {
+        Set<String> scheduled = new HashSet<>();
+        // One ZMSCORE per index key: a command can only touch keys in one slot.
+        hashes.stream().distinct().collect(Collectors.groupingBy(RedisUploadedBlockStore::indexKey)).forEach((indexKey, group) -> {
+            List<Double> scores = redisRepository.scoresInSortedSet(indexKey,
+                    group.stream().map(hash -> ownerId + ":" + hash).toList());
+            for (int i = 0; i < group.size(); i++) {
+                if (scores.get(i) != null && scores.get(i) > since.toEpochMilli()) {
+                    scheduled.add(group.get(i));
+                }
             }
-        }
-        return uploaded;
+        });
+        return scheduled;
     }
 
     @Override
@@ -116,10 +109,6 @@ class RedisUploadedBlockStore implements RecordUploadedBlockPort, FindUploadedBl
             group.forEach(block -> args.add(block.ownerId() + ":" + block.hash()));
             redisRepository.executeScript(RELEASE_SCRIPT, List.of(indexKey), args.toArray(String[]::new));
         });
-    }
-
-    static String key(UUID ownerId, String hash) {
-        return KEY_PREFIX + "{" + ownerId + "}:" + hash;
     }
 
     /** Hashes are hex SHA-256, so the first digit spreads them evenly over the 16 keys. */
