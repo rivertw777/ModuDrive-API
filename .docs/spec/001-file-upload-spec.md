@@ -36,12 +36,12 @@
 
 | 구성 요소 | 역할 |
 |---|---|
-| **WEB** | 파일을 블록으로 나눠 해시를 계산하고, 서버에 없는 블록만 보낸다 |
+| **WEB** | 파일을 블록으로 나눠 해시를 계산하고, 서버에 없는 블록만 S3에 직접 올린다 |
 | **gateway-service** | 세션을 확인하고 `X_USER_ID`를 붙여 요청을 넘긴다 |
 | **file-service** | 이름 충돌 조회, commit(버전 생성), 드라이브 용량 한도, 버전·참조 없는 블록 정리 |
-| **storage-service** | 블록 검증·저장(S3), 아직 commit되지 않은 블록 기록(Redis)과 정리 |
-| **S3** | 블록 저장 (GZIP 압축 후 AES-GCM 암호화) |
-| **Redis** | 올라왔지만 아직 commit되지 않은 블록, 사용자별 블록 업로드 횟수 (storage 전용 Redis, [006 2-4-6](006-resilience-spec.md#2-4-6-redis-분리)) |
+| **storage-service** | 블록 업로드 URL 발급(Presigned), commit 전 올라온 블록 확인(S3 HEAD), commit되지 않은 블록 정리 |
+| **S3** | 블록 저장 (받은 바이트 그대로, SHA-256 체크섬 검증·보관, 버킷 기본 암호화) |
+| **Redis** | commit되지 않은 블록의 정리 대상 목록, 사용자별 URL 발급 횟수 (storage 전용 Redis, [006 2-4-6](006-resilience-spec.md#2-4-6-redis-분리)) |
 | **file_db** | 파일·버전·블록(`block`)·드라이브 용량(`namespace`) |
 
 ### 1-1. 블록과 blocklist
@@ -50,7 +50,8 @@
 - WEB이 blocklist로 commit하면 file-service가 서버에 없는 블록만 알려 주고, WEB은 그 블록만 보낸 뒤 같은 목록으로 다시 commit한다.
 - 파일 행은 **commit이 버전을 만들 때** 생긴다. 그 전 단계(batch)는 이름 충돌만 조회한다 → 업로드가 끝나지 않은 파일이 목록에 남지 않는다.
 - 서버에 업로드 세션이 없다. 다시 commit하는 것이 곧 "어디까지 받았나"를 묻는 것이다 ([7](#7-이어-올리기)).
-- 블록은 소유자별로 저장한다(`blocks/{ownerId}/{hash}`). 같은 사용자가 같은 내용을 다시 올리면 전송이 없다.
+- 블록은 소유자별로 저장한다(`blocks/{ownerId}/{hash}`). 같은 사용자가 같은 내용을 다시 올리면 전송이 없다. 사용자끼리는 공유하지 않는다 — 해시만 아는 사람이 남의 블록으로 commit하거나, `needBlocks`로 남이 가진 내용인지 알아내지 못하게 한다.
+- **블록 바이트는 서버를 거치지 않는다.** storage-service가 블록마다 S3 PUT URL(Presigned)을 발급하고, WEB이 그 URL로 S3에 직접 올린다 ([6](#6-블록-전송)). 서버는 메타데이터(해시·크기)만 다룬다.
 
 ### 1-2. 저장 위치
 
@@ -58,15 +59,18 @@
 
 | 키 | 내용 |
 |---|---|
-| `blocks/{ownerId}/{hash}` | 블록 하나 (GZIP 압축 → AES-GCM 암호화) |
+| `blocks/{ownerId}/{hash}` | 블록 하나. 받은 바이트 그대로, SHA-256 체크섬(`x-amz-checksum-sha256`)과 함께 저장된다. 암호화는 버킷 기본 암호화(`demo` SSE-S3, `prod` SSE-KMS 고객 관리 키) |
 
 **Redis** (storage-service)
 
 | 키 | 타입 | 값 | TTL | 용도 |
 |---|---|---|---|---|
-| `uploaded-block:{ownerId}:{hash}` | string | 블록의 실제 크기 | 24시간 | 올라왔지만 아직 commit되지 않은 블록. commit이 이 값으로 크기를 확인한다 |
-| `uploaded-blocks:{0}` ~ `{f}` | sorted set | `ownerId:hash`, 점수 = 올라온 시각 | 없음 | 미커밋 블록 정리 대상 ([11](#11-블록-정리)). 해시 첫 글자로 16개 키에 나눈다 |
-| `upload-count:{ownerId}` | string | 블록 업로드 횟수 | 24시간 (첫 업로드부터, 연장 없음) | 사용자당 블록 업로드 한도 ([6-2](#6-2-검증과-오류)) |
+| `uploaded-blocks:{0}` ~ `{f}` | sorted set | `ownerId:hash`, 점수 = URL을 마지막으로 발급한 시각 | 없음 | 미커밋 블록 정리 대상 ([11](#11-블록-정리)), commit이 받아 주는 24시간의 기준 ([5](#5-commit)). 해시 첫 글자로 16개 키에 나눈다 |
+| `upload-count:{ownerId}` | string | 블록 URL 발급 횟수 | 24시간 (첫 발급부터, 연장 없음) | 사용자당 블록 업로드 한도 ([6-2](#6-2-검증과-오류)) |
+
+올라왔지만 아직 commit되지 않은 블록은 따로 기록하지 않는다. 서버가 PUT을 보지 못하므로, commit이 S3에 직접 묻는다 ([5](#5-commit)).
+
+> **이전 형식의 블록** — Presigned 업로드 전에는 storage-service가 블록을 GZIP 압축 후 AES-GCM으로 암호화해 같은 키에 저장했다. 지금 코드는 그 블록을 읽지 못하고, `block` 행이 남아 있으면 같은 해시의 새 업로드도 그 블록을 가리킨다. 그래서 전환할 때 데이터를 비운다: 로컬은 `make reset`, demo는 storage 버킷과 file_db를 비운 뒤 배포한다. 옛 키(SSM `STORAGE_ENCRYPTION_KEY`)는 이전 블록이 백업 사본까지 모두 없어진 뒤에 지운다.
 
 **file_db**
 
@@ -101,18 +105,20 @@ sequenceDiagram
         U->>F: POST /api/v1/files/commit {files: [{path, name, uploadId, size, blocklist}, …]}
         F->>F: 용량 1차 검사, 묶음 전체의 block 행 조회 한 번 (잠그지 않음)
         F->>S: POST /internal/storage/blocks/uploaded (block 행에 없는 해시만, 한 번)
-        S->>R: MGET uploaded-block:{ownerId}:{hash}
-        S-->>F: 올라온 블록의 크기
+        S->>R: ZMSCORE uploaded-blocks:{해시 첫 글자} (24시간 안에 URL을 받은 해시만 남김)
+        S->>S3: HEAD blocks/{ownerId}/{hash} (남은 해시마다, 동시에 8개)
+        S-->>F: 체크섬이 맞는 블록의 크기
         F->>F: 블록이 다 있는 파일마다 짧은 트랜잭션:<br/>block 행 잠금 후 다시 확인, 파일 행 생성,<br/>참조 수 +1, 버전 저장, 용량 조건부 갱신
         F-->>U: 200 {results: [파일마다 needBlocks 또는 fileId·versionId 또는 error]}
 
         opt needBlocks가 있는 파일이 있음
-            loop 묶음 전체의 needBlocks (중복 없이), 요청당 8MB·64개 이하, 동시에 3개
-                U->>S: POST /api/v1/storage/blocks (multipart: hash + block 여러 개)
-                S->>S: 블록마다 크기 ≤ 4MB, SHA-256(받은 바이트) == hash 확인
+            loop 묶음 전체의 needBlocks (중복 없이), URL 요청당 64개·32MB 이하
+                U->>S: POST /api/v1/storage/blocks/upload-urls {blocks: [{hash, size}, …]}
+                S->>S: 해시 형식, 크기 1바이트~4MB, 24시간 한도 확인
                 S->>R: ZADD uploaded-blocks:{해시 첫 글자} (정리 대상 등록)
-                S->>S3: PUT blocks/{ownerId}/{hash}
-                S->>R: SET uploaded-block:{ownerId}:{hash} 크기 (24시간)
+                S-->>U: 블록마다 PUT URL (1시간 유효, 크기·체크섬·If-None-Match 서명)
+                U->>S3: PUT 블록 (x-amz-checksum-sha256, If-None-Match: *, 동시에 6개)
+                S3->>S3: 받은 바이트의 SHA-256·길이가 서명과 같은지, 그 키가 비었는지 확인
             end
             U->>F: POST /api/v1/files/commit (needBlocks가 있던 파일만, 같은 내용으로)
             F-->>U: 200 {results: [파일마다 fileId·versionId]}
@@ -123,13 +129,14 @@ sequenceDiagram
 1. **충돌 조회** — 고른 항목 전체의 이름 충돌을 묻고, 항목마다 실제로 올라갈 경로·이름을 받는다 ([3](#3-충돌-조회-batch)).
 2. **해시 계산** — 파일을 고르자마자 WEB이 blocklist를 계산하고, 파일을 묶음으로 나눈다 ([4](#4-해시-계산과-묶기-web)).
 3. **commit** — 묶음 전체를 한 번에 보낸다. 블록이 다 있는 파일은 여기서 버전이 생기고, 나머지는 `needBlocks`를 받는다 ([5](#5-commit)).
-4. **블록 전송** — `needBlocks`만 storage-service로 보낸다 ([6](#6-블록-전송)).
+4. **블록 전송** — `needBlocks`만 storage-service에서 URL을 받아 S3에 직접 올린다 ([6](#6-블록-전송)).
 5. **다시 commit** — `needBlocks`가 있던 파일만 같은 내용으로 다시 보낸다. 빠진 블록이 없으면 버전이 생긴다. 그래도 빠진 블록이 있거나(그 사이 24시간이 지난 경우) 블록 전송이 끝내 실패한 파일은 WEB이 실패로 표시한다.
 
 **설계 메모**
 
-- commit 응답(`fileId`, `versionId`)이 곧 완료다. storage-service가 file-service에 완료를 알리는 콜백은 없다.
+- commit 응답(`fileId`, `versionId`)이 곧 완료다. S3 PUT이 끝났다고 따로 알리는 요청은 없다. commit이 S3에 직접 묻는다.
 - storage-service가 여러 대이거나 재시작돼도 상관없다. 상태가 S3·Redis·file_db에만 있다.
+- 블록 바이트가 gateway·storage-service를 거치지 않으므로, 업로드 트래픽이 늘어도 서버 CPU·메모리·대역폭은 늘지 않는다. 서버가 하는 일은 요청마다 해시 목록을 읽고 URL에 서명하는 것뿐이다.
 
 ---
 
@@ -172,7 +179,11 @@ sequenceDiagram
 `POST /api/v1/files/commit`에 묶음의 파일 전부를 한 번에 보낸다. 파일마다 [3](#3-충돌-조회-batch)의 `path`·`name`, `uploadId`(업로드 시도마다 새 UUID), `size`, `blocklist`를 담는다.
 
 1. **용량 1차 검사** — 요청 시작 때 읽은 `used_bytes`로, 들어가지 않을 파일은 블록 전송 없이 바로 거절한다 ([9](#9-드라이브-용량-한도)).
-2. **블록 조회** — 묶음 전체에 **한 번씩**만 묻는다. 이미 commit된 블록은 file_db `block` 테이블로, 올라왔지만 아직 commit되지 않은 블록은 storage-service에 묻는다(Redis 표시).
+2. **블록 조회** — 묶음 전체에 **한 번씩**만 묻는다. 이미 commit된 블록은 file_db `block` 테이블로, 올라왔지만 아직 commit되지 않은 블록은 storage-service에 묻는다.
+   - storage-service는 먼저 Redis 정리 대상 목록에서 **24시간 안에 URL을 받은** 해시만 남긴다. URL을 받은 적 없는 해시는 S3에 묻지 않는다 — 새 파일의 첫 commit은 HEAD가 0번이다.
+   - 남은 해시마다 S3에 `HeadObject`(`ChecksumMode=ENABLED`)를 보내, **저장된 SHA-256 체크섬이 해시와 같은** 객체만 올라온 블록으로 친다. 크기는 객체 크기(`Content-Length`)다.
+   - 24시간의 기준이 객체 나이가 아니라 URL 발급 시각인 이유: 이미 있는 블록은 다시 PUT해도 412로 덮어쓰이지 않는다([6](#6-블록-전송)). 대신 URL을 다시 받는 것이 정리 대상 시각을 지금으로 옮겨, 정리 작업이 그 블록을 지우지 못하게 한다.
+   - 체크섬을 다시 보는 이유: S3의 서명 검증에만 기대지 않는다. 체크섬 없이 쓰인 객체(이전 형식의 블록, 서명 검증을 끈 에뮬레이터 등)는 없는 블록으로 친다.
    - storage-service에는 `block` 테이블에 없는 해시가 있을 때만 묻는다. 이미 있는 파일만 올리면 묻지 않는다.
 3. **버전 생성** — 블록이 다 있는 파일마다 **따로 짧은 트랜잭션**으로 버전을 만든다 ([5-1](#5-1-버전-생성-규칙)).
 4. **응답** — `results`는 요청 순서 그대로, 파일마다 셋 중 하나다.
@@ -235,7 +246,7 @@ sequenceDiagram
 | `size` ≤ 5GB | 413 `FILE_TOO_LARGE` |
 | 드라이브 사용량 + 이 파일이 늘리는 크기 ≤ 용량 한도 ([9](#9-드라이브-용량-한도)) | 413 `QUOTA_EXCEEDED` (WEB은 그 행에 "저장 공간 부족" 표시) |
 | `blocklist` 길이 = `ceil(size / 4MB)` (빈 파일은 0) | 400 `INVALID_BLOCKLIST` |
-| 마지막을 뺀 블록은 모두 정확히 4MB, 마지막은 1바이트~4MB, 합 = `size` (크기는 `block` 행·Redis 표시에 저장된 실제 값) | 400 `INVALID_BLOCKLIST` |
+| 마지막을 뺀 블록은 모두 정확히 4MB, 마지막은 1바이트~4MB, 합 = `size` (크기는 `block` 행·S3 객체의 실제 값) | 400 `INVALID_BLOCKLIST` |
 | 그 자리에 폴더가 없고, 상위 경로 중간에 파일이 없음 (버전을 만들 때만) | 400 `FILE_ALREADY_EXISTS` |
 | `block` 행에 없는 블록이 있는데 storage-service 조회가 실패함 (서킷 열림·시간 초과·5xx) | 503 |
 | Postgres가 잠금 순환(교착)을 끊음 | 503 (다시 보내면 된다) |
@@ -244,41 +255,56 @@ sequenceDiagram
 
 ## 6. 블록 전송
 
-`needBlocks`가 있을 때만 한다. WEB이 묶음 전체의 `needBlocks`를 **중복 없이** 모아(여러 파일에 같은 블록이 있어도 한 번) `POST /api/v1/storage/blocks`로 보낸다.
+`needBlocks`가 있을 때만 한다. WEB이 묶음 전체의 `needBlocks`를 **중복 없이** 모아(여러 파일에 같은 블록이 있어도 한 번) S3에 직접 올린다. 블록 바이트는 gateway·storage-service를 거치지 않는다.
 
-1. **요청** — 요청 하나에 블록 64개·합계 8MB까지, multipart로 `hash`와 `block`을 같은 순서로 반복한다. WEB은 요청을 **동시에 3개까지** 보낸다.
-2. **검증** — storage-service가 블록마다 받은 바이트의 해시를 **다시 계산**해, 함께 온 해시와 다르면 거절한다. 클라이언트가 보낸 해시는 믿지 않는다.
-3. **저장** — 요청 하나의 블록을 **전부 확인한 뒤에** 저장한다. 하나라도 잘못되면 아무것도 저장하지 않는다 ([6-1](#6-1-저장-순서)).
+1. **URL 요청** — `POST /api/v1/storage/blocks/upload-urls`에 블록마다 `hash`·`size`를 보낸다. 요청 하나에 블록 64개까지이고, WEB은 합이 32MB를 넘지 않게 나눈다.
+2. **URL 발급** — storage-service가 해시 형식, 크기(1바이트~4MB), 24시간 한도를 확인하고, 블록을 정리 대상에 등록한 뒤 블록마다 PUT URL을 돌려준다.
+   - 키(`blocks/{ownerId}/{hash}`)는 **서버가 정한다.** 호출자 자신의 공간에만 올릴 수 있다.
+   - URL에는 `Content-Length`(= `size`), `x-amz-checksum-sha256`(= 해시의 Base64), `If-None-Match: *`가 서명돼 있다. 1시간 유효하다.
+3. **S3 PUT** — WEB이 URL마다 블록을 `x-amz-checksum-sha256`·`If-None-Match: *` 헤더와 함께 PUT한다. **동시에 6개까지**(브라우저가 한 출처에 여는 연결 수).
+4. **검증** — S3가 받은 바이트의 SHA-256을 계산해 서명된 값과 다르면 거절한다(400 `BadDigest`). 길이나 헤더가 서명과 다르면 서명 오류다(403). 그 키에 이미 객체가 있으면 쓰지 않는다(412) — WEB은 올라간 것으로 친다. 클라이언트가 보낸 해시를 믿지 않는 것은 그대로이고, 확인하는 주체가 storage-service에서 S3로 바뀌었을 뿐이다. commit이 저장된 체크섬을 한 번 더 확인한다 ([5](#5-commit)).
 
 **설계 메모**
 
-- 동시 3개는 왕복 시간을 줄이면서 storage-service 업로드 자리([006 2-4-4](006-resilience-spec.md#2-4-4-벌크헤드))를 다른 사용자에게 남기는 값이다.
-- storage-service 메모리는 요청당 블록 합 8MB까지 쓴다(multipart 한도 `STORAGE_MULTIPART_MAX_REQUEST_SIZE` 9MB).
+- 서버를 거치지 않으므로 압축·애플리케이션 암호화는 하지 않는다. 드라이브에 올라오는 파일 대부분(사진·동영상·zip·pdf)은 이미 압축돼 있어 잃는 것이 거의 없다. 암호화는 버킷 기본 암호화가 맡는다. `prod`는 SSE-KMS 고객 관리 키라 버킷 읽기 권한만으로는 원본을 읽지 못한다(`kms:Decrypt` 필요).
+- URL 요청을 32MB씩 나누는 이유: URL은 받은 직후에 쓴다. 32MB 전송과 일시 중지(최대 10분, [7](#7-이어-올리기))를 합쳐도 1시간 유효 기간 안에 끝난다.
+- `If-None-Match`가 없으면 URL 하나로 1시간 동안 같은 키에 몇 번이든 PUT할 수 있다. 발급 한도(24시간 25,600개)가 저장량을 묶지 못하고, `prod`는 버킷 버전 관리로 덮어쓸 때마다 이전 버전이 30일 남는다.
+- URL 발급은 S3를 부르지 않는다(로컬 서명). 그래서 S3 벌크헤드·서킷을 거치지 않고, S3가 아파도 바로 답한다. 실패는 WEB의 PUT에서 드러난다.
+- 브라우저가 S3에 PUT하려면 버킷 CORS가 WEB 출처(`CLIENT_URL`)의 `PUT`과 `if-none-match`·`x-amz-checksum-sha256` 헤더를 허용해야 하고, WEB CSP `connect-src`에 S3 출처가 있어야 한다.
 
 ### 6-1. 저장 순서
 
-블록마다 **정리 대상 등록(ZADD) → S3 PUT → 업로드 표시(SET)** 순서다.
+블록마다 **정리 대상 등록(ZADD) → URL 발급 → (WEB) S3 PUT** 순서다.
 
 | 순서 | 이유 |
 |---|---|
-| 표시(SET)는 반드시 PUT **뒤** | 먼저 하면 S3에 없는 블록으로 commit이 성공해 파일이 깨진다 |
-| 정리 대상 등록(ZADD)은 PUT **앞** | PUT 뒤에 하면, PUT은 됐는데 Redis가 실패한 블록이 정리 대상에도 오르지 않아 S3에 영구히 남는다. 등록만 되고 PUT이 실패한 블록은 정리 작업이 없는 객체를 지우는 것으로 끝난다 |
+| 정리 대상 등록(ZADD)은 URL 발급 **앞** | 발급 뒤에 하면, 등록이 실패한 URL로 올라간 블록이 정리 대상에도 오르지 않아 S3에 영구히 남는다. 등록만 되고 PUT이 없던 블록은 정리 작업이 없는 객체를 지우는 것으로 끝난다 |
+| "올라왔다"는 표시를 따로 두지 않음 | 서버가 PUT의 성공을 보지 못한다. commit이 S3에 직접 물으므로, S3에 없는 블록으로 commit이 성공할 수 없다 |
 
-- 같은 블록을 다시 올리면 등록 시각이 지금으로 옮겨져 정리 대상에서 멀어진다. S3 객체는 그냥 덮어쓴다(내용이 같으므로 무해).
+- 같은 블록의 URL을 다시 받으면 등록 시각이 지금으로 옮겨져 정리 대상에서 멀어지고, commit이 다시 24시간 받아 준다. S3 객체는 덮어쓰지 않는다(412).
 - 정리 대상 목록은 해시 첫 글자(hex)로 **16개 키**(`uploaded-blocks:{0}` ~ `{f}`)에 나뉜다. 모든 업로드가 쓰는 목록이라, 키 하나면 Redis 샤드를 늘려도 한 샤드에 쓰기와 메모리가 몰린다.
 
 ### 6-2. 검증과 오류
 
+**URL 요청** (`POST /api/v1/storage/blocks/upload-urls`)
+
 | 확인 | 실패 |
 |---|---|
-| 해시가 맞고 빈 블록이 아니며 `hash`와 `block` 개수가 같음 | 400 `INVALID_BLOCK` |
-| 블록 하나가 4MB 이하 | 413 `BLOCK_TOO_LARGE` |
-| 요청 합 8MB 이하, 64개 이하 | 413 `BLOCK_BATCH_TOO_LARGE` |
-| S3가 정상이고 동시 업로드 자리가 남음 | 503 `STORAGE_UNAVAILABLE` + `Retry-After` |
+| 블록 1~64개, 해시 형식(소문자 hex 64자), 크기 1바이트 이상 | 400 `INVALID_BLOCK` |
+| 크기 4MB 이하 | 413 `BLOCK_TOO_LARGE` |
 | 사용자당 24시간에 블록 25,600개(4MB 기준 100GB) 이하 (`STORAGE_UPLOAD_BLOCKS_PER_WINDOW`) | 429 `UPLOAD_LIMIT_EXCEEDED` |
 
-- 503은 기다리지 않고 바로 답한다. 중간에 실패하면 일부 블록만 저장됐을 수 있지만, 다시 보내면 덮어쓰므로 무해하다.
-- 24시간 블록 한도가 없으면 commit하지 않을 블록으로 S3와 Redis를 무한히 채울 수 있다. 드라이브 용량 한도는 이와 별개로 commit이 검사한다.
+**S3 PUT**
+
+| S3 응답 | 뜻 | WEB의 동작 |
+|---|---|---|
+| 400 `BadDigest` | 해시를 계산한 뒤 파일이 바뀌었다 | 그 블록이 필요한 파일만 실패 |
+| 403 | URL 만료(서명한 task role 자격 증명이 먼저 끝나면 1시간보다 일찍), 또는 서명과 다른 요청 | 그 블록이 필요한 파일만 실패 |
+| 412 | 그 키에 블록이 이미 있다 | 올라간 것으로 친다. commit이 체크섬으로 다시 확인한다 |
+| 5xx, 네트워크 오류 | S3 일시 장애 | 다시 보낸다 ([7](#7-이어-올리기)) |
+
+- 24시간 한도는 URL 발급 수로 센다. 없으면 commit하지 않을 블록으로 S3를 무한히 채울 수 있다. 드라이브 용량 한도는 이와 별개로 commit이 검사한다.
+- 다시 받은 URL도 한도에 센다. 25,600개는 하루 업로드로 넉넉한 값이라, 재시도가 섞여도 정상 사용은 닿지 않는다.
 
 ---
 
@@ -291,21 +317,21 @@ sequenceDiagram
     autonumber
     actor U as 사용자 (WEB)
     participant F as file-service
-    participant S as storage-service
+    participant S3 as S3
 
     U->>F: commit [h1..h10]
     F-->>U: needBlocks [h1..h10]
     alt 블록 전송 중 끊김
-        U->>S: 블록 h1 ~ h6 ✅
-        U--xS: 블록 h7 ❌ 끊김
+        U->>S3: 블록 h1 ~ h6 ✅
+        U--xS3: 블록 h7 ❌ 끊김
         Note over U: 재시도 (자동 재시도, 또는 파일을 다시 골라 대체로 올림)
         U->>F: commit [h1..h10]
         F-->>U: needBlocks [h7..h10]
-        U->>S: 블록 h7 ~ h10
+        U->>S3: 블록 h7 ~ h10 (URL을 새로 받아)
         U->>F: commit [h1..h10]
         F-->>U: 버전 생성
     else 블록을 다 보낸 뒤 commit에서 끊김
-        U->>S: 블록 h1 ~ h10 ✅
+        U->>S3: 블록 h1 ~ h10 ✅
         U--xF: commit [h1..h10] ❌ 끊김
         Note over U: 재시도
         U->>F: commit [h1..h10]
@@ -319,12 +345,12 @@ sequenceDiagram
 |---|---|
 | 네트워크 오류, 5xx | 1초/2초/4초 간격으로 3번 다시 보낸다. 간격마다 0~50% 지터를 더해 S3가 복구되는 순간 모든 클라이언트가 같은 박자로 몰리지 않게 한다. 503에 `Retry-After`(10초, 서킷이 열려 있는 시간)가 오면 그보다 일찍 보내지 않는다 |
 | 3번 다 실패 | 바로 실패로 끝내지 않고 **일시 중지**한다. 상태 패널에 "연결 대기 중 · 자동으로 다시 시도합니다"로 보이고, 30초마다(지터 포함) 다시 보내다 성공하면 이어 간다. 10분이 지나도 안 되면 그 묶음의 남은 파일을 실패로 표시한다 |
-| 블록 요청의 400·413 | 해시를 계산한 뒤 파일이 바뀐 경우 등. 그 요청의 블록이 필요한 파일만 실패시키고 나머지 요청은 계속 보낸다 |
+| URL 요청의 400·413, S3 PUT의 400·403 | 해시를 계산한 뒤 파일이 바뀐 경우, URL 만료 등. 그 블록이 필요한 파일만 실패시키고 나머지 블록은 계속 보낸다 |
 | 그 밖의 4xx (429 24시간 한도, 401 세션 만료 등) | 어느 요청이든 같은 결과라 나머지 블록 전송과 일시 중지 중이던 요청을 멈춘다. 다시 보내지 않는다 |
 
 - 탭이 열려 있는 동안은 고른 `File`이 살아 있어서 다시 고를 필요가 없다.
 - 끝내 실패한 파일을 다시 고르면 해시를 다시 계산하고 commit한다. 이미 받은 블록은 건너뛰고, 블록을 다 받은 상태였다면 그 commit 한 번으로 버전이 생긴다. WEB이 `localStorage`에 기억할 것이 없다.
-- 올라온 블록은 **24시간** 안에 commit해야 한다. 그 뒤에는 Redis 표시가 사라져 `needBlocks`에 다시 나온다.
+- 블록은 URL을 받은 뒤 **24시간** 안에 commit해야 한다. 그 뒤에는 `needBlocks`에 다시 나온다. 다시 올리면 URL을 새로 받으므로 다시 24시간이다(S3에 남아 있으면 PUT은 412로 끝난다).
 
 ---
 
@@ -452,7 +478,7 @@ commit, 휴지통 이동, 복원, 이름 변경, 이동, 영구 삭제가 같은
 |---|---|---|---|
 | 보존 기간이 지난 버전 | file-service | `UPLOADED` 파일에서 현재 버전이 아니면서, 만든 지 30일이 지났거나 그 파일의 최신 100개 밖인 `file_version` 행 | ShedLock으로 한 인스턴스만 |
 | 참조 없는 블록 | file-service | `block.ref_count`가 0이 된 지 24시간 지난 행 | `FOR UPDATE SKIP LOCKED`로 나눠 처리 |
-| commit되지 않은 블록 | storage-service | 올라온 지 25시간 지난 `uploaded-blocks:{0..f}` 항목 (16개 키를 차례로) | Redis에서 블록마다 원자적으로 가져가 나눠 처리 |
+| commit되지 않은 블록 | storage-service | URL을 마지막으로 발급한 지 25시간 지난 `uploaded-blocks:{0..f}` 항목 (16개 키를 차례로) | Redis에서 블록마다 원자적으로 가져가 나눠 처리 |
 
 1. **보존 기간이 지난 버전** — commit과 같은 순서로 블록(해시 순) → 파일 행을 잠그고, 다시 읽어 그 버전들의 블록 참조를 풀고 행을 지운다. 파일마다 트랜잭션 하나.
    - 이 규칙이 없으면 덮어쓸 때마다 이전 블록이 파일이 영구 삭제될 때까지 S3에 남는다.
@@ -461,10 +487,13 @@ commit, 휴지통 이동, 복원, 이름 변경, 이동, 영구 삭제가 같은
    - 24시간 안에 같은 블록이 다시 commit되면 살아난다(휴지통을 비운 직후 같은 파일을 다시 올리는 경우).
    - 지나면 행을 지우고 같은 트랜잭션에서 `storage-blocks-purge-requested`(outbox)를 기록한다 → storage-service가 S3 객체를 지운다 ([005 7](005-messaging-spec.md#7-사용-큐-목록)).
 3. **commit되지 않은 블록** — 지우기 전에 file-service(`POST /internal/files/blocks/committed`)에 commit됐는지 물어 commit된 블록은 남긴다.
+   - 25시간 = commit이 받아 주는 24시간 + 여유 1시간. 둘 다 URL 발급 시각 기준이라, commit이 아직 쓸 수 있는 블록을 정리 작업이 지우지 않는다. URL은 그보다 훨씬 전에 만료돼 그 키에 새로 쓸 수도 없다.
+   - 지우기 직전에 그 블록의 URL이 다시 발급됐는지 한 번 더 본다. 이미 있는 블록을 다시 올리면 S3 객체가 바뀌지 않으므로(412) 객체로는 알 수 없고, 정리 대상 목록만 안다.
 
 **설계 메모**
 
-- storage-service는 S3 객체를 지울 때 결정 시각(`decidedAt`) 뒤에 다시 쓰인 블록은 남긴다. `HeadObject`의 `LastModified`(초 단위)를 결정 시각과 비교하고, `DeleteObject`에 `If-Match: <ETag>`를 붙여 그 사이 덮어쓰인 객체는 412로 남는다.
+- storage-service는 S3 객체를 지울 때 결정 시각(`decidedAt`) 뒤에 쓰인 블록은 남긴다. `HeadObject`의 `LastModified`(초 단위)를 결정 시각과 비교하고, `DeleteObject`에 `If-Match: <ETag>`를 붙여 그 사이 바뀐 객체는 412로 남는다. 같은 내용을 다시 올리는 경우는 객체가 바뀌지 않으므로 위의 정리 대상 재확인이 막는다.
+- 참조 없는 블록을 지울 때(`storage-blocks-purge-requested`)도 24시간 안에 URL이 발급된 블록은 남긴다. commit이 받아 줄 블록이기 때문이다. commit되지 않으면 미커밋 블록 정리가 나중에 지운다.
 - 블록 해제는 모든 버전의 해시를 합쳐 **해시 순서로** 한다. commit이 블록 행을 잠그는 순서와 같아서, 같은 블록을 쓰는 commit과 영구 삭제가 교착에 빠지지 않는다.
 - 폴더 영구 삭제는 하위 파일 전부의 블록 참조를 SQL 안에서 모아 한 번에 푼다.
 - 행이 없는 블록을 해제하면 오류 로그를 남긴다(참조 수가 어긋났다는 뜻).
@@ -481,10 +510,12 @@ commit, 휴지통 이동, 복원, 이름 변경, 이동, 영구 삭제가 같은
 | batch 항목 수 | 5,000개 | `UploadBatchRequest` |
 | commit 한 번 | 파일 100개, 폴더 1,000개, 해시 합 1,280개 | `CommitFileUploadRequest`, `COMMIT_TOO_LARGE` |
 | 혼자 한 묶음이 되는 파일 | 256MB(블록 64개) 초과 | WEB `SOLO_BLOCKS` |
-| 블록 전송 요청 하나 | 64개, 합 8MB | `UploadBlocksService.MAX_BLOCKS_PER_REQUEST`, `MAX_BYTES_PER_REQUEST` |
-| 블록 전송 동시 요청 | 3개 | WEB `PARALLEL_BLOCK_REQUESTS` |
-| 사용자당 블록 업로드 | 24시간에 25,600개 | `STORAGE_UPLOAD_BLOCKS_PER_WINDOW` |
-| 미커밋 블록 유효 기간 | 24시간 (정리는 25시간 뒤) | `Blocks.UPLOAD_TTL`, `PurgeUncommittedUploadsService.MARGIN` |
+| URL 요청 하나 | 64개 (WEB은 합 32MB까지) | `PresignBlockUploadsService.MAX_BLOCKS_PER_REQUEST`, WEB `MAX_URL_REQUEST_BYTES` |
+| URL 유효 기간 | 1시간 | `Blocks.UPLOAD_URL_TTL` |
+| S3 PUT 동시 요청 | 6개 | WEB `PARALLEL_BLOCK_PUTS` |
+| 사용자당 블록 URL 발급 | 24시간에 25,600개 | `STORAGE_UPLOAD_BLOCKS_PER_WINDOW` |
+| 블록 조회 동시 HEAD | commit 하나에 8개 | `S3StorageAdapter.LOOKUP_PARALLELISM` |
+| 미커밋 블록 유효 기간 | URL 발급 뒤 24시간 (정리는 25시간 뒤) | `Blocks.UPLOAD_TTL`, `PurgeUncommittedUploadsService.MARGIN` |
 | 해시 Worker | 코어 수, 최대 8개 | WEB `hash-in-worker.ts` |
 | 재시도 | 1·2·4초 3번 → 30초마다, 최대 10분 | WEB `upload-file.ts` |
 | 버전 보존 | 30일, 최신 100개 | `PruneFileVersionsService.RETENTION`, `KEEP` |
@@ -498,15 +529,18 @@ commit, 휴지통 이동, 복원, 이름 변경, 이동, 영구 삭제가 같은
 |---|---|---|---|
 | `POST /api/v1/files/batch` | file | 세션 | 이름 충돌 조회, 올라갈 경로·이름 |
 | `POST /api/v1/files/commit` | file | 세션 | 파일 버전 생성 / `needBlocks`, 빈 폴더 생성 |
-| `POST /api/v1/storage/blocks` | storage | 세션 | 블록 전송 (multipart) |
-| `POST /internal/storage/blocks/uploaded` | storage | 서비스 간 | 올라왔지만 commit되지 않은 블록의 크기 |
+| `POST /api/v1/storage/blocks/upload-urls` | storage | 세션 | 블록 PUT URL 발급 |
+| `PUT <Presigned URL>` | S3 | URL 서명 | 블록 전송 |
+| `POST /internal/storage/blocks/uploaded` | storage | 서비스 간 | 올라왔지만 commit되지 않은 블록의 크기 (S3 HEAD) |
 | `POST /internal/files/blocks/committed` | file | 서비스 간 | commit된 블록인지 (미커밋 블록 정리가 지우기 전에 확인) |
 
 **호출 수** (batch 1번 제외)
 
-| 경우 | 파일마다 따로 올릴 때 | 묶음 |
+| 경우 | 서버 요청 | S3 PUT |
 |---|---|---|
-| 새 작은 파일 1,000개 (각 10KB) | 약 3,000번 | commit 10 + 블록 2 + commit 10 = 약 22번 |
-| 새 30MB 파일 1개 | commit 2 + 블록 8 = 10번 | commit 2 + 블록 4 = 6번 |
-| 이미 있는 파일 100개 | commit 100번 | commit 1번 |
-| 빈 폴더 1,000개 | 폴더 생성 1,000번 | commit 1번 ([8](#8-폴더-업로드)) |
+| 새 작은 파일 1,000개 (각 10KB) | commit 10 + URL 16 + commit 10 = 약 36번 | 1,000번 |
+| 새 30MB 파일 1개 | commit 2 + URL 1 = 3번 | 8번 |
+| 이미 있는 파일 100개 | commit 1번 | 0 |
+| 빈 폴더 1,000개 | commit 1번 ([8](#8-폴더-업로드)) | 0 |
+
+- S3 PUT은 블록마다 하나다. 작은 파일이 많으면 PUT 수가 늘지만, 서버를 거치지 않으므로 서버 부하는 서버 요청 수만큼이다.

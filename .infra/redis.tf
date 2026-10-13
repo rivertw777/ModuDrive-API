@@ -78,7 +78,7 @@ locals {
 
 # prod: MemoryDB for Valkey. A write is acknowledged only once it's in the Multi-AZ transaction log,
 # so a primary lost (or cut off) and replaced by a replica loses nothing: the sessions, verification
-# codes, upload records and quotas here stay exactly as written. Cluster mode — the app keeps keys
+# codes, upload sweep schedule and quotas here stay exactly as written. Cluster mode — the app keeps keys
 # used together in one hash slot (spec 006 2-4-6) and follows topology changes (application-redis.yml).
 resource "aws_memorydb_cluster" "redis" {
   for_each = var.redis_engine == "memorydb" ? var.redis_clusters : {}

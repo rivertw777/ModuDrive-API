@@ -6,7 +6,7 @@ import java.util.UUID;
 
 public interface FindUploadedBlocksUseCase {
 
-    /** Uploaded, not-yet-expired blocks among {@code hashes} (hash → raw size) — file-service asks
+    /** Blocks among {@code hashes} that landed in S3 within the last 24h, intact (hash → size) — file-service asks
      * when a commit names blocks it has no row for. */
     Map<String, Integer> findUploadedBlocks(UUID ownerId, List<String> hashes);
 }

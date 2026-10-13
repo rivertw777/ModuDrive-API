@@ -93,6 +93,11 @@ services:
       - AWS_DEFAULT_REGION=${SQS_REGION}
       - STORAGE_S3_BUCKET=${STORAGE_S3_BUCKET}
       - STORAGE_S3_REGION=${STORAGE_S3_REGION}
+      # The browser PUTs blocks to the bucket from here (bucket CORS, spec 001 6).
+      - CLIENT_URL=${CLIENT_URL}
+      # Check signatures like AWS does, so a presigned upload URL fails here too when the request
+      # doesn't match what was signed (size, checksum header).
+      - S3_SKIP_SIGNATURE_VALIDATION=0
       - MAIL_FROM=${MAIL_FROM}
     volumes:
       - localstack_data:/var/lib/localstack

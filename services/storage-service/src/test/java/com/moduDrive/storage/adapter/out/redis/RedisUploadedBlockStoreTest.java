@@ -22,8 +22,8 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** Runs the Lua scripts against a real Redis — the record/index pairing and the atomic claim live
- * there, not in Java. */
+/** Runs the Lua scripts against a real Redis — the upload count and the atomic claim live there, not
+ * in Java. */
 class RedisUploadedBlockStoreTest {
 
     private static final GenericContainer<?> REDIS = new GenericContainer<>("redis:7-alpine").withExposedPorts(6379);
@@ -57,19 +57,25 @@ class RedisUploadedBlockStoreTest {
     }
 
     @Nested
-    @DisplayName("블록이 올라왔다고 기록할 때")
-    class WhenRecording {
+    @DisplayName("URL을 받은 블록을 찾을 때")
+    class WhenFindingScheduled {
+
+        private static final String HASH_A = "a".repeat(64);
+        private static final String HASH_B = "b".repeat(64);
+        private static final String HASH_C = "c".repeat(64);
 
         @Test
-        @DisplayName("크기를 24시간 동안 기억하고, 같은 소유자의 그 해시로만 찾힌다 (정리 대상 등록은 scheduleSweep 몫)")
-        void remembersTheSizeForTheOwnerOnly() {
-            store.recordUploaded(owner, "h1", 4);
+        @DisplayName("기준 시각 뒤에 등록된 그 소유자의 블록만 돌려준다 (여러 키에 걸쳐)")
+        void findsTheOwnersBlocksScheduledSince() throws InterruptedException {
+            store.scheduleSweep(owner, HASH_A);
+            Thread.sleep(5);
+            Instant since = Instant.now();
+            Thread.sleep(5);
+            store.scheduleSweep(owner, HASH_B);
+            store.scheduleSweep(UUID.randomUUID(), HASH_C);
 
-            assertThat(store.findUploaded(owner, List.of("h1", "h2"))).containsExactly(java.util.Map.entry("h1", 4));
-            assertThat(store.findUploaded(UUID.randomUUID(), List.of("h1"))).isEmpty();
-            long ttl = redisTemplate.getExpire(RedisUploadedBlockStore.key(owner, "h1"), TimeUnit.MILLISECONDS);
-            assertThat(ttl).isBetween(Blocks.UPLOAD_TTL.toMillis() - 5_000, Blocks.UPLOAD_TTL.toMillis());
-            assertThat(store.claimStale(Instant.now().plusSeconds(60), 10)).isEmpty();
+            assertThat(store.findScheduledSince(owner, List.of(HASH_A, HASH_B, HASH_C, HASH_B), since))
+                    .containsExactly(HASH_B);
         }
     }
 
@@ -124,11 +130,10 @@ class RedisUploadedBlockStoreTest {
         }
 
         @Test
-        @DisplayName("S3에 넣기 전에 정리 대상으로만 등록한 블록도 거둔다")
-        void claimsABlockScheduledButNeverRecorded() {
+        @DisplayName("URL만 발급되고 올라오지 않은 블록도 거둔다")
+        void claimsABlockScheduledButNeverUploaded() {
             store.scheduleSweep(owner, "a1");
 
-            assertThat(store.findUploaded(owner, List.of("a1"))).isEmpty();
             assertThat(store.claimStale(Instant.now().plusMillis(1), 10)).containsExactly(new UploadedBlock(owner, "a1"));
         }
 
@@ -157,13 +162,6 @@ class RedisUploadedBlockStoreTest {
 
             assertThat(store.claimStale(cutoff, 10)).isEmpty();
         }
-    }
-
-    @Test
-    @DisplayName("한 소유자의 블록 기록은 한 클러스터 슬롯에 있어, MemoryDB에서도 한 번에 조회된다")
-    void anOwnersRecordsShareAClusterSlot() {
-        assertThat(SlotHash.getSlot(RedisUploadedBlockStore.key(owner, "h1")))
-                .isEqualTo(SlotHash.getSlot(RedisUploadedBlockStore.key(owner, "h2")));
     }
 
     @Test

@@ -103,12 +103,24 @@ data "aws_iam_policy_document" "task" {
     }
   }
 
-  # Blocks: put on upload, get on download, delete on purge. No bucket-level rights (no CreateBucket, 003-aws-migration.md 1-8).
+  # Blocks: put through the presigned URLs it signs, get on download and lookup, delete on purge.
+  # No CreateBucket (003-aws-migration.md 1-8).
   dynamic "statement" {
     for_each = each.key == "storage" ? [1] : []
     content {
       actions   = ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"]
-      resources = ["${aws_s3_bucket.storage.arn}/*"]
+      resources = ["${aws_s3_bucket.storage.arn}/blocks/*"]
+    }
+  }
+
+  # Without ListBucket S3 answers a HEAD on a missing key with 403, not 404 — and a missing block is
+  # the usual answer: the commit's lookup and the sweep both HEAD blocks that were never PUT. No
+  # s3:prefix condition: a HEAD carries no prefix, so the condition would never match it.
+  dynamic "statement" {
+    for_each = each.key == "storage" ? [1] : []
+    content {
+      actions   = ["s3:ListBucket"]
+      resources = [aws_s3_bucket.storage.arn]
     }
   }
 

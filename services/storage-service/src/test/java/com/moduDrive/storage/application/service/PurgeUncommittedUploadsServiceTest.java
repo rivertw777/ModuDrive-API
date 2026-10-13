@@ -4,6 +4,7 @@ import com.moduDrive.storage.application.port.out.ClaimStaleUploadsPort;
 import com.moduDrive.storage.application.port.out.ClaimStaleUploadsPort.UploadedBlock;
 import com.moduDrive.storage.application.port.out.DeleteBlocksPort;
 import com.moduDrive.storage.application.port.out.FindCommittedBlocksPort;
+import com.moduDrive.storage.application.port.out.FindScheduledUploadsPort;
 import com.moduDrive.storage.domain.model.Blocks;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -36,6 +37,7 @@ class PurgeUncommittedUploadsServiceTest {
 
     @Mock private ClaimStaleUploadsPort claimStaleUploadsPort;
     @Mock private FindCommittedBlocksPort findCommittedBlocksPort;
+    @Mock private FindScheduledUploadsPort findScheduledUploadsPort;
     @Mock private DeleteBlocksPort deleteBlocksPort;
     @InjectMocks private PurgeUncommittedUploadsService service;
 
@@ -59,7 +61,20 @@ class PurgeUncommittedUploadsServiceTest {
         }
 
         @Test
-        @DisplayName("업로드 기록이 사라진 뒤(25시간)의 것만 고른다")
+        @DisplayName("거둔 뒤 URL이 다시 발급된 블록은 남긴다 — 다시 올려도 S3 객체가 바뀌지 않아 객체로는 알 수 없다")
+        void keepsABlockSignedAgainSinceTheClaim() {
+            given(claimStaleUploadsPort.claimStale(any(), anyInt()))
+                    .willReturn(List.of(new UploadedBlock(owner, "h1"), new UploadedBlock(owner, "h2")));
+            given(findScheduledUploadsPort.findScheduledSince(eq(owner), eq(List.of("h1", "h2")), any())).willReturn(Set.of("h2"));
+
+            service.purgeUncommittedUploads();
+
+            then(deleteBlocksPort).should().deleteUnlessRewritten(eq(Blocks.key(owner, "h1")), any());
+            then(deleteBlocksPort).should(never()).deleteUnlessRewritten(eq(Blocks.key(owner, "h2")), any());
+        }
+
+        @Test
+        @DisplayName("commit이 더는 받지 않는 것(URL 발급 25시간 뒤)만 고른다")
         void claimsOnlyPastTheUploadWindow() {
             given(claimStaleUploadsPort.claimStale(any(), anyInt())).willReturn(List.of());
             Instant before = Instant.now();
