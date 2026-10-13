@@ -71,7 +71,6 @@
 <br>
 
 - [파일 업로드 설계하기 (블록 기반)](https://nicky777.tistory.com/27)
-- [파일 메타데이터와 스토리지의 정합성 보장](https://github.com/rivertw777/ModuDrive-API/wiki/%ED%8C%8C%EC%9D%BC-%EB%A9%94%ED%83%80%EB%8D%B0%EC%9D%B4%ED%84%B0%EC%99%80-%EC%8A%A4%ED%86%A0%EB%A6%AC%EC%A7%80%EC%9D%98-%EC%A0%95%ED%95%A9%EC%84%B1-%EB%B3%B4%EC%9E%A5)
 - [분산 트레이싱 도입](https://github.com/rivertw777/ModuDrive-API/wiki/%EB%B6%84%EC%82%B0-%ED%8A%B8%EB%A0%88%EC%9D%B4%EC%8B%B1-%EB%8F%84%EC%9E%85)
 
 <br>
