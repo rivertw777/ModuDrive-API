@@ -11,7 +11,6 @@ import java.io.IOException;
 import java.util.Map;
 import java.util.Properties;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import software.amazon.awssdk.awscore.exception.AwsServiceException;
 import software.amazon.awssdk.core.SdkBytes;
@@ -22,7 +21,6 @@ import software.amazon.awssdk.services.ses.model.MessageTag;
 /** Uses SendRawEmail directly because Spring Cloud AWS's JavaMailSender can't set message tags. Each mail
  * carries its delivery id as the {@link #DELIVERY_TAG} tag, which comes back in SES's Send event. */
 @Component
-@ConditionalOnProperty(name = "modudrive.mail.transport", havingValue = "ses", matchIfMissing = true)
 class SesMailAdapter implements SendMailPort {
 
     static final String DELIVERY_TAG = "deliveryId";
