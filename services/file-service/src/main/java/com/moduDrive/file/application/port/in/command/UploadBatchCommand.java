@@ -1,11 +1,13 @@
 package com.moduDrive.file.application.port.in.command;
 
+import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.File.FilePath;
 import lombok.Getter;
 
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /** A whole upload selection — files, folders, or both — checked for name conflicts in one
  * request. Nothing is created here; each file's commit makes its rows. */
@@ -24,12 +26,17 @@ public class UploadBatchCommand {
         this.userId = userId;
         this.targetPath = targetPath;
         this.items = List.copyOf(items);
-        this.resolutions = resolutions == null ? Map.of() : Map.copyOf(resolutions);
+        this.resolutions = resolutions == null ? Map.of() : resolutions.entrySet().stream()
+                .collect(Collectors.toUnmodifiableMap(e -> File.nfc(e.getKey()), Map.Entry::getValue));
     }
 
     /** {@code relativePath} is "/"-separated and relative to {@code targetPath}; {@code size} is
      * only read for files. */
-    public record Item(String relativePath, boolean directory, Long size) {}
+    public record Item(String relativePath, boolean directory, Long size) {
+        public Item {
+            relativePath = File.nfc(relativePath);
+        }
+    }
 
     public enum ConflictResolution {
         REPLACE, KEEP_BOTH, SKIP

@@ -1,5 +1,6 @@
 package com.moduDrive.file.application.port.in.command;
 
+import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.FileVersion.FileVersionFileSize;
 import com.moduDrive.file.domain.model.FileVersion.FileVersionHashes;
 import com.moduDrive.file.domain.model.FileVersion.FileVersionUploadId;
@@ -23,8 +24,8 @@ public class CommitFileUploadCommand {
     public CommitFileUploadCommand(UUID callerId, String path, String name, UUID uploadId, long fileSize,
                                    List<String> blocklist) {
         this.callerId = callerId;
-        this.path = path;
-        this.name = name;
+        this.path = File.nfc(path);
+        this.name = File.nfc(name);
         this.uploadId = new FileVersionUploadId(uploadId);
         this.fileSize = new FileVersionFileSize(fileSize);
         this.blocklist = new FileVersionHashes(List.copyOf(blocklist));

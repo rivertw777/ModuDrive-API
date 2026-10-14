@@ -4,6 +4,7 @@ import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
+import java.text.Normalizer;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -171,6 +172,12 @@ public class File {
         this.linkRole = null;
     }
 
+    /** macOS hands over Hangul names decomposed (NFD), Windows composed (NFC): the same name would
+     * otherwise be two rows that never conflict. Every name and path is stored and looked up in NFC. */
+    public static String nfc(String value) {
+        return value == null ? null : Normalizer.normalize(value, Normalizer.Form.NFC);
+    }
+
     public record FileId(UUID value) {}
     public record FileNamespaceId(UUID value) {}
     public record FileName(String value) {
@@ -182,6 +189,7 @@ public class File {
                     || value.equals(".") || value.equals("..")) {
                 throw new IllegalArgumentException("파일/디렉토리 이름에 /, \\, ., .. 는 사용할 수 없습니다.");
             }
+            value = nfc(value);
         }
 
         /** "report.pdf" + 1 -> "report (1).pdf", the "keep both" name on a conflict. A directory
@@ -193,7 +201,11 @@ public class File {
                     : new FileName(value + " (" + n + ")");
         }
     }
-    public record FilePath(String value) {}
+    public record FilePath(String value) {
+        public FilePath {
+            value = nfc(value);
+        }
+    }
     public record FileOwnerId(UUID value) {}
     public record FileCurrentVersionId(UUID value) {}
     public record FileSize(Long value) {}
