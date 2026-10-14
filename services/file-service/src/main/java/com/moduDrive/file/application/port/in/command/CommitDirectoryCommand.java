@@ -1,5 +1,6 @@
 package com.moduDrive.file.application.port.in.command;
 
+import com.moduDrive.file.domain.model.File;
 import lombok.Getter;
 
 import java.util.UUID;
@@ -15,7 +16,7 @@ public class CommitDirectoryCommand {
 
     public CommitDirectoryCommand(UUID callerId, String path, String name) {
         this.callerId = callerId;
-        this.path = path;
-        this.name = name;
+        this.path = File.nfc(path);
+        this.name = File.nfc(name);
     }
 }

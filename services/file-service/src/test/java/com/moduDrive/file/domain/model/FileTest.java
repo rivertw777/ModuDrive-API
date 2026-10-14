@@ -39,6 +39,15 @@ class FileTest {
             assertThatThrownBy(() -> new FileName(null))
                     .isInstanceOf(IllegalArgumentException.class);
         }
+
+        @Test
+        @DisplayName("macOS의 분해된(NFD) 한글 이름과 경로를 조합형(NFC)으로 바꾼다")
+        void composesDecomposedHangul() {
+            String nfd = "보고서.pdf"; // "보고서.pdf" as macOS sends it
+
+            assertThat(new FileName(nfd).value()).isEqualTo("보고서.pdf");
+            assertThat(new File.FilePath("/" + nfd).value()).isEqualTo("/보고서.pdf");
+        }
     }
 
     @Nested

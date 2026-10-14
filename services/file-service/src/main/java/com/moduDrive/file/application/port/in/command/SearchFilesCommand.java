@@ -1,5 +1,6 @@
 package com.moduDrive.file.application.port.in.command;
 
+import com.moduDrive.file.domain.model.File;
 import com.moduDrive.file.domain.model.Namespace.NamespaceUserId;
 import lombok.Getter;
 
@@ -16,6 +17,6 @@ public class SearchFilesCommand {
             throw new IllegalArgumentException("query must not be blank");
         }
         this.userId = new NamespaceUserId(userId);
-        this.query = query;
+        this.query = File.nfc(query);
     }
 }
