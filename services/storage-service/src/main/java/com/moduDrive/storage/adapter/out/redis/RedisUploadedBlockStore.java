@@ -19,7 +19,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * The uncommitted-upload sweep's schedule (spec 001 6-1): {@code uploaded-blocks:{<c>}} is a sorted set
+ * The uncommitted-upload sweep's schedule (spec 001 2-4-1): {@code uploaded-blocks:{<c>}} is a sorted set
  * of {@code ownerId:hash} by the time its upload URL was signed. It is split 16 ways by the hash's first
  * hex digit — one key would put every upload's write on a single shard however many there are. The
  * score is also what a commit's freshness check reads; whether a block actually landed is S3's to say

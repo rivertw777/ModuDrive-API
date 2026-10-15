@@ -9,7 +9,7 @@ import org.springframework.http.HttpStatus;
 @AllArgsConstructor
 public enum StorageExceptionCase implements ExceptionCase {
 
-    /** No blocks or over 64 in one URL request, a malformed hash, or an empty block (spec 001 6-2). */
+    /** No blocks or over 64 in one URL request, a malformed hash, or an empty block (spec 001 2-4-2). */
     INVALID_BLOCK(HttpStatus.BAD_REQUEST, "올바르지 않은 블록입니다."),
     BLOCK_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "블록 하나는 블록 크기를 초과할 수 없습니다."),
     /** The owner already got {@code storage.upload-blocks-per-window} upload URLs in the last 24h. */

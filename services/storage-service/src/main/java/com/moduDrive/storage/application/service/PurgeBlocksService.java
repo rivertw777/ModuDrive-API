@@ -13,7 +13,7 @@ import java.util.Set;
 
 /** Blocks file-service stopped referencing a day ago. One written after file-service decided is kept
  * — see {@link DeleteBlocksPort}. So is one whose upload URL was signed within {@link Blocks#UPLOAD_TTL},
- * even if the object is older: a commit takes such a block (spec 001 5), and re-uploading a block
+ * even if the object is older: a commit takes such a block (spec 001 2-3), and re-uploading a block
  * already in S3 doesn't rewrite it, so deleting the object would commit a version whose block is gone.
  * The uncommitted-upload sweep deletes it later if nothing commits it. */
 @UseCase

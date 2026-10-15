@@ -8,6 +8,6 @@ import java.util.UUID;
 public interface FindScheduledUploadsPort {
 
     /** The blocks among {@code hashes} whose upload URL was last signed after {@code since} — still on
-     * the sweep's schedule, so the sweep can't take them before a commit does (spec 001 5). */
+     * the sweep's schedule, so the sweep can't take them before a commit does (spec 001 2-3). */
     Set<String> findScheduledSince(UUID ownerId, Collection<String> hashes, Instant since);
 }

@@ -21,7 +21,7 @@ public class StorageProperties {
     @Setter
     public static class S3Properties {
         private String endpoint;
-        /** Where the browser reaches the same S3 — what presigned upload URLs point at (spec 001 6).
+        /** Where the browser reaches the same S3 — what presigned upload URLs point at (spec 001 2-4).
          * Locally LocalStack as seen from the host; blank = real AWS S3, the same for both. */
         private String publicEndpoint;
         private String bucket = "modudrive";
