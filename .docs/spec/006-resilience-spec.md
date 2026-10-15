@@ -347,11 +347,11 @@ flowchart LR
 ```
 
 - S3 호출 하나하나(`GetObject`, `HeadObject`, `DeleteObject`)를 **벌크헤드 → 서킷 브레이커** 순으로 감싼다 (`S3StorageAdapter`). 다운로드 하나가 블록을 여러 개 읽어도 자리는 블록을 읽는 동안만 잡는다. 느린 클라이언트가 응답을 받는 동안에는 자리를 잡지 않는다.
-- 블록 바이트는 WEB이 S3에 직접 PUT한다 ([001 6](001-file-upload-spec.md#6-블록-전송)). storage-service는 `PutObject`를 부르지 않는다. URL 발급은 로컬 서명이라 S3를 부르지 않으므로 어느 벌크헤드도 거치지 않는다.
+- 블록 바이트는 WEB이 S3에 직접 PUT한다 ([001 2-4](001-file-upload-spec.md#2-4-블록-전송)). storage-service는 `PutObject`를 부르지 않는다. URL 발급은 로컬 서명이라 S3를 부르지 않으므로 어느 벌크헤드도 거치지 않는다.
 - 블록 확인·다운로드·삭제의 자리를 나눠, 한쪽이 몰리거나 느려져도 다른 쪽 자리는 남는다. 세 벌크헤드 합(85)이 Tomcat 요청 스레드(200)보다 작아서, S3가 완전히 멈춰도 S3를 쓰지 않는 요청을 받을 스레드가 남는다.
 - 서킷은 하나다. 업로드든 다운로드든 S3 자체가 아프면 같이 막는다.
 - `/internal/storage/blocks/uploaded`는 24시간 안에 URL을 받은 해시마다 `HeadObject`를 보내고(commit 하나에 동시 8개), 그 자리는 `s3Lookup`에서 잡는다. 서킷이 열리면 바로, 자리가 차면 최대 1초 기다린 뒤 조회 전체가 503으로 끝나고 남은 HEAD는 보내지 않는다. URL을 받은 적 없는 해시는 S3에 묻지 않아서, 새 파일의 첫 commit은 S3가 아파도 영향이 없다.
-- file-service는 S3를 직접 부르지 않는다. commit은 storage-service 조회를 **DB 트랜잭션 밖에서** 한다 ([001 5](001-file-upload-spec.md#5-commit)). 그래서 S3 장애가 file-service DB 잠금으로 번지지 않는다.
+- file-service는 S3를 직접 부르지 않는다. commit은 storage-service 조회를 **DB 트랜잭션 밖에서** 한다 ([001 2-3](001-file-upload-spec.md#2-3-commit)). 그래서 S3 장애가 file-service DB 잠금으로 번지지 않는다.
 - storage-service 자체가 죽어 그 조회가 실패해도 commit 요청 전체가 실패하지 않는다. 이미 commit된 블록만으로 된 파일은 버전을 만들고, 나머지 파일만 그 503으로 답한다.
 
 #### 2-4-1. 시간 제한
@@ -397,7 +397,7 @@ SDK 표준 재시도에 맡기고, 최대 시도는 **2번**(처음 1 + 재시�
 | 시간 초과·연결 실패·5xx | 500 `STORAGE_ERROR` | 스토리지 오류가 발생했습니다. |
 
 - 모든 서비스의 503에는 `Retry-After: 10`이 붙는다 (`GlobalExceptionHandler`, 서킷이 열려 있는 시간 `waitDurationInOpenState`). gateway 자신이 만드는 503(라우트 서킷 폴백 `FallbackController`, 세션 확인 실패 `CustomAuthenticationEntryPoint`)에도 같은 값이 붙고, gateway CORS가 이 헤더를 노출한다.
-- 503은 WEB 업로드가 자동으로 다시 보내는 응답이다 (1·2·4초에 0~50% 지터 — S3가 돌아오는 순간 모든 클라이언트가 같은 박자로 몰리지 않게 — 단 `Retry-After`보다 일찍은 아니다). 그래도 실패하면 30초 간격으로 최대 10분 **일시 중지 후 자동 재개**하고, 그때도 안 되면 그 파일만 실패한다. 나중에 다시 올리면 commit이 이어 올리기로 받은 블록을 건너뛴다 ([001 7](001-file-upload-spec.md#7-이어-올리기)).
+- 503은 WEB 업로드가 자동으로 다시 보내는 응답이다 (1·2·4초에 0~50% 지터 — S3가 돌아오는 순간 모든 클라이언트가 같은 박자로 몰리지 않게 — 단 `Retry-After`보다 일찍은 아니다). 그래도 실패하면 30초 간격으로 최대 10분 **일시 중지 후 자동 재개**하고, 그때도 안 되면 그 파일만 실패한다. 나중에 다시 올리면 commit이 이어 올리기로 받은 블록을 건너뛴다 ([001 2-5](001-file-upload-spec.md#2-5-이어-올리기)).
 - 미확정 블록 정리 작업은 실패하면 꺼낸 블록을 다시 정리 대상에 넣고 그 회차를 멈춘다. 다음 회차(1시간 뒤)에 다시 한다.
 
 #### 2-4-6. Redis 분리
