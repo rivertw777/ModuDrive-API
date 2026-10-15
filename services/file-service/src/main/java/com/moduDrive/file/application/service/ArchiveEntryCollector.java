@@ -74,7 +74,7 @@ class ArchiveEntryCollector {
                 entries.add(new ArchiveEntry(path, null));
                 return;
             }
-            // Never finished uploading — nothing to put in the zip.
+            // Purged since it was listed (its versions went with it) — nothing to put in the zip.
             FileVersion version = versions.get(file.getCurrentVersionId());
             if (version != null) {
                 entries.add(new ArchiveEntry(path, version));

@@ -24,7 +24,6 @@ import com.moduDrive.file.domain.model.File.FileName;
 import com.moduDrive.file.domain.model.File.FileNamespaceId;
 import com.moduDrive.file.domain.model.File.FileOwnerId;
 import com.moduDrive.file.domain.model.File.FilePath;
-import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.FileVersion;
 import com.moduDrive.file.domain.model.FileVersion.FileVersionFileId;
 import com.moduDrive.file.domain.model.FileVersion.FileVersionOwnerId;
@@ -265,12 +264,12 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
         NamespaceId namespaceId = new NamespaceId(namespace.getId());
         File file = fileAt(namespaceId, path, name, ownerId);
         // Read under the file's lock: no other commit can replace it meanwhile.
-        long replaced = file.getStatus() == FileStatus.PENDING || file.getFileSize() == null ? 0 : file.getFileSize();
+        long replaced = file.getFileSize() == null ? 0 : file.getFileSize();
         // The same content as the current version — a re-upload of an unchanged file — makes no new
         // version; otherwise repeating it would pile up versions (and their block rows) forever.
         Optional<FileVersion> current = file.getCurrentVersionId() == null ? Optional.empty()
                 : findFileVersionsPort.findAllByIds(List.of(file.getCurrentVersionId())).stream().findFirst();
-        if (file.getStatus() == FileStatus.UPLOADED && current.isPresent()
+        if (current.isPresent()
                 && current.get().getFileSize() == fileSize && current.get().getHashes().equals(blocklist)) {
             saveFileAccessPort.recordAccesses(ownerId, List.of(file.getId()), LocalDateTime.now());
             return CommitResult.committed(current.get());
@@ -339,10 +338,10 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
     }
 
     /** How much the drive grows if this file is committed: its size, less the current size of the
-     * file it replaces (a folder or a PENDING row counts as 0). */
+     * file it replaces (a folder counts as 0). */
     private long growthOf(CommitFileUploadCommand command, NamespaceId namespaceId) {
         long replaced = findFilePort.findActiveByNamespaceIdAndPathAndName(namespaceId, command.getPath(), command.getName())
-                .filter(file -> !file.isDirectory() && file.getStatus() != FileStatus.PENDING && file.getFileSize() != null)
+                .filter(file -> !file.isDirectory() && file.getFileSize() != null)
                 .map(File::getFileSize)
                 .orElse(0L);
         return command.getFileSize().value() - replaced;
