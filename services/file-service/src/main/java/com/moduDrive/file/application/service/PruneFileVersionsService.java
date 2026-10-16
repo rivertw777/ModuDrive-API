@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.UUID;
 
 /** Spec 001: a file keeps its current version, and of the others only those under 30 days old and
- * among its newest 100 (Google Drive's rule). A dropped version releases its blocks; the
+ * among its newest 5. A dropped version releases its blocks; the
  * unreferenced-block sweep deletes the ones no other version uses, a day later. */
 @Slf4j
 @UseCase
@@ -22,7 +22,7 @@ import java.util.UUID;
 class PruneFileVersionsService implements PruneFileVersionsUseCase {
 
     static final Duration RETENTION = Duration.ofDays(30);
-    static final int KEEP = 100;
+    static final int KEEP = 5;
     static final int BATCH_SIZE = 500;
 
     private final FindFileVersionsPort findFileVersionsPort;
