@@ -27,7 +27,7 @@ locals {
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' blob: data:",
     "media-src 'self' blob: https://api.${var.domain_name}",
-    # Block uploads go straight to the bucket (spec 001 6).
+    # Block uploads go straight to the bucket (spec 001 2-4).
     "connect-src 'self' https://api.${var.domain_name} https://${aws_s3_bucket.storage.bucket_regional_domain_name}",
     "object-src 'none'",
     "base-uri 'self'",
