@@ -127,7 +127,7 @@ sequenceDiagram
 - `file_version`을 만든 시각 내림차순으로 1개, 즉 **가장 최근에 완료된 버전**이 내려간다.
 - 대체 업로드가 commit되기 전에는 새 버전이 아직 없으므로 이전 버전이 내려간다.
 - 버전이 없는 파일은 404 `FILE_NOT_FOUND_IN_STORAGE`다.
-- 과거 버전을 골라 받는 기능은 없다. 버전 이력은 `GET /api/v1/files/{fileId}/revisions`로 목록 조회만 된다. 과거 버전은 30일·최신 100개 규칙으로 정리된다 ([001 5](001-file-upload-spec.md#5-블록-정리)).
+- 과거 버전을 골라 받는 기능은 없다. 버전 이력은 `GET /api/v1/files/{fileId}/revisions`로 목록 조회만 된다. 과거 버전은 30일·최신 5개 규칙으로 정리된다 ([001 5-3](001-file-upload-spec.md#5-3-과거-버전-정리)).
 
 ---
 
