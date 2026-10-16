@@ -98,7 +98,7 @@ class S3StorageAdapterTest {
     }
 
     @Nested
-    @DisplayName("commit 전에 올라온 블록을 확인할 때 (spec 001 5)")
+    @DisplayName("commit 전에 올라온 블록을 확인할 때 (spec 001 2-3)")
     class WhenFindingUploaded {
 
         private void headReturns(String hash, Instant lastModified, String checksum, long size) {

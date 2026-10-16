@@ -37,7 +37,7 @@ if [ -n "${STORAGE_S3_BUCKET:-}" ]; then
   fi
   awslocal s3api head-bucket --bucket "$STORAGE_S3_BUCKET" 2>/dev/null \
     || awslocal s3api create-bucket --bucket "$STORAGE_S3_BUCKET" --region "$STORAGE_S3_REGION" "${location[@]}" >/dev/null
-  # The WEB PUTs blocks straight here through presigned URLs (spec 001 6) — same rule as s3.tf.
+  # The WEB PUTs blocks straight here through presigned URLs (spec 001 2-4) — same rule as s3.tf.
   awslocal s3api put-bucket-cors --bucket "$STORAGE_S3_BUCKET" --cors-configuration "{
     \"CORSRules\": [{\"AllowedOrigins\": [\"$CLIENT_URL\"], \"AllowedMethods\": [\"PUT\"],
       \"AllowedHeaders\": [\"content-type\", \"if-none-match\", \"x-amz-checksum-sha256\"], \"MaxAgeSeconds\": 3600}]

@@ -5,7 +5,7 @@ import lombok.Getter;
 
 import java.util.UUID;
 
-/** A folder of an uploaded folder tree that no file commit creates (spec 001 8). {@code path} is
+/** A folder of an uploaded folder tree that no file commit creates (spec 001 2-6). {@code path} is
  * the folder above it; the service validates both, since they become rows. */
 @Getter
 public class CommitDirectoryCommand {

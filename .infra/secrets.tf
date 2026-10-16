@@ -55,7 +55,7 @@ moved {
 }
 
 # Former AES-256 key for file blocks. Nothing reads it since blocks go to S3 as-is through presigned
-# URLs (spec 001 6), and blocks written with it are unreadable to the app (spec 001 1-2: reset). Kept
+# URLs (spec 001 2-4), and blocks written with it are unreadable to the app (spec 001 2-3; reset). Kept
 # only because prevent_destroy refuses a plain removal — once no old block is left anywhere (backup
 # copies included), drop the lifecycle blocks in one apply, then the resources in the next.
 resource "random_bytes" "storage_encryption_key" {

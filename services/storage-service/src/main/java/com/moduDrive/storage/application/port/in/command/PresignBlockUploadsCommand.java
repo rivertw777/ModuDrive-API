@@ -5,7 +5,7 @@ import lombok.Getter;
 import java.util.List;
 import java.util.UUID;
 
-/** Blocks the caller is about to PUT to S3 (spec 001 6): each with the hash and size it says it has. */
+/** Blocks the caller is about to PUT to S3 (spec 001 2-4): each with the hash and size it says it has. */
 @Getter
 public class PresignBlockUploadsCommand {
 

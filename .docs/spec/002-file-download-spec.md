@@ -37,9 +37,9 @@
 |---|---|
 | **WEB** | 파일 하나는 Blob으로 받아 저장, zip은 토큰 링크로 이동, 미리보기는 Blob 또는 `<video>`/`<audio>` `src` |
 | **gateway-service** | 세션을 확인하고 `X_USER_ID`를 붙여 요청을 넘긴다. 공개 링크·zip 받기 경로는 인증 없이 통과 |
-| **storage-service** | 바이트 조립 — S3에서 블록을 읽어 그대로 응답에 쓴다(블록은 원본 바이트, [001 1-2](001-file-upload-spec.md#1-2-저장-위치)). 쿼터·zip 토큰 관리 |
+| **storage-service** | 바이트 조립 — S3에서 블록을 읽어 그대로 응답에 쓴다(블록은 원본 바이트, [001 1](001-file-upload-spec.md#1-구성-요소)). 쿼터·zip 토큰 관리 |
 | **file-service** | 권한 판단과 내려갈 버전의 블록 목록(`ownerId`, 해시들), zip 구성 계산 |
-| **S3** | 블록 (`blocks/{ownerId}/{hash}`, [001 1-2](001-file-upload-spec.md#1-2-저장-위치)) |
+| **S3** | 블록 (`blocks/{ownerId}/{hash}`, [001 1](001-file-upload-spec.md#1-구성-요소)) |
 | **Redis** | 다운로드 쿼터, zip 토큰 (storage 전용 Redis) |
 
 - 권한 판단은 **file-service**가, 바이트 조립은 **storage-service**가 한다. storage-service는 file-service가 돌려준 위치만 읽는다.
@@ -54,7 +54,7 @@
 | 파일과 폴더를 섞어서 | **zip 하나**로 받는다 |
 
 - WEB은 `UPLOADED` 상태인 파일과 폴더만 다운로드 대상으로 본다.
-- 파일 행은 commit이 버전과 함께 만들기 때문에([001 1-1](001-file-upload-spec.md#1-1-블록과-blocklist)) 지금은 버전 없는 파일이 생기지 않는다. 예전 업로드 흐름이 남긴 `PENDING` 행만 메뉴와 zip에서 빠진다.
+- 파일 행은 commit이 버전과 함께 만들기 때문에([001 2-3-1](001-file-upload-spec.md#2-3-1-버전-생성-규칙)) 버전 없는 파일은 생기지 않는다.
 
 ### 1-2. Redis 키
 
@@ -127,7 +127,7 @@ sequenceDiagram
 - `file_version`을 만든 시각 내림차순으로 1개, 즉 **가장 최근에 완료된 버전**이 내려간다.
 - 대체 업로드가 commit되기 전에는 새 버전이 아직 없으므로 이전 버전이 내려간다.
 - 버전이 없는 파일은 404 `FILE_NOT_FOUND_IN_STORAGE`다.
-- 과거 버전을 골라 받는 기능은 없다. 버전 이력은 `GET /api/v1/files/{fileId}/revisions`로 목록 조회만 된다. 과거 버전은 30일·최신 100개 규칙으로 정리된다 ([001 11](001-file-upload-spec.md#11-블록-정리)).
+- 과거 버전을 골라 받는 기능은 없다. 버전 이력은 `GET /api/v1/files/{fileId}/revisions`로 목록 조회만 된다. 과거 버전은 30일·최신 5개 규칙으로 정리된다 ([001 5-3](001-file-upload-spec.md#5-3-과거-버전-정리)).
 
 ---
 
@@ -271,7 +271,7 @@ sequenceDiagram
 
 - `<video>`는 재생을 `bytes=0-`으로 시작하고 시킹마다 `Range`를 보낸다. 요청마다 파일 전체(최대 100MB)를 조립하면 재생 중인 영상 하나로 태스크가 OOM으로 죽는다(#634). 그래서 요청당 블록 2개(8MB)까지만 메모리에 올린다.
 - 요청한 것보다 짧게 보내는 것은 RFC 9110이 허용하고, 미디어 요소는 받은 뒤 다음 구간을 다시 요청한다.
-- 업로드가 마지막 블록을 뺀 모든 블록을 정확히 4MB로 자르므로([001 5-3](001-file-upload-spec.md#5-3-검증과-오류)) 바이트 위치를 블록 번호로 바로 바꿀 수 있다.
+- 업로드가 마지막 블록을 뺀 모든 블록을 정확히 4MB로 자르므로([001 2-3-3](001-file-upload-spec.md#2-3-3-검증과-오류)) 바이트 위치를 블록 번호로 바로 바꿀 수 있다.
 
 ### 7-2. WEB이 미리보기를 띄우는 조건
 
