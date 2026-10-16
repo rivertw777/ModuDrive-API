@@ -27,13 +27,18 @@ interface SpringDataBlockRepository extends JpaRepository<BlockJpaEntity, BlockJ
 
     // Upsert, not insert: two commits of the same new block can both find it missing — the second
     // adds its references to the row the first created instead of failing on the primary key.
+    // One statement for a whole version (the arrays line up by index), its rows written in hash
+    // order — the order the commit locked them in, so two commits still can't deadlock.
     @Modifying
-    @Query(value = "insert into block (owner_id, hash, size, ref_count) values (:ownerId, :hash, :size, :count) "
+    @Query(value = "insert into block (owner_id, hash, size, ref_count) "
+            + "select :ownerId, t.hash, t.size, t.cnt "
+            + "from unnest(cast(:hashes as varchar[]), cast(:sizes as int[]), cast(:counts as int[])) as t(hash, size, cnt) "
+            + "order by t.hash "
             + "on conflict (owner_id, hash) do update "
             + "set ref_count = block.ref_count + excluded.ref_count, unreferenced_at = null",
             nativeQuery = true)
-    void reference(@Param("ownerId") UUID ownerId, @Param("hash") String hash,
-                   @Param("size") int size, @Param("count") int count);
+    void referenceAll(@Param("ownerId") UUID ownerId, @Param("hashes") String[] hashes,
+                      @Param("sizes") Integer[] sizes, @Param("counts") Integer[] counts);
 
     // The case reads the row's old ref_count, so it stamps unreferenced_at exactly when this
     // release is the one that takes the count to 0.

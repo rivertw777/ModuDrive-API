@@ -48,12 +48,12 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
-/** The commit of spec 001 5: the client sends a file's blocklist and where it goes, gets back the
+/** The commit of spec 001 2-3: the client sends a file's blocklist and where it goes, gets back the
  * blocks the server doesn't have yet, uploads those to storage-service, and commits again. Commits
  * that come back with {@code needBlocks} change nothing — no file or folder row exists until the
  * version does — so asking again is also how an interrupted upload finds where it stopped (2-1).
  *
- * <p>A request carries a group of files (spec 001 5), so which blocks exist is asked once for
+ * <p>A request carries a group of files (spec 001 2-3), so which blocks exist is asked once for
  * the whole group — and outside any transaction, storage-service included, so a slow
  * storage-service never holds a DB connection or a block lock here (spec 006 2-4). Each file with
  * nothing missing then gets its own short transaction, which re-checks under the lock. */
@@ -126,7 +126,7 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
         List<String> notCommitted = asked.stream().filter(h -> !committed.contains(h)).toList();
         Map<String, Integer> found = Map.of();
         // storage-service down: files made only of committed blocks still go through; the rest fail
-        // on their own with its 503 instead of failing the whole group (spec 001 5).
+        // on their own with its 503 instead of failing the whole group (spec 001 2-3).
         ExceptionCase storageDown = null;
         if (!notCommitted.isEmpty()) {
             try {
@@ -288,7 +288,7 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
                 command.getBlocklist()));
         file.markUploaded(version.getId(), version.getFileSize());
         saveFilePort.saveFile(file);
-        // An uploaded file counts as "opened" for 최근 문서함 (spec 001 5-1).
+        // An uploaded file counts as "opened" for 최근 문서함 (spec 001 2-3-1).
         saveFileAccessPort.recordAccesses(ownerId, List.of(file.getId()), LocalDateTime.now());
         // The authoritative quota check, last: a commit that lost the race to another one into the
         // same drive rolls all of the above back.

@@ -15,7 +15,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-/** Spec 001 5: a block counts as uploaded if its upload URL was signed within {@link Blocks#UPLOAD_TTL}
+/** Spec 001 2-3: a block counts as uploaded if its upload URL was signed within {@link Blocks#UPLOAD_TTL}
  * and S3 holds it intact. Freshness comes from the signing, not the object's age: a block already in
  * S3 refuses a second PUT (If-None-Match), so re-uploading it only signs a URL again — and that
  * keeps the sweep off it just as long. Hashes never signed for aren't asked of S3 at all. */

@@ -1,10 +1,11 @@
 package com.moduDrive.file.application.port.in.command;
 
+import com.moduDrive.file.domain.model.File;
 import lombok.Getter;
 
 import java.util.UUID;
 
-/** A folder of an uploaded folder tree that no file commit creates (spec 001 8). {@code path} is
+/** A folder of an uploaded folder tree that no file commit creates (spec 001 2-6). {@code path} is
  * the folder above it; the service validates both, since they become rows. */
 @Getter
 public class CommitDirectoryCommand {
@@ -15,7 +16,7 @@ public class CommitDirectoryCommand {
 
     public CommitDirectoryCommand(UUID callerId, String path, String name) {
         this.callerId = callerId;
-        this.path = path;
-        this.name = name;
+        this.path = File.nfc(path);
+        this.name = File.nfc(name);
     }
 }

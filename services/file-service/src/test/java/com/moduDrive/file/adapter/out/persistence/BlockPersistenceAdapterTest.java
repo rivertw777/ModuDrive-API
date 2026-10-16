@@ -62,6 +62,21 @@ class BlockPersistenceAdapterTest {
         }
 
         @Test
+        @DisplayName("여러 블록을 한 번에 참조하면 블록마다 제 크기와 참조 수가 들어간다")
+        void referencesSeveralBlocksAtOnce() {
+            adapter.referenceBlocks(owner, Map.of("h2", 4, "h1", 3), Map.of("h2", 1, "h1", 2));
+
+            assertThat(row("h1")).get().satisfies(b -> {
+                assertThat(b.getSize()).isEqualTo(3);
+                assertThat(b.getRefCount()).isEqualTo(2);
+            });
+            assertThat(row("h2")).get().satisfies(b -> {
+                assertThat(b.getSize()).isEqualTo(4);
+                assertThat(b.getRefCount()).isEqualTo(1);
+            });
+        }
+
+        @Test
         @DisplayName("참조가 끊겼던 블록을 다시 참조하면 유예 시각을 지운다")
         void clearsTheGraceStartOnReuse() {
             adapter.referenceBlocks(owner, Map.of("h1", 4), Map.of("h1", 1));

@@ -12,7 +12,7 @@ public final class Blocks {
     /** How long after its upload URL was signed a block can be committed. Past it, a commit asks for
      * the block again and the uncommitted-upload sweep deletes it. */
     public static final Duration UPLOAD_TTL = Duration.ofHours(24);
-    /** How long a presigned PUT URL works (spec 001 6). */
+    /** How long a presigned PUT URL works (spec 001 2-4). */
     public static final Duration UPLOAD_URL_TTL = Duration.ofHours(1);
 
     private static final Pattern HASH = Pattern.compile("[0-9a-f]{64}");

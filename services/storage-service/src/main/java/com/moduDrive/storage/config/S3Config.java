@@ -55,7 +55,7 @@ public class S3Config {
         return client;
     }
 
-    /** Signs block upload URLs (spec 001 6) with the same credentials as {@link #s3Client} — the
+    /** Signs block upload URLs (spec 001 2-4) with the same credentials as {@link #s3Client} — the
      * task role on AWS, so the URL carries its session token. Signing is local: nothing is sent. */
     @Bean(destroyMethod = "close")
     public S3Presigner s3Presigner(StorageProperties properties) {

@@ -47,7 +47,7 @@ import java.util.function.Supplier;
 class S3StorageAdapter implements RetrieveBlocksPort, DeleteBlocksPort, FindUploadedBlocksPort {
 
     private static final Logger logger = LoggerFactory.getLogger(S3StorageAdapter.class);
-    /** HEADs one commit's lookup has in flight at once (spec 001 5): a fresh 5GB file asks about
+    /** HEADs one commit's lookup has in flight at once (spec 001 2-3): a fresh 5GB file asks about
      * 1,280 blocks, so one at a time would take seconds — all at once would take every seat. */
     static final int LOOKUP_PARALLELISM = 8;
     // A real version has at most 1,280 blocks (5GB / 4MB); this only stops a malformed one from
@@ -82,7 +82,7 @@ class S3StorageAdapter implements RetrieveBlocksPort, DeleteBlocksPort, FindUplo
         }
     }
 
-    /** Spec 001 5: a block counts as uploaded only if S3 holds the SHA-256 the hash names — checked
+    /** Spec 001 2-3: a block counts as uploaded only if S3 holds the SHA-256 the hash names — checked
      * here, not trusted to the presigned URL's signature alone. Any lookup failure fails the whole
      * answer: a block reported missing would only be uploaded again, but one reported present must
      * really be there. */

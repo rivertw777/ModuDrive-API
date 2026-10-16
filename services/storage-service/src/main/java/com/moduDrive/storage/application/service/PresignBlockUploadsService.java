@@ -14,7 +14,7 @@ import org.springframework.beans.factory.annotation.Value;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Spec 001 6: the block bytes go from the WEB straight to S3; this only signs where they may land —
+/** Spec 001 2-4: the block bytes go from the WEB straight to S3; this only signs where they may land —
  * always the caller's own space, so a hash alone never reaches another owner's block. Every block
  * is checked before any URL is handed out. */
 @UseCase
@@ -58,7 +58,7 @@ class PresignBlockUploadsService implements PresignBlockUploadsUseCase {
             if (!recordUploadedBlockPort.tryCountUpload(command.getUserId(), uploadLimit)) {
                 throw new BusinessException(StorageExceptionCase.UPLOAD_LIMIT_EXCEEDED);
             }
-            // Schedule → sign (spec 001 6-1): see RecordUploadedBlockPort for why.
+            // Schedule → sign (spec 001 2-4-1): see RecordUploadedBlockPort for why.
             recordUploadedBlockPort.scheduleSweep(command.getUserId(), block.hash());
             urls.add(presignBlockUploadPort.presignUpload(
                     Blocks.key(command.getUserId(), block.hash()), block.size(), block.hash()));
