@@ -51,9 +51,17 @@ class BlockPersistenceAdapter implements LockCommittedBlocksPort, FindCommittedB
 
     @Override
     public void referenceBlocks(UUID ownerId, Map<String, Integer> sizeByHash, Map<String, Integer> countByHash) {
-        // Hash order, same as the lock — keeps concurrent commits from deadlocking on new rows.
-        new TreeMap<>(countByHash).forEach((hash, count) ->
-                blockRepository.reference(ownerId, hash, sizeByHash.get(hash), count));
+        if (countByHash.isEmpty()) {
+            return;
+        }
+        String[] hashes = countByHash.keySet().toArray(String[]::new);
+        Integer[] sizes = new Integer[hashes.length];
+        Integer[] counts = new Integer[hashes.length];
+        for (int i = 0; i < hashes.length; i++) {
+            sizes[i] = sizeByHash.get(hashes[i]);
+            counts[i] = countByHash.get(hashes[i]);
+        }
+        blockRepository.referenceAll(ownerId, hashes, sizes, counts);
     }
 
     @Override

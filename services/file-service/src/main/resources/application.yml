@@ -12,6 +12,13 @@ spring:
     # same request cached — a FOR UPDATE re-read (FilePurger, the commit's locks) would lock the row
     # but see its old status. Adapters map rows to domain inside their transaction; nothing is lazy.
     open-in-view: false
+    properties:
+      hibernate:
+        # A commit writes a version's blocklist (file_version_block, one row per block — 1,280 for a
+        # 5GB file) in batches instead of one statement a row.
+        jdbc:
+          batch_size: 50
+        order_inserts: true
 
 modudrive:
   messaging:
