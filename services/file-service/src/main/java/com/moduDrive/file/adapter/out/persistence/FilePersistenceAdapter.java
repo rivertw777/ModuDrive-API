@@ -227,6 +227,18 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
     }
 
     @Override
+    public List<File> findActiveByNamespaceIdAndPathAndNames(NamespaceId namespaceId, String path, Collection<String> names) {
+        if (names.isEmpty()) {
+            return List.of();
+        }
+        return fileRepository
+                .findByNamespaceIdAndPathAndNameInAndStatusNotIn(namespaceId.value(), path, names, FileStatus.REMOVED)
+                .stream()
+                .map(fileMapper::mapFileToDomain)
+                .toList();
+    }
+
+    @Override
     public Optional<File> lockActiveByNamespaceIdAndPathAndName(NamespaceId namespaceId, String path, String name) {
         return fileRepository
                 .lockByNamespaceIdAndPathAndNameAndStatusNotIn(namespaceId.value(), path, name, FileStatus.REMOVED)
@@ -345,6 +357,16 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
     @Override
     public Optional<FileVersion> findByUploadId(UUID uploadId) {
         return fileVersionRepository.findByUploadId(uploadId).map(fileMapper::mapFileVersionToDomain);
+    }
+
+    @Override
+    public List<FileVersion> findAllByUploadIds(Collection<UUID> uploadIds) {
+        if (uploadIds.isEmpty()) {
+            return List.of();
+        }
+        return fileVersionRepository.findByUploadIdIn(uploadIds).stream()
+                .map(fileMapper::mapFileVersionToDomain)
+                .toList();
     }
 
     @Override

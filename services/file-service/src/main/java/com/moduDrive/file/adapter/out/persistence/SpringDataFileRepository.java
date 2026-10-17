@@ -23,6 +23,9 @@ interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID>, J
     Optional<FileJpaEntity> findByNamespaceIdAndPathAndNameAndStatusNotIn(
             UUID namespaceId, String path, String name, Collection<FileStatus> statuses);
 
+    List<FileJpaEntity> findByNamespaceIdAndPathAndNameInAndStatusNotIn(
+            UUID namespaceId, String path, Collection<String> names, Collection<FileStatus> statuses);
+
     // FOR UPDATE: Postgres re-checks the status after waiting on a concurrent trash, so a row trashed
     // meanwhile comes back empty.
     @Lock(LockModeType.PESSIMISTIC_WRITE)
