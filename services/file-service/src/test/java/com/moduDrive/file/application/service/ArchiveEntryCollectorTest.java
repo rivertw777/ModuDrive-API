@@ -67,9 +67,9 @@ class ArchiveEntryCollectorTest {
             UUID bV = UUID.randomUUID();
             File b = file("/photos/2024", "b.jpg", bV, FileStatus.UPLOADED);
             File trashed = file("/photos", "gone.jpg", UUID.randomUUID(), FileStatus.TRASHED);
-            File neverUploaded = file("/photos", "pending.jpg", null, FileStatus.PENDING);
+            File purgedMeanwhile = file("/photos", "purged.jpg", null, FileStatus.UPLOADED);
             given(findFilePort.findByNamespaceIdAndPathStartingWith(new NamespaceId(NAMESPACE), "/photos"))
-                    .willReturn(List.of(a, emptySub, b, trashed, neverUploaded));
+                    .willReturn(List.of(a, emptySub, b, trashed, purgedMeanwhile));
             given(findFileVersionsPort.findAllByIds(any())).willReturn(List.of(version(aV, a), version(bV, b)));
 
             List<ArchiveEntry> entries = archiveEntryCollector.collect(List.of(photos));

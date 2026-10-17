@@ -62,7 +62,7 @@ flowchart LR
 | 단계 | 하는 일 |
 |---|---|
 | 각 서비스 | `:9464/actuator/prometheus` 주소에 지표를 내놓는다 |
-| Prometheus | 15초마다 모든 서비스의 지표를 가져가 저장한다 |
+| Prometheus | 15초마다 모든 서비스의 지표를 가져가 저장한다 (AWS는 ADOT가 demo 60초, prod 30초마다) |
 | 알림 규칙 | Prometheus가 1분마다 "이 값이 기준을 넘었나"를 확인한다. 정해 둔 시간(`for`) 동안 계속 넘어야 알림을 보낸다 |
 | Alertmanager | 비슷한 알림을 한 메시지로 묶고 디스코드 문구로 만들어 SNS에 올린다. 고칠 때까지 4시간마다 다시 보낸다 |
 | SNS → Lambda | Lambda(`discord_forwarder.py`)가 메시지의 `channel` 속성으로 웹후크를 골라 디스코드에 보낸다. AWS에선 CloudWatch 경보·Budgets·GuardDuty도 같은 토픽으로 들어온다([5장](#5-aws-전용-경보)) |
@@ -74,7 +74,7 @@ flowchart LR
 
 | 순서 | 걸리는 시간 | 이유 |
 |---|---|---|
-| 1. 지표 수집 | 최대 15초 | Prometheus가 15초마다 가져간다 |
+| 1. 지표 수집 | 최대 15초 (AWS demo 60초, prod 30초) | Prometheus가 15초마다 가져간다. AWS는 `otel_collector.scrape_interval`(`envs/*.tfvars`)을 따른다 |
 | 2. 발견 | 최대 1분 | 규칙을 1분마다 검사한다. 처음 발견하면 "대기(Pending)" 상태가 된다 |
 | 3. 지속 확인 | `for` (알림마다 다름) | 이 시간 동안 계속 문제여야 "발생(Firing)"이 된다. 중간에 한 번이라도 괜찮아지면 처음부터 다시 센다 |
 | 4. 발송 대기 | 30초 | 같이 묶을 알림이 더 있는지 잠깐 기다렸다 보낸다 |
@@ -111,6 +111,7 @@ flowchart LR
 | `.infra/monitoring/discord_forwarder.py` | SNS → 디스코드 전달 | 같은 파일 |
 
 규칙 파일은 로컬과 AWS가 따로다. 쿼리와 기준값은 같고 확인 명령어(docker·Loki·Tempo ↔ CloudWatch·X-Ray)만 다르다. 규칙을 고치면 두 파일을 같이 고친다.
+예외는 둘이다. AWS는 서비스마다 태스크가 여럿일 수 있어 서비스 응답 없음·힙 메모리 부족을 `by (service, instance)`로 태스크마다 따로 보고, 서비스 태스크 없음([4-4](#4-4-서비스-응답-없음))이 하나 더 있다.
 로컬의 SNS 토픽·Lambda·웹후크 저장(SSM)은 `.docker/localstack/init-aws.sh`가 LocalStack이 뜰 때마다 만든다.
 
 ### 2-1. 지표
@@ -234,14 +235,13 @@ Lambda(`discord_forwarder.py`)가 메시지마다 채널을 정하고, 그 채�
 
 ## 4. 사용 알림
 
-지금 쓰는 알림은 아홉 개다.
-
 | 알림 | 채널 | 언제 울리나 | 조건 | 기다리는 시간 (`for`) |
 |---|---|---|---|---|
 | 이벤트 전송 적체 | `#messaging` | 이벤트가 SQS로 못 나가고 2분 넘게 밀려 있을 때 | `max by (service, queue) (modudrive_outbox_lag_seconds) > 120` | 5분 |
 | 이벤트 전송 실패 | `#messaging` | SQS가 거절해서 사람이 직접 처리해야 할 이벤트가 생겼을 때 | `max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0` | 바로 |
 | 이벤트 처리 실패 | `#messaging` | 받는 쪽 서비스가 처리를 포기한 메시지가 DLQ에 있을 때 | `max by (service, queue) (modudrive_dlq_messages) > 0` | 바로 |
 | 서비스 응답 없음 | `#service` | 서비스가 응답하지 않을 때 (프로세스가 죽음) | `min by (service) (up{job="services"}) < 1` | 2분 |
+| 서비스 태스크 없음 (AWS) | `#service` | 서비스의 태스크가 하나도 수집되지 않을 때 (기동 실패 · 배포 롤백 반복) | 서비스마다 `absent(up{job="services",service="<서비스>"})` | 2분 |
 | 서킷 열림 | `#service` | 서비스는 떠 있지만, 그 서비스로 가는 호출이 계속 실패할 때 | `max by (service, name) (resilience4j_circuitbreaker_state{state=~"open\|half_open"}) > 0` | 2분 |
 | 요청 실패율 높음 | `#service` | 게이트웨이를 지난 요청이 5xx로 많이 실패할 때 | 5xx 비율 `> 5%` 이면서 5분간 5xx `>= 10`건 (`spring_cloud_gateway_requests_seconds_count`, 경로별) | 2분 |
 | 느린 요청 많음 | `#service` | 게이트웨이를 지난 요청이 에러 없이 느려졌을 때 | 1초 초과 비율 `> 5%` 이면서 5분간 1초 초과 `>= 10`건 (`spring_cloud_gateway_requests_seconds_bucket{le="1.0"}`, 경로별, storage-service 제외) | 2분 |
@@ -274,6 +274,9 @@ SQS가 "이 메시지는 받을 수 없다"며 거절한 이벤트다. 큐가 �
 
 Prometheus가 15초마다 지표를 가져가는데, 2분 내내 응답이 없으면 알린다. 대부분 프로세스가 죽은 경우다.
 재배포할 때도 잠깐 내려가기 때문에, 그 정도로는 울리지 않도록 2분을 기다린다.
+
+AWS(ECS)에선 죽은 태스크가 0이 되지 않고 수집 대상에서 아예 사라진다. 그러면 `up` 값 자체가 없어 이 알림이 조용하므로,
+서비스의 태스크가 하나도 안 보이는 상태가 2분 이어지면 **서비스 태스크 없음**으로 따로 알린다. 받으면 ECS 서비스 이벤트로 태스크가 뜨지 못하는 이유를 본다.
 
 **받으면:** 컨테이너가 떠 있는지, 앱 로그에 에러가 있는지 본다.
 
@@ -394,11 +397,15 @@ flowchart LR
 
 ```
 🚨  서비스 메모리 높음
+대상: service-memory-storage
 사유: Threshold Crossed: 1 datapoint [97.2] was greater than the threshold (90.0).
 조치: storage-service 메모리가 90% 넘음, 넘치면 태스크가 OOM으로 재시작 — …
 ```
 
-정상으로 돌아오면 `✅  서비스 메모리 높음 (해제)`가 간다. Budgets·GuardDuty는 AWS가 만든 문장을 그대로 보낸다.
+대상은 경보 이름이다. 같은 경보가 서비스마다 있어서, 이름이 없으면 어느 서비스의 해제인지 알 수 없다.
+정상으로 돌아오면 `✅  서비스 메모리 높음 (해제)`와 대상이 간다. 단, 경보(ALARM)였다가 정상이 된 경우만 보낸다.
+경보를 새로 만들거나 지표가 끊겼다 돌아오면 데이터 부족(INSUFFICIENT_DATA)에서 정상으로 바뀌는데, 울린 적이 없으니 보내지 않는다.
+Budgets는 AWS가 만든 문장을, GuardDuty는 EventBridge 규칙에 적어 둔 문장을 그대로 보낸다.
 
 경보 이름(`alarm_name`)은 영문으로 둔다. SNS 제목이 이 이름으로 만들어지기 때문이다.
 

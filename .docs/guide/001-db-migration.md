@@ -160,12 +160,12 @@ expand/contract 패턴으로 단계를 나눈다. 옛 버전 앱과 새 버전 �
 
 ### enum 값 추가
 
-엔티티의 `@Enumerated(STRING)` 컬럼에는 허용 값을 검사하는 check 제약이 걸려 있다. 예를 들어 `file.status`는 `('PENDING', 'UPLOADED', 'TRASHED', 'DELETED')`만 받는다. enum에 값을 추가하면 제약도 바꿔야 한다.
+엔티티의 `@Enumerated(STRING)` 컬럼에는 허용 값을 검사하는 check 제약이 걸려 있다. 예를 들어 `file.status`는 `('UPLOADED', 'TRASHED', 'DELETED')`만 받는다. enum에 값을 추가하거나 빼면 제약도 바꿔야 한다(예: file의 `V13__drop_pending_file_status.sql`).
 
 ```sql
 alter table file drop constraint file_status_check;
 alter table file add constraint file_status_check
-    check (status in ('PENDING', 'UPLOADED', 'TRASHED', 'DELETED', 'ARCHIVED'));
+    check (status in ('UPLOADED', 'TRASHED', 'DELETED', 'ARCHIVED'));
 ```
 
 제약 이름은 두 가지다. `V1__init.sql`에서 컬럼 옆에 `check (...)`로만 적은 건 Postgres가 `<테이블>_<컬럼>_check`로 이름을 붙인다. 나중 마이그레이션에서 `add constraint`로 붙인 건 거기 적은 이름이다(예: `outbox_event_status_check`). 헷갈리면 `\d <테이블>`로 확인한다.
