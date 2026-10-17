@@ -21,6 +21,9 @@ az_count            = 2 # a third AZ would add an ALB public IPv4 and buys nothi
 # One instance for every service's database (each still its own database and login).
 db_engine                = "rds"
 db_backup_retention_days = 1 # the account is on the AWS free plan, which caps it at 1
+# 4 services x Hikari's default 10 kept 40 backends open on a 1 GB micro: ~60 MB free and swapping.
+# 3 each is plenty at ~1k requests/day.
+db_pool_size = 3
 db_instances = {
   file = { instance_class = "db.t4g.micro", nodes = 1, clients = ["member", "file", "notification", "auth"] }
 }
