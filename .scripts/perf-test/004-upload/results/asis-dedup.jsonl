@@ -1,0 +1,5 @@
+{"label": "asis-dedup", "kind": "dedup", "args": [1000, 10240], "users": ["d56fabe0-9d45-4058-9afd-2ecdc7f40215"], "commit1": {"ms": 27001.3, "db": 13021, "redis": 4, "redis_by_command": {"auth": 2, "ping": 2}}}
+{"label": "asis-dedup", "kind": "dedup", "args": [1000, 10240], "users": ["319dedb0-3881-4dcf-a837-e579559e79f2"], "commit1": {"ms": 24927.2, "db": 13021, "redis": 6, "redis_by_command": {"auth": 3, "ping": 3}}}
+{"label": "asis-dedup", "kind": "dedup", "args": [1000, 10240], "users": ["0092bba6-8a81-42ae-bb23-3f453c114919"], "commit1": {"ms": 25105.8, "db": 13021, "redis": 6, "redis_by_command": {"auth": 3, "ping": 3}}}
+{"label": "asis-dedup", "kind": "dedup", "args": [1000, 10240], "users": ["6bae5118-da24-4bf7-9db8-8cbad81f17eb"], "commit1": {"ms": 24926.8, "db": 13021, "redis": 4, "redis_by_command": {"auth": 2, "ping": 2}}}
+{"label": "asis-dedup", "kind": "dedup", "args": [1000, 10240], "users": ["d1123537-4449-43f7-9860-08a8e10d0c24"], "commit1": {"ms": 24948.0, "db": 13021, "redis": 6, "redis_by_command": {"auth": 3, "ping": 3}}}

@@ -1,9 +1,12 @@
-""".docs/perf-test/004-upload.md — one upload the way the WEB does it (spec 001 2): commit → upload URLs → S3 PUTs →
-second commit, each phase timed, with the DB statements and Redis commands it sent.
-Usage: upload.py <label> big <blocks>          — one file of <blocks> × 4MiB
-       upload.py <label> small <files> <bytes>  — <files> one-block files, committed 100 at a time
+""".docs/perf-test/004-upload.md — uploads the way the WEB does (spec 001 2): commit → upload URLs → S3 PUTs → second
+commit, each phase timed, with the DB statements and Redis commands it sent.
+Usage: upload.py <label> big <blocks>                  — one file of <blocks> × 4MiB
+       upload.py <label> small <files> <bytes>          — <files> one-block files, committed 100 at a time
+       upload.py <label> dedup <files> <bytes>          — `small`, then the same files again into another folder:
+                                                          only the second upload is measured
+       upload.py <label> concurrent <users> <files> <bytes>  — <users> drives each uploading `small` at once
 Runs in the bench container (scenario.sh up); env REDIS_PASSWORD. Prints one JSON line and appends it to results/."""
-import base64, hashlib, json, os, socket, sys, time, uuid, urllib.parse, urllib.request
+import base64, hashlib, json, os, random, socket, statistics, sys, threading, time, uuid, urllib.parse, urllib.request
 from concurrent.futures import ThreadPoolExecutor
 import psycopg
 from bench import DB, reset_stats, read_stats
@@ -12,6 +15,7 @@ FILE_API, STORAGE_API = "http://file-service:10012", "http://storage-service:100
 BLOCK, GROUP, URLS_PER_REQUEST, PUTS = 4 * 1024 * 1024, 100, 64, 6  # spec 001 6: block, commit group, URL request, PUTs
 QUOTA = 1_000_000_000_000_000  # scenario.sh cleanup's marker for bench drives
 IN_SCRIPT = {"incr", "incrby", "decr", "decrby", "pexpire"}
+PHASES = ("commit1", "presign", "put", "commit2")
 
 
 def post(base, path, user, body):
@@ -32,6 +36,29 @@ def redis_calls():
     return {part.split(b":")[0].decode(): int(part.split(b"calls=")[1].split(b",")[0]) for part in info.split(b"cmdstat_")[1:]}
 
 
+def redis_delta(before):
+    after = redis_calls()
+    # Less the bench's own AUTH + INFO between the two reads.
+    after["auth"] -= 1
+    after["info"] -= 1
+    by_command = {c: k - before.get(c, 0) for c, k in after.items() if k - before.get(c, 0)}
+    # Round trips: what upload-count.lua runs inside its one EVALSHA isn't one.
+    return {"redis": sum(k for c, k in by_command.items() if c not in IN_SCRIPT), "redis_by_command": by_command}
+
+
+class Blocks:
+    """Block i's bytes, made again from a seed whenever needed — a 5GiB file is never held in memory."""
+
+    def __init__(self, sizes):
+        self.seed, self.sizes = uuid.uuid4().hex, sizes
+        self.digests = [hashlib.sha256(self.data(i)).digest() for i in range(len(sizes))]
+        self.hashes = [d.hex() for d in self.digests]
+        self.index = {h: i for i, h in enumerate(self.hashes)}
+
+    def data(self, i):
+        return random.Random(f"{self.seed}:{i}").randbytes(self.sizes[i])
+
+
 def put(url, data, digest):
     # The URL names localhost:4566 (the browser's view); the bench reaches LocalStack by its compose name and
     # keeps the signed Host.
@@ -46,70 +73,115 @@ def put(url, data, digest):
             raise
 
 
-def main():
-    label, kind = sys.argv[1], sys.argv[2]
-    if kind == "big":
-        n = int(sys.argv[3])
-        blobs = [os.urandom(BLOCK) for _ in range(n)]
-        files = [{"name": "big.bin", "blocks": list(range(n))}]
-    else:
-        n, size = int(sys.argv[3]), int(sys.argv[4])
-        blobs = [os.urandom(size) for _ in range(n)]
-        files = [{"name": f"f{i:05}.bin", "blocks": [i]} for i in range(n)]
-    digests = [hashlib.sha256(b).digest() for b in blobs]
-    hashes = [d.hex() for d in digests]
+def new_drive(cur):
     user = str(uuid.uuid4())
-    for f in files:
-        f["req"] = {"path": "/bench", "name": f["name"], "uploadId": str(uuid.uuid4()),
-                    "size": sum(len(blobs[i]) for i in f["blocks"]), "blocklist": [hashes[i] for i in f["blocks"]]}
-    groups = [files[i:i + GROUP] for i in range(0, len(files), GROUP)] if kind == "small" else [files]
+    cur.execute("insert into namespace(id,user_id,root_path,quota_bytes,used_bytes,created_at,updated_at,is_deleted) "
+                "values (gen_random_uuid(),%s,%s,%s,0,now(),now(),false)", (user, "/" + user, QUOTA))
+    return user
 
+
+def commit_groups(blocks, kind, folder):
+    """The commit requests, grouped as the WEB groups them: one big file alone, small files 100 at a time."""
+    if kind == "big":
+        files = [("big.bin", list(range(len(blocks.sizes))))]
+    else:
+        files = [(f"f{i:05}.bin", [i]) for i in range(len(blocks.sizes))]
+    reqs = [{"path": folder, "name": name, "uploadId": str(uuid.uuid4()),
+             "size": sum(blocks.sizes[i] for i in ids), "blocklist": [blocks.hashes[i] for i in ids]}
+            for name, ids in files]
+    return [reqs[i:i + GROUP] for i in range(0, len(reqs), GROUP)]
+
+
+def upload(user, blocks, groups, phase):
+    """One upload, step by step; phase(name, fn) runs and records each step."""
+    files = sum(len(g) for g in groups)
+
+    def commit_all():
+        return [r for g in groups for r in post(FILE_API, "/api/v1/files/commit", user, {"files": g})["results"]]
+
+    first = phase("commit1", commit_all)
+    need = sorted({h for r in first for h in (r.get("needBlocks") or [])})
+    if not need:  # every block already committed (dedup): the first commit made the versions
+        assert sum(1 for r in first if r.get("versionId")) == files, first[:2]
+        return
+
+    def presign():
+        urls = {}
+        for i in range(0, len(need), URLS_PER_REQUEST):
+            chunk = need[i:i + URLS_PER_REQUEST]
+            got = post(STORAGE_API, "/api/v1/storage/blocks/upload-urls", user,
+                       {"blocks": [{"hash": h, "size": blocks.sizes[blocks.index[h]]} for h in chunk]})["urls"]
+            urls.update(zip(chunk, got))
+        return urls
+    urls = phase("presign", presign)
+
+    def put_all():
+        with ThreadPoolExecutor(PUTS) as pool:
+            list(pool.map(lambda h: put(urls[h], blocks.data(blocks.index[h]), blocks.digests[blocks.index[h]]), need))
+    phase("put", put_all)
+
+    second = phase("commit2", commit_all)
+    done = sum(1 for r in second if r.get("versionId"))
+    assert done == files, f"{done} of {files} committed: {[r for r in second if not r.get('versionId')][:2]}"
+
+
+def measured(cur, out):
+    """phase() that records the step's time, DB statements and Redis round trips into out."""
+    def phase(name, fn):
+        reset_stats(cur)
+        redis0, t = redis_calls(), time.perf_counter()
+        result = fn()
+        out[name] = {"ms": round((time.perf_counter() - t) * 1000, 1), "db": read_stats(cur)[0], **redis_delta(redis0)}
+        return result
+    return phase
+
+
+def timed(times):
+    """phase() that records only the step's time — for drives uploading at once, whose DB and Redis counts can't be
+    told apart."""
+    def phase(name, fn):
+        t = time.perf_counter()
+        result = fn()
+        times[name] = round((time.perf_counter() - t) * 1000, 1)
+        return result
+    return phase
+
+
+def main():
+    label, kind, *args = sys.argv[1:]
+    args = [int(a) for a in args]
+    out = {"label": label, "kind": kind, "args": args}
     with psycopg.connect(DB, autocommit=True) as conn, conn.cursor() as cur:
-        cur.execute("insert into namespace(id,user_id,root_path,quota_bytes,used_bytes,created_at,updated_at,is_deleted) "
-                    "values (gen_random_uuid(),%s,%s,%s,0,now(),now(),false)", (user, "/" + user, QUOTA))
-        out = {"label": label, "kind": kind, "n": n, "user": user}
+        if kind == "concurrent":
+            users, files, size = args
+            drives = [(new_drive(cur), Blocks([size] * files)) for _ in range(users)]
+            out["users"] = [u for u, _ in drives]
+            times = [{} for _ in drives]
+            gate = threading.Barrier(users)
 
-        def phase(name, fn):
+            def run(k):
+                user, blocks = drives[k]
+                groups = commit_groups(blocks, kind, "/bench")
+                gate.wait()
+                upload(user, blocks, groups, timed(times[k]))
             reset_stats(cur)
             redis0, t = redis_calls(), time.perf_counter()
-            result = fn()
-            redis1 = redis_calls()
-            # Less the bench's own AUTH + INFO between the two reads.
-            redis1["auth"] -= 1
-            redis1["info"] -= 1
-            redis = {c: k - redis0.get(c, 0) for c, k in redis1.items() if k - redis0.get(c, 0)}
-            out[name] = {"ms": round((time.perf_counter() - t) * 1000, 1), "db": read_stats(cur)[0],
-                         # Round trips: what upload-count.lua runs inside its one EVALSHA isn't one.
-                         "redis": sum(k for c, k in redis.items() if c not in IN_SCRIPT), "redis_by_command": redis}
-            return result
-
-        def commit_all():
-            return [r for g in groups for r in post(FILE_API, "/api/v1/files/commit", user,
-                                                    {"files": [f["req"] for f in g]})["results"]]
-
-        first = phase("commit1", commit_all)
-        need = sorted({h for r in first for h in (r.get("needBlocks") or [])})
-        assert len(need) == n, f"expected every block needed, got {len(need)} of {n}: {first[:2]}"
-        index = {h: i for i, h in enumerate(hashes)}
-
-        def presign():
-            urls = {}
-            for i in range(0, len(need), URLS_PER_REQUEST):
-                chunk = need[i:i + URLS_PER_REQUEST]
-                got = post(STORAGE_API, "/api/v1/storage/blocks/upload-urls", user,
-                           {"blocks": [{"hash": h, "size": len(blobs[index[h]])} for h in chunk]})["urls"]
-                urls.update(zip(chunk, got))
-            return urls
-        urls = phase("presign", presign)
-
-        def put_all():
-            with ThreadPoolExecutor(PUTS) as pool:
-                list(pool.map(lambda h: put(urls[h], blobs[index[h]], digests[index[h]]), need))
-        phase("put", put_all)
-
-        second = phase("commit2", commit_all)
-        done = sum(1 for r in second if r.get("versionId"))
-        assert done == len(files), f"{done} of {len(files)} committed: {[r for r in second if not r.get('versionId')][:2]}"
+            with ThreadPoolExecutor(users) as pool:
+                list(pool.map(run, range(users)))
+            out["wall_ms"] = round((time.perf_counter() - t) * 1000, 1)
+            out["db"] = read_stats(cur)[0]
+            out.update(redis_delta(redis0))
+            out["per_drive"] = {p: {"median": statistics.median(x[p] for x in times), "max": max(x[p] for x in times)}
+                                for p in PHASES}
+        else:
+            user = new_drive(cur)
+            out["users"] = [user]
+            blocks = Blocks([BLOCK] * args[0] if kind == "big" else [args[1]] * args[0])
+            if kind == "dedup":
+                upload(user, blocks, commit_groups(blocks, kind, "/bench"), timed({}))  # the original, unmeasured
+                upload(user, blocks, commit_groups(blocks, kind, "/bench-copy"), measured(cur, out))
+            else:
+                upload(user, blocks, commit_groups(blocks, kind, "/bench"), measured(cur, out))
 
     line = json.dumps(out)
     print(line)
