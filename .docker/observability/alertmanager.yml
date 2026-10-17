@@ -15,6 +15,8 @@ route:
   routes:
     - receiver: messaging
       matchers: [channel="messaging"]
+    - receiver: infra
+      matchers: [channel="infra"]
 
 templates:
   - /etc/alertmanager/shared/discord.tmpl
@@ -44,3 +46,15 @@ receivers:
         message: '{{ template "discord.message" . }}'
         attributes:
           channel: service
+  - name: infra
+    sns_configs:
+      - api_url: http://localstack:4566
+        topic_arn: arn:aws:sns:ap-northeast-2:000000000000:modudrive-alerts
+        sigv4:
+          region: ap-northeast-2
+          access_key: test
+          secret_key: test
+        subject: '{{ .CommonLabels.alertname }}'
+        message: '{{ template "discord.message" . }}'
+        attributes:
+          channel: infra

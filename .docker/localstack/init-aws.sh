@@ -65,7 +65,7 @@ fi
 # the webhook URLs from SSM. Only where that folder is mounted — the SQS module's queue test doesn't.
 if [ -d /etc/modudrive-alerts ]; then
   # As JSON, not --value: this image's CLI v1 fetches an http(s):// argument and stores the response.
-  for name in DISCORD_MESSAGING_WEBHOOK_URL DISCORD_SERVICE_WEBHOOK_URL; do
+  for name in DISCORD_MESSAGING_WEBHOOK_URL DISCORD_SERVICE_WEBHOOK_URL DISCORD_INFRA_WEBHOOK_URL DISCORD_ACCOUNT_WEBHOOK_URL; do
     awslocal ssm put-parameter --overwrite --cli-input-json \
       "{\"Name\": \"/modudrive/$name\", \"Type\": \"SecureString\", \"Value\": \"${!name}\"}" >/dev/null
   done
@@ -80,7 +80,7 @@ if [ -d /etc/modudrive-alerts ]; then
     awslocal lambda create-function --function-name "$function" --runtime python3.13 \
       --handler discord_forwarder.handler --timeout 15 --zip-file fileb:///tmp/discord_forwarder.zip \
       --role arn:aws:iam::000000000000:role/modudrive-discord-forwarder \
-      --environment "Variables={MESSAGING_WEBHOOK_PARAM=/modudrive/DISCORD_MESSAGING_WEBHOOK_URL,SERVICE_WEBHOOK_PARAM=/modudrive/DISCORD_SERVICE_WEBHOOK_URL}" >/dev/null
+      --environment "Variables={MESSAGING_WEBHOOK_PARAM=/modudrive/DISCORD_MESSAGING_WEBHOOK_URL,SERVICE_WEBHOOK_PARAM=/modudrive/DISCORD_SERVICE_WEBHOOK_URL,INFRA_WEBHOOK_PARAM=/modudrive/DISCORD_INFRA_WEBHOOK_URL,ACCOUNT_WEBHOOK_PARAM=/modudrive/DISCORD_ACCOUNT_WEBHOOK_URL}" >/dev/null
   fi
   awslocal lambda wait function-active-v2 --function-name "$function"
   awslocal sns subscribe --topic-arn "$topic" --protocol lambda \

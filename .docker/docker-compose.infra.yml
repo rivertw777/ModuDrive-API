@@ -88,6 +88,9 @@ services:
       # evaluated and sent, and only the last hop to Discord fails.
       - DISCORD_MESSAGING_WEBHOOK_URL=${DISCORD_MESSAGING_WEBHOOK_URL:-https://discord.com/api/webhooks/unset}
       - DISCORD_SERVICE_WEBHOOK_URL=${DISCORD_SERVICE_WEBHOOK_URL:-https://discord.com/api/webhooks/unset}
+      # Unset = set-by-hand → the forwarder sends these channels' alerts to the service channel.
+      - DISCORD_INFRA_WEBHOOK_URL=${DISCORD_INFRA_WEBHOOK_URL:-set-by-hand}
+      - DISCORD_ACCOUNT_WEBHOOK_URL=${DISCORD_ACCOUNT_WEBHOOK_URL:-set-by-hand}
       # What the init script creates: queues in the services' SQS_REGION, storage-service's bucket,
       # mail-service's verified sender (SES rejects mail from an unverified one, LocalStack too).
       - AWS_DEFAULT_REGION=${SQS_REGION}

@@ -80,7 +80,7 @@ resource "aws_ssm_parameter" "storage_encryption_key" {
 # Discord webhooks are made in Discord, not here: the parameters exist so tasks and Grafana can point
 # at them, and their value is set once by hand (aws ssm put-parameter --overwrite) and left alone.
 resource "aws_ssm_parameter" "discord_webhook" {
-  for_each = toset(["DISCORD_MESSAGING_WEBHOOK_URL", "DISCORD_SERVICE_WEBHOOK_URL"])
+  for_each = toset([for c in ["MESSAGING", "SERVICE", "INFRA", "ACCOUNT"] : "DISCORD_${c}_WEBHOOK_URL"])
 
   name   = "/${var.project}/${each.key}"
   type   = "SecureString"
