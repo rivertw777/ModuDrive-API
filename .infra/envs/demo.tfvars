@@ -22,8 +22,8 @@ az_count            = 2 # a third AZ would add an ALB public IPv4 and buys nothi
 db_engine                = "rds"
 db_backup_retention_days = 1 # the account is on the AWS free plan, which caps it at 1
 # 4 services x Hikari's default 10 kept 40 backends open on a 1 GB micro: ~60 MB free and swapping.
-# 3 each is plenty at ~1k requests/day.
-db_pool_size = 3
+# 5 each, always open: 20 with one task per service, 40 if all four scale to two.
+db_pool_size = 5
 db_instances = {
   file = { instance_class = "db.t4g.micro", nodes = 1, clients = ["member", "file", "notification", "auth"] }
 }
@@ -35,16 +35,17 @@ redis_clusters = {
   auth = { node_type = "cache.t4g.micro", nodes = 1, clients = ["auth", "member", "mail", "storage"] }
 }
 
-# 0.5 vCPU, 1 GB and exactly one task each — no autoscaling, so a traffic burst slows the demo down
-# instead of raising the bill. 0.25 vCPU ran out on every request (CPU peaking at 120%), memory stays ~45%.
+# 0.5 vCPU, 1 GB, one task each and at most two — a burst gets one extra task (CPU above 60%), past
+# that it slows the demo down instead of raising the bill further. 0.25 vCPU ran out on every request
+# (CPU peaking at 120%), memory stays ~45%. DB connections: db_pool_size above.
 services = {
-  gateway      = { cpu = 512, memory = 1024, min = 1, max = 1 }
-  member       = { cpu = 512, memory = 1024, min = 1, max = 1 }
-  auth         = { cpu = 512, memory = 1024, min = 1, max = 1 }
-  file         = { cpu = 512, memory = 1024, min = 1, max = 1 }
-  storage      = { cpu = 512, memory = 1024, min = 1, max = 1 }
-  mail         = { cpu = 512, memory = 1024, min = 1, max = 1 }
-  notification = { cpu = 512, memory = 1024, min = 1, max = 1 }
+  gateway      = { cpu = 512, memory = 1024, min = 1, max = 2 }
+  member       = { cpu = 512, memory = 1024, min = 1, max = 2 }
+  auth         = { cpu = 512, memory = 1024, min = 1, max = 2 }
+  file         = { cpu = 512, memory = 1024, min = 1, max = 2 }
+  storage      = { cpu = 512, memory = 1024, min = 1, max = 2 }
+  mail         = { cpu = 512, memory = 1024, min = 1, max = 2 }
+  notification = { cpu = 512, memory = 1024, min = 1, max = 2 }
 }
 
 # A trial account's first alarm. ~$138 of infrastructure + AMP/X-Ray/logs, with headroom.

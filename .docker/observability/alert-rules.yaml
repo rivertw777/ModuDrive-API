@@ -139,3 +139,34 @@ groups:
           summary: '최근 5분 요청의 **{{ humanizePercentage $value }}**가 1초를 넘김'
           action: Grafana → Explore → Tempo에 아래 쿼리로 느린 trace를 열어 가장 긴 span(DB 쿼리·하위 호출)을 확인
           inspect: '{ resource.service.name = "{{ $labels.routeId }}" && kind = server && duration > 1s }'
+
+      # 힙이 차서 GC가 따라가지 못하는 경우 — 요청이 느려지다 OutOfMemoryError로 죽는다. 힙 사용량 그대로는 안 본다:
+      # 아직 안 치운 쓰레기도 들어가고, 요청이 없으면 GC가 안 돌아 쓰레기로 찬 채 몇 시간이고 머문다.
+      # 그래서 old 영역의 "GC 직후 살아남은 양 / 최대"를 본다 — GC가 치워도 90%가 남았다면 진짜로 모자란 것이다.
+      # old GC가 한 번도 안 돌았으면 0이다. 컨테이너 메모리(힙 밖 포함)는 앱 지표로 안 보인다(AWS의 service-memory-*).
+      - alert: HeapHigh
+        expr: >-
+          max by (service) (jvm_gc_live_data_size_bytes)
+          / max by (service) (jvm_gc_max_data_size_bytes > 0) > 0.9
+        for: 5m
+        labels:
+          channel: infra
+        annotations:
+          title: 힙 메모리 부족
+          summary: 'GC 직후에도 old 영역의 **{{ humanizePercentage $value }}**가 남아 있음 (GC가 못 따라감 · 곧 OutOfMemoryError)'
+          action: 그 시각의 요청(zip·다운로드 등)과 GC 로그 확인, 계속되면 메모리 상향
+          inspect: 'docker logs modudrive-service-{{ $labels.service }}-1 2>&1 | grep -E "OutOfMemoryError|GC"'
+
+      # 풀(maximum-pool-size)이 다 쓰여 3초(connection-timeout) 안에 커넥션을 못 받은 요청 — 그 요청은 503이 됐다.
+      # 오래 쥐고 있는 트랜잭션이나 느린 쿼리가 원인이다. 대기 수(hikaricp_connections_pending)는 안 본다: 수집하는
+      # 순간의 값이라, 몇 초씩 끊겨 오는 고갈은 검사 사이에 0이 끼어 for가 계속 처음부터 센다.
+      # 타임아웃은 이미 사용자가 에러를 본 것이라 for 없이 보낸다. 5분 창이라 마지막 타임아웃 5분 뒤 해제된다.
+      - alert: DbPoolExhausted
+        expr: max by (service) (increase(hikaricp_connections_timeout_total[5m])) > 0
+        labels:
+          channel: service
+        annotations:
+          title: DB 커넥션 부족
+          summary: '최근 5분 동안 커넥션을 못 받아 실패(503)한 요청 **{{ printf "%.0f" $value }}건** (풀이 다 쓰임)'
+          action: Grafana → Explore → Tempo에 아래 쿼리로 느린 trace를 열어 DB 구간(커넥션 대기·쿼리) 확인, 계속되면 풀 크기 상향
+          inspect: '{ resource.service.name = "{{ $labels.service }}" && kind = server && duration > 1s }'

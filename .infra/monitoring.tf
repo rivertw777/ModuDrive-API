@@ -82,6 +82,8 @@ resource "aws_lambda_function" "discord_forwarder" {
     variables = {
       MESSAGING_WEBHOOK_PARAM = aws_ssm_parameter.discord_webhook["DISCORD_MESSAGING_WEBHOOK_URL"].name
       SERVICE_WEBHOOK_PARAM   = aws_ssm_parameter.discord_webhook["DISCORD_SERVICE_WEBHOOK_URL"].name
+      INFRA_WEBHOOK_PARAM     = aws_ssm_parameter.discord_webhook["DISCORD_INFRA_WEBHOOK_URL"].name
+      ACCOUNT_WEBHOOK_PARAM   = aws_ssm_parameter.discord_webhook["DISCORD_ACCOUNT_WEBHOOK_URL"].name
     }
   }
 
@@ -219,6 +221,100 @@ resource "aws_cloudwatch_metric_alarm" "nat_instance" {
   ok_actions          = local.alarm_actions
 }
 
+# A task running out of room — the container's own numbers, off-heap memory included, which the app's
+# metrics can't see. CPU waits out 15 minutes: every JVM start peaks above 100% for a minute or two.
+# Memory alarms on one 5-minute peak: past the container limit the task is OOM-killed, not slowed.
+resource "aws_cloudwatch_metric_alarm" "service_cpu" {
+  for_each = local.service_ports
+
+  alarm_name          = "service-cpu-${each.key}"
+  alarm_description   = "서비스 CPU 높음: ${each.key}-service CPU가 15분째 80% 넘음 — 요청량과 느린 trace 확인, 계속되면 services.${each.key}.cpu 상향"
+  namespace           = "AWS/ECS"
+  metric_name         = "CPUUtilization"
+  dimensions          = { ClusterName = aws_ecs_cluster.main.name, ServiceName = aws_ecs_service.service[each.key].name }
+  statistic           = "Average"
+  period              = 300
+  evaluation_periods  = 3
+  threshold           = 80
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+}
+
+resource "aws_cloudwatch_metric_alarm" "service_memory" {
+  for_each = local.service_ports
+
+  alarm_name          = "service-memory-${each.key}"
+  alarm_description   = "서비스 메모리 높음: ${each.key}-service 메모리가 90% 넘음, 넘치면 태스크가 OOM으로 재시작 — 그 시각 요청(zip·다운로드 등) 확인, 계속되면 services.${each.key}.memory 상향"
+  namespace           = "AWS/ECS"
+  metric_name         = "MemoryUtilization"
+  dimensions          = { ClusterName = aws_ecs_cluster.main.name, ServiceName = aws_ecs_service.service[each.key].name }
+  statistic           = "Maximum"
+  period              = 300
+  evaluation_periods  = 1
+  threshold           = 90
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+}
+
+# RDS and Redis from the inside. Storage needs none: it grows up to max_allocated_storage.
+# RDS runs burstable classes in unlimited mode: out of credits it isn't throttled, it bills the surplus.
+resource "aws_cloudwatch_metric_alarm" "db_cpu_credit" {
+  for_each = { for k, v in aws_db_instance.postgres : k => v if startswith(v.instance_class, "db.t") }
+
+  alarm_name          = "db-cpu-credit-${each.key}"
+  alarm_description   = "DB CPU 크레딧 부족: ${each.value.identifier} 크레딧이 30 아래, 바닥나면 넘게 쓴 CPU만큼 추가 요금(무제한 모드) — CPU를 쓰는 쿼리 확인, 계속되면 instance_class 상향"
+  namespace           = "AWS/RDS"
+  metric_name         = "CPUCreditBalance"
+  dimensions          = { DBInstanceIdentifier = each.value.identifier }
+  statistic           = "Minimum"
+  period              = 300
+  evaluation_periods  = 2
+  threshold           = 30
+  comparison_operator = "LessThanThreshold"
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+}
+
+# Under ~64 MB Postgres is swapping. Each pooled connection is a backend process (db_pool_size).
+resource "aws_cloudwatch_metric_alarm" "db_memory" {
+  for_each = aws_db_instance.postgres
+
+  alarm_name          = "db-memory-${each.key}"
+  alarm_description   = "DB 메모리 부족: ${each.value.identifier} 남은 메모리가 10분째 64MB 아래, 스왑으로 느려짐 — DB 연결 수 확인, db_pool_size를 줄이거나 instance_class 상향"
+  namespace           = "AWS/RDS"
+  metric_name         = "FreeableMemory"
+  dimensions          = { DBInstanceIdentifier = each.value.identifier }
+  statistic           = "Minimum"
+  period              = 300
+  evaluation_periods  = 2
+  threshold           = 64 * 1024 * 1024
+  comparison_operator = "LessThanThreshold"
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+}
+
+# Valkey runs noeviction: once full, writes fail — logins, uploads and download quotas with them.
+resource "aws_cloudwatch_metric_alarm" "redis_memory" {
+  for_each = aws_elasticache_replication_group.redis
+
+  alarm_name          = "redis-memory-${each.key}"
+  alarm_description   = "Redis 메모리 높음: ${each.value.id} 사용량이 80% 넘음, 가득 차면 쓰기(로그인·업로드)가 실패 — 큰 키나 남은 업로드 블록 확인, 계속되면 node_type 상향"
+  namespace           = "AWS/ElastiCache"
+  metric_name         = "DatabaseMemoryUsagePercentage"
+  dimensions          = { CacheClusterId = sort(tolist(each.value.member_clusters))[0] }
+  statistic           = "Maximum"
+  period              = 300
+  evaluation_periods  = 1
+  threshold           = 80
+  comparison_operator = "GreaterThanThreshold"
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+}
+
 # High-severity GuardDuty findings (hardened, audit.tf), as one line of text.
 resource "aws_cloudwatch_event_rule" "guardduty" {
   count = var.hardened ? 1 : 0
@@ -254,6 +350,12 @@ resource "aws_budgets_budget" "monthly" {
   limit_amount = tostring(var.monthly_budget_usd)
   limit_unit   = "USD"
   time_unit    = "MONTHLY"
+
+  # What's used before credits: on the free plan credits net the bill to $0, and the account closes
+  # once they run out — so this watches the credits burning, not the (zero) bill.
+  cost_types {
+    include_credit = false
+  }
 
   notification {
     comparison_operator        = "GREATER_THAN"

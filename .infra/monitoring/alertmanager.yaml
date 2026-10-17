@@ -10,6 +10,8 @@ alertmanager_config: |
     routes:
       - receiver: messaging
         matchers: [channel="messaging"]
+      - receiver: infra
+        matchers: [channel="infra"]
   templates:
     - discord
   receivers:
@@ -31,6 +33,15 @@ alertmanager_config: |
           message: '{{ template "discord.message" . }}'
           attributes:
             channel: service
+    - name: infra
+      sns_configs:
+        - topic_arn: ${topic_arn}
+          sigv4:
+            region: ${region}
+          subject: '{{ .CommonLabels.alertname }}'
+          message: '{{ template "discord.message" . }}'
+          attributes:
+            channel: infra
 template_files:
   discord: |
     ${indent(4, discord_template)}

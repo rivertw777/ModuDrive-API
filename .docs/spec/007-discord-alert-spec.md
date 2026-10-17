@@ -24,7 +24,14 @@
   - [4-5. 서킷 열림](#4-5-서킷-열림)
   - [4-6. 요청 실패율 높음](#4-6-요청-실패율-높음)
   - [4-7. 느린 요청 많음](#4-7-느린-요청-많음)
-- [5. TODO](#5-todo)
+  - [4-8. 힙 메모리 부족](#4-8-힙-메모리-부족)
+  - [4-9. DB 커넥션 부족](#4-9-db-커넥션-부족)
+- [5. AWS 전용 경보](#5-aws-전용-경보)
+  - [5-1. 발송 과정](#5-1-발송-과정)
+  - [5-2. 알림이 오기까지 걸리는 시간](#5-2-알림이-오기까지-걸리는-시간)
+  - [5-3. 알림 메시지](#5-3-알림-메시지)
+  - [5-4. 경보 목록](#5-4-경보-목록)
+- [6. TODO](#6-todo)
 
 ---
 
@@ -42,7 +49,7 @@ flowchart LR
     A["Alertmanager<br/>묶어서 보내기"]
     S["SNS 토픽<br/>modudrive-alerts"]
     L["Lambda<br/>discord-forwarder"]
-    D(["Discord<br/>#messaging · #service"])
+    D(["Discord<br/>#service · #infra · #messaging"])
 
     M -- "15초마다 수집" --> P
     P --> R
@@ -58,8 +65,8 @@ flowchart LR
 | Prometheus | 15초마다 모든 서비스의 지표를 가져가 저장한다 |
 | 알림 규칙 | Prometheus가 1분마다 "이 값이 기준을 넘었나"를 확인한다. 정해 둔 시간(`for`) 동안 계속 넘어야 알림을 보낸다 |
 | Alertmanager | 비슷한 알림을 한 메시지로 묶고 디스코드 문구로 만들어 SNS에 올린다. 고칠 때까지 4시간마다 다시 보낸다 |
-| SNS → Lambda | Lambda(`discord_forwarder.py`)가 메시지의 `channel` 속성으로 웹후크를 골라 디스코드에 보낸다. AWS에선 CloudWatch 경보·Budgets·GuardDuty도 같은 토픽으로 들어온다 |
-| Discord | 알림에 적힌 채널(`#messaging` 또는 `#service`)로 도착한다 |
+| SNS → Lambda | Lambda(`discord_forwarder.py`)가 메시지의 `channel` 속성으로 웹후크를 골라 디스코드에 보낸다. AWS에선 CloudWatch 경보·Budgets·GuardDuty도 같은 토픽으로 들어온다([5장](#5-aws-전용-경보)) |
+| Discord | 알림에 적힌 채널(`#service`, `#infra`, `#messaging`)로 도착한다([3장](#3-사용-디스코드-채널)) |
 
 ### 1-1. 알림이 오기까지 걸리는 시간
 
@@ -204,12 +211,21 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 
 ## 3. 사용 디스코드 채널
 
-| 채널 | 받는 알림 | 웹후크 주소 환경 변수 |
-|---|---|---|
-| `#messaging` | 이벤트가 제대로 오가는지: 전송 적체, 전송 실패, 처리 실패 | `DISCORD_MESSAGING_WEBHOOK_URL` |
-| `#service` | 서비스가 제대로 돌고 있는지: 응답 없음, 서킷 열림, 요청 실패율, 느린 요청 (나중에 CPU, 메모리) | `DISCORD_SERVICE_WEBHOOK_URL` |
+채널은 "받았을 때 무엇을 해야 하나"로 나눈다. 급한 것만 `#service`에 모여 있어야 거기만 휴대폰 알림을 켜 둘 수 있다.
 
-메시지는 SNS 속성 `channel`로 갈리고, Lambda가 그 채널의 웹후크 주소를 SSM에서 읽는다. 주소는 레포에 올리지 않는다.
+| 채널 | 성격 | 받는 알림 | 받으면 | 웹후크 주소 환경 변수 |
+|---|---|---|---|---|
+| `#service` | 지금 사용자가 피해를 보고 있음 | 응답 없음, 태스크 없음, 서킷 열림, 요청 실패율, 느린 요청, DB 커넥션 부족, ALB 5xx, gateway 정상 태스크 없음 | 바로 본다 | `DISCORD_SERVICE_WEBHOOK_URL` |
+| `#infra` | 아직 괜찮지만 그냥 두면 문제가 됨 (자원 한도) | 힙 메모리, 서비스 CPU·메모리, DB 메모리·CPU 크레딧, Redis 메모리, NAT 상태 검사 | 그날 안에 사양·설정을 조정하거나 원인을 고친다 | `DISCORD_INFRA_WEBHOOK_URL` |
+| `#messaging` | 비동기 이벤트가 멈춤 | 이벤트 전송 적체·실패, 이벤트 처리 실패, 큐 처리 지연 | 원인을 고친 뒤 재처리(리드라이브) | `DISCORD_MESSAGING_WEBHOOK_URL` |
+| `#account` | 계정 수준, 드묾 (AWS만) | 예산 초과, GuardDuty 위협 탐지 | 비용 확인, 보안 대응 | `DISCORD_ACCOUNT_WEBHOOK_URL` |
+
+Lambda(`discord_forwarder.py`)가 메시지마다 채널을 정하고, 그 채널의 웹후크 주소를 SSM에서 읽는다. 주소는 레포에 올리지 않는다.
+
+- 4장 알림: 규칙의 `channel` 라벨을 Alertmanager가 SNS 속성 `channel`로 실어 보낸다.
+- CloudWatch 경보: 속성을 실을 수 없어서 경보 이름 앞부분으로 정한다. `queue-age-` → `#messaging`, `service-`·`db-`·`redis-`·`nat-` → `#infra`, 나머지 → `#service`. 새 경보를 만들 땐 이 규칙에 맞게 이름을 짓는다.
+- Budgets·GuardDuty: CloudWatch 경보가 아닌 글이라 `#account`로 간다.
+- 웹후크 주소를 아직 안 넣은 채널(값이 `set-by-hand` 그대로)은 `#service`로 대신 보낸다. 주소를 넣기 전이라고 알림이 사라지지 않게 하려는 것이다.
 
 - 로컬: `.docker/.env`에 넣으면 LocalStack이 뜰 때 SSM(`/modudrive/DISCORD_*_WEBHOOK_URL`)에 들어간다. 바꾼 뒤엔 LocalStack을 다시 띄운다.
 - AWS: SSM에 손으로 한 번 넣는다([003-aws-migration.md 1-13](../guide/003-aws-migration.md#1-13-모니터링과-알림)).
@@ -218,7 +234,7 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 
 ## 4. 사용 알림
 
-지금 쓰는 알림은 일곱 개다.
+지금 쓰는 알림은 아홉 개다.
 
 | 알림 | 채널 | 언제 울리나 | 조건 | 기다리는 시간 (`for`) |
 |---|---|---|---|---|
@@ -229,6 +245,8 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 | 서킷 열림 | `#service` | 서비스는 떠 있지만, 그 서비스로 가는 호출이 계속 실패할 때 | `max by (service, name) (resilience4j_circuitbreaker_state{state=~"open\|half_open"}) > 0` | 2분 |
 | 요청 실패율 높음 | `#service` | 게이트웨이를 지난 요청이 5xx로 많이 실패할 때 | 5xx 비율 `> 5%` 이면서 5분간 5xx `>= 10`건 (`spring_cloud_gateway_requests_seconds_count`, 경로별) | 2분 |
 | 느린 요청 많음 | `#service` | 게이트웨이를 지난 요청이 에러 없이 느려졌을 때 | 1초 초과 비율 `> 5%` 이면서 5분간 1초 초과 `>= 10`건 (`spring_cloud_gateway_requests_seconds_bucket{le="1.0"}`, 경로별, storage-service 제외) | 2분 |
+| 힙 메모리 부족 | `#infra` | 힙이 차서 GC가 따라가지 못할 때 | GC 직후 old 영역 사용률 `> 90%` (`jvm_gc_live_data_size_bytes` / `jvm_gc_max_data_size_bytes`) | 5분 |
+| DB 커넥션 부족 | `#service` | 커넥션 풀이 다 쓰여 요청이 커넥션을 못 받고 실패할 때 | `max by (service) (increase(hikaricp_connections_timeout_total[5m])) > 0` | 바로 |
 
 ### 4-1. 이벤트 전송 적체
 
@@ -298,9 +316,116 @@ DB나 Redis에 연결할 수 없을 때는 서비스가 503을 돌려주므로 �
 **받으면:** 알림의 TraceQL을 Grafana → Explore → Tempo에 붙여 느린 trace를 열고, 가장 긴 span(DB 쿼리, 하위 서비스 호출, S3)을 본다.
 Explore에서 `spring_cloud_gateway_requests_seconds_bucket` 그래프를 띄우면 점(exemplar)이 찍혀 있어, 눌러서 그 시점의 trace로 바로 갈 수도 있다.
 
+### 4-8. 힙 메모리 부족
+
+힙이 차서 GC가 메모리를 되찾지 못하는 경우를 보는 알림이다. 이대로 가면 요청이 GC 때문에 멈칫거리다 `OutOfMemoryError`로 죽는다.
+
+- **GC 직후에 남은 양을 본다**: 힙 사용량에는 아직 안 치운 쓰레기도 들어간다. 게다가 요청이 없으면 GC가 돌지 않아서, 바쁜 시간이 지난 뒤 쓰레기로 90%가 찬 채 몇 시간이고 머물 수 있다.
+  그래서 오래 사는 객체가 있는 old 영역에서 GC가 치우고도 남은 양(`jvm_gc_live_data_size_bytes`)을 그 영역의 최대(`jvm_gc_max_data_size_bytes`)로 나눈다. 치워도 90%가 남았다면 진짜로 모자란 것이다.
+- **old GC 전에는 0이다**: 이 값은 old 영역 GC가 돌 때 바뀐다. 한 번도 안 돌았으면 0이라 울리지 않는다.
+- **컨테이너 메모리는 못 본다**: 힙 밖 메모리(Metaspace, 스레드, 버퍼)까지 합친 값은 앱 지표에 없다. AWS에선 `service-memory-*` 경보([5장](#5-aws-전용-경보))가 따로 본다.
+  힙은 컨테이너의 70%(`MaxRAMPercentage`)다. 힙 밖이 100~150MB라 75%면 1GB 태스크에서 힙이 다 늘기만 해도 그 경보 기준(90%)에 닿았다.
+
+**받으면:** 그 시각의 요청(zip, 다운로드 등 큰 응답)과 로그의 `OutOfMemoryError`를 본다. 계속되면 메모리를 올린다.
+
+### 4-9. DB 커넥션 부족
+
+커넥션 풀(`maximum-pool-size`)이 다 쓰여서 요청이 커넥션을 못 받은 경우를 보는 알림이다. 오래 쥐고 있는 트랜잭션이나 느린 쿼리가 원인이다.
+커넥션을 3초(`connection-timeout`) 기다려도 못 받으면 그 요청은 503이 된다. 최근 5분 동안 이런 요청이 한 건이라도 있으면 알린다.
+
+- **기다리는 요청 수는 안 본다**: `hikaricp_connections_pending`은 수집하는 순간의 값이다. 고갈은 보통 몇 초씩 끊겨서 오기 때문에, 1분마다 하는 검사 사이에 0이 끼면 `for`가 계속 처음부터 센다.
+  그래서 커넥션을 못 받고 실패한 횟수(`hikaricp_connections_timeout_total`)를 센다.
+- **바로 보낸다**: 타임아웃이 났다면 이미 사용자가 에러를 본 것이다. 5분 창으로 세기 때문에 마지막 타임아웃 5분 뒤에 해제된다.
+
+**받으면:** 느린 trace에서 DB 구간(커넥션 대기, 쿼리)을 본다. 계속되면 풀 크기를 올린다(AWS는 `db_pool_size`).
+
 ---
 
-## 5. TODO
+## 5. AWS 전용 경보
+
+앱 지표로는 안 보이는 것들은 AWS에서 따로 본다. ALB, NAT, 컨테이너의 CPU·메모리 한도, DB·Redis 내부, 요금, 계정 위협이다.
+로컬에는 이 대상들이 없어서 이 경보들도 없다. 4장 알림과 같은 SNS 토픽을 거쳐 같은 Lambda가 디스코드로 보낸다.
+
+### 5-1. 발송 과정
+
+```mermaid
+flowchart LR
+    SRC["AWS 서비스<br/>ECS · RDS · ElastiCache<br/>ALB · SQS · EC2(NAT)"]
+    CW[("CloudWatch<br/>지표 저장")]
+    AL["CloudWatch 경보<br/>기준 검사"]
+    B["Budgets<br/>비용 검사"]
+    G["GuardDuty → EventBridge<br/>위협 탐지 (prod)"]
+    S["SNS 토픽<br/>modudrive-alerts"]
+    L["Lambda<br/>discord-forwarder"]
+    D(["Discord<br/>#service · #infra<br/>#messaging · #account"])
+
+    SRC -- "1분 단위로 자동 전송" --> CW
+    CW --> AL
+    AL -- "상태가 바뀔 때마다" --> S
+    B -- "80% · 예상 100%" --> S
+    G -- "심각도 7 이상" --> S
+    S --> L
+    L -- "웹후크" --> D
+```
+
+| 단계 | 하는 일 |
+|---|---|
+| AWS 서비스 | 앱이 아니라 AWS가 지표를 낸다. 코드나 수집기 설정이 필요 없고, 1분 단위로 CloudWatch에 쌓인다 |
+| CloudWatch 경보 | 정해 둔 구간(`period`, 5분 등)마다 값을 하나로 줄여(평균·최대·최소) 기준과 비교한다. 연속으로 정한 횟수(`evaluation_periods`)만큼 넘으면 경보(ALARM), 다시 괜찮아지면 정상(OK)이 된다 |
+| Budgets · GuardDuty | CloudWatch 경보가 아니지만 같은 토픽에 바로 올린다. Budgets는 `alert_email`이 있으면 메일로도 보낸다 |
+| SNS → Lambda | 4장 알림과 같은 Lambda다. 이 메시지들엔 `channel` 속성이 없어서 경보 이름 앞부분으로 채널을 고른다. Budgets·GuardDuty는 `#account`다([3장](#3-사용-디스코드-채널)) |
+| Discord | `#service`, `#infra`, `#messaging`, `#account` 중 한 곳으로 도착한다 |
+
+4장 알림과 다른 점은 둘이다.
+
+- **Alertmanager를 거치지 않는다.** 그래서 묶음 발송([2-4](#2-4-그룹핑과-재발송))이 없다. 서비스 세 개가 동시에 넘으면 세 통이 온다.
+- **재알림이 없다.** 상태가 바뀔 때(정상 → 경보, 경보 → 정상) 한 번씩만 보낸다. 고치지 않아도 4시간마다 다시 오지 않으니, 받은 경보는 해제 알림이 올 때까지 기억해야 한다.
+
+### 5-2. 알림이 오기까지 걸리는 시간
+
+경보마다 `period × evaluation_periods`만큼 계속 넘어야 울린다. 예를 들어 `service-cpu-*`는 5분 구간 3번이라 15분이다.
+여기에 AWS가 지표를 CloudWatch에 올리는 지연(보통 1~3분)이 더해진다. 해제도 같은 방식이라, 고친 뒤 한 구간(대부분 5분)이 지나야 해제 알림이 온다.
+
+경보마다 걸리는 시간은 [5-4](#5-4-경보-목록)의 "기다리는 시간" 열에 있다.
+
+### 5-3. 알림 메시지
+
+경보 설명(`alarm_description`)을 `제목: 조치`로 적어 두면, Lambda가 앞부분을 제목으로, 뒷부분을 조치로 쓴다. 사유는 CloudWatch가 붙여 주는 문장(`NewStateReason`)이다.
+
+```
+🚨  서비스 메모리 높음
+사유: Threshold Crossed: 1 datapoint [97.2] was greater than the threshold (90.0).
+조치: storage-service 메모리가 90% 넘음, 넘치면 태스크가 OOM으로 재시작 — …
+```
+
+정상으로 돌아오면 `✅  서비스 메모리 높음 (해제)`가 간다. Budgets·GuardDuty는 AWS가 만든 문장을 그대로 보낸다.
+
+경보 이름(`alarm_name`)은 영문으로 둔다. SNS 제목이 이 이름으로 만들어지기 때문이다.
+
+### 5-4. 경보 목록
+
+정의는 `.infra/monitoring.tf`에 있다.
+
+| 알림 | 채널 | 언제 울리나 | 조건 | 기다리는 시간 |
+|---|---|---|---|---|
+| 큐 처리 지연 | `#messaging` | 컨슈머가 느리거나 멈춰서 메시지가 실패 없이 쌓이기만 할 때 (DLQ 알림이 안 울린다) | `queue-age-<큐>`: `ApproximateAgeOfOldestMessage` 최대 `> 300`초 | 10분 (5분 × 2) |
+| ALB 5xx | `#service` | gateway가 죽거나 닿지 않아 ALB가 5xx를 직접 응답할 때 (gateway 지표 자체가 없다) | `alb-5xx`: `HTTPCode_ELB_5XX_Count` 합 `> 10`건 | 5분 |
+| gateway 정상 태스크 없음 | `#service` | ALB 헬스 체크를 통과한 gateway가 하나도 없을 때 — 서비스 전체가 응답하지 않는다 | `gateway-unhealthy`: `HealthyHostCount` 최소 `< 1` | 3분 (1분 × 3) |
+| 서비스 CPU 높음 | `#infra` | 태스크 CPU가 오래 높을 때 (앱 지표는 컨테이너 한도를 모른다) | `service-cpu-<서비스>`: ECS `CPUUtilization` 평균 `> 80`% | 15분 (5분 × 3) — JVM 기동 때 1~2분 100%를 넘는 건 버틴다 |
+| 서비스 메모리 높음 | `#infra` | 태스크 메모리가 한도에 가까울 때 — 넘으면 느려지지 않고 OOM으로 죽는다 (힙 밖 메모리 포함) | `service-memory-<서비스>`: ECS `MemoryUtilization` 최대 `> 90`% | 5분 (한 번이라도) |
+| DB 메모리 부족 (demo) | `#infra` | DB 남은 메모리가 바닥나 스왑으로 모든 쿼리가 느려질 때 | `db-memory-<인스턴스>`: RDS `FreeableMemory` 최소 `< 64`MB | 10분 (5분 × 2) |
+| DB CPU 크레딧 부족 (demo) | `#infra` | t 계열 DB의 크레딧이 바닥나기 직전 — RDS는 무제한 모드라 느려지지 않고, 넘게 쓴 CPU만큼 추가 요금이 나간다 | `db-cpu-credit-<인스턴스>`: RDS `CPUCreditBalance` 최소 `< 30` | 10분 (5분 × 2) |
+| Redis 메모리 높음 (demo) | `#infra` | Redis가 차 갈 때 — noeviction이라 가득 차면 쓰기(로그인·업로드)가 실패한다 | `redis-memory-<클러스터>`: ElastiCache `DatabaseMemoryUsagePercentage` 최대 `> 80`% | 5분 |
+| NAT 인스턴스 상태 검사 실패 (demo) | `#infra` | NAT가 멈춰 바깥 통신(SQS·SES·이미지 받기)만 끊길 때 — 서비스는 떠 있다 | `nat-instance-status`: EC2 `StatusCheckFailed` 최대 `> 0` | 3분 (1분 × 3) |
+| 예산 초과 | `#account` | 이번 달 사용액이 예산의 80%를 넘었거나, 월말 예상이 100%를 넘을 때. 크레딧을 빼기 전 금액으로 본다 — 무료 플랜은 크레딧이 청구액을 0으로 만들고, 다 쓰면 계정이 닫힌다 (`alert_email`이 있으면 메일로도) | Budgets: 실제 `>= 80`%, 예상 `>= 100`% | AWS가 비용을 집계할 때 (하루 몇 번) |
+| GuardDuty 위협 탐지 (prod) | `#account` | 계정 수준의 위협이 탐지됐을 때 ([003 4-6](../guide/003-aws-migration.md)) | GuardDuty 심각도 `>= 7` | 탐지 후 몇 분 |
+
+알림 이름 옆 (demo)·(prod)는 그 환경에만 있다는 뜻이고, 없는 것은 둘 다에 있다. prod는 Aurora·MemoryDB라 DB·Redis 경보가 아직 없다.
+기다리는 시간은 `period × evaluation_periods`이고, 여기에 지표가 CloudWatch에 올라오는 지연(보통 1~3분)이 더해진다([5-2](#5-2-알림이-오기까지-걸리는-시간)).
+
+---
+
+## 6. TODO
 
 - [ ] **DLQ 지표를 CloudWatch 경보로**: AWS에선 CloudWatch가 DLQ의 `ApproximateNumberOfMessagesVisible`을 이미 안다.
   DLQ마다 경보를 걸면 앱이 30초마다 세는 코드(`DeadLetterQueueMetrics`)를 없앨 수 있다.
