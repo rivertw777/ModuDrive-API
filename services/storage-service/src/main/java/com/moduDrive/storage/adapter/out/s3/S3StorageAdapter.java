@@ -48,9 +48,8 @@ class S3StorageAdapter implements RetrieveBlocksPort, DeleteBlocksPort, FindUplo
 
     private static final Logger logger = LoggerFactory.getLogger(S3StorageAdapter.class);
     /** HEADs one commit's lookup has in flight at once (spec 001 2-3): a fresh 5GB file asks about
-     * 1,280 blocks, so a few at a time take seconds (8 = 160 rounds of HEAD) — all at once would take
-     * every seat (s3Lookup: 40), leaving the next commit to wait. */
-    static final int LOOKUP_PARALLELISM = 32;
+     * 1,280 blocks, so one at a time would take seconds — all at once would take every seat. */
+    static final int LOOKUP_PARALLELISM = 8;
     // A real version has at most 1,280 blocks (5GB / 4MB); this only stops a malformed one from
     // pre-allocating an oversized list.
     private static final int MAX_BLOCK_COUNT = 100_000;
