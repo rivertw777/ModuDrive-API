@@ -1,6 +1,6 @@
 # 파일 업로드 성능 테스트
 
-WEB과 같은 순서로 파일을 올리면서([001 2](../spec/001-file-upload-spec.md#2-파일-업로드)) 단계마다 걸린 시간과 DB·Redis 호출 수를 잰 테스트다. 큰 파일, 작은 파일 여러 개, 같은 파일 다시 올리기, 여러 사용자 동시 업로드의 네 경우로, 블록 수·파일 수에 비례해 늘던 호출을 줄인 전후(#681)를 비교했다.
+WEB과 같은 순서로 파일을 올리면서([001 2](../spec/001-file-upload-spec.md#2-파일-업로드)) 단계마다 걸린 시간과 DB·Redis 호출 수를 잰 테스트다. 큰 파일, 작은 파일 여러 개, 같은 파일 다시 올리기, 여러 사용자 동시 업로드, 크기가 섞인 폴더의 다섯 경우로, 블록 수·파일 수에 비례해 늘던 호출을 줄인 전후(#681)를 비교했다.
 
 ## 1. 테스트 시나리오
 
@@ -10,6 +10,16 @@ WEB과 같은 순서로 파일을 올리면서([001 2](../spec/001-file-upload-s
 | 2. 작은 파일 | 10KiB 파일 1,000개(파일마다 블록 1개), commit은 100개씩 10번 | 파일 수에 비례하는 commit 비용 |
 | 3. 다시 올리기 | 2의 1,000개를 올린 뒤, 같은 파일을 다른 폴더에 다시 올림 — 두 번째만 잰다 | 중복 제거: 블록이 이미 있어 URL 발급·PUT 없이 commit만 |
 | 4. 동시 업로드 | 사용자 10명이 동시에 각자 10KiB 파일 100개 | 동시 부하에서 지연과 서로의 간섭 |
+| 5. 혼합 폴더 | 업무 폴더 하나(파일 532개, 약 1GiB) — 아래 표 | 크기가 섞인 보통의 폴더 업로드 |
+
+혼합 폴더는 하위 폴더 넷에 크기가 다른 파일을 넣는다. 크기는 범위 안에서 고르게 뽑되 매 라운드 같은 값이다(내용만 바뀐다). WEB처럼 묶음 하나에 파일 100개·블록 1,280개까지, 블록 64개(256MiB)를 넘는 파일은 혼자 한 묶음으로 나눠, 묶음 7개·블록 701개가 된다.
+
+| 하위 폴더 | 파일 수 | 크기 |
+|---|---|---|
+| `코드` | 300 | 1~20KiB |
+| `문서` | 150 | 50KiB~2MiB |
+| `사진` | 80 | 2~6MiB |
+| `영상` | 2 | 120MiB, 400MiB |
 
 한 번 올릴 때 WEB처럼 네 단계를 차례로 밟고, 단계마다 시간·DB 쿼리 수(pg_stat_statements)·Redis 왕복 수(`INFO commandstats`)를 잰다.
 
@@ -36,7 +46,8 @@ WEB과 같은 순서로 파일을 올리면서([001 2](../spec/001-file-upload-s
 .scripts/perf-test/004-upload/run.sh tobe-small 5 small 1000 10240
 .scripts/perf-test/004-upload/run.sh tobe-dedup 5 dedup 1000 10240
 .scripts/perf-test/004-upload/run.sh tobe-concurrent 5 concurrent 10 100 10240
-python3 summary.py tobe-big5g tobe-small tobe-dedup tobe-concurrent   # 004-upload/에서
+.scripts/perf-test/004-upload/run.sh tobe-mixed 5 mixed
+python3 summary.py tobe-big5g tobe-small tobe-dedup tobe-concurrent tobe-mixed   # 004-upload/에서
 .scripts/perf-test/scenario.sh cleanup                   # 측정용 드라이브 삭제
 ```
 
@@ -88,7 +99,18 @@ python3 summary.py tobe-big5g tobe-small tobe-dedup tobe-concurrent   # 004-uplo
 | commit2 | 8.3 / 8.4초 | **10.1 / 16.9초** |
 | DB 쿼리 / Redis 왕복 (10명 합) | 15,050번 / 2,322번 | 11,090번 / 595번 |
 
-- **URL 발급과 1차 commit**은 네 경우 모두 호출 수가 줄어든 만큼 빨라졌다. 블록 수·파일 수에 비례하던 호출이 요청·묶음마다 몇 번으로 바뀌었다.
+**5. 혼합 폴더 (파일 532개, 블록 701개, 묶음 7개)**
+
+| 단계 | 개선 전 | 개선 후 |
+|---|---|---|
+| commit1 | 2,037ms, DB 1,078번 | **504ms (-75%), DB 30번** |
+| presign | 1,773ms, Redis 1,402번 | **440ms (-75%)**, Redis 37번 |
+| put | 14.2초 | 13.8초 |
+| commit2 | 16.6초, DB 7,635번 | 15.2초 (-9%), DB 6,587번 |
+| 합계 | 34.6초 | 29.9초 (-14%) |
+
+- **URL 발급과 1차 commit**은 다섯 경우 모두 호출 수가 줄어든 만큼 빨라졌다. 블록 수·파일 수에 비례하던 호출이 요청·묶음마다 몇 번으로 바뀌었다.
+- **혼합 폴더**에서도 가장 긴 단계는 블록 전송(put)이 아니라 2차 commit이다. 파일 532개가 파일마다 트랜잭션을 하나씩 연다([3](#3-남은-병목-파일마다-트랜잭션)).
 - **다시 올리기**는 블록이 모두 이미 있어 URL 발급·PUT·HEAD가 없고, 시간이 전부 파일마다의 버전 생성이다. 그래서 작은 파일의 2차 commit과 같은 비용이 그대로 보인다([3](#3-남은-병목-파일마다-트랜잭션)).
 - **큰 파일의 2차 commit**은 그대로다. 시간 대부분이 블록 1,280개의 HEAD인데, 로컬 LocalStack은 동시 요청을 늘려도 HEAD가 빨라지지 않았다.
 - **동시 업로드의 2차 commit은 오히려 느려졌다.** HEAD 동시 32개 때문이다([4](#4-head-동시-요청-32개의-역효과)).
@@ -97,7 +119,7 @@ python3 summary.py tobe-big5g tobe-small tobe-dedup tobe-concurrent   # 004-uplo
 
 ## 3. 남은 병목: 파일마다 트랜잭션
 
-작은 파일의 2차 commit(1,000개 23초)과 다시 올리기(21초)가 업로드 전체에서 가장 길다. 파일 100개짜리 commit 하나를 pg_stat_statements로 보면 DB 실행 시간은 합쳐서 약 130ms인데, 요청은 2.3초가 걸린다.
+작은 파일의 2차 commit(1,000개 23초)과 다시 올리기(21초)가 업로드 전체에서 가장 길고, 혼합 폴더(15초)에서도 블록 전송보다 길다. 파일 100개짜리 commit 하나를 pg_stat_statements로 보면 DB 실행 시간은 합쳐서 약 130ms인데, 요청은 2.3초가 걸린다.
 
 | 파일마다 (commit2) | 쿼리 |
 |---|---|
