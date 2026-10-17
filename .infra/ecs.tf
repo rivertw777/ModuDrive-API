@@ -24,6 +24,9 @@ locals {
         SPRING_DATASOURCE_URL      = "jdbc:postgresql://${local.db_address[local.db_instance_of[name]]}:5432/${local.db_names[name]}?sslmode=require"
         SPRING_DATASOURCE_USERNAME = "${name}_service"
       } : {},
+      contains(keys(local.db_names), name) && var.db_pool_size != null ? {
+        SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE = tostring(var.db_pool_size)
+      } : {},
       contains(local.redis_clients, name) ? {
         REDIS_HOST        = local.redis_host[name]
         REDIS_PORT        = "6379"
