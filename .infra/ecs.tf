@@ -15,7 +15,9 @@ locals {
         SERVER_PORT = tostring(port)
         # Not "dev": that profile seeds the test users (db/seed) and opens Swagger.
         SPRING_PROFILES_ACTIVE = "prod"
-        JAVA_TOOL_OPTIONS      = "-XX:MaxRAMPercentage=75"
+        # 70, not 75: off-heap (metaspace, code cache, threads, buffers) runs 100–150 MB, so on a 1 GB task a
+        # full 75% heap already sat near the 90% memory alarm (service-memory-*).
+        JAVA_TOOL_OPTIONS = "-XX:MaxRAMPercentage=70"
         # Traces go to the app's default, http://otel-collector:4318 — the collector's Service Connect
         # name is the compose one (monitoring.tf).
       },

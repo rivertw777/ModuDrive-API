@@ -111,3 +111,26 @@ groups:
           summary: '최근 5분 요청의 **{{ humanizePercentage $value }}**가 1초를 넘김'
           action: X-Ray 콘솔 → 트레이스에서 아래 필터로 느린 trace를 열어 가장 긴 구간(DB 쿼리·하위 호출)을 확인
           inspect: 'service("{{ $labels.routeId }}") { responsetime > 1 }'
+
+      - alert: HeapHigh
+        expr: >-
+          max by (service, instance) (jvm_gc_live_data_size_bytes)
+          / max by (service, instance) (jvm_gc_max_data_size_bytes > 0) > 0.9
+        for: 5m
+        labels:
+          channel: infra
+        annotations:
+          title: 힙 메모리 부족
+          summary: 'GC 직후에도 old 영역의 **{{ humanizePercentage $value }}**가 남아 있음 (GC가 못 따라감 · 곧 OutOfMemoryError)'
+          action: 그 시각의 요청(zip·다운로드 등)과 GC 로그 확인, 계속되면 services.<이름>.memory 상향
+          inspect: 'aws logs tail /ecs/${project}/{{ $labels.service }} --since 15m --filter-pattern OutOfMemoryError'
+
+      - alert: DbPoolExhausted
+        expr: max by (service) (increase(hikaricp_connections_timeout_total[5m])) > 0
+        labels:
+          channel: service
+        annotations:
+          title: DB 커넥션 부족
+          summary: '최근 5분 동안 커넥션을 못 받아 실패(503)한 요청 **{{ printf "%.0f" $value }}건** (풀이 다 쓰임)'
+          action: X-Ray에서 DB 구간이 긴 trace로 느린 쿼리 확인, 계속되면 db_pool_size 상향
+          inspect: 'service("{{ $labels.service }}") { responsetime > 1 }'

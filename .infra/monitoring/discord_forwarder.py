@@ -2,9 +2,10 @@
 
 Three kinds of message arrive (each posted as the text plus a coloured title card):
   - AMP alertmanager: already Discord-formatted text (alertmanager.yaml), channel in a message attribute
-  - CloudWatch alarm: JSON — AlarmDescription is "title: details"
-  - Budgets, GuardDuty (EventBridge): plain text
-Webhook URLs are read from SSM once per container — they're set by hand, never in code or env.
+  - CloudWatch alarm: JSON — AlarmDescription is "title: details", channel from the alarm name's prefix
+  - Budgets, GuardDuty (EventBridge): plain text, the account channel
+Webhook URLs are read from SSM once per container — they're set by hand, never in code or env. A channel
+whose URL isn't set yet (still "set-by-hand") falls back to the service channel instead of dropping the alert.
 """
 import json
 import os
@@ -17,13 +18,35 @@ CARD_GAP = "\n\u200b"
 _webhooks = {}
 
 
-def webhook(channel):
-    name = os.environ["MESSAGING_WEBHOOK_PARAM" if channel == "messaging" else "SERVICE_WEBHOOK_PARAM"]
+# CloudWatch alarms can't carry a message attribute, so their names say where they go (monitoring.tf).
+ALARM_CHANNELS = {"queue-age-": "messaging", "service-": "infra", "db-": "infra", "redis-": "infra", "nat-": "infra"}
+
+
+def channel_of(sns):
+    attribute = sns.get("MessageAttributes", {}).get("channel", {}).get("Value")
+    if attribute:
+        return attribute
+    try:
+        alarm = json.loads(sns["Message"])
+    except ValueError:
+        return "account"
+    if not isinstance(alarm, dict) or "AlarmName" not in alarm:
+        return "account"
+    return next((c for prefix, c in ALARM_CHANNELS.items() if alarm["AlarmName"].startswith(prefix)), "service")
+
+
+def url(channel):
+    name = os.environ.get(f"{channel.upper()}_WEBHOOK_PARAM", os.environ["SERVICE_WEBHOOK_PARAM"])
     if name not in _webhooks:
         import boto3  # in the Lambda runtime; imported here so the self-check below runs without it
 
         _webhooks[name] = boto3.client("ssm").get_parameter(Name=name, WithDecryption=True)["Parameter"]["Value"]
     return _webhooks[name]
+
+
+def webhook(channel):
+    value = url(channel)
+    return value if value.startswith("https://") or channel == "service" else url("service")
 
 
 def text(message):
@@ -56,7 +79,7 @@ def payload(message):
 def handler(event, _context):
     for record in event["Records"]:
         sns = record["Sns"]
-        channel = sns.get("MessageAttributes", {}).get("channel", {}).get("Value", "service")
+        channel = channel_of(sns)
         body = json.dumps(payload(sns["Message"])).encode()
         # Discord's edge refuses the default Python-urllib agent.
         request = urllib.request.Request(
@@ -83,4 +106,20 @@ if __name__ == "__main__":
     assert payload("plain budget text")["embeds"][0]["color"] == OTHER
     assert payload("plain budget text")["content"] == "plain budget text\n\u200b"
     assert len(payload("x" * 3000)["content"]) == DISCORD_LIMIT
+
+    def sns(message, attribute=None):
+        return {"Message": message, **({"MessageAttributes": {"channel": {"Value": attribute}}} if attribute else {})}
+
+    assert channel_of(sns("🚨 text", "messaging")) == "messaging"
+    assert channel_of(sns(json.dumps({**alarm, "AlarmName": "queue-age-member-signed-up"}))) == "messaging"
+    assert channel_of(sns(json.dumps({**alarm, "AlarmName": "service-cpu-file"}))) == "infra"
+    assert channel_of(sns(json.dumps({**alarm, "AlarmName": "db-memory-file"}))) == "infra"
+    assert channel_of(sns(json.dumps(alarm))) == "service"  # alb-5xx
+    assert channel_of(sns("plain budget text")) == "account"
+
+    os.environ.update(SERVICE_WEBHOOK_PARAM="s", INFRA_WEBHOOK_PARAM="i", ACCOUNT_WEBHOOK_PARAM="a")
+    _webhooks.update(s="https://service", i="https://infra", a="set-by-hand")
+    assert webhook("infra") == "https://infra"
+    assert webhook("account") == "https://service"  # not set yet → falls back
+    assert webhook("unknown") == "https://service"
     print("ok")

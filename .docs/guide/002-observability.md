@@ -121,7 +121,7 @@ flowchart LR
 | `.docker/docker-compose.observability.yml` | 로컬 스택 전체 (compose 프로젝트 `modudrive-observability`) |
 | `.docker/observability/*.yaml`, `*.yml` | 컴포넌트별 설정. 디렉터리째 `/etc/modudrive`로 마운트한다(8장) |
 | `.docker/observability/otel-collector-config.yaml` | tail sampling 정책 |
-| `.docker/observability/alert-rules.yaml` | 알림 규칙 7개 |
+| `.docker/observability/alert-rules.yaml` | 알림 규칙 9개 |
 | `.docker/observability/alertmanager.yml` | 알림 묶음, 재발송, 채널 |
 | `.docker/observability/grafana/datasources/datasources.yaml` | Grafana 데이터소스 (Prometheus, Tempo, Loki와 그 사이 링크) |
 | `.docker/localstack/init-aws.sh` | 알림용 SNS 토픽, Lambda, 웹후크 SSM 파라미터 |
