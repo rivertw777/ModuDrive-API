@@ -105,6 +105,12 @@ variable "db_backup_retention_days" {
   default = 7
 }
 
+# Hikari pool per service task. null keeps Hikari's default (10).
+variable "db_pool_size" {
+  type    = number
+  default = null
+}
+
 # PostgreSQL instances (or Aurora clusters), and the services whose database each one holds (rds.tf).
 # Each service's database (member_db, file_db ...) lives on exactly one.
 variable "db_instances" {
