@@ -41,6 +41,8 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
     implementation 'org.springframework.boot:spring-boot-starter-webflux'
     implementation 'software.amazon.awssdk:s3:2.54.13'
+    // The S3 client's default HTTP client (s3 ships it as runtime only), sized in S3Config.
+    implementation 'software.amazon.awssdk:apache5-client:2.54.13'
     // S3 calls take a bulkhead seat (spec 006 2-4); version from the Resilience4j BOM.
     implementation 'io.github.resilience4j:resilience4j-bulkhead'
     // S3 calls as spans. Pinned to the release built on the opentelemetry-api the Boot BOM ships (1.62).

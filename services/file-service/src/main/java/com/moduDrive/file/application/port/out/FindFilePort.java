@@ -7,6 +7,7 @@ import com.moduDrive.file.domain.model.File.FileId;
 import com.moduDrive.file.domain.model.Namespace.NamespaceId;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -25,6 +26,9 @@ public interface FindFilePort {
      * upload of the same name would collide with. A trashed file at that name doesn't occupy the
      * slot (see {@code uk_file_namespace_path_active_name}), so it's deliberately excluded here. */
     Optional<File> findActiveByNamespaceIdAndPathAndName(NamespaceId namespaceId, String path, String name);
+
+    /** {@link #findActiveByNamespaceIdAndPathAndName} for many names in one folder, in one query. */
+    List<File> findActiveByNamespaceIdAndPathAndNames(NamespaceId namespaceId, String path, Collection<String> names);
 
     /** {@link #findActiveByNamespaceIdAndPathAndName}, locking the row until the transaction ends —
      * a commit adding a version, so the file can't be trashed (and purged without that version's

@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
 @DataJpaTest
@@ -139,6 +140,22 @@ class FilePersistenceAdapterTest {
             var result = filePersistenceAdapter.findActiveByNamespaceIdAndPathAndName(namespaceId, "/1/docs", "report.pdf");
 
             assertThat(result).isEmpty();
+        }
+
+        @Test
+        @DisplayName("여러 이름을 한 번에 찾으면, 그 경로의 활성 파일 중 그 이름들만 돌려준다")
+        void findsManyNamesOfOneFolderAtOnce() {
+            save("/1/docs", "a.pdf");
+            save("/1/docs", "b.pdf");
+            save("/1/docs", "c.pdf");
+            save("/1/docs", "d.pdf", FileStatus.TRASHED);
+            save("/1/other", "a.pdf");
+
+            var result = filePersistenceAdapter.findActiveByNamespaceIdAndPathAndNames(
+                    namespaceId, "/1/docs", List.of("a.pdf", "b.pdf", "d.pdf", "x.pdf"));
+
+            assertThat(result).extracting(File::getPath, File::getName)
+                    .containsExactlyInAnyOrder(tuple("/1/docs", "a.pdf"), tuple("/1/docs", "b.pdf"));
         }
 
         @Test
@@ -444,6 +461,21 @@ class FilePersistenceAdapterTest {
             assertThat(filePersistenceAdapter.findByUploadId(uploadId))
                     .get().extracting(com.moduDrive.file.domain.model.FileVersion::getUploadId).isEqualTo(uploadId);
             assertThat(filePersistenceAdapter.findByUploadId(UUID.randomUUID())).isEmpty();
+        }
+
+        @Test
+        @DisplayName("여러 uploadId를 한 번에 찾으면, 버전이 있는 것만 돌려준다")
+        void returnsTheVersionsOfManyUploadIds() {
+            UUID first = UUID.randomUUID();
+            UUID second = UUID.randomUUID();
+            springDataFileVersionRepository.save(version(UUID.randomUUID(), first, List.of("h1")));
+            springDataFileVersionRepository.save(version(UUID.randomUUID(), second, List.of("h2", "h3")));
+            springDataFileVersionRepository.save(version(UUID.randomUUID(), UUID.randomUUID(), List.of("h4")));
+
+            assertThat(filePersistenceAdapter.findAllByUploadIds(List.of(first, second, UUID.randomUUID())))
+                    .extracting(com.moduDrive.file.domain.model.FileVersion::getUploadId,
+                            com.moduDrive.file.domain.model.FileVersion::getHashes)
+                    .containsExactlyInAnyOrder(tuple(first, List.of("h1")), tuple(second, List.of("h2", "h3")));
         }
 
         @Test

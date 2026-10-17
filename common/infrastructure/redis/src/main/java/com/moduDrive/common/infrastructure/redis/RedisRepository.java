@@ -2,12 +2,15 @@ package com.moduDrive.common.infrastructure.redis;
 
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.script.RedisScript;
 
 import java.time.Duration;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.stream.Collectors;
 
 public class RedisRepository {
 
@@ -40,9 +43,11 @@ public class RedisRepository {
         redisTemplate.delete(key);
     }
 
-    /** Adds the member, or moves it to {@code score} if it is already there. */
-    public void addToSortedSet(String key, String member, double score) {
-        redisTemplate.opsForZSet().add(key, member, score);
+    /** Adds the members, or moves those already there to {@code score} — one ZADD. */
+    public void addToSortedSet(String key, Collection<String> members, double score) {
+        redisTemplate.opsForZSet().add(key, members.stream()
+                .map(member -> ZSetOperations.TypedTuple.of(member, score))
+                .collect(Collectors.toSet()));
     }
 
     /** Each member's score, in order — null where it isn't in the set (ZMSCORE). */

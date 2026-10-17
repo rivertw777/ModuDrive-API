@@ -48,14 +48,17 @@ class RedisUploadedBlockStore implements RecordUploadedBlockPort, ClaimStaleUplo
     private final RedisRepository redisRepository;
 
     @Override
-    public void scheduleSweep(UUID ownerId, String hash) {
-        redisRepository.addToSortedSet(indexKey(hash), ownerId + ":" + hash, Instant.now().toEpochMilli());
+    public void scheduleSweep(UUID ownerId, Collection<String> hashes) {
+        long now = Instant.now().toEpochMilli();
+        // One ZADD per index key: a command can only touch keys in one slot.
+        hashes.stream().collect(Collectors.groupingBy(RedisUploadedBlockStore::indexKey)).forEach((indexKey, group) ->
+                redisRepository.addToSortedSet(indexKey, group.stream().map(hash -> ownerId + ":" + hash).toList(), now));
     }
 
     @Override
-    public boolean tryCountUpload(UUID ownerId, int limit) {
+    public boolean tryCountUploads(UUID ownerId, int count, int limit) {
         Long counted = redisRepository.executeScript(COUNT_SCRIPT, List.of(COUNT_KEY_PREFIX + ownerId),
-                String.valueOf(limit), String.valueOf(Blocks.UPLOAD_TTL.toMillis()));
+                String.valueOf(limit), String.valueOf(Blocks.UPLOAD_TTL.toMillis()), String.valueOf(count));
         return counted != null && counted == 1L;
     }
 
