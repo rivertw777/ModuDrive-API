@@ -3,7 +3,7 @@
 Three kinds of message arrive (each posted as the text plus a coloured title card):
   - AMP alertmanager: already Discord-formatted text (alertmanager.yaml), channel in a message attribute
   - CloudWatch alarm: JSON — AlarmDescription is "title: details", channel from the alarm name's prefix
-  - Budgets, GuardDuty (EventBridge): plain text, the account channel
+  - Budgets: plain text; GuardDuty (EventBridge): a JSON string of text. Both the account channel
 Webhook URLs are read from SSM once per container — they're set by hand, never in code or env. A channel
 whose URL isn't set yet (still "set-by-hand") falls back to the service channel instead of dropping the alert.
 """
@@ -54,33 +54,44 @@ def text(message):
         alarm = json.loads(message)
     except ValueError:
         return message
+    if isinstance(alarm, str):
+        return alarm  # EventBridge's string template (GuardDuty) arrives quoted and escaped
     if not isinstance(alarm, dict) or "AlarmName" not in alarm:
         return message
 
+    # A new alarm (or one back from missing data) goes INSUFFICIENT_DATA → OK: nothing was ever firing.
+    if alarm["NewStateValue"] == "OK" and alarm.get("OldStateValue") != "ALARM":
+        return None
     title, _, details = (alarm.get("AlarmDescription") or alarm["AlarmName"]).partition(": ")
+    target = f"**대상**: `{alarm['AlarmName']}`"
     if alarm["NewStateValue"] == "OK":
-        return f"✅  **{title} (해제)**"
-    return f"🚨  **{title}**\n\n**사유**: {alarm['NewStateReason']}\n\n**조치**: {details}"
+        return f"✅  **{title} (해제)**\n\n{target}"
+    return f"🚨  **{title}**\n\n{target}\n\n**사유**: {alarm['NewStateReason']}\n\n**조치**: {details}"
 
 
 def payload(message):
     """The text as the message, plus a small card titled with its first line: red while firing, green
-    once resolved (the text starts with 🚨 / ✅), grey for anything else."""
+    once resolved (the text starts with 🚨 / ✅), grey for anything else. None when there's nothing to post."""
     body = text(message)
+    if body is None:
+        return None
     first = body.split("\n", 1)[0]
     color = FIRING if first.startswith("🚨") else RESOLVED if first.startswith("✅") else OTHER
     title = first.lstrip("🚨✅ ").replace("**", "").strip()
     return {
         "content": body[: DISCORD_LIMIT - len(CARD_GAP)] + CARD_GAP,
-        "embeds": [{"title": title[:256], "color": color, "footer": {"text": "ModuDrive · Alertmanager"}}],
+        "embeds": [{"title": title[:256], "color": color, "footer": {"text": "ModuDrive"}}],
     }
 
 
 def handler(event, _context):
     for record in event["Records"]:
         sns = record["Sns"]
+        message = payload(sns["Message"])
+        if message is None:
+            continue
         channel = channel_of(sns)
-        body = json.dumps(payload(sns["Message"])).encode()
+        body = json.dumps(message).encode()
         # Discord's edge refuses the default Python-urllib agent.
         request = urllib.request.Request(
             webhook(channel), body, {"Content-Type": "application/json", "User-Agent": "modudrive-alerts"}
@@ -94,14 +105,20 @@ if __name__ == "__main__":
         "AlarmName": "alb-5xx",
         "AlarmDescription": "ALB 5xx: gateway 태스크 상태 확인",
         "NewStateValue": "ALARM",
+        "OldStateValue": "OK",
         "NewStateReason": "Threshold Crossed",
     }
-    assert text(json.dumps(alarm)) == "🚨  **ALB 5xx**\n\n**사유**: Threshold Crossed\n\n**조치**: gateway 태스크 상태 확인"
-    assert text(json.dumps({**alarm, "NewStateValue": "OK"})) == "✅  **ALB 5xx (해제)**"
-    assert text('"a json string"') == '"a json string"'
+    resolved = {**alarm, "NewStateValue": "OK", "OldStateValue": "ALARM"}
+    assert text(json.dumps(alarm)) == (
+        "🚨  **ALB 5xx**\n\n**대상**: `alb-5xx`\n\n**사유**: Threshold Crossed\n\n**조치**: gateway 태스크 상태 확인"
+    )
+    assert text(json.dumps(resolved)) == "✅  **ALB 5xx (해제)**\n\n**대상**: `alb-5xx`"
+    assert payload(json.dumps({**resolved, "OldStateValue": "INSUFFICIENT_DATA"})) is None  # just created
+    assert text('"🚨  **GuardDuty**\\n\\nx"') == "🚨  **GuardDuty**\n\nx"
+    assert payload('"🚨  **GuardDuty**\\n\\nx"')["embeds"][0]["color"] == FIRING
     card = payload("🚨  **서비스 응답 없음** (2건)\n\n- a")["embeds"][0]
     assert (card["title"], card["color"]) == ("서비스 응답 없음 (2건)", FIRING)
-    card = payload(json.dumps({**alarm, "NewStateValue": "OK"}))["embeds"][0]
+    card = payload(json.dumps(resolved))["embeds"][0]
     assert (card["title"], card["color"]) == ("ALB 5xx (해제)", RESOLVED)
     assert payload("plain budget text")["embeds"][0]["color"] == OTHER
     assert payload("plain budget text")["content"] == "plain budget text\n\u200b"

@@ -55,7 +55,8 @@
 
 **조치**: {{ (index .Alerts.Firing 0).Annotations.action }}
 {{ end }}
-{{- if .Alerts.Resolved }}✅  **{{ .CommonAnnotations.title }} (해제)** ({{ len .Alerts.Resolved }}건)
+{{- if .Alerts.Resolved }}{{ if .Alerts.Firing }}
+{{ end }}✅  **{{ .CommonAnnotations.title }} (해제)** ({{ len .Alerts.Resolved }}건)
 {{ range .Alerts.Resolved }}
 - {{ template "discord.target" . }}
 {{- end }}
