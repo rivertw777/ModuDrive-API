@@ -3,8 +3,6 @@ package com.moduDrive.file.domain.model;
 import java.util.Set;
 
 public enum FileStatus {
-    /** Created, no committed version yet. */
-    PENDING,
     UPLOADED,
     /** In the trash, restorable. {@code File.trashedAt} is set. */
     TRASHED,

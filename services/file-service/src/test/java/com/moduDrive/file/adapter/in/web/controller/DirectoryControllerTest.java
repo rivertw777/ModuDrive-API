@@ -50,7 +50,7 @@ class DirectoryControllerTest {
             new FileId(UUID.randomUUID()), new FileNamespaceId(UUID.randomUUID()),
             new FileName("docs"), new FilePath("/1"),
             new FileOwnerId(UUID.fromString(USER_ID)), null, null,
-            FileStatus.PENDING, new FileIsDirectory(true));
+            FileStatus.UPLOADED, new FileIsDirectory(true));
 
     @Nested
     @DisplayName("GET /api/v1/directories")

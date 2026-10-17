@@ -846,7 +846,7 @@ class FilePersistenceAdapterTest {
             saveEntry("/1", "a-dir", true, FileStatus.UPLOADED);
             saveEntry("/1", "b-dir", true, FileStatus.UPLOADED);
             saveEntry("/1", "p.txt", false, FileStatus.UPLOADED);
-            saveEntry("/1", "q.txt", false, FileStatus.PENDING);
+            saveEntry("/1", "q.txt", false, FileStatus.UPLOADED);
             saveEntry("/1", "r.txt", false, FileStatus.UPLOADED);
             saveEntry("/1", "s.txt", false, FileStatus.UPLOADED);
             saveEntry("/1", "t.txt", false, FileStatus.UPLOADED);

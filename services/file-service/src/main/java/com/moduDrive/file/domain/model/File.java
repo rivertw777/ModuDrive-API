@@ -45,7 +45,7 @@ public class File {
                 ownerId.value(),
                 null,
                 null,
-                FileStatus.PENDING,
+                FileStatus.UPLOADED,
                 isDirectory.value(),
                 false,
                 null,
