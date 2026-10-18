@@ -350,7 +350,7 @@ flowchart LR
 - 블록 바이트는 WEB이 S3에 직접 PUT한다 ([001 2-4](001-file-upload-spec.md#2-4-블록-전송)). storage-service는 `PutObject`를 부르지 않는다. URL 발급은 로컬 서명이라 S3를 부르지 않으므로 어느 벌크헤드도 거치지 않는다.
 - 블록 확인·다운로드·삭제의 자리를 나눠, 한쪽이 몰리거나 느려져도 다른 쪽 자리는 남는다. 세 벌크헤드 합(85)이 Tomcat 요청 스레드(200)보다 작아서, S3가 완전히 멈춰도 S3를 쓰지 않는 요청을 받을 스레드가 남는다.
 - 서킷은 하나다. 업로드든 다운로드든 S3 자체가 아프면 같이 막는다.
-- `/internal/storage/blocks/uploaded`는 24시간 안에 URL을 받은 해시마다 `HeadObject`를 보내고(commit 하나에 동시 32개), 그 자리는 `s3Lookup`에서 잡는다. 서킷이 열리면 바로, 자리가 차면 최대 1초 기다린 뒤 조회 전체가 503으로 끝나고 남은 HEAD는 보내지 않는다. URL을 받은 적 없는 해시는 S3에 묻지 않아서, 새 파일의 첫 commit은 S3가 아파도 영향이 없다.
+- `/internal/storage/blocks/uploaded`는 24시간 안에 URL을 받은 해시마다 `HeadObject`를 보내고(commit 하나에 동시 8개), 그 자리는 `s3Lookup`에서 잡는다. 서킷이 열리면 바로, 자리가 차면 최대 1초 기다린 뒤 조회 전체가 503으로 끝나고 남은 HEAD는 보내지 않는다. URL을 받은 적 없는 해시는 S3에 묻지 않아서, 새 파일의 첫 commit은 S3가 아파도 영향이 없다.
 - file-service는 S3를 직접 부르지 않는다. commit은 storage-service 조회를 **DB 트랜잭션 밖에서** 한다 ([001 2-3](001-file-upload-spec.md#2-3-commit)). 그래서 S3 장애가 file-service DB 잠금으로 번지지 않는다.
 - storage-service 자체가 죽어 그 조회가 실패해도 commit 요청 전체가 실패하지 않는다. 이미 commit된 블록만으로 된 파일은 버전을 만들고, 나머지 파일만 그 503으로 답한다.
 

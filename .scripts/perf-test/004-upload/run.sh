@@ -4,7 +4,9 @@
 #   run.sh deploy <tag>                    — (re)start file-service and storage-service on the images tagged <tag>
 #   run.sh <label> <rounds> big <blocks>   — one <blocks> × 4MiB file per round
 #   run.sh <label> <rounds> small <files> <bytes>
-# Each round is a new drive; its S3 blocks are deleted after it (LocalStack keeps them in memory).
+#   run.sh <label> <rounds> dedup <files> <bytes>              — the same files again into another folder
+#   run.sh <label> <rounds> concurrent <users> <files> <bytes> — <users> drives uploading at once
+# Each round is a new drive (or drives); its S3 blocks are deleted after it (LocalStack keeps them in memory).
 set -eu
 DIR=$(cd "$(dirname "$0")" && pwd)
 SERVICES="file-service storage-service"
@@ -25,7 +27,8 @@ case $1 in
       line=$(docker exec -e REDIS_PASSWORD="$(docker exec modudrive-infra-redis-1 printenv REDIS_PASSWORD)" \
         -e PYTHONPATH=/w bench sh -c "cd /w/004-upload && python upload.py $label $*")
       echo "$line"
-      user=$(echo "$line" | python3 -c 'import json,sys;print(json.load(sys.stdin)["user"])')
-      docker exec modudrive-infra-localstack-1 awslocal s3 rm "s3://$BUCKET/blocks/$user/" --recursive --quiet
+      for user in $(echo "$line" | python3 -c 'import json,sys;print(*json.load(sys.stdin)["users"])'); do
+        docker exec modudrive-infra-localstack-1 awslocal s3 rm "s3://$BUCKET/blocks/$user/" --recursive --quiet
+      done
     done ;;
 esac
