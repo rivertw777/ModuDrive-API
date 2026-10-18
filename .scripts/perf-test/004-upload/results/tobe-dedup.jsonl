@@ -1,0 +1,5 @@
+{"label": "tobe-dedup", "kind": "dedup", "args": [1000, 10240], "users": ["ef619fa6-95ab-4a3e-ad6c-5594e7b95599"], "commit1": {"ms": 24222.3, "db": 11041, "redis": 6, "redis_by_command": {"auth": 3, "ping": 3}}}
+{"label": "tobe-dedup", "kind": "dedup", "args": [1000, 10240], "users": ["d0f86806-0a7b-48a9-9faf-1b819115b09e"], "commit1": {"ms": 22016.5, "db": 11041, "redis": 4, "redis_by_command": {"auth": 2, "ping": 2}}}
+{"label": "tobe-dedup", "kind": "dedup", "args": [1000, 10240], "users": ["bfe11c78-bec8-48df-8f92-4cc7f70bf030"], "commit1": {"ms": 21040.0, "db": 11041, "redis": 4, "redis_by_command": {"auth": 2, "ping": 2}}}
+{"label": "tobe-dedup", "kind": "dedup", "args": [1000, 10240], "users": ["837d8963-03ff-4685-948b-ddf4ce74de96"], "commit1": {"ms": 20558.2, "db": 11041, "redis": 4, "redis_by_command": {"auth": 2, "ping": 2}}}
+{"label": "tobe-dedup", "kind": "dedup", "args": [1000, 10240], "users": ["f5b4e27e-32df-490a-a9c8-9c6c499b48aa"], "commit1": {"ms": 21124.6, "db": 11041, "redis": 4, "redis_by_command": {"auth": 2, "ping": 2}}}

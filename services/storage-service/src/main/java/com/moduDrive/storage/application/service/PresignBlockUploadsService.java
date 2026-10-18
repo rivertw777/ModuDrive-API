@@ -53,13 +53,14 @@ class PresignBlockUploadsService implements PresignBlockUploadsUseCase {
                 throw new BusinessException(StorageExceptionCase.BLOCK_TOO_LARGE);
             }
         }
+        // The whole request counted at once: a refusal signs nothing, so it uses up nothing.
+        if (!recordUploadedBlockPort.tryCountUploads(command.getUserId(), blocks.size(), uploadLimit)) {
+            throw new BusinessException(StorageExceptionCase.UPLOAD_LIMIT_EXCEEDED);
+        }
+        // Schedule → sign (spec 001 2-4-1): see RecordUploadedBlockPort for why.
+        recordUploadedBlockPort.scheduleSweep(command.getUserId(), blocks.stream().map(Block::hash).toList());
         List<String> urls = new ArrayList<>(blocks.size());
         for (Block block : blocks) {
-            if (!recordUploadedBlockPort.tryCountUpload(command.getUserId(), uploadLimit)) {
-                throw new BusinessException(StorageExceptionCase.UPLOAD_LIMIT_EXCEEDED);
-            }
-            // Schedule → sign (spec 001 2-4-1): see RecordUploadedBlockPort for why.
-            recordUploadedBlockPort.scheduleSweep(command.getUserId(), block.hash());
             urls.add(presignBlockUploadPort.presignUpload(
                     Blocks.key(command.getUserId(), block.hash()), block.size(), block.hash()));
         }

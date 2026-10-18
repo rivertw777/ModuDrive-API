@@ -67,12 +67,12 @@ class RedisUploadedBlockStoreTest {
         @Test
         @DisplayName("기준 시각 뒤에 등록된 그 소유자의 블록만 돌려준다 (여러 키에 걸쳐)")
         void findsTheOwnersBlocksScheduledSince() throws InterruptedException {
-            store.scheduleSweep(owner, HASH_A);
+            store.scheduleSweep(owner, List.of(HASH_A));
             Thread.sleep(5);
             Instant since = Instant.now();
             Thread.sleep(5);
-            store.scheduleSweep(owner, HASH_B);
-            store.scheduleSweep(UUID.randomUUID(), HASH_C);
+            store.scheduleSweep(owner, List.of(HASH_B));
+            store.scheduleSweep(UUID.randomUUID(), List.of(HASH_C));
 
             assertThat(store.findScheduledSince(owner, List.of(HASH_A, HASH_B, HASH_C, HASH_B), since))
                     .containsExactly(HASH_B);
@@ -86,14 +86,24 @@ class RedisUploadedBlockStoreTest {
         @Test
         @DisplayName("한도까지는 받고, 넘으면 거절하며 거절한 건 세지 않는다")
         void refusesPastTheLimitWithoutCountingTheRefusal() {
-            assertThat(store.tryCountUpload(owner, 2)).isTrue();
-            assertThat(store.tryCountUpload(owner, 2)).isTrue();
-            assertThat(store.tryCountUpload(owner, 2)).isFalse();
-            assertThat(store.tryCountUpload(UUID.randomUUID(), 2)).isTrue();
+            assertThat(store.tryCountUploads(owner, 1, 2)).isTrue();
+            assertThat(store.tryCountUploads(owner, 1, 2)).isTrue();
+            assertThat(store.tryCountUploads(owner, 1, 2)).isFalse();
+            assertThat(store.tryCountUploads(UUID.randomUUID(), 1, 2)).isTrue();
 
             assertThat(redisTemplate.opsForValue().get("upload-count:" + owner)).isEqualTo("2");
             long ttl = redisTemplate.getExpire("upload-count:" + owner, TimeUnit.MILLISECONDS);
             assertThat(ttl).isBetween(Blocks.UPLOAD_TTL.toMillis() - 5_000, Blocks.UPLOAD_TTL.toMillis());
+        }
+
+        @Test
+        @DisplayName("여러 개를 한 번에 세고, 다 들어가지 않으면 하나도 세지 않는다")
+        void countsARequestAllOrNothing() {
+            assertThat(store.tryCountUploads(owner, 3, 5)).isTrue();
+            assertThat(store.tryCountUploads(owner, 3, 5)).isFalse();
+            assertThat(store.tryCountUploads(owner, 2, 5)).isTrue();
+
+            assertThat(redisTemplate.opsForValue().get("upload-count:" + owner)).isEqualTo("5");
         }
     }
 
@@ -104,7 +114,7 @@ class RedisUploadedBlockStoreTest {
         @Test
         @DisplayName("기준 시각 전에 올라온 것만 한 번씩 돌려준다")
         void claimsEachStaleBlockOnce() {
-            store.scheduleSweep(owner, "a1");
+            store.scheduleSweep(owner, List.of("a1"));
             Instant afterFirst = Instant.now().plusMillis(1);
 
             assertThat(store.claimStale(Instant.now().minusSeconds(60), 10)).isEmpty();
@@ -115,13 +125,13 @@ class RedisUploadedBlockStoreTest {
         @Test
         @DisplayName("돌려놓은 블록은 다음에 다시 거두되, 그 사이 다시 올라온 블록은 새 시각을 지킨다")
         void releasedBlocksAreClaimedAgainUnlessUploadedSince() throws InterruptedException {
-            store.scheduleSweep(owner, "a1");
-            store.scheduleSweep(owner, "b2");
-            store.scheduleSweep(owner, "a2");
+            store.scheduleSweep(owner, List.of("a1"));
+            store.scheduleSweep(owner, List.of("b2"));
+            store.scheduleSweep(owner, List.of("a2"));
             Instant cutoff = Instant.now().plusMillis(1);
             Thread.sleep(5);
             List<UploadedBlock> claimed = store.claimStale(cutoff, 10);
-            store.scheduleSweep(owner, "a2"); // uploaded again while claimed
+            store.scheduleSweep(owner, List.of("a2")); // uploaded again while claimed
 
             store.release(claimed, cutoff.minusSeconds(60));
 
@@ -132,7 +142,7 @@ class RedisUploadedBlockStoreTest {
         @Test
         @DisplayName("URL만 발급되고 올라오지 않은 블록도 거둔다")
         void claimsABlockScheduledButNeverUploaded() {
-            store.scheduleSweep(owner, "a1");
+            store.scheduleSweep(owner, List.of("a1"));
 
             assertThat(store.claimStale(Instant.now().plusMillis(1), 10)).containsExactly(new UploadedBlock(owner, "a1"));
         }
@@ -140,7 +150,7 @@ class RedisUploadedBlockStoreTest {
         @Test
         @DisplayName("여러 키에 나뉜 블록을 한도만큼 거두고, 한도보다 적게 돌려주면 남은 게 없다")
         void claimsAcrossIndexKeysUpToTheLimit() {
-            List.of("01", "12", "a3", "f4", "f5").forEach(hash -> store.scheduleSweep(owner, hash));
+            store.scheduleSweep(owner, List.of("01", "12", "a3", "f4", "f5"));
             Instant cutoff = Instant.now().plusMillis(1);
 
             List<UploadedBlock> first = store.claimStale(cutoff, 3);
@@ -155,10 +165,10 @@ class RedisUploadedBlockStoreTest {
         @Test
         @DisplayName("다시 올라온 블록은 시각이 갱신돼 거둬지지 않는다")
         void reUploadingMovesTheBlockOutOfReach() throws InterruptedException {
-            store.scheduleSweep(owner, "a1");
+            store.scheduleSweep(owner, List.of("a1"));
             Instant cutoff = Instant.now().plusMillis(1);
             Thread.sleep(5);
-            store.scheduleSweep(owner, "a1");
+            store.scheduleSweep(owner, List.of("a1"));
 
             assertThat(store.claimStale(cutoff, 10)).isEmpty();
         }

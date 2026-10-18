@@ -26,8 +26,12 @@ public final class FileVersionTestFixture {
     }
 
     public static FileVersion aVersion(UUID id, UUID fileId, long fileSize, List<String> hashes) {
+        return aVersion(id, fileId, fileSize, hashes, UUID.randomUUID());
+    }
+
+    public static FileVersion aVersion(UUID id, UUID fileId, long fileSize, List<String> hashes, UUID uploadId) {
         return FileVersion.withId(new FileVersionId(id), new FileVersionFileId(fileId),
                 new FileVersionOwnerId(OWNER_ID), new FileVersionFileSize(fileSize),
-                new FileVersionUploadId(UUID.randomUUID()), new FileVersionHashes(hashes));
+                new FileVersionUploadId(uploadId), new FileVersionHashes(hashes));
     }
 }

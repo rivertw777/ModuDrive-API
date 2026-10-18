@@ -62,7 +62,7 @@ class PresignBlockUploadsServiceTest {
         @Test
         @DisplayName("블록마다 호출자 공간의 해시 키로 서명한 URL을 요청 순서대로 돌려준다")
         void signsEachUnderTheCallersKeyInOrder() {
-            given(recordUploadedBlockPort.tryCountUpload(userId, LIMIT)).willReturn(true);
+            given(recordUploadedBlockPort.tryCountUploads(userId, 2, LIMIT)).willReturn(true);
             given(presignBlockUploadPort.presignUpload(Blocks.key(userId, HASH_A), 4, HASH_A)).willReturn("url-a");
             given(presignBlockUploadPort.presignUpload(Blocks.key(userId, HASH_B), 8, HASH_B)).willReturn("url-b");
 
@@ -75,27 +75,26 @@ class PresignBlockUploadsServiceTest {
         @Test
         @DisplayName("정리 대상 등록 → URL 서명 순서로 한다")
         void schedulesBeforeSigning() {
-            given(recordUploadedBlockPort.tryCountUpload(userId, LIMIT)).willReturn(true);
+            given(recordUploadedBlockPort.tryCountUploads(userId, 1, LIMIT)).willReturn(true);
 
             service.presignBlockUploads(new PresignBlockUploadsCommand(userId, List.of(new Block(HASH_A, 4))));
 
             InOrder order = inOrder(recordUploadedBlockPort, presignBlockUploadPort);
-            order.verify(recordUploadedBlockPort).scheduleSweep(userId, HASH_A);
+            order.verify(recordUploadedBlockPort).scheduleSweep(userId, List.of(HASH_A));
             order.verify(presignBlockUploadPort).presignUpload(Blocks.key(userId, HASH_A), 4, HASH_A);
         }
 
         @Test
-        @DisplayName("업로드 한도에 닿으면 그 블록부터 서명하지 않는다")
-        void stopsAtTheUploadLimit() {
-            given(recordUploadedBlockPort.tryCountUpload(userId, LIMIT)).willReturn(true, false);
+        @DisplayName("요청 전체가 업로드 한도에 들어가지 않으면 하나도 등록·서명하지 않는다")
+        void refusesTheWholeRequestPastTheUploadLimit() {
+            given(recordUploadedBlockPort.tryCountUploads(userId, 2, LIMIT)).willReturn(false);
 
             Throwable thrown = catchThrowable(() -> service.presignBlockUploads(new PresignBlockUploadsCommand(userId,
                     List.of(new Block(HASH_A, 4), new Block(HASH_B, 4)))));
 
             assertThat(((BusinessException) thrown).getExceptionCase()).isEqualTo(StorageExceptionCase.UPLOAD_LIMIT_EXCEEDED);
-            then(presignBlockUploadPort).should().presignUpload(Blocks.key(userId, HASH_A), 4, HASH_A);
-            then(presignBlockUploadPort).should(never()).presignUpload(Blocks.key(userId, HASH_B), 4, HASH_B);
-            then(recordUploadedBlockPort).should(never()).scheduleSweep(userId, HASH_B);
+            then(presignBlockUploadPort).shouldHaveNoInteractions();
+            then(recordUploadedBlockPort).should(never()).scheduleSweep(any(), any());
         }
     }
 
@@ -128,7 +127,7 @@ class PresignBlockUploadsServiceTest {
             assertThat(rejection(List.of())).isEqualTo(StorageExceptionCase.INVALID_BLOCK);
             assertThat(rejection(Collections.nCopies(PresignBlockUploadsService.MAX_BLOCKS_PER_REQUEST + 1, new Block(HASH_A, 4))))
                     .isEqualTo(StorageExceptionCase.INVALID_BLOCK);
-            then(recordUploadedBlockPort).should(never()).tryCountUpload(any(), anyInt());
+            then(recordUploadedBlockPort).should(never()).tryCountUploads(any(), anyInt(), anyInt());
         }
     }
 }

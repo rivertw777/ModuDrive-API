@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -16,6 +17,8 @@ interface SpringDataFileVersionRepository extends JpaRepository<FileVersionJpaEn
     List<FileVersionJpaEntity> findByFileIdOrderByCreatedAtDesc(UUID fileId, Pageable pageable);
 
     Optional<FileVersionJpaEntity> findByUploadId(UUID uploadId);
+
+    List<FileVersionJpaEntity> findByUploadIdIn(Collection<UUID> uploadIds);
 
     // Bulk deletes for a purge — the blocklist (an element collection) first, since a JPQL/native
     // delete of the version rows doesn't cascade to it.

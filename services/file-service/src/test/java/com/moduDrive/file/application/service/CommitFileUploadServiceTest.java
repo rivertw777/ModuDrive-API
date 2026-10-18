@@ -134,7 +134,6 @@ class CommitFileUploadServiceTest {
     /** Lenient: a commit that answers needBlocks never looks for the file. */
     private void fileExists() {
         givenNamespace();
-        given(findFileVersionsPort.findByUploadId(uploadId)).willReturn(Optional.empty());
         lenient().when(findFilePort.lockActiveByNamespaceIdAndPathAndName(any(), eq("/사진"), eq("a.bin")))
                 .thenReturn(Optional.of(file));
     }
@@ -288,9 +287,9 @@ class CommitFileUploadServiceTest {
         @Test
         @DisplayName("이미 만든 버전을 그대로 돌려주고 아무것도 다시 하지 않는다")
         void returnsTheExistingVersion() {
-            FileVersion done = FileVersionTestFixture.aVersion(UUID.randomUUID(), file.getId(), size, blocklist);
+            FileVersion done = FileVersionTestFixture.aVersion(UUID.randomUUID(), file.getId(), size, blocklist, uploadId);
             givenNamespace();
-            given(findFileVersionsPort.findByUploadId(uploadId)).willReturn(Optional.of(done));
+            given(findFileVersionsPort.findAllByUploadIds(List.of(uploadId))).willReturn(List.of(done));
 
             CommitResult result = commitOne(command(size, blocklist));
 
@@ -303,9 +302,9 @@ class CommitFileUploadServiceTest {
         @Test
         @DisplayName("같은 uploadId인데 내용이 다르면 거절한다")
         void rejectsTheSameUploadIdWithOtherContent() {
-            FileVersion done = FileVersionTestFixture.aVersion(UUID.randomUUID(), file.getId(), size, blocklist);
+            FileVersion done = FileVersionTestFixture.aVersion(UUID.randomUUID(), file.getId(), size, blocklist, uploadId);
             givenNamespace();
-            given(findFileVersionsPort.findByUploadId(uploadId)).willReturn(Optional.of(done));
+            given(findFileVersionsPort.findAllByUploadIds(List.of(uploadId))).willReturn(List.of(done));
 
             assertThat(commitError(command(size, List.of(HASH_A, HASH_A, HASH_C))))
                     .isEqualTo(FileExceptionCase.INVALID_BLOCKLIST);
@@ -317,7 +316,7 @@ class CommitFileUploadServiceTest {
             fileExists();
             givenCommitted(Map.of(HASH_A, BLOCK, HASH_B, BLOCK, HASH_C, 10));
             FileVersion winner = FileVersionTestFixture.aVersion(UUID.randomUUID(), file.getId(), size, blocklist);
-            given(findFileVersionsPort.findByUploadId(uploadId)).willReturn(Optional.empty(), Optional.of(winner));
+            given(findFileVersionsPort.findByUploadId(uploadId)).willReturn(Optional.of(winner));
             given(saveFileVersionPort.saveFileVersion(any(FileVersion.class)))
                     .willThrow(new DataIntegrityViolationException("uk_file_version_upload_id"));
 
@@ -330,7 +329,7 @@ class CommitFileUploadServiceTest {
             fileExists();
             givenCommitted(Map.of(HASH_A, BLOCK, HASH_B, BLOCK, HASH_C, 10));
             FileVersion winner = FileVersionTestFixture.aVersion(UUID.randomUUID(), file.getId(), 10L, List.of(HASH_A));
-            given(findFileVersionsPort.findByUploadId(uploadId)).willReturn(Optional.empty(), Optional.of(winner));
+            given(findFileVersionsPort.findByUploadId(uploadId)).willReturn(Optional.of(winner));
             given(saveFileVersionPort.saveFileVersion(any(FileVersion.class)))
                     .willThrow(new DataIntegrityViolationException("uk_file_version_upload_id"));
 
@@ -340,10 +339,10 @@ class CommitFileUploadServiceTest {
         @Test
         @DisplayName("다른 사용자의 uploadId면 거절한다")
         void rejectsAnUploadIdOfAnotherUser() {
-            FileVersion other = FileVersionTestFixture.aVersion(UUID.randomUUID(), UUID.randomUUID(), size, blocklist);
+            FileVersion other = FileVersionTestFixture.aVersion(UUID.randomUUID(), UUID.randomUUID(), size, blocklist, uploadId);
             UUID stranger = UUID.randomUUID();
             given(findNamespacePort.findByUserId(new NamespaceUserId(stranger))).willReturn(Optional.of(namespace));
-            given(findFileVersionsPort.findByUploadId(uploadId)).willReturn(Optional.of(other));
+            given(findFileVersionsPort.findAllByUploadIds(List.of(uploadId))).willReturn(List.of(other));
 
             assertThat(commitError(new CommitFileUploadCommand(stranger, "/사진", "a.bin", uploadId, size, blocklist)))
                     .isEqualTo(FileExceptionCase.INVALID_BLOCKLIST);
@@ -404,8 +403,7 @@ class CommitFileUploadServiceTest {
         @DisplayName("없는 상위 폴더를 위에서부터 만들고 파일 행을 새로 만든다")
         void createsMissingFoldersAndTheFile() {
             givenNamespace();
-            given(findFileVersionsPort.findByUploadId(uploadId)).willReturn(Optional.empty());
-            givenCommitted(Map.of());
+                givenCommitted(Map.of());
             given(findFilePort.lockActiveByNamespaceIdAndPathAndName(any(), eq("/사진/2024"), eq("a.bin")))
                     .willReturn(Optional.empty());
             given(findFilePort.lockActiveByNamespaceIdAndPathAndName(any(), eq("/"), eq("사진")))
@@ -441,8 +439,7 @@ class CommitFileUploadServiceTest {
         @DisplayName("빠진 블록이 있으면 폴더도 파일도 만들지 않는다")
         void createsNothingWhileBlocksAreMissing() {
             givenNamespace();
-            given(findFileVersionsPort.findByUploadId(uploadId)).willReturn(Optional.empty());
-            givenCommitted(Map.of());
+                givenCommitted(Map.of());
             given(findUploadedBlocksPort.findUploadedBlocks(eq(ownerId), any())).willReturn(Map.of());
 
             CommitResult result = commitOne(
@@ -485,8 +482,7 @@ class CommitFileUploadServiceTest {
         @DisplayName("그 자리에 폴더가 있으면 FILE_ALREADY_EXISTS")
         void rejectsAFolderAtTheTarget() {
             givenNamespace();
-            given(findFileVersionsPort.findByUploadId(uploadId)).willReturn(Optional.empty());
-            givenCommitted(Map.of());
+                givenCommitted(Map.of());
             given(findFilePort.lockActiveByNamespaceIdAndPathAndName(any(), eq("/사진"), eq("a.bin")))
                     .willReturn(Optional.of(File.withId(new FileId(UUID.randomUUID()), new FileNamespaceId(namespace.getId()),
                             new FileName("a.bin"), new FilePath("/사진"), new FileOwnerId(ownerId), null, null,
@@ -501,8 +497,7 @@ class CommitFileUploadServiceTest {
         @DisplayName("상위 경로 중간에 파일이 있으면 FILE_ALREADY_EXISTS")
         void rejectsAFileInTheParentPath() {
             givenNamespace();
-            given(findFileVersionsPort.findByUploadId(uploadId)).willReturn(Optional.empty());
-            givenCommitted(Map.of());
+                givenCommitted(Map.of());
             given(findFilePort.lockActiveByNamespaceIdAndPathAndName(any(), eq("/사진"), eq("a.bin")))
                     .willReturn(Optional.empty());
             given(findFilePort.lockActiveByNamespaceIdAndPathAndName(any(), eq("/"), eq("사진")))
@@ -591,8 +586,7 @@ class CommitFileUploadServiceTest {
         @DisplayName("한도를 넘는 파일은 블록을 묻기 전에 QUOTA_EXCEEDED로 거절한다")
         void rejectsAFileThatWontFitBeforeAskingForBlocks() {
             givenNamespaceUsing(quota - 5);
-            given(findFileVersionsPort.findByUploadId(uploadId)).willReturn(Optional.empty());
-
+    
             assertThat(commitError(command(10L, List.of(HASH_A)))).isEqualTo(FileExceptionCase.QUOTA_EXCEEDED);
             then(findCommittedBlocksPort).shouldHaveNoInteractions();
             then(findUploadedBlocksPort).shouldHaveNoInteractions();
@@ -602,9 +596,8 @@ class CommitFileUploadServiceTest {
         @DisplayName("대체 업로드는 늘어나는 만큼만 센다")
         void countsOnlyTheGrowthOfAReplacement() {
             givenNamespaceUsing(quota - 5);
-            given(findFileVersionsPort.findByUploadId(uploadId)).willReturn(Optional.empty());
-            file.markUploaded(UUID.randomUUID(), 8L);
-            given(findFilePort.findActiveByNamespaceIdAndPathAndName(any(), eq("/사진"), eq("a.bin"))).willReturn(Optional.of(file));
+                file.markUploaded(UUID.randomUUID(), 8L);
+            given(findFilePort.findActiveByNamespaceIdAndPathAndNames(any(), eq("/사진"), any())).willReturn(List.of(file));
             givenCommitted(Map.of());
             given(findUploadedBlocksPort.findUploadedBlocks(eq(ownerId), anyCollection())).willReturn(Map.of());
 
@@ -617,8 +610,7 @@ class CommitFileUploadServiceTest {
         void aShrinkingReplacementFreesNothingForTheGroup() {
             givenNamespaceUsing(quota);
             file.markUploaded(UUID.randomUUID(), 1_000L);
-            given(findFileVersionsPort.findByUploadId(any())).willReturn(Optional.empty());
-            given(findFilePort.findActiveByNamespaceIdAndPathAndName(any(), eq("/사진"), eq("a.bin"))).willReturn(Optional.of(file));
+            given(findFilePort.findActiveByNamespaceIdAndPathAndNames(any(), eq("/사진"), any())).willReturn(List.of(file));
             givenCommitted(Map.of());
             given(findUploadedBlocksPort.findUploadedBlocks(eq(ownerId), anyCollection())).willReturn(Map.of());
 
@@ -635,7 +627,6 @@ class CommitFileUploadServiceTest {
         @DisplayName("묶음 안에서 앞 파일들이 남은 용량을 쓰면, 넘치는 파일만 실패한다")
         void failsOnlyTheFilesPastTheQuotaWithinAGroup() {
             givenNamespaceUsing(quota - 15);
-            given(findFileVersionsPort.findByUploadId(any())).willReturn(Optional.empty());
             givenCommitted(Map.of());
             given(findUploadedBlocksPort.findUploadedBlocks(eq(ownerId), anyCollection())).willReturn(Map.of());
 
@@ -761,6 +752,31 @@ class CommitFileUploadServiceTest {
                     DirectoryResult.failed(FileExceptionCase.FILE_ALREADY_EXISTS),
                     DirectoryResult.failed(FileExceptionCase.INVALID_BATCH_ITEM));
             then(saveFilePort).shouldHaveNoInteractions();
+        }
+    }
+
+    @Nested
+    @DisplayName("여러 파일을 한 묶음으로 commit할 때")
+    class WhenCommittingAGroup {
+
+        @Test
+        @DisplayName("uploadId와 올라갈 자리는 파일마다가 아니라 묶음 전체를 한 번에 조회한다")
+        void looksUpTheGroupOnce() {
+            givenNamespace();
+            givenCommitted(Map.of());
+            given(findUploadedBlocksPort.findUploadedBlocks(eq(ownerId), anyCollection())).willReturn(Map.of());
+            List<CommitFileUploadCommand> group = List.of(
+                    new CommitFileUploadCommand(ownerId, "/사진", "a.bin", UUID.randomUUID(), 10L, List.of(HASH_A)),
+                    new CommitFileUploadCommand(ownerId, "/사진", "b.bin", UUID.randomUUID(), 10L, List.of(HASH_B)),
+                    new CommitFileUploadCommand(ownerId, "/문서", "c.bin", UUID.randomUUID(), 10L, List.of(HASH_C)));
+
+            commitFileUploadService.commit(group);
+
+            then(findFileVersionsPort).should().findAllByUploadIds(group.stream().map(c -> c.getUploadId().value()).toList());
+            then(findFileVersionsPort).should(never()).findByUploadId(any());
+            then(findFilePort).should().findActiveByNamespaceIdAndPathAndNames(any(), eq("/사진"), eq(Set.of("a.bin", "b.bin")));
+            then(findFilePort).should().findActiveByNamespaceIdAndPathAndNames(any(), eq("/문서"), eq(Set.of("c.bin")));
+            then(findFilePort).should(never()).findActiveByNamespaceIdAndPathAndName(any(), any(), any());
         }
     }
 }

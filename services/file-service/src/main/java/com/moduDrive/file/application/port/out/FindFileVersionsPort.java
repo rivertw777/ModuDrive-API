@@ -16,6 +16,9 @@ public interface FindFileVersionsPort {
     /** The version a commit already created — the client picks a fresh uploadId per upload. */
     Optional<FileVersion> findByUploadId(UUID uploadId);
 
+    /** {@link #findByUploadId} for a commit's whole group in one query; ids with no version are left out. */
+    List<FileVersion> findAllByUploadIds(Collection<UUID> uploadIds);
+
     /** One query for many versions — a zip of a large folder needs every file's current version at once. */
     List<FileVersion> findAllByIds(Collection<UUID> versionIds);
 

@@ -46,6 +46,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /** The commit of spec 001 2-3: the client sends a file's blocklist and where it goes, gets back the
  * blocks the server doesn't have yet, uploads those to storage-service, and commits again. Commits
@@ -99,14 +101,21 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
         // commitLocked checks again, atomically, as it adds the file to the usage.
         NamespaceId namespaceId = new NamespaceId(namespace.getId());
         long used = namespace.getUsedBytes();
+        // One query each for the whole group, not one per file.
+        Map<UUID, FileVersion> doneByUploadId = findFileVersionsPort
+                .findAllByUploadIds(commands.stream().map(c -> c.getUploadId().value()).toList()).stream()
+                .collect(Collectors.toMap(FileVersion::getUploadId, Function.identity()));
+        Map<String, File> activeBySpot = activeFilesAt(namespaceId, commands);
         for (int i = 0; i < commands.size(); i++) {
+            CommitFileUploadCommand command = commands.get(i);
             try {
-                results[i] = alreadyDone(commands.get(i), ownerId);
+                results[i] = alreadyDone(command, ownerId, Optional.ofNullable(doneByUploadId.get(command.getUploadId().value())));
             } catch (BusinessException e) {
                 results[i] = CommitResult.failed(e.getExceptionCase());
             }
             if (results[i] == null) {
-                long growth = growthOf(commands.get(i), namespaceId);
+                long growth = growthOf(command,
+                        activeBySpot.get(UploadBatchService.child(command.getPath(), command.getName())));
                 // Every growing file of the group counted, committed or not yet — the second commit
                 // of the same files sees them all again, and they must fit together. A file that
                 // doesn't grow the drive always goes through, and frees nothing for the others: it
@@ -115,7 +124,7 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
                     results[i] = CommitResult.failed(FileExceptionCase.QUOTA_EXCEEDED);
                 } else {
                     used += Math.max(growth, 0);
-                    asked.addAll(commands.get(i).getBlocklist().value());
+                    asked.addAll(command.getBlocklist().value());
                 }
             }
         }
@@ -160,7 +169,8 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
                 // a unique slot — the file's, or the uploadId's — and answers with the winner's
                 // version, checked like any resend (alreadyDone).
                 try {
-                    CommitResult done = alreadyDone(command, ownerId);
+                    CommitResult done = alreadyDone(command, ownerId,
+                            findFileVersionsPort.findByUploadId(command.getUploadId().value()));
                     if (done != null) {
                         results[i] = done;
                     } else if (e instanceof BusinessException business) {
@@ -216,11 +226,11 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
     }
 
     /** Checks what can be checked without the blocks, and answers a resend of a commit that already
-     * went through (its response was lost) with the version it made. Null means: look at the blocks. */
-    private CommitResult alreadyDone(CommitFileUploadCommand command, UUID ownerId) {
+     * went through (its response was lost) with the version it made ({@code done}, the version with
+     * the command's uploadId). Null means: look at the blocks. */
+    private CommitResult alreadyDone(CommitFileUploadCommand command, UUID ownerId, Optional<FileVersion> done) {
         requireSpot(command.getPath(), command.getName());
 
-        Optional<FileVersion> done = findFileVersionsPort.findByUploadId(command.getUploadId().value());
         if (done.isPresent()) {
             // Only a resend of the very same commit gets it back; anything else reusing the id is a bug.
             if (!done.get().getOwnerId().equals(ownerId)
@@ -337,13 +347,22 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
         return folder;
     }
 
+    /** The active rows the group's files would land on, by full path — one query per folder the
+     * group goes into (usually one). */
+    private Map<String, File> activeFilesAt(NamespaceId namespaceId, List<CommitFileUploadCommand> commands) {
+        Map<String, File> bySpot = new HashMap<>();
+        commands.stream().collect(Collectors.groupingBy(CommitFileUploadCommand::getPath,
+                        Collectors.mapping(CommitFileUploadCommand::getName, Collectors.toSet())))
+                .forEach((path, names) -> findFilePort.findActiveByNamespaceIdAndPathAndNames(namespaceId, path, names)
+                        .forEach(file -> bySpot.put(UploadBatchService.child(file.getPath(), file.getName()), file)));
+        return bySpot;
+    }
+
     /** How much the drive grows if this file is committed: its size, less the current size of the
-     * file it replaces (a folder counts as 0). */
-    private long growthOf(CommitFileUploadCommand command, NamespaceId namespaceId) {
-        long replaced = findFilePort.findActiveByNamespaceIdAndPathAndName(namespaceId, command.getPath(), command.getName())
-                .filter(file -> !file.isDirectory() && file.getFileSize() != null)
-                .map(File::getFileSize)
-                .orElse(0L);
+     * file it replaces ({@code existing}, the active row at its spot; a folder counts as 0). */
+    private static long growthOf(CommitFileUploadCommand command, File existing) {
+        long replaced = existing == null || existing.isDirectory() || existing.getFileSize() == null
+                ? 0 : existing.getFileSize();
         return command.getFileSize().value() - replaced;
     }
 
