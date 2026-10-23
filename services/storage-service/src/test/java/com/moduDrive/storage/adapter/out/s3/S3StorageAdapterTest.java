@@ -18,14 +18,18 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.ChecksumAlgorithm;
 import software.amazon.awssdk.services.s3.model.ChecksumMode;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.S3Exception;
+import software.amazon.awssdk.services.s3.model.S3Object;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
@@ -34,6 +38,7 @@ import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -43,6 +48,7 @@ import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willAnswer;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 
 @ExtendWith(MockitoExtension.class)
@@ -153,6 +159,93 @@ class S3StorageAdapterTest {
                     .willThrow(S3Exception.builder().statusCode(403).build());
 
             Throwable thrown = catchThrowable(() -> adapter.findUploaded(OWNER, List.of(HASH_A, HASH_B)));
+
+            assertThat(((BusinessException) thrown).getExceptionCase()).isEqualTo(StorageExceptionCase.STORAGE_ERROR);
+        }
+    }
+
+    @Nested
+    @DisplayName("올라온 블록을 많이 확인할 때 — 목록으로 (spec 001 2-3)")
+    class WhenFindingManyUploaded {
+
+        /** The bucket as a sorted key → object map, listed a page at a time like S3. */
+        private final TreeMap<String, S3Object> bucket = new TreeMap<>();
+        private int pageSize = 1000;
+
+        /** 64 hashes, four per first hex digit. */
+        private final List<String> asked = java.util.stream.IntStream.range(0, 64)
+                .mapToObj(i -> Character.forDigit(i % 16, 16) + String.format("%063d", i)).toList();
+
+        private void stored(String hash, long size, boolean sha256) {
+            bucket.put(Blocks.key(OWNER, hash), S3Object.builder().key(Blocks.key(OWNER, hash)).size(size)
+                    .checksumAlgorithm(sha256 ? List.of(ChecksumAlgorithm.SHA256) : List.of()).build());
+        }
+
+        @BeforeEach
+        void listsLikeS3() {
+            lenient().when(s3Client.listObjectsV2(any(ListObjectsV2Request.class))).thenAnswer(inv -> {
+                ListObjectsV2Request r = inv.getArgument(0);
+                String after = r.continuationToken() != null ? r.continuationToken() : r.startAfter();
+                List<S3Object> page = bucket.tailMap(after, false).values().stream()
+                        .filter(o -> o.key().startsWith(r.prefix())).limit(pageSize + 1).toList();
+                boolean truncated = page.size() > pageSize;
+                List<S3Object> contents = truncated ? page.subList(0, pageSize) : page;
+                return ListObjectsV2Response.builder().contents(contents).isTruncated(truncated)
+                        .nextContinuationToken(truncated ? contents.getLast().key() : null).build();
+            });
+        }
+
+        @Test
+        @DisplayName("SHA-256으로 저장된 블록만 그 크기로 답하고, HEAD는 보내지 않는다")
+        void answersFromTheListing() {
+            stored(asked.get(0), 4, true);
+            stored(asked.get(17), 6, true);
+            stored(asked.get(18), 6, false);
+            stored(Character.forDigit(1, 16) + "9".repeat(63), 8, true);  // the owner's, not asked
+            bucket.put(Blocks.key(UUID.randomUUID(), asked.get(1)), S3Object.builder()
+                    .key("blocks/other/" + asked.get(1)).size(4L).checksumAlgorithm(ChecksumAlgorithm.SHA256).build());
+
+            assertThat(adapter.findUploaded(OWNER, asked)).containsOnly(Map.entry(asked.get(0), 4), Map.entry(asked.get(17), 6));
+            then(s3Client).should(never()).headObject(any(HeadObjectRequest.class));
+            // One listing per first hex digit.
+            then(s3Client).should(org.mockito.Mockito.times(16)).listObjectsV2(any(ListObjectsV2Request.class));
+        }
+
+        @Test
+        @DisplayName("한 범위가 여러 페이지면 이어서 읽고, 가장 큰 해시를 지나면 멈춘다")
+        void pagesThroughARangeAndStopsPastItsLast() {
+            pageSize = 2;
+            String last = asked.stream().filter(h -> h.charAt(0) == '0').max(String::compareTo).orElseThrow();
+            asked.stream().filter(h -> h.charAt(0) == '0').forEach(h -> stored(h, 4, true));
+            for (int i = 0; i < 10; i++) {
+                stored(last.substring(0, 62) + "9" + i, 4, true);  // past the last asked: never read
+            }
+
+            assertThat(adapter.findUploaded(OWNER, asked)).hasSize(4);
+            then(s3Client).should(org.mockito.Mockito.atMost(18)).listObjectsV2(any(ListObjectsV2Request.class));
+        }
+
+        @Test
+        @DisplayName("범위 안에 블록이 너무 많아 페이지 한도를 넘으면 HEAD로 확인한다")
+        void fallsBackToHeadsWhenTheRangesAreTooDense() {
+            pageSize = 1;
+            for (int i = 1; i < 48; i++) {
+                if (i % 16 != 0) {
+                    stored("0" + String.format("%063d", i), 4, true);  // not asked, between the asked ones of range 0
+                }
+            }
+            lenient().when(s3Client.headObject(any(HeadObjectRequest.class))).thenThrow(NoSuchKeyException.builder().statusCode(404).build());
+
+            assertThat(adapter.findUploaded(OWNER, asked)).isEmpty();
+            then(s3Client).should(org.mockito.Mockito.times(64)).headObject(any(HeadObjectRequest.class));
+        }
+
+        @Test
+        @DisplayName("목록 하나라도 실패하면 조회 전체를 STORAGE_ERROR로 끝낸다")
+        void failsTheWholeLookupOnAListingFailure() {
+            given(s3Client.listObjectsV2(any(ListObjectsV2Request.class))).willThrow(S3Exception.builder().statusCode(403).build());
+
+            Throwable thrown = catchThrowable(() -> adapter.findUploaded(OWNER, asked));
 
             assertThat(((BusinessException) thrown).getExceptionCase()).isEqualTo(StorageExceptionCase.STORAGE_ERROR);
         }
