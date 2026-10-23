@@ -1,4 +1,4 @@
-"""Shared-folder permission benchmark (.docs/perf-test/002-share-permission.md): a grantee opening / listing
+"""Shared-folder permission benchmark (.docs/perf-test/003-share-permission.md): a grantee opening / listing
 files under a folder shared only at the top of a depth-d chain. python perm.py <label>"""
 import json, sys, statistics, uuid, time
 import psycopg

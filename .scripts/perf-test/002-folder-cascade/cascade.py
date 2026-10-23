@@ -1,4 +1,4 @@
-"""Folder cascade benchmark (.docs/perf-test/001-folder-cascade.md): move / trash / restore / purge
+"""Folder cascade benchmark (.docs/perf-test/002-folder-cascade.md): move / trash / restore / purge
 of a folder with N files — SQL count (pg_stat_statements) and latency. Its seed() is shared by this folder's scripts.
 Run through scenario.sh, or inside the bench container: python cascade.py <label> [sizes...]"""
 import json, os, sys, threading, time, uuid, statistics

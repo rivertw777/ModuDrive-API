@@ -1,4 +1,4 @@
-"""Lock-hold benchmark (.docs/perf-test/001-folder-cascade.md): while a cascade runs, a second client keeps
+"""Lock-hold benchmark (.docs/perf-test/002-folder-cascade.md): while a cascade runs, a second client keeps
 committing empty files into the same drive; records the slowest commit.
 python contend.py <label> [sizes...]"""
 import json, os, sys, threading, time, statistics

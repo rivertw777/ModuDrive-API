@@ -1,6 +1,6 @@
 #!/bin/bash
-# Query/latency benchmarks for .docs/perf-test/001-002 (scripts in 001-*/, 002-*/, helpers in bench.py). Run from
-# the repo root, with infra + services up. 003 (003-quota-concurrency/) and 004 (004-upload/) have their own entry scripts.
+# Query/latency benchmarks for .docs/perf-test/002-003 (scripts in 002-*/, 003-*/, helpers in bench.py). Run from
+# the repo root, with infra + services up. 004 (004-quota-concurrency/) and 001 (001-upload/) have their own entry scripts.
 #   scenario.sh up                 — pg_stat_statements on (restarts postgres) + bench container on modudrive_network
 #   scenario.sh down               — bench container off, pg_stat_statements off (restarts postgres)
 #   scenario.sh deploy <label>     — build file-service from the working tree, tag it <label>, (re)start it
@@ -34,10 +34,10 @@ case ${1:-} in
     docker tag modu-drive-file-service:0.0.1-SNAPSHOT "modu-drive-file-service:$2"
     docker-compose -f $SERVICE_COMPOSE up -d --force-recreate file-service
     until docker logs modudrive-service-file-service-1 2>&1 | grep -q 'Started .*Application'; do sleep 2; done ;;
-  cascade) shift; bench 001-folder-cascade cascade.py "$@" ;;
-  contend) shift; bench 001-folder-cascade contend.py "$@" ;;
-  perm)    shift; bench 002-share-permission perm.py "$@" ;;
-  index)   shift; bench 001-folder-cascade index.py "$@" ;;
+  cascade) shift; bench 002-folder-cascade cascade.py "$@" ;;
+  contend) shift; bench 002-folder-cascade contend.py "$@" ;;
+  perm)    shift; bench 003-share-permission perm.py "$@" ;;
+  index)   shift; bench 002-folder-cascade index.py "$@" ;;
   wait)
     until [ "$(psql_su -d file_db -tA < "$DIR/sql/05-long-transactions.sql" | wc -l)" = 0 ]; do sleep 5; done ;;
   cleanup) psql_su -d file_db < "$DIR/sql/04-cleanup-bench-data.sql" ;;

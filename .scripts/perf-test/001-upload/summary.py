@@ -1,4 +1,4 @@
-""".docs/perf-test/004-upload.md — median over a label's rounds. Usage: summary.py <label>..."""
+""".docs/perf-test/001-upload.md — median over a label's rounds. Usage: summary.py <label>..."""
 import json, statistics, sys
 
 PHASES = ("commit1", "presign", "put", "commit2")
