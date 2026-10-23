@@ -1,4 +1,4 @@
-""".docs/perf-test/004-upload.md section 5 — S3 HEAD latency and the commit's lookup on real S3, run as a one-off ECS task
+""".docs/perf-test/001-upload.md section 3 — S3 HEAD latency and the commit's lookup on real S3, run as a one-off ECS task
 next to storage-service (its subnets, security group and task role; command: pip install boto3 && python s3-head.py). The lookup is simulated as storage-service and file-service do it: each commit
 HEADs its blocks <per> at a time (ChecksumMode ENABLED) through one shared bulkhead (40 seats, 1s wait); a HEAD refused
 a seat fails the whole lookup, and file-service tries it again from the start (3 attempts, 0.5s then 1s apart).

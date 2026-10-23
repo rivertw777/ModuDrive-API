@@ -1,5 +1,5 @@
 #!/bin/bash
-# .docs/perf-test/003-quota-concurrency.md
+# .docs/perf-test/004-quota-concurrency.md
 # perf.sh <label> <users-file> — commit + usage latency for each bulk namespace
 USERS=$(realpath "$2"); cd "$(dirname "$0")"
 while read N U; do

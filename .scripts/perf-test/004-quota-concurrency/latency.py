@@ -1,4 +1,4 @@
-# .docs/perf-test/003-quota-concurrency.md
+# .docs/perf-test/004-quota-concurrency.md
 # latency.py <userId> <n> — n sequential commits of empty files; prints p50/p95 ms
 import sys, json, uuid, time, urllib.request
 user, n = sys.argv[1], int(sys.argv[2]); ms = []

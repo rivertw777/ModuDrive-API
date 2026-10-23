@@ -1,10 +1,9 @@
-""".docs/perf-test/004-upload.md — uploads the way the WEB does (spec 001 2): commit → upload URLs → S3 PUTs → second
+""".docs/perf-test/001-upload.md — uploads the way the WEB does (spec 001 2): commit → upload URLs → S3 PUTs → second
 commit, each phase timed, with the DB statements and Redis commands it sent.
 Usage: upload.py <label> big <blocks>                  — one file of <blocks> × 4MiB
        upload.py <label> small <files> <bytes>          — <files> one-block files, committed 100 at a time
-       upload.py <label> dedup <files> <bytes>          — `small`, then the same files again into another folder:
-                                                          only the second upload is measured
-       upload.py <label> concurrent <users> <files> <bytes>  — <users> drives each uploading `small` at once
+       upload.py <label> concurrent <users> <kind> <args>... — <users> drives each uploading <kind> (big, small
+                                                          or mixed, with its args) at once
        upload.py <label> mixed                          — one folder of mixed files (MIXED), grouped as the WEB does
 Runs in the bench container (scenario.sh up); env REDIS_PASSWORD. Prints one JSON line and appends it to results/."""
 import base64, hashlib, json, os, random, socket, statistics, sys, threading, time, uuid, urllib.parse, urllib.request
@@ -19,9 +18,14 @@ IN_SCRIPT = {"incr", "incrby", "decr", "decrby", "pexpire"}
 PHASES = ("commit1", "presign", "put", "commit2")
 SOLO_BLOCKS = 64  # WEB: a file over 64 blocks (256MiB) is a group of its own
 KiB, MiB = 1024, 1024 * 1024
-# A work folder as people upload it: (subfolder, files, smallest, largest bytes).
-MIXED = [("코드", 300, 1 * KiB, 20 * KiB), ("문서", 150, 50 * KiB, 2 * MiB), ("사진", 80, 2 * MiB, 6 * MiB),
-         ("영상", 1, 120 * MiB, 120 * MiB), ("영상", 1, 400 * MiB, 400 * MiB)]
+# A work folder as people upload it: (subfolder, extension, files, smallest, largest bytes). The extension only
+# names the file (FileCategory); the upload's cost is the sizes and the folders.
+MIXED = [("문서", "pdf", 60, 100 * KiB, 5 * MiB), ("문서", "docx", 50, 20 * KiB, 2 * MiB),
+         ("문서/보고서", "xlsx", 40, 10 * KiB, 1 * MiB), ("문서/보고서", "hwp", 20, 30 * KiB, 3 * MiB),
+         ("코드/src/main", "java", 250, 1 * KiB, 20 * KiB), ("코드", "json", 30, 1 * KiB, 50 * KiB),
+         ("사진", "jpg", 60, 2 * MiB, 6 * MiB), ("사진/스크린샷", "png", 20, 100 * KiB, 3 * MiB),
+         ("음악", "mp3", 15, 3 * MiB, 10 * MiB), ("압축", "zip", 5, 10 * MiB, 60 * MiB),
+         ("영상", "mp4", 1, 120 * MiB, 120 * MiB), ("영상", "mp4", 1, 400 * MiB, 400 * MiB)]
 
 
 def post(base, path, user, body):
@@ -97,8 +101,9 @@ def plan(kind, args):
         return [("/bench", "big.bin", BLOCK * args[0])]
     if kind == "mixed":
         sizes = random.Random(0)  # the same folder every round; only the bytes change
-        return [(f"/bench/{sub}", f"{sub}{k:04}.bin", sizes.randint(lo, hi))
-                for sub, n, lo, hi in MIXED for k in range(n)]
+        files = [(sub, ext, sizes.randint(lo, hi)) for sub, ext, n, lo, hi in MIXED for _ in range(n)]
+        # Numbered across the list: two rows may share a folder and an extension.
+        return [(f"/bench/{sub}", f"{ext}-{k:04}.{ext}", size) for k, (sub, ext, size) in enumerate(files)]
     files, size = args[-2:]
     return [("/bench", f"f{k:05}.bin", size) for k in range(files)]
 
@@ -111,8 +116,8 @@ class Upload:
         self.files = [(folder, name, size, split(size)) for folder, name, size in files]
         self.blocks = Blocks([b for *_, sizes in self.files for b in sizes])
 
-    def groups(self, into=None):
-        """Fresh commit requests (new uploadIds); `into` moves every file under another root folder."""
+    def groups(self):
+        """Fresh commit requests (new uploadIds)."""
         groups, group, hashes, solo_group, first = [], [], 0, False, 0
         for folder, name, size, sizes in self.files:
             ids = range(first, first + len(sizes))
@@ -121,7 +126,7 @@ class Upload:
             if group and (solo or solo_group or len(group) == GROUP or hashes + len(sizes) > 1280):
                 groups.append(group)
                 group, hashes = [], 0
-            group.append({"path": folder.replace("/bench", into, 1) if into else folder, "name": name,
+            group.append({"path": folder, "name": name,
                           "uploadId": str(uuid.uuid4()), "size": size, "blocklist": [self.blocks.hashes[i] for i in ids]})
             hashes += len(sizes)
             solo_group = solo
@@ -136,10 +141,9 @@ def upload(user, blocks, groups, phase):
         return [r for g in groups for r in post(FILE_API, "/api/v1/files/commit", user, {"files": g})["results"]]
 
     first = phase("commit1", commit_all)
+    # A file that failed (not needBlocks) would never get its blocks sent: stop here, not at the second commit.
+    assert not any(r.get("error") for r in first), [r for r in first if r.get("error")][:2]
     need = sorted({h for r in first for h in (r.get("needBlocks") or [])})
-    if not need:  # every block already committed (dedup): the first commit made the versions
-        assert sum(1 for r in first if r.get("versionId")) == files, first[:2]
-        return
 
     def presign():
         urls = {}
@@ -185,12 +189,14 @@ def timed(times):
 
 def main():
     label, kind, *args = sys.argv[1:]
-    args = [int(a) for a in args]
-    out = {"label": label, "kind": kind, "args": args}
+    if kind == "concurrent":
+        users, each, args = int(args[0]), args[1], [int(a) for a in args[2:]]
+    else:
+        args = [int(a) for a in args]
+    out = {"label": label, "kind": kind, "args": [users, each, *args] if kind == "concurrent" else args}
     with psycopg.connect(DB, autocommit=True) as conn, conn.cursor() as cur:
         if kind == "concurrent":
-            users = args[0]
-            drives = [(new_drive(cur), Upload(plan(kind, args))) for _ in range(users)]
+            drives = [(new_drive(cur), Upload(plan(each, args))) for _ in range(users)]
             out["users"] = [u for u, _ in drives]
             times = [{} for _ in drives]
             gate = threading.Barrier(users)
@@ -214,11 +220,7 @@ def main():
             out["users"] = [user]
             up = Upload(plan(kind, args))
             out["files"], out["blocks"], out["groups"] = len(up.files), len(up.blocks.sizes), len(up.groups())
-            if kind == "dedup":
-                upload(user, up.blocks, up.groups(), timed({}))  # the original, unmeasured
-                upload(user, up.blocks, up.groups("/bench-copy"), measured(cur, out))
-            else:
-                upload(user, up.blocks, up.groups(), measured(cur, out))
+            upload(user, up.blocks, up.groups(), measured(cur, out))
 
     line = json.dumps(out)
     print(line)

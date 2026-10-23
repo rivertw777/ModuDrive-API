@@ -1,5 +1,5 @@
 """EXPLAIN ANALYZE of the purge's block-release statement on a fresh 10k-file tree (rolled back, leaves
-nothing). Use when a purge is slow or unstable (.docs/perf-test/001-folder-cascade.md 3장)."""
+nothing). Use when a purge is slow or unstable (.docs/perf-test/002-folder-cascade.md 3장)."""
 import psycopg
 from cascade import DB, seed
 SQL = """explain (analyze, buffers off, timing off) with refs as (select v.owner_id, vb.hash, count(*) as cnt from file_version v

@@ -1,5 +1,5 @@
 #!/bin/bash
-# .docs/perf-test/003-quota-concurrency.md
+# .docs/perf-test/004-quota-concurrency.md
 # bulk.sh <userId> <files>  — a namespace (20GiB quota) holding, under /bulk, <files> uploaded 1MiB file rows
 docker exec -i modudrive-infra-postgres-1 sh -c 'psql -qtA -U $POSTGRES_USER -d file_db' <<SQL
 insert into namespace(id,user_id,root_path,quota_bytes,created_at,updated_at,is_deleted)

@@ -35,6 +35,13 @@ interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID>, J
             @Param("namespaceId") UUID namespaceId, @Param("path") String path, @Param("name") String name,
             @Param("statuses") Collection<FileStatus> statuses);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select f from FileJpaEntity f where f.namespaceId = :namespaceId and f.path = :path "
+            + "and f.name in :names and f.status not in :statuses order by f.name")
+    List<FileJpaEntity> lockByNamespaceIdAndPathAndNameInAndStatusNotIn(
+            @Param("namespaceId") UUID namespaceId, @Param("path") String path, @Param("names") Collection<String> names,
+            @Param("statuses") Collection<FileStatus> statuses);
+
     // Not named "StartingWith": without this @Query, Spring Data would derive an unescaped
     // `like 'prefix%'`, and "/foo" would match "/foo2". :escapedPrefix has LIKE metacharacters
     // escaped by the caller; :prefix stays raw for the exact match. `||`, not concat(): concat() is

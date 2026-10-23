@@ -18,12 +18,16 @@ import io.opentelemetry.context.Context;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.ChecksumAlgorithm;
 import software.amazon.awssdk.services.s3.model.ChecksumMode;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
 import software.amazon.awssdk.services.s3.model.S3Exception;
+import software.amazon.awssdk.services.s3.model.S3Object;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -34,22 +38,34 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableSet;
 import java.util.Optional;
+import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.UUID;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
 @PersistenceAdapter
 class S3StorageAdapter implements RetrieveBlocksPort, DeleteBlocksPort, FindUploadedBlocksPort {
 
     private static final Logger logger = LoggerFactory.getLogger(S3StorageAdapter.class);
-    /** HEADs one commit's lookup has in flight at once (spec 001 2-3): a fresh 5GB file asks about
-     * 1,280 blocks, so one at a time would take seconds — all at once would take every seat. */
+    /** S3 calls one commit's lookup has in flight at once (spec 001 2-3) — HEADs, or listing pages —
+     * so one commit doesn't take every seat. */
     static final int LOOKUP_PARALLELISM = 8;
+    /** From this many hashes the lookup lists the owner's blocks instead of a HEAD each: a listing
+     * page answers for up to 1,000 keys. Below it, the 16 key ranges cost more calls than HEADs. */
+    static final int LIST_MIN_HASHES = 64;
+    /** Hashes asked about per extra listing page, past one page a range, before the lookup gives up
+     * on listing — an owner with many blocks in the asked ranges — and HEADs instead.
+     * ponytail: fixed ratio (~4 hashes a page), tune from S3 latencies if owners get that large. */
+    static final int HASHES_PER_LIST_PAGE = 4;
     // A real version has at most 1,280 blocks (5GB / 4MB); this only stops a malformed one from
     // pre-allocating an oversized list.
     private static final int MAX_BLOCK_COUNT = 100_000;
@@ -82,46 +98,119 @@ class S3StorageAdapter implements RetrieveBlocksPort, DeleteBlocksPort, FindUplo
         }
     }
 
-    /** Spec 001 2-3: a block counts as uploaded only if S3 holds the SHA-256 the hash names — checked
-     * here, not trusted to the presigned URL's signature alone. Any lookup failure fails the whole
-     * answer: a block reported missing would only be uploaded again, but one reported present must
-     * really be there. */
+    /** Spec 001 2-3: a block counts as uploaded only if S3 stored it with a SHA-256 checksum — which
+     * the upload URL signs, so S3 refused any PUT whose bytes didn't match the hash. Any lookup failure
+     * fails the whole answer: a block reported missing would only be uploaded again, but one reported
+     * present must really be there. */
     @Override
     public Map<String, Integer> findUploaded(UUID ownerId, Collection<String> hashes) {
         if (hashes.isEmpty()) {
             return Map.of();
         }
+        if (hashes.size() >= LIST_MIN_HASHES) {
+            try {
+                return listUploaded(ownerId, hashes);
+            } catch (TooManyPages e) {
+                // The owner's blocks are too dense in the asked ranges: HEADs are fewer calls.
+            }
+        }
+        Map<String, Integer> uploaded = new HashMap<>();
+        List<String> asked = List.copyOf(hashes);
+        List<Optional<Integer>> sizes = inParallel(ownerId,
+                asked.stream().<Callable<Optional<Integer>>>map(hash -> () -> uploadedSize(Blocks.key(ownerId, hash), hash)).toList());
+        for (int i = 0; i < asked.size(); i++) {
+            int k = i;
+            sizes.get(i).ifPresent(size -> uploaded.put(asked.get(k), size));
+        }
+        return uploaded;
+    }
+
+    /** The asked hashes, by listing the owner's keys: one listing per first hex digit, each from just
+     * before its smallest asked hash to its largest, in parallel. */
+    private Map<String, Integer> listUploaded(UUID ownerId, Collection<String> hashes) {
+        Map<Character, TreeSet<String>> byRange = new TreeMap<>();
+        hashes.forEach(hash -> byRange.computeIfAbsent(hash.charAt(0), c -> new TreeSet<>()).add(hash));
+        // A page for each range, and more as the hashes grow.
+        AtomicInteger pagesLeft = new AtomicInteger(byRange.size() + hashes.size() / HASHES_PER_LIST_PAGE);
+        Map<String, Integer> uploaded = new HashMap<>();
+        inParallel(ownerId, byRange.values().stream()
+                .<Callable<Map<String, Integer>>>map(range -> () -> listRange(ownerId, range, pagesLeft)).toList())
+                .forEach(uploaded::putAll);
+        return uploaded;
+    }
+
+    private Map<String, Integer> listRange(UUID ownerId, NavigableSet<String> range, AtomicInteger pagesLeft) {
+        String ownerPrefix = Blocks.key(ownerId, "");
+        String first = Blocks.key(ownerId, range.first());
+        String last = Blocks.key(ownerId, range.last());
+        Map<String, Integer> uploaded = new HashMap<>();
+        String token = null;
+        while (true) {
+            if (pagesLeft.decrementAndGet() < 0) {
+                throw new TooManyPages();
+            }
+            ListObjectsV2Request.Builder builder = ListObjectsV2Request.builder()
+                    .bucket(properties.getS3().getBucket())
+                    .prefix(ownerPrefix + range.first().charAt(0));
+            // Exclusive: the first hash's own key, one character short, sorts just before it.
+            ListObjectsV2Request request = (token == null
+                    ? builder.startAfter(first.substring(0, first.length() - 1))
+                    : builder.continuationToken(token)).build();
+            ListObjectsV2Response page = callS3(lookupBulkhead, () -> s3Client.listObjectsV2(request));
+            for (S3Object object : page.contents()) {
+                String hash = object.key().substring(ownerPrefix.length());
+                if (range.contains(hash) && object.checksumAlgorithm().contains(ChecksumAlgorithm.SHA256)) {
+                    uploaded.put(hash, Math.toIntExact(object.size()));
+                }
+            }
+            if (!Boolean.TRUE.equals(page.isTruncated()) || page.contents().isEmpty()
+                    || page.contents().getLast().key().compareTo(last) >= 0) {
+                return uploaded;
+            }
+            token = page.nextContinuationToken();
+        }
+    }
+
+    /** Listing would take more pages than the lookup is worth. */
+    private static final class TooManyPages extends RuntimeException {
+        TooManyPages() {
+            super(null, null, false, false);
+        }
+    }
+
+    /** The lookups' results in order, {@link #LOOKUP_PARALLELISM} at a time. */
+    private <T> List<T> inParallel(UUID ownerId, List<Callable<T>> lookups) {
         Semaphore inFlight = new Semaphore(LOOKUP_PARALLELISM);
-        Map<String, Future<Optional<Integer>>> lookups = new HashMap<>();
         // Virtual threads wait on S3, not a platform thread each; the context carries the trace over.
         ExecutorService executor = Context.taskWrapping(Executors.newVirtualThreadPerTaskExecutor());
         try {
-            for (String hash : hashes) {
-                lookups.put(hash, executor.submit(() -> {
+            List<Future<T>> futures = new ArrayList<>(lookups.size());
+            for (Callable<T> lookup : lookups) {
+                futures.add(executor.submit(() -> {
                     inFlight.acquire();
                     try {
-                        return uploadedSize(Blocks.key(ownerId, hash), hash);
+                        return lookup.call();
                     } finally {
                         inFlight.release();
                     }
                 }));
             }
-            Map<String, Integer> uploaded = new HashMap<>();
-            for (Map.Entry<String, Future<Optional<Integer>>> lookup : lookups.entrySet()) {
-                lookup.getValue().get().ifPresent(size -> uploaded.put(lookup.getKey(), size));
+            List<T> results = new ArrayList<>(futures.size());
+            for (Future<T> future : futures) {
+                results.add(future.get());
             }
-            return uploaded;
+            return results;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new BusinessException(StorageExceptionCase.STORAGE_ERROR);
         } catch (ExecutionException e) {
-            if (e.getCause() instanceof BusinessException businessException) {
-                throw businessException;
+            if (e.getCause() instanceof BusinessException || e.getCause() instanceof TooManyPages) {
+                throw (RuntimeException) e.getCause();
             }
             logger.error("Failed to look up uploaded blocks of owner {}", ownerId, e.getCause());
             throw new BusinessException(StorageExceptionCase.STORAGE_ERROR);
         } finally {
-            // Once the answer is a failure, the HEADs still queued would only spend S3 seats on it.
+            // Once the answer is a failure, the calls still queued would only spend S3 seats on it.
             executor.shutdownNow();
         }
     }

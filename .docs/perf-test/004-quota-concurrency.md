@@ -17,16 +17,16 @@
 레포 루트에서, 인프라와 서비스가 떠 있는 상태로 실행한다. 비교할 코드로 file-service를 띄우는 방법은 `.scripts/perf-test/scenario.sh deploy <label>`이다.
 
 ```bash
-.scripts/perf-test/003-quota-concurrency/run.sh 10 20 1048576 10485760     # 동시 commit 20개 × 10라운드 (한도 10MiB)
-.scripts/perf-test/003-quota-concurrency/run.sh 10 2 1048576 1572864       # 동시 commit 2개 × 10라운드 (한도 1.5MiB)
+.scripts/perf-test/004-quota-concurrency/run.sh 10 20 1048576 10485760     # 동시 commit 20개 × 10라운드 (한도 10MiB)
+.scripts/perf-test/004-quota-concurrency/run.sh 10 2 1048576 1572864       # 동시 commit 2개 × 10라운드 (한도 1.5MiB)
 
 # 파일 수별 드라이브 만들기: user_id를 정해 bulk.sh로 만들고 "파일수 user_id"를 한 줄씩 적어 둔다
-for n in 0 1000 10000 100000; do u=$(python3 -c 'import uuid;print(uuid.uuid4())'); .scripts/perf-test/003-quota-concurrency/bulk.sh $u $n; echo "$n $u"; done > /tmp/bulk-users.txt
-.scripts/perf-test/003-quota-concurrency/perf.sh asis /tmp/bulk-users.txt      # 드라이브마다 100회
-.scripts/perf-test/003-quota-concurrency/perf2.sh asis /tmp/bulk-users.txt     # 가장 작은·큰 드라이브만 300회 × 3번
+for n in 0 1000 10000 100000; do u=$(python3 -c 'import uuid;print(uuid.uuid4())'); .scripts/perf-test/004-quota-concurrency/bulk.sh $u $n; echo "$n $u"; done > /tmp/bulk-users.txt
+.scripts/perf-test/004-quota-concurrency/perf.sh asis /tmp/bulk-users.txt      # 드라이브마다 100회
+.scripts/perf-test/004-quota-concurrency/perf2.sh asis /tmp/bulk-users.txt     # 가장 작은·큰 드라이브만 300회 × 3번
 ```
 
-스크립트는 `.scripts/perf-test/003-quota-concurrency/`, 결과 원본은 그 아래 `results/`에 있다. 측정 후 `run.sh`가 만든 드라이브는 `scenario.sh cleanup`으로 지운다. `bulk.sh` 드라이브는 실제 한도와 같은 20GiB라서 cleanup에 걸리지 않으므로 user_id로 따로 지운다.
+스크립트는 `.scripts/perf-test/004-quota-concurrency/`, 결과 원본은 그 아래 `results/`에 있다. 측정 후 `run.sh`가 만든 드라이브는 `scenario.sh cleanup`으로 지운다. `bulk.sh` 드라이브는 실제 한도와 같은 20GiB라서 cleanup에 걸리지 않으므로 user_id로 따로 지운다.
 
 ## 2. 테스트 결과
 

@@ -6,11 +6,14 @@ import com.moduDrive.file.domain.model.Namespace.NamespaceId;
 
 import java.time.LocalDateTime;
 import java.util.Collection;
+import java.util.List;
 import java.util.UUID;
 
 public interface SaveFilePort {
 
     File saveFile(File file);
+    /** {@link #saveFile} for many files in one flush (JDBC batches), in the given order. */
+    List<File> saveFiles(List<File> files);
 
     /** Purge from trash: drop versions/shares/favorites, keep the row as a tombstone with
      * {@code deletedAt} stamped. {@code deletedBy} is null for the retention sweep. */

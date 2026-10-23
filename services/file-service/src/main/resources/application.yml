@@ -7,6 +7,16 @@ spring:
       - "classpath:application-observability.yml"
       - "classpath:application-sqs.yml"
       - "classpath:application-resilience4j.yml"
+  cloud:
+    openfeign:
+      client:
+        config:
+          # The commit's uploaded-block lookup, storage-service's only call from here: S3 listing
+          # pages, or a HEAD per block under 64 hashes, sharing the instance's seats with every
+          # other commit. With a HEAD per block, ten 5GB commits at once took ~17s on S3
+          # (perf-test 001), past the default 10s; listing isn't measured on S3 yet.
+          storage-service:
+            read-timeout: 30000
   jpa:
     # Off: one EntityManager per request would hand a transaction the entity an earlier read in the
     # same request cached — a FOR UPDATE re-read (FilePurger, the commit's locks) would lock the row
@@ -42,6 +52,8 @@ resilience4j:
         baseConfig: default
       storageServiceCircuitBreaker:
         baseConfig: default
+        # As long as the read timeout: a lookup that just took long isn't a failing service.
+        slowCallDurationThreshold: 30s
 
 # Fixed service URLs (compose DNS locally, ECS Service Connect on AWS).
 clients:

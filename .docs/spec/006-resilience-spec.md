@@ -294,6 +294,7 @@ ApiResponse<AuthenticateMemberResponse> authenticateMember(AuthenticateMemberReq
 |---|---|---|
 | 연결 | 3초 | `spring.cloud.openfeign.client.config.default.connect-timeout` (`application-resilience4j.yml`) |
 | 읽기 | 10초 | `spring.cloud.openfeign.client.config.default.read-timeout` (`application-resilience4j.yml`) |
+| 읽기 — file-service → storage-service 블록 조회 | 30초 | `spring.cloud.openfeign.client.config.storage-service.read-timeout` (file-service `application.yml`). 블록 확인이 S3를 부르고 인스턴스의 확인 자리를 나눠 쓰므로, commit이 많이 겹치면 10초를 넘을 수 있다(HEAD로 확인하던 때 5GB commit 10개가 S3에서 약 17초, [perf-test 001](../perf-test/001-upload.md)). `storageServiceCircuitBreaker`의 느린 호출 기준도 30초로 맞춘다 |
 
 #### 2-3-2. 재시도
 
@@ -332,7 +333,7 @@ ApiResponse<AuthenticateMemberResponse> authenticateMember(AuthenticateMemberReq
 
 ### 2-4. S3 호출 (storage-service)
 
-S3가 느려지거나 멈춰도 **S3를 쓰지 않는 요청은 그대로 돌아가야 하고, S3를 쓰는 요청은 오래 기다리지 않고 실패해야 한다.** 특히 file-service의 commit이 부르는 `/internal/storage/blocks/uploaded`(S3 HEAD)가 S3 때문에 늘어지면, file-service까지 장애가 번진다.
+S3가 느려지거나 멈춰도 **S3를 쓰지 않는 요청은 그대로 돌아가야 하고, S3를 쓰는 요청은 오래 기다리지 않고 실패해야 한다.** 특히 file-service의 commit이 부르는 `/internal/storage/blocks/uploaded`(S3 목록·HEAD)가 S3 때문에 늘어지면, file-service까지 장애가 번진다.
 
 ```mermaid
 flowchart LR
@@ -346,11 +347,11 @@ flowchart LR
     U["블록 URL 발급<br/>POST /storage/blocks/upload-urls"] --> Redis[("Redis")]
 ```
 
-- S3 호출 하나하나(`GetObject`, `HeadObject`, `DeleteObject`)를 **벌크헤드 → 서킷 브레이커** 순으로 감싼다 (`S3StorageAdapter`). 다운로드 하나가 블록을 여러 개 읽어도 자리는 블록을 읽는 동안만 잡는다. 느린 클라이언트가 응답을 받는 동안에는 자리를 잡지 않는다.
+- S3 호출 하나하나(`GetObject`, `HeadObject`, `ListObjectsV2`, `DeleteObject`)를 **벌크헤드 → 서킷 브레이커** 순으로 감싼다 (`S3StorageAdapter`). 다운로드 하나가 블록을 여러 개 읽어도 자리는 블록을 읽는 동안만 잡는다. 느린 클라이언트가 응답을 받는 동안에는 자리를 잡지 않는다.
 - 블록 바이트는 WEB이 S3에 직접 PUT한다 ([001 2-4](001-file-upload-spec.md#2-4-블록-전송)). storage-service는 `PutObject`를 부르지 않는다. URL 발급은 로컬 서명이라 S3를 부르지 않으므로 어느 벌크헤드도 거치지 않는다.
 - 블록 확인·다운로드·삭제의 자리를 나눠, 한쪽이 몰리거나 느려져도 다른 쪽 자리는 남는다. 세 벌크헤드 합(85)이 Tomcat 요청 스레드(200)보다 작아서, S3가 완전히 멈춰도 S3를 쓰지 않는 요청을 받을 스레드가 남는다.
 - 서킷은 하나다. 업로드든 다운로드든 S3 자체가 아프면 같이 막는다.
-- `/internal/storage/blocks/uploaded`는 24시간 안에 URL을 받은 해시마다 `HeadObject`를 보내고(commit 하나에 동시 8개), 그 자리는 `s3Lookup`에서 잡는다. 서킷이 열리면 바로, 자리가 차면 최대 1초 기다린 뒤 조회 전체가 503으로 끝나고 남은 HEAD는 보내지 않는다. URL을 받은 적 없는 해시는 S3에 묻지 않아서, 새 파일의 첫 commit은 S3가 아파도 영향이 없다.
+- `/internal/storage/blocks/uploaded`는 24시간 안에 URL을 받은 해시를 S3에서 확인하고(64개 이상이면 `ListObjectsV2`, 그보다 적으면 해시마다 `HeadObject`, commit 하나에 동시 8개), 그 자리는 `s3Lookup`에서 잡는다. 서킷이 열리면 바로, 자리가 차면 최대 1초 기다린 뒤 조회 전체가 503으로 끝나고 남은 호출은 보내지 않는다. URL을 받은 적 없는 해시는 S3에 묻지 않아서, 새 파일의 첫 commit은 S3가 아파도 영향이 없다.
 - file-service는 S3를 직접 부르지 않는다. commit은 storage-service 조회를 **DB 트랜잭션 밖에서** 한다 ([001 2-3](001-file-upload-spec.md#2-3-commit)). 그래서 S3 장애가 file-service DB 잠금으로 번지지 않는다.
 - storage-service 자체가 죽어 그 조회가 실패해도 commit 요청 전체가 실패하지 않는다. 이미 commit된 블록만으로 된 파일은 버전을 만들고, 나머지 파일만 그 503으로 답한다.
 
@@ -382,11 +383,11 @@ SDK 표준 재시도에 맡기고, 최대 시도는 **2번**(처음 1 + 재시�
 
 | 벌크헤드 | 자리 | 기다림 | 감싸는 호출 |
 |---|---|---|---|
-| `s3Lookup` | 40 | 1초 | commit의 블록 확인 `HeadObject` |
+| `s3Lookup` | 40 | 1초 | commit의 블록 확인 `ListObjectsV2` · `HeadObject` |
 | `s3Read` | 40 | 0 | 다운로드·zip·미리보기 `GetObject` |
 | `s3Delete` | 5 | 1초 | 블록 삭제 `HeadObject` + `DeleteObject` |
 
-삭제는 사용자가 기다리는 요청이 아니라 SQS 소비·정리 작업이라, 자리가 날 때까지 조금 기다린다. 블록 확인은 HEAD 하나가 짧게(수십 ms) 끝나므로, commit 여러 개가 겹쳐도 바로 거절하지 않고 1초까지 기다린다.
+삭제는 사용자가 기다리는 요청이 아니라 SQS 소비·정리 작업이라, 자리가 날 때까지 조금 기다린다. 블록 확인은 호출 하나가 짧게(수십 ms) 끝나므로, commit 여러 개가 겹쳐도 바로 거절하지 않고 1초까지 기다린다.
 
 S3 클라이언트의 HTTP 커넥션은 세 벌크헤드 자리의 합(85)만큼 둔다(`S3Config`). SDK 기본값(50)이면 자리를 받은 호출이 S3가 아니라 커넥션을 기다린다.
 
