@@ -41,6 +41,19 @@ interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID>, J
             @Param("namespaceId") UUID namespaceId, @Param("path") String path, @Param("name") String name,
             @Param("statuses") Collection<FileStatus> statuses);
 
+    // The row File.createDirectory + saveFile would write, unless the active slot is taken: then
+    // nothing and no id back. uuidv7() (Postgres 18) is the id @UuidGenerator would have made. A CTE, so
+    // it runs as the query it reads as.
+    @Query(value = "with inserted as (insert into file (id, namespace_id, owner_id, name, path, is_directory, status, "
+            + "active_slot_name, access_scope, created_at, created_by, updated_at, updated_by, is_deleted) "
+            + "values (uuidv7(), :namespaceId, :ownerId, :name, :path, true, 'UPLOADED', :name, 'RESTRICTED', "
+            + ":now, :ownerId, :now, :ownerId, false) "
+            + "on conflict (namespace_id, path, active_slot_name) do nothing returning id) select id from inserted",
+            nativeQuery = true)
+    List<UUID> insertDirectoryIfAbsent(@Param("namespaceId") UUID namespaceId, @Param("path") String path,
+                                       @Param("name") String name, @Param("ownerId") UUID ownerId,
+                                       @Param("now") LocalDateTime now);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select f from FileJpaEntity f where f.namespaceId = :namespaceId and f.path = :path "
             + "and f.name in :names and f.status not in :statuses order by f.name")

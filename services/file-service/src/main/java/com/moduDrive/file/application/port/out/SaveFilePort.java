@@ -7,6 +7,7 @@ import com.moduDrive.file.domain.model.Namespace.NamespaceId;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface SaveFilePort {
@@ -14,6 +15,10 @@ public interface SaveFilePort {
     File saveFile(File file);
     /** {@link #saveFile} for many files in one flush (JDBC batches), in the given order. */
     List<File> saveFiles(List<File> files);
+    /** Inserts a new folder unless its active slot is taken — then nothing, and empty: no unique
+     * violation, so two commits making the same folder at once don't fail one of them. A commit still
+     * making it is waited for first, so the caller can lock whatever is there now. */
+    Optional<File> saveDirectoryIfAbsent(File directory);
 
     /** Purge from trash: drop versions/shares/favorites, keep the row as a tombstone with
      * {@code deletedAt} stamped. {@code deletedBy} is null for the retention sweep. */
