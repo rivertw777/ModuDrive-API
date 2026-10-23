@@ -75,12 +75,14 @@ class BlockPersistenceAdapter implements LockCommittedBlocksPort, FindCommittedB
             Map<String, Integer> counts = countsByOwner.computeIfAbsent(version.getOwnerId(), owner -> new TreeMap<>());
             version.getHashes().forEach(hash -> counts.merge(hash, 1, Integer::sum));
         }
-        countsByOwner.forEach((ownerId, counts) -> counts.forEach((hash, count) -> {
-            if (blockRepository.release(ownerId, hash, count, now) == 0) {
-                // A version pointing at a block with no row: references were lost somewhere.
-                logger.error("Released block {} of owner {} has no row", hash, ownerId);
+        countsByOwner.forEach((ownerId, counts) -> {
+            long missing = blockRepository.releaseAll(ownerId, counts.keySet().toArray(String[]::new),
+                    counts.values().toArray(Integer[]::new), now);
+            if (missing > 0) {
+                // Versions pointing at blocks with no row: references were lost somewhere.
+                logger.error("{} released block(s) of owner {} have no row", missing, ownerId);
             }
-        }));
+        });
     }
 
     @Override

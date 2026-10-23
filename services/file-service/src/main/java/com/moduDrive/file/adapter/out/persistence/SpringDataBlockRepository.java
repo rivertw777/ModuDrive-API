@@ -40,15 +40,21 @@ interface SpringDataBlockRepository extends JpaRepository<BlockJpaEntity, BlockJ
     void referenceAll(@Param("ownerId") UUID ownerId, @Param("hashes") String[] hashes,
                       @Param("sizes") Integer[] sizes, @Param("counts") Integer[] counts);
 
-    // The case reads the row's old ref_count, so it stamps unreferenced_at exactly when this
-    // release is the one that takes the count to 0.
-    @Modifying
-    @Query(value = "update block set ref_count = ref_count - :count, "
-            + "unreferenced_at = case when ref_count - :count <= 0 then :now else unreferenced_at end "
-            + "where owner_id = :ownerId and hash = :hash",
+    // Takes `counts[i]` references off each `hashes[i]` block of the owner, in one statement: the rows
+    // locked in hash order (the order a commit locks them in, so the two can't deadlock), then
+    // decremented. The case reads the row's old ref_count, so it stamps unreferenced_at exactly when
+    // this release is the one that takes the count to 0. Returns how many hashes had no row (should be 0).
+    @Query(value = "with refs as (select t.hash, t.cnt from unnest(cast(:hashes as varchar[]), cast(:counts as int[])) "
+            + "as t(hash, cnt)), "
+            + "locked as materialized (select b.hash, r.cnt from block b join refs r "
+            + "on b.owner_id = :ownerId and b.hash = r.hash order by b.hash for update of b), "
+            + "released as (update block b set ref_count = b.ref_count - l.cnt, "
+            + "unreferenced_at = case when b.ref_count - l.cnt <= 0 then :now else b.unreferenced_at end "
+            + "from locked l where b.owner_id = :ownerId and b.hash = l.hash returning 1) "
+            + "select (select count(*) from refs) - (select count(*) from released)",
             nativeQuery = true)
-    int release(@Param("ownerId") UUID ownerId, @Param("hash") String hash,
-                @Param("count") int count, @Param("now") LocalDateTime now);
+    long releaseAll(@Param("ownerId") UUID ownerId, @Param("hashes") String[] hashes,
+                    @Param("counts") Integer[] counts, @Param("now") LocalDateTime now);
 
     // release() for every block the files' versions point at, in one statement: the references are
     // counted per block in SQL (no versions loaded), the rows locked in (owner, hash) order — the
