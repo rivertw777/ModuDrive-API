@@ -61,8 +61,9 @@ import java.util.stream.Collectors;
  *
  * <p>A request carries a group of files (spec 001 2-3), so which blocks exist is asked once for
  * the whole group — and outside any transaction, storage-service included, so a slow
- * storage-service never holds a DB connection or a block lock here (spec 006 2-4). Each file with
- * nothing missing then gets its own short transaction, which re-checks under the lock. */
+ * storage-service never holds a DB connection or a block lock here (spec 006 2-4). The files with
+ * nothing missing are then committed in one transaction, which re-checks under the locks; if any of
+ * them goes off the plain path, each gets its own short transaction instead. */
 @UseCase
 @RequiredArgsConstructor
 class CommitFileUploadService implements CommitFileUploadUseCase {
@@ -193,14 +194,14 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
                 File folder;
                 try {
                     // Its own transaction, like a file: one folder failing leaves the others.
-                    folder = transactionTemplate.execute(status -> folderAt(namespaceId, target, ownerId));
+                    folder = transactionTemplate.execute(status -> folderAt(namespaceId, target, ownerId, new HashMap<>()));
                 } catch (BusinessException e) {
                     if (e.getExceptionCase() != FileExceptionCase.FILE_ALREADY_EXISTS) {
                         throw e;
                     }
                     // Another commit created a folder on the way first (the unique slot): the second
                     // look finds it. A file in the way fails the same again.
-                    folder = transactionTemplate.execute(status -> folderAt(namespaceId, target, ownerId));
+                    folder = transactionTemplate.execute(status -> folderAt(namespaceId, target, ownerId, new HashMap<>()));
                 }
                 return DirectoryResult.created(folder.getId());
             } catch (BusinessException e) {
@@ -286,8 +287,9 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
         Map<String, Set<String>> namesByPath = new TreeMap<>(Comparator.comparing((String path) -> path.replace('/', '\0')));
         group.forEach(c -> namesByPath.computeIfAbsent(c.getPath(), path -> new LinkedHashSet<>()).add(c.getName()));
         Map<String, File> bySpot = new HashMap<>();
+        Map<String, File> folders = new HashMap<>();
         namesByPath.forEach((path, names) -> {
-            folderAt(namespaceId, path, ownerId);
+            folderAt(namespaceId, path, ownerId, folders);
             findFilePort.lockActiveByNamespaceIdAndPathAndNames(namespaceId, path, names)
                     .forEach(f -> bySpot.put(UploadBatchService.child(f.getPath(), f.getName()), f));
         });
@@ -442,32 +444,38 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
             }
             return existing.get();
         }
-        folderAt(namespaceId, path, ownerId);
+        folderAt(namespaceId, path, ownerId, new HashMap<>());
         return saveFilePort.saveFile(File.create(new FileNamespaceId(namespaceId.value()), new FileName(name),
                 new FilePath(path), new FileOwnerId(ownerId), new FileIsDirectory(false)));
     }
 
     /** The folder at {@code path}, creating it and any folder above it that doesn't exist yet,
-     * top-down; null for the root. A file anywhere on the way is FILE_ALREADY_EXISTS. */
-    private File folderAt(NamespaceId namespaceId, String path, UUID ownerId) {
+     * top-down; null for the root. A file anywhere on the way is FILE_ALREADY_EXISTS. {@code known}
+     * holds the folders this transaction already locked or made, by full path — not looked up again. */
+    private File folderAt(NamespaceId namespaceId, String path, UUID ownerId, Map<String, File> known) {
         FileNamespaceId fileNamespaceId = new FileNamespaceId(namespaceId.value());
         FileOwnerId fileOwnerId = new FileOwnerId(ownerId);
         String parent = "/";
         File folder = null;
-        // One lookup per path segment. Two commits creating the same missing folder at once: the
+        // One lookup per path segment not yet known. Two commits creating the same missing folder at once: the
         // second fails on the unique slot (FILE_ALREADY_EXISTS) for that file alone, and its retry
         // finds the folder.
         for (String segment : "/".equals(path) ? new String[0] : path.substring(1).split("/")) {
             // Locked top-down, like a trash locks a subtree: the folder can't be trashed while a file
             // goes in under it, and one trashed meanwhile isn't found — a new one is made instead.
-            Optional<File> found = findFilePort.lockActiveByNamespaceIdAndPathAndName(namespaceId, parent, segment);
+            String at = parent;
+            parent = UploadBatchService.child(parent, segment);
+            folder = known.get(parent);
+            if (folder != null) {
+                continue;
+            }
+            Optional<File> found = findFilePort.lockActiveByNamespaceIdAndPathAndName(namespaceId, at, segment);
             if (found.isPresent() && !found.get().isDirectory()) {
                 throw new BusinessException(FileExceptionCase.FILE_ALREADY_EXISTS);
             }
-            String at = parent;
             folder = found.orElseGet(() -> saveFilePort.saveFile(
                     File.createDirectory(fileNamespaceId, new FileName(segment), new FilePath(at), fileOwnerId)));
-            parent = UploadBatchService.child(parent, segment);
+            known.put(parent, folder);
         }
         return folder;
     }

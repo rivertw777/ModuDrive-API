@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 public interface FindFilePort {
 
@@ -29,6 +30,8 @@ public interface FindFilePort {
 
     /** {@link #findActiveByNamespaceIdAndPathAndName} for many names in one folder, in one query. */
     List<File> findActiveByNamespaceIdAndPathAndNames(NamespaceId namespaceId, String path, Collection<String> names);
+    /** The names of the active entries directly in {@code path} — names only, no rows to map. */
+    Set<String> findActiveNamesByNamespaceIdAndPath(NamespaceId namespaceId, String path);
 
     /** {@link #findActiveByNamespaceIdAndPathAndName}, locking the row until the transaction ends —
      * a commit adding a version, so the file can't be trashed (and purged without that version's

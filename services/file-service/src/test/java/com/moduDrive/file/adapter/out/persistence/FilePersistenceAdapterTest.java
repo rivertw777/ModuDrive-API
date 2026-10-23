@@ -173,6 +173,19 @@ class FilePersistenceAdapterTest {
         }
 
         @Test
+        @DisplayName("폴더의 이름만 찾으면, 그 경로 바로 아래 활성 항목의 이름만 돌려준다")
+        void findsTheActiveNamesOfOneFolder() {
+            save("/1/docs", "a.pdf");
+            save("/1/docs", "b.pdf");
+            save("/1/docs", "c.pdf", FileStatus.TRASHED);
+            save("/1/docs/sub", "d.pdf");
+            save("/1/other", "e.pdf");
+
+            assertThat(filePersistenceAdapter.findActiveNamesByNamespaceIdAndPath(namespaceId, "/1/docs"))
+                    .containsExactlyInAnyOrder("a.pdf", "b.pdf");
+        }
+
+        @Test
         @DisplayName("여러 파일을 한 번에 저장하면 새 파일은 만들고 있던 파일은 바꿔, 준 순서대로 돌려준다")
         void savesManyFilesInOrder() {
             File existing = filePersistenceAdapter.saveFile(File.create(
