@@ -226,8 +226,8 @@ class S3StorageAdapterTest {
         }
 
         @Test
-        @DisplayName("범위 안에 블록이 너무 많아 페이지 한도를 넘으면 HEAD로 확인한다")
-        void fallsBackToHeadsWhenTheRangesAreTooDense() {
+        @DisplayName("범위 안에 블록이 너무 많아 페이지 한도를 넘으면, 다 못 읽은 범위만 HEAD로 확인한다")
+        void headsTheRangesThePagesRanOutOn() {
             pageSize = 1;
             for (int i = 1; i < 48; i++) {
                 if (i % 16 != 0) {
@@ -237,7 +237,10 @@ class S3StorageAdapterTest {
             lenient().when(s3Client.headObject(any(HeadObjectRequest.class))).thenThrow(NoSuchKeyException.builder().statusCode(404).build());
 
             assertThat(adapter.findUploaded(OWNER, asked)).isEmpty();
-            then(s3Client).should(org.mockito.Mockito.times(64)).headObject(any(HeadObjectRequest.class));
+            // Range 0 always runs out; the others only if it took their pages first.
+            asked.stream().filter(h -> h.charAt(0) == '0').forEach(h -> then(s3Client).should()
+                    .headObject(argThat((HeadObjectRequest r) -> r != null && r.key().equals(Blocks.key(OWNER, h)))));
+            then(s3Client).should(org.mockito.Mockito.atMost(64)).headObject(any(HeadObjectRequest.class));
         }
 
         @Test

@@ -107,12 +107,33 @@ class S3StorageAdapter implements RetrieveBlocksPort, DeleteBlocksPort, FindUplo
         if (hashes.isEmpty()) {
             return Map.of();
         }
-        if (hashes.size() >= LIST_MIN_HASHES) {
-            try {
-                return listUploaded(ownerId, hashes);
-            } catch (TooManyPages e) {
-                // The owner's blocks are too dense in the asked ranges: HEADs are fewer calls.
+        if (hashes.size() < LIST_MIN_HASHES) {
+            return headUploaded(ownerId, hashes);
+        }
+        Map<Character, TreeSet<String>> byRange = new TreeMap<>();
+        hashes.forEach(hash -> byRange.computeIfAbsent(hash.charAt(0), c -> new TreeSet<>()).add(hash));
+        List<TreeSet<String>> ranges = List.copyOf(byRange.values());
+        // A page for each range, and more as the hashes grow.
+        AtomicInteger pagesLeft = new AtomicInteger(ranges.size() + hashes.size() / HASHES_PER_LIST_PAGE);
+        List<Map<String, Integer>> listed = inParallel(ownerId, ranges.stream()
+                .<Callable<Map<String, Integer>>>map(range -> () -> listRange(ownerId, range, pagesLeft)).toList());
+        Map<String, Integer> uploaded = new HashMap<>();
+        List<String> unlisted = new ArrayList<>();
+        for (int i = 0; i < ranges.size(); i++) {
+            if (listed.get(i) != null) {
+                uploaded.putAll(listed.get(i));
+            } else {
+                unlisted.addAll(ranges.get(i));
             }
+        }
+        // The ranges the pages ran out on — the owner's blocks are dense there: HEADs are fewer calls.
+        uploaded.putAll(headUploaded(ownerId, unlisted));
+        return uploaded;
+    }
+
+    private Map<String, Integer> headUploaded(UUID ownerId, Collection<String> hashes) {
+        if (hashes.isEmpty()) {
+            return Map.of();
         }
         Map<String, Integer> uploaded = new HashMap<>();
         List<String> asked = List.copyOf(hashes);
@@ -125,20 +146,8 @@ class S3StorageAdapter implements RetrieveBlocksPort, DeleteBlocksPort, FindUplo
         return uploaded;
     }
 
-    /** The asked hashes, by listing the owner's keys: one listing per first hex digit, each from just
-     * before its smallest asked hash to its largest, in parallel. */
-    private Map<String, Integer> listUploaded(UUID ownerId, Collection<String> hashes) {
-        Map<Character, TreeSet<String>> byRange = new TreeMap<>();
-        hashes.forEach(hash -> byRange.computeIfAbsent(hash.charAt(0), c -> new TreeSet<>()).add(hash));
-        // A page for each range, and more as the hashes grow.
-        AtomicInteger pagesLeft = new AtomicInteger(byRange.size() + hashes.size() / HASHES_PER_LIST_PAGE);
-        Map<String, Integer> uploaded = new HashMap<>();
-        inParallel(ownerId, byRange.values().stream()
-                .<Callable<Map<String, Integer>>>map(range -> () -> listRange(ownerId, range, pagesLeft)).toList())
-                .forEach(uploaded::putAll);
-        return uploaded;
-    }
-
+    /** The asked hashes of one first hex digit, by listing the owner's keys from just before the
+     * smallest to the largest. Null when the lookup's pages ran out first. */
     private Map<String, Integer> listRange(UUID ownerId, NavigableSet<String> range, AtomicInteger pagesLeft) {
         String ownerPrefix = Blocks.key(ownerId, "");
         String first = Blocks.key(ownerId, range.first());
@@ -147,7 +156,7 @@ class S3StorageAdapter implements RetrieveBlocksPort, DeleteBlocksPort, FindUplo
         String token = null;
         while (true) {
             if (pagesLeft.decrementAndGet() < 0) {
-                throw new TooManyPages();
+                return null;
             }
             ListObjectsV2Request.Builder builder = ListObjectsV2Request.builder()
                     .bucket(properties.getS3().getBucket())
@@ -168,13 +177,6 @@ class S3StorageAdapter implements RetrieveBlocksPort, DeleteBlocksPort, FindUplo
                 return uploaded;
             }
             token = page.nextContinuationToken();
-        }
-    }
-
-    /** Listing would take more pages than the lookup is worth. */
-    private static final class TooManyPages extends RuntimeException {
-        TooManyPages() {
-            super(null, null, false, false);
         }
     }
 
@@ -204,8 +206,8 @@ class S3StorageAdapter implements RetrieveBlocksPort, DeleteBlocksPort, FindUplo
             Thread.currentThread().interrupt();
             throw new BusinessException(StorageExceptionCase.STORAGE_ERROR);
         } catch (ExecutionException e) {
-            if (e.getCause() instanceof BusinessException || e.getCause() instanceof TooManyPages) {
-                throw (RuntimeException) e.getCause();
+            if (e.getCause() instanceof BusinessException business) {
+                throw business;
             }
             logger.error("Failed to look up uploaded blocks of owner {}", ownerId, e.getCause());
             throw new BusinessException(StorageExceptionCase.STORAGE_ERROR);
