@@ -5,8 +5,10 @@ Usage: upload.py <label> big <blocks>                  — one file of <blocks> 
        upload.py <label> concurrent <users> <kind> <args>... — <users> drives each uploading <kind> (big, small
                                                           or mixed, with its args) at once
        upload.py <label> mixed                          — one folder of mixed files (MIXED), grouped as the WEB does
+Env INFLIGHT=<n>: the WEB's own flow instead of phase by phase — each group commit → URLs → PUTs → commit on its
+own, n groups at a time, sharing the 6 PUTs; only the whole upload is timed ("total").
 Runs in the bench container (scenario.sh up); env REDIS_PASSWORD. Prints one JSON line and appends it to results/."""
-import base64, hashlib, json, os, random, socket, statistics, sys, threading, time, uuid, urllib.parse, urllib.request
+import base64, contextlib, hashlib, json, os, random, socket, statistics, sys, threading, time, uuid, urllib.parse, urllib.request
 from concurrent.futures import ThreadPoolExecutor
 import psycopg
 from bench import DB, reset_stats, read_stats
@@ -16,6 +18,7 @@ BLOCK, GROUP, URLS_PER_REQUEST, PUTS = 4 * 1024 * 1024, 100, 64, 6  # spec 001 6
 QUOTA = 1_000_000_000_000_000  # scenario.sh cleanup's marker for bench drives
 IN_SCRIPT = {"incr", "incrby", "decr", "decrby", "pexpire"}
 PHASES = ("commit1", "presign", "put", "commit2")
+INFLIGHT = int(os.environ.get("INFLIGHT") or 0)
 SOLO_BLOCKS = 64  # WEB: a file over 64 blocks (256MiB) is a group of its own
 KiB, MiB = 1024, 1024 * 1024
 # A work folder as people upload it: (subfolder, extension, files, smallest, largest bytes). The extension only
@@ -133,8 +136,9 @@ class Upload:
         return groups + ([group] if group else [])
 
 
-def upload(user, blocks, groups, phase):
-    """One upload, step by step; phase(name, fn) runs and records each step."""
+def upload(user, blocks, groups, phase, seats=None):
+    """One upload, step by step; phase(name, fn) runs and records each step. seats, if given, caps the PUTs in flight
+    across uploads running at once."""
     files = sum(len(g) for g in groups)
 
     def commit_all():
@@ -156,13 +160,24 @@ def upload(user, blocks, groups, phase):
     urls = phase("presign", presign)
 
     def put_all():
+        def one(h):
+            with seats or contextlib.nullcontext():
+                put(urls[h], blocks.data(blocks.index[h]), blocks.digests[blocks.index[h]])
         with ThreadPoolExecutor(PUTS) as pool:
-            list(pool.map(lambda h: put(urls[h], blocks.data(blocks.index[h]), blocks.digests[blocks.index[h]]), need))
+            list(pool.map(one, need))
     phase("put", put_all)
 
     second = phase("commit2", commit_all)
     done = sum(1 for r in second if r.get("versionId"))
     assert done == files, f"{done} of {files} committed: {[r for r in second if not r.get('versionId')][:2]}"
+
+
+def web_upload(user, blocks, groups, inflight):
+    """The WEB's flow (use-file-upload.ts): every group on its own, inflight groups at a time, all their PUTs sharing
+    the browser's 6 connections."""
+    seats = threading.Semaphore(PUTS)
+    with ThreadPoolExecutor(inflight) as pool:
+        list(pool.map(lambda g: upload(user, blocks, [g], lambda name, fn: fn(), seats), groups))
 
 
 def measured(cur, out):
@@ -193,7 +208,7 @@ def main():
         users, each, args = int(args[0]), args[1], [int(a) for a in args[2:]]
     else:
         args = [int(a) for a in args]
-    out = {"label": label, "kind": kind, "args": [users, each, *args] if kind == "concurrent" else args}
+    out = {"label": label, "kind": kind, "inflight": INFLIGHT, "args": [users, each, *args] if kind == "concurrent" else args}
     with psycopg.connect(DB, autocommit=True) as conn, conn.cursor() as cur:
         if kind == "concurrent":
             drives = [(new_drive(cur), Upload(plan(each, args))) for _ in range(users)]
@@ -205,7 +220,10 @@ def main():
                 user, up = drives[k]
                 groups = up.groups()
                 gate.wait()
-                upload(user, up.blocks, groups, timed(times[k]))
+                if INFLIGHT:
+                    timed(times[k])("total", lambda: web_upload(user, up.blocks, groups, INFLIGHT))
+                else:
+                    upload(user, up.blocks, groups, timed(times[k]))
             reset_stats(cur)
             redis0, t = redis_calls(), time.perf_counter()
             with ThreadPoolExecutor(users) as pool:
@@ -214,13 +232,16 @@ def main():
             out["db"] = read_stats(cur)[0]
             out.update(redis_delta(redis0))
             out["per_drive"] = {p: {"median": statistics.median(x[p] for x in times), "max": max(x[p] for x in times)}
-                                for p in PHASES}
+                                for p in (("total",) if INFLIGHT else PHASES)}
         else:
             user = new_drive(cur)
             out["users"] = [user]
             up = Upload(plan(kind, args))
             out["files"], out["blocks"], out["groups"] = len(up.files), len(up.blocks.sizes), len(up.groups())
-            upload(user, up.blocks, up.groups(), measured(cur, out))
+            if INFLIGHT:
+                measured(cur, out)("total", lambda: web_upload(user, up.blocks, up.groups(), INFLIGHT))
+            else:
+                upload(user, up.blocks, up.groups(), measured(cur, out))
 
     line = json.dumps(out)
     print(line)
