@@ -159,6 +159,55 @@ class FilePersistenceAdapterTest {
         }
 
         @Test
+        @DisplayName("여러 이름을 한 번에 잠그면, 그 경로의 활성 파일 중 그 이름들만 이름 순으로 돌려준다")
+        void locksManyNamesOfOneFolderAtOnce() {
+            save("/1/docs", "b.pdf");
+            save("/1/docs", "a.pdf");
+            save("/1/docs", "c.pdf", FileStatus.TRASHED);
+            save("/1/other", "a.pdf");
+
+            var result = filePersistenceAdapter.lockActiveByNamespaceIdAndPathAndNames(
+                    namespaceId, "/1/docs", List.of("b.pdf", "a.pdf", "c.pdf", "x.pdf"));
+
+            assertThat(result).extracting(File::getName).containsExactly("a.pdf", "b.pdf");
+        }
+
+        @Test
+        @DisplayName("여러 파일을 한 번에 저장하면 새 파일은 만들고 있던 파일은 바꿔, 준 순서대로 돌려준다")
+        void savesManyFilesInOrder() {
+            File existing = filePersistenceAdapter.saveFile(File.create(
+                    new FileNamespaceId(namespaceIdValue), new FileName("a.pdf"),
+                    new FilePath("/1/docs"), new FileOwnerId(UUID.randomUUID()), new FileIsDirectory(false)));
+            UUID versionId = UUID.randomUUID();
+            existing.markUploaded(versionId, 7L);
+
+            var saved = filePersistenceAdapter.saveFiles(List.of(existing, File.create(
+                    new FileNamespaceId(namespaceIdValue), new FileName("b.pdf"),
+                    new FilePath("/1/docs"), new FileOwnerId(UUID.randomUUID()), new FileIsDirectory(false))));
+
+            assertThat(saved).extracting(File::getName).containsExactly("a.pdf", "b.pdf");
+            assertThat(saved.get(1).getId()).isNotNull();
+            assertThat(springDataFileRepository.findById(existing.getId()).orElseThrow().getCurrentVersionId()).isEqualTo(versionId);
+        }
+
+        @Test
+        @DisplayName("여러 파일을 한 번에 저장하다 자리가 겹쳐도 비즈니스 예외로 변환된다")
+        void translatesASlotConflictInABatch() {
+            save("/1/docs", "a.pdf");
+
+            Throwable thrown = catchThrowable(() -> filePersistenceAdapter.saveFiles(List.of(
+                    File.create(new FileNamespaceId(namespaceIdValue), new FileName("b.pdf"),
+                            new FilePath("/1/docs"), new FileOwnerId(UUID.randomUUID()), new FileIsDirectory(false)),
+                    File.create(new FileNamespaceId(namespaceIdValue), new FileName("a.pdf"),
+                            new FilePath("/1/docs"), new FileOwnerId(UUID.randomUUID()), new FileIsDirectory(false)))));
+
+            assertThat(thrown)
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getExceptionCase())
+                    .isEqualTo(FileExceptionCase.FILE_ALREADY_EXISTS);
+        }
+
+        @Test
         @DisplayName("같은 자리에 두 번째 활성 파일을 저장하면 DB 유니크 제약 위반이 비즈니스 예외로 변환된다")
         void translatesUniqueConstraintViolationToBusinessException() {
             filePersistenceAdapter.saveFile(File.create(
@@ -428,6 +477,37 @@ class FilePersistenceAdapterTest {
             fileSharePersistenceAdapter.deleteFileShare(new FileShareId(created.getId()));
 
             assertThat(fileSharePersistenceAdapter.findByFileId(new FileId(fileIdValue))).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("버전 여러 개를 한 번에 저장할 때")
+    class WhenSavingManyVersions {
+
+        @Test
+        @DisplayName("준 순서대로 블록 목록과 함께 저장해 id를 붙여 돌려준다")
+        void savesThemInOrder() {
+            UUID fileIdValue = UUID.randomUUID();
+            List<com.moduDrive.file.domain.model.FileVersion> versions = List.of(
+                    newVersion(fileIdValue, 4L, List.of("h1", "h2")), newVersion(fileIdValue, 1L, List.of("h3")));
+
+            var saved = filePersistenceAdapter.saveFileVersions(versions);
+            entityManager.flush();
+            entityManager.clear();
+
+            assertThat(saved).extracting(com.moduDrive.file.domain.model.FileVersion::getFileSize).containsExactly(4L, 1L);
+            assertThat(filePersistenceAdapter.findAllByIds(List.of(saved.get(0).getId())))
+                    .extracting(com.moduDrive.file.domain.model.FileVersion::getHashes)
+                    .containsExactly(List.of("h1", "h2"));
+        }
+
+        private com.moduDrive.file.domain.model.FileVersion newVersion(UUID fileId, long size, List<String> hashes) {
+            return com.moduDrive.file.domain.model.FileVersion.create(
+                    new com.moduDrive.file.domain.model.FileVersion.FileVersionFileId(fileId),
+                    new com.moduDrive.file.domain.model.FileVersion.FileVersionOwnerId(UUID.randomUUID()),
+                    new com.moduDrive.file.domain.model.FileVersion.FileVersionFileSize(size),
+                    new com.moduDrive.file.domain.model.FileVersion.FileVersionUploadId(UUID.randomUUID()),
+                    new com.moduDrive.file.domain.model.FileVersion.FileVersionHashes(hashes));
         }
     }
 

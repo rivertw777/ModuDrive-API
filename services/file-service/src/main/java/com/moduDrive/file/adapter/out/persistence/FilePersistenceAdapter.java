@@ -43,13 +43,23 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
 
     @Override
     public File saveFile(File file) {
+        return saveFiles(List.of(file)).getFirst();
+    }
+
+    @Override
+    public List<File> saveFiles(List<File> files) {
+        List<FileJpaEntity> entities = files.stream().map(this::toEntity).toList();
+        // Callers' same-name pre-checks aren't atomic with the insert; the slot constraint is.
+        // Rename/move/restore can collide too (a restore onto a slot a later upload took).
+        return saveAndTranslateSlotConflict(entities).stream().map(fileMapper::mapFileToDomain).toList();
+    }
+
+    private FileJpaEntity toEntity(File file) {
         if (file.getId() == null) {
-            FileJpaEntity entity = new FileJpaEntity(
+            return new FileJpaEntity(
                     file.getNamespaceId(), file.getName(), file.getPath(),
                     file.getOwnerId(), file.getStatus(), file.isDirectory()
             );
-            // Callers' same-name pre-checks aren't atomic with this insert; the slot constraint is.
-            return fileMapper.mapFileToDomain(saveAndTranslateSlotConflict(entity));
         }
 
         FileJpaEntity entity = fileRepository.findById(file.getId())
@@ -59,17 +69,15 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
         entity.applyChanges(file.getName(), file.getPath(), file.getCurrentVersionId(), file.getFileSize(),
                 file.getStatus(), file.getAccessScope(), file.getLinkRole(),
                 file.getTrashedAt());
-
-        // Rename/move/restore can collide too (a restore onto a slot a later upload took).
-        return fileMapper.mapFileToDomain(saveAndTranslateSlotConflict(entity));
+        return entity;
     }
 
-    /** saveAndFlush, so a uk_file_namespace_path_active_name violation surfaces inside this catch
+    /** saveAllAndFlush, so a uk_file_namespace_path_active_name violation surfaces inside this catch
      * rather than at a later flush. Only that constraint becomes FILE_ALREADY_EXISTS; any other
      * integrity violation is a bug and surfaces as is. */
-    private FileJpaEntity saveAndTranslateSlotConflict(FileJpaEntity entity) {
+    private List<FileJpaEntity> saveAndTranslateSlotConflict(List<FileJpaEntity> entities) {
         try {
-            return fileRepository.saveAndFlush(entity);
+            return fileRepository.saveAllAndFlush(entities);
         } catch (DataIntegrityViolationException e) {
             if (isActiveSlotConflict(e)) {
                 throw new BusinessException(FileExceptionCase.FILE_ALREADY_EXISTS);
@@ -246,6 +254,18 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
     }
 
     @Override
+    public List<File> lockActiveByNamespaceIdAndPathAndNames(NamespaceId namespaceId, String path, Collection<String> names) {
+        if (names.isEmpty()) {
+            return List.of();
+        }
+        return fileRepository
+                .lockByNamespaceIdAndPathAndNameInAndStatusNotIn(namespaceId.value(), path, names, FileStatus.REMOVED)
+                .stream()
+                .map(fileMapper::mapFileToDomain)
+                .toList();
+    }
+
+    @Override
     public Optional<File> lockById(FileId fileId) {
         return fileRepository.lockById(fileId.value()).map(fileMapper::mapFileToDomain);
     }
@@ -340,11 +360,16 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
 
     @Override
     public FileVersion saveFileVersion(FileVersion fileVersion) {
-        FileVersionJpaEntity entity = new FileVersionJpaEntity(
+        return saveFileVersions(List.of(fileVersion)).getFirst();
+    }
+
+    @Override
+    public List<FileVersion> saveFileVersions(List<FileVersion> fileVersions) {
+        List<FileVersionJpaEntity> entities = fileVersions.stream().map(fileVersion -> new FileVersionJpaEntity(
                 fileVersion.getFileId(), fileVersion.getOwnerId(), fileVersion.getFileSize(),
                 fileVersion.getUploadId(), fileVersion.getHashes()
-        );
-        return fileMapper.mapFileVersionToDomain(fileVersionRepository.save(entity));
+        )).toList();
+        return fileVersionRepository.saveAll(entities).stream().map(fileMapper::mapFileVersionToDomain).toList();
     }
 
     @Override
