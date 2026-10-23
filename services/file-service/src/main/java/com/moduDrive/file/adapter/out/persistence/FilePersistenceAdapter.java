@@ -20,9 +20,11 @@ import org.springframework.data.jpa.domain.Specification;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -232,6 +234,11 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
         return fileRepository
                 .findByNamespaceIdAndPathAndNameAndStatusNotIn(namespaceId.value(), path, name, FileStatus.REMOVED)
                 .map(fileMapper::mapFileToDomain);
+    }
+
+    @Override
+    public Set<String> findActiveNamesByNamespaceIdAndPath(NamespaceId namespaceId, String path) {
+        return new HashSet<>(fileRepository.findNamesByNamespaceIdAndPathAndStatusNotIn(namespaceId.value(), path, FileStatus.REMOVED));
     }
 
     @Override

@@ -20,6 +20,12 @@ interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID>, J
     List<FileJpaEntity> findByNamespaceIdAndPathAndStatusNotIn(
             UUID namespaceId, String path, Collection<FileStatus> statuses);
 
+    @Query("select f.name from FileJpaEntity f where f.namespaceId = :namespaceId and f.path = :path "
+            + "and f.status not in :statuses")
+    List<String> findNamesByNamespaceIdAndPathAndStatusNotIn(
+            @Param("namespaceId") UUID namespaceId, @Param("path") String path,
+            @Param("statuses") Collection<FileStatus> statuses);
+
     Optional<FileJpaEntity> findByNamespaceIdAndPathAndNameAndStatusNotIn(
             UUID namespaceId, String path, String name, Collection<FileStatus> statuses);
 

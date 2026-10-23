@@ -58,15 +58,17 @@ class UploadBatchService implements UploadBatchUseCase {
 
         Map<String, Node> nodes = parse(command.getItems());
 
-        // Active entries only (the adapter drops TRASHED/DELETED), so a trashed same-name item is
-        // never a conflict — the commit only ever looks at active rows too.
-        Map<String, File> existing = findFilePort.findByNamespaceIdAndPath(namespaceId, target).stream()
-                .collect(Collectors.toMap(File::getName, Function.identity(), (a, b) -> a));
-        Set<String> taken = new HashSet<>(existing.keySet());
         // Every top-level name the user actually picked is off-limits to numbering, so numbering
         // an earlier entry into "a (1).txt" can't push a later, non-conflicting "a (1).txt" aside.
         Set<String> requested = nodes.values().stream()
                 .filter(Node::isTopLevel).map(Node::name).collect(Collectors.toSet());
+        // Active entries only (the adapter drops TRASHED/DELETED), so a trashed same-name item is
+        // never a conflict — the commit only ever looks at active rows too. Only the picked names'
+        // rows: the rest of the folder is read, names only, once a name has to be numbered.
+        Map<String, File> existing = findFilePort.findActiveByNamespaceIdAndPathAndNames(namespaceId, target, requested)
+                .stream().collect(Collectors.toMap(File::getName, Function.identity(), (a, b) -> a));
+        Set<String> taken = new HashSet<>(existing.keySet());
+        boolean takenComplete = false;
         Map<String, String> finalTopNames = new HashMap<>();
         Map<String, File> replacing = new HashMap<>();
         List<String> conflicts = new ArrayList<>();
@@ -89,11 +91,19 @@ class UploadBatchService implements UploadBatchUseCase {
                     replacing.put(name, clash);
                     finalTopNames.put(name, name);
                 } else if (resolution == ConflictResolution.KEEP_BOTH) {
+                    if (!takenComplete) {
+                        taken.addAll(findFilePort.findActiveNamesByNamespaceIdAndPath(namespaceId, target));
+                        takenComplete = true;
+                    }
                     finalTopNames.put(name, takeFreeName(name, node.directory(), taken, requested));
                 }
                 // SKIP: no final name, so the loop below leaves it out.
             } else {
                 // File vs folder — never asked, always kept side by side.
+                if (!takenComplete) {
+                    taken.addAll(findFilePort.findActiveNamesByNamespaceIdAndPath(namespaceId, target));
+                    takenComplete = true;
+                }
                 finalTopNames.put(name, takeFreeName(name, node.directory(), taken, requested));
             }
         }
@@ -132,16 +142,18 @@ class UploadBatchService implements UploadBatchUseCase {
                 name = node.name();
                 reused = null;
                 if (mergedFolderPaths.contains(parent)) {
-                    // One children query per merged folder.
+                    // One query per merged folder, for the names the batch puts in it.
                     Map<String, File> children = mergedChildren.computeIfAbsent(parent, path ->
-                            findFilePort.findByNamespaceIdAndPath(namespaceId, path).stream()
+                            findFilePort.findActiveByNamespaceIdAndPathAndNames(namespaceId, path,
+                                            requestedSiblings.get(node.parentRelativePath())).stream()
                                     .collect(Collectors.toMap(File::getName, Function.identity(), (a, b) -> a)));
                     File clash = children.get(name);
                     if (clash != null && clash.isDirectory() == node.directory()) {
                         fileAccessGuard.requireOwner(clash, command.getUserId());
                         reused = clash;
                     } else if (clash != null) {
-                        Set<String> takenHere = mergedTaken.computeIfAbsent(parent, path -> new HashSet<>(children.keySet()));
+                        Set<String> takenHere = mergedTaken.computeIfAbsent(parent, path ->
+                                new HashSet<>(findFilePort.findActiveNamesByNamespaceIdAndPath(namespaceId, path)));
                         name = takeFreeName(name, node.directory(), takenHere,
                                 requestedSiblings.get(node.parentRelativePath()));
                     }
