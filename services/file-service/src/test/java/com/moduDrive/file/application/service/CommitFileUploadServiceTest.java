@@ -50,6 +50,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.moduDrive.file.fixture.FileVersionTestFixture.HASH_A;
 import static com.moduDrive.file.fixture.FileVersionTestFixture.HASH_B;
@@ -62,6 +63,7 @@ import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.BDDMockito.willAnswer;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
@@ -891,6 +893,26 @@ class CommitFileUploadServiceTest {
             assertThat(results.get(0).version()).isNotNull();
             assertThat(results.get(1).version()).isNotNull();
             assertThat(results.get(2).error()).isEqualTo(FileExceptionCase.QUOTA_EXCEEDED);
+        }
+
+        @Test
+        @DisplayName("다른 commit이 같은 폴더를 먼저 만들면 묶음을 한 번 더 시도해, 묶음 그대로 commit한다")
+        void retriesTheGroupOnceWhenAFolderWasMadeMeanwhile() {
+            givenGroupSpots();
+            AtomicInteger folders = new AtomicInteger();
+            willAnswer(inv -> {
+                if (folders.getAndIncrement() == 0) {
+                    throw new BusinessException(FileExceptionCase.FILE_ALREADY_EXISTS);
+                }
+                return saveFilePort.saveFiles(List.of(inv.<File>getArgument(0))).getFirst();
+            }).given(saveFilePort).saveFile(any());
+
+            List<CommitResult> results = commitFileUploadService.commit(group);
+
+            assertThat(results).allSatisfy(r -> assertThat(r.version()).isNotNull());
+            then(transactionTemplate).should(times(2)).execute(any());
+            then(saveFileVersionPort).should(times(1)).saveFileVersions(any());
+            then(saveFileVersionPort).should(never()).saveFileVersion(any());
         }
 
         @Test

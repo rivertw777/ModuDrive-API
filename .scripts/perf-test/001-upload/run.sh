@@ -25,7 +25,7 @@ case $1 in
     BUCKET=$(docker exec modudrive-service-storage-service-1 printenv STORAGE_S3_BUCKET)
     for _ in $(seq 1 "$rounds"); do
       line=$(docker exec -e REDIS_PASSWORD="$(docker exec modudrive-infra-redis-1 printenv REDIS_PASSWORD)" \
-        -e PYTHONPATH=/w bench sh -c "cd /w/001-upload && python upload.py $label $*")
+        -e INFLIGHT="${INFLIGHT:-}" -e PYTHONPATH=/w bench sh -c "cd /w/001-upload && python upload.py $label $*")
       echo "$line"
       for user in $(echo "$line" | python3 -c 'import json,sys;print(*json.load(sys.stdin)["users"])'); do
         docker exec modudrive-infra-localstack-1 awslocal s3 rm "s3://$BUCKET/blocks/$user/" --recursive --quiet

@@ -254,10 +254,19 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
                 || group.stream().map(c -> c.getUploadId().value()).distinct().count() < group.size()) {
             return null;
         }
-        try {
-            return transactionTemplate.execute(status -> commitTogetherLocked(group, namespace, uploaded));
-        } catch (NotTogether | BusinessException | DataIntegrityViolationException | PessimisticLockingFailureException e) {
-            return null;
+        for (int attempt = 0; ; attempt++) {
+            try {
+                return transactionTemplate.execute(status -> commitTogetherLocked(group, namespace, uploaded));
+            } catch (BusinessException e) {
+                // A folder on the way made by another commit at the same moment — the same caller's other
+                // group in flight: Postgres held this insert until that one ended, so the second try finds it.
+                if (attempt == 0 && e.getExceptionCase() == FileExceptionCase.FILE_ALREADY_EXISTS) {
+                    continue;
+                }
+                return null;
+            } catch (NotTogether | DataIntegrityViolationException | PessimisticLockingFailureException e) {
+                return null;
+            }
         }
     }
 
