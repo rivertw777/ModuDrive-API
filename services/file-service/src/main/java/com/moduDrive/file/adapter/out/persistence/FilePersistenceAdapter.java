@@ -56,6 +56,15 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
         return saveAndTranslateSlotConflict(entities).stream().map(fileMapper::mapFileToDomain).toList();
     }
 
+    @Override
+    public Optional<File> saveDirectoryIfAbsent(File directory) {
+        return fileRepository.insertDirectoryIfAbsent(directory.getNamespaceId(), directory.getPath(),
+                        directory.getName(), directory.getOwnerId(), LocalDateTime.now())
+                .stream().findFirst()
+                .flatMap(fileRepository::findById)
+                .map(fileMapper::mapFileToDomain);
+    }
+
     private FileJpaEntity toEntity(File file) {
         if (file.getId() == null) {
             return new FileJpaEntity(

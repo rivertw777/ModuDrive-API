@@ -185,6 +185,51 @@ class FilePersistenceAdapterTest {
                     .containsExactlyInAnyOrder("a.pdf", "b.pdf");
         }
 
+        private File directory(String path, String name) {
+            return File.createDirectory(new FileNamespaceId(namespaceIdValue), new FileName(name), new FilePath(path),
+                    new FileOwnerId(UUID.randomUUID()));
+        }
+
+        private long rowsAt(String path, String name) {
+            return count("select count(*) from file where namespace_id = '" + namespaceIdValue
+                    + "' and path = '" + path + "' and name = '" + name + "'");
+        }
+
+        @Test
+        @DisplayName("빈 자리면 폴더를 만들어 돌려준다")
+        void insertsAFolderIntoAFreeSlot() {
+            var saved = filePersistenceAdapter.saveDirectoryIfAbsent(directory("/1", "docs"));
+
+            assertThat(saved).get().satisfies(f -> {
+                assertThat(f.getId()).isNotNull();
+                assertThat(f.isDirectory()).isTrue();
+                assertThat(f.getStatus()).isEqualTo(FileStatus.UPLOADED);
+            });
+            assertThat(filePersistenceAdapter.findActiveByNamespaceIdAndPathAndName(namespaceId, "/1", "docs"))
+                    .get().extracting(File::getId).isEqualTo(saved.get().getId());
+        }
+
+        @Test
+        @DisplayName("자리가 이미 차 있으면 오류 없이 아무것도 만들지 않는다 (폴더든 파일이든)")
+        void insertsNothingIntoATakenSlot() {
+            filePersistenceAdapter.saveDirectoryIfAbsent(directory("/1", "docs"));
+            save("/1", "a.pdf");
+
+            assertThat(filePersistenceAdapter.saveDirectoryIfAbsent(directory("/1", "docs"))).isEmpty();
+            assertThat(filePersistenceAdapter.saveDirectoryIfAbsent(directory("/1", "a.pdf"))).isEmpty();
+            assertThat(rowsAt("/1", "docs")).isEqualTo(1);
+            assertThat(rowsAt("/1", "a.pdf")).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("휴지통에 같은 이름이 있어도 활성 자리는 비어 있어 새로 만든다")
+        void insertsBesideATrashedNamesake() {
+            save("/1", "docs", FileStatus.TRASHED);
+
+            assertThat(filePersistenceAdapter.saveDirectoryIfAbsent(directory("/1", "docs"))).isPresent();
+            assertThat(rowsAt("/1", "docs")).isEqualTo(2);
+        }
+
         @Test
         @DisplayName("여러 파일을 한 번에 저장하면 새 파일은 만들고 있던 파일은 바꿔, 준 순서대로 돌려준다")
         void savesManyFilesInOrder() {

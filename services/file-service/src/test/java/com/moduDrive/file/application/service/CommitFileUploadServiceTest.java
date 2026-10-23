@@ -50,7 +50,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.moduDrive.file.fixture.FileVersionTestFixture.HASH_A;
 import static com.moduDrive.file.fixture.FileVersionTestFixture.HASH_B;
@@ -63,7 +62,6 @@ import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
-import static org.mockito.BDDMockito.willAnswer;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
@@ -422,20 +420,24 @@ class CommitFileUploadServiceTest {
                         new FileNamespaceId(f.getNamespaceId()), new FileName(f.getName()), new FilePath(f.getPath()),
                         new FileOwnerId(f.getOwnerId()), null, null, f.getStatus(), new FileIsDirectory(false));
             });
+            given(saveFilePort.saveDirectoryIfAbsent(any(File.class))).willAnswer(inv -> Optional.of(withNewId(inv.getArgument(0))));
             given(saveFileVersionPort.saveFileVersion(any(FileVersion.class)))
                     .willReturn(FileVersionTestFixture.aVersion(UUID.randomUUID(), newId, 0L, List.of()));
 
             commitOne(new CommitFileUploadCommand(ownerId, "/사진/2024", "a.bin", uploadId, 0L, List.of()));
 
+            ArgumentCaptor<File> folders = ArgumentCaptor.forClass(File.class);
+            then(saveFilePort).should().saveDirectoryIfAbsent(folders.capture());
+            assertThat(folders.getValue()).extracting(File::getPath, File::getName, File::isDirectory)
+                    .containsExactly("/사진", "2024", true);
             ArgumentCaptor<File> saved = ArgumentCaptor.forClass(File.class);
-            then(saveFilePort).should(times(3)).saveFile(saved.capture());
+            then(saveFilePort).should(times(2)).saveFile(saved.capture());
             assertThat(saved.getAllValues())
                     .extracting(File::getPath, File::getName, File::isDirectory)
                     .containsExactly(
-                            tuple("/사진", "2024", true),
                             tuple("/사진/2024", "a.bin", false),
                             tuple("/사진/2024", "a.bin", false));
-            assertThat(saved.getAllValues().get(2).getStatus()).isEqualTo(FileStatus.UPLOADED);
+            assertThat(saved.getAllValues().get(1).getStatus()).isEqualTo(FileStatus.UPLOADED);
         }
 
         @Test
@@ -694,28 +696,27 @@ class CommitFileUploadServiceTest {
             given(findFilePort.lockActiveByNamespaceIdAndPathAndName(any(), eq("/사진"), eq("v1.2"))).willReturn(Optional.empty());
             given(findFilePort.lockActiveByNamespaceIdAndPathAndName(any(), eq("/사진/v1.2"), eq("빈폴더"))).willReturn(Optional.empty());
             File created = folder("/사진/v1.2", "빈폴더");
-            given(saveFilePort.saveFile(any(File.class))).willAnswer(inv ->
-                    "빈폴더".equals(inv.<File>getArgument(0).getName()) ? created : inv.getArgument(0));
+            given(saveFilePort.saveDirectoryIfAbsent(any(File.class))).willAnswer(inv -> Optional.of(
+                    "빈폴더".equals(inv.<File>getArgument(0).getName()) ? created : withNewId(inv.getArgument(0))));
 
             List<DirectoryResult> results = commitFileUploadService.commitDirectories(
                     List.of(new CommitDirectoryCommand(ownerId, "/사진/v1.2", "빈폴더")));
 
             assertThat(results).containsExactly(DirectoryResult.created(created.getId()));
             ArgumentCaptor<File> saved = ArgumentCaptor.forClass(File.class);
-            then(saveFilePort).should(times(2)).saveFile(saved.capture());
+            then(saveFilePort).should(times(2)).saveDirectoryIfAbsent(saved.capture());
             assertThat(saved.getAllValues())
                     .extracting(File::getPath, File::getName, File::isDirectory)
                     .containsExactly(tuple("/사진", "v1.2", true), tuple("/사진/v1.2", "빈폴더", true));
         }
 
         @Test
-        @DisplayName("다른 commit이 같은 폴더를 먼저 만들었으면 다시 찾아 그 폴더를 돌려준다")
-        void findsAFolderAnotherCommitCreatedFirst() {
+        @DisplayName("다른 commit이 같은 폴더를 동시에 만들면, 오류 없이 그 폴더를 잠가 돌려준다")
+        void locksAFolderAnotherCommitMadeAtOnce() {
             File raced = folder("/", "사진");
             given(findFilePort.lockActiveByNamespaceIdAndPathAndName(any(), eq("/"), eq("사진")))
                     .willReturn(Optional.empty(), Optional.of(raced));
-            given(saveFilePort.saveFile(any(File.class)))
-                    .willThrow(new BusinessException(FileExceptionCase.FILE_ALREADY_EXISTS));
+            given(saveFilePort.saveDirectoryIfAbsent(any(File.class))).willReturn(Optional.empty());
 
             List<DirectoryResult> results = commitFileUploadService.commitDirectories(
                     List.of(new CommitDirectoryCommand(ownerId, "/", "사진")));
@@ -809,6 +810,7 @@ class CommitFileUploadServiceTest {
             lenient().when(findFilePort.lockActiveByNamespaceIdAndPathAndName(any(), eq("/사진"), eq("b.bin")))
                     .thenReturn(Optional.of(photo));
             lenient().when(saveFilePort.saveFile(any())).thenAnswer(inv -> saveFilePort.saveFiles(List.of(inv.<File>getArgument(0))).getFirst());
+            lenient().when(saveFilePort.saveDirectoryIfAbsent(any())).thenAnswer(inv -> Optional.of(withNewId(inv.getArgument(0))));
             lenient().when(saveFilePort.saveFiles(any())).thenAnswer(inv -> inv.<List<File>>getArgument(0).stream()
                     .map(f -> f.getId() != null ? f : File.withId(new FileId(UUID.randomUUID()),
                             new FileNamespaceId(f.getNamespaceId()), new FileName(f.getName()), new FilePath(f.getPath()),
@@ -896,26 +898,6 @@ class CommitFileUploadServiceTest {
         }
 
         @Test
-        @DisplayName("다른 commit이 같은 폴더를 먼저 만들면 묶음을 한 번 더 시도해, 묶음 그대로 commit한다")
-        void retriesTheGroupOnceWhenAFolderWasMadeMeanwhile() {
-            givenGroupSpots();
-            AtomicInteger folders = new AtomicInteger();
-            willAnswer(inv -> {
-                if (folders.getAndIncrement() == 0) {
-                    throw new BusinessException(FileExceptionCase.FILE_ALREADY_EXISTS);
-                }
-                return saveFilePort.saveFiles(List.of(inv.<File>getArgument(0))).getFirst();
-            }).given(saveFilePort).saveFile(any());
-
-            List<CommitResult> results = commitFileUploadService.commit(group);
-
-            assertThat(results).allSatisfy(r -> assertThat(r.version()).isNotNull());
-            then(transactionTemplate).should(times(2)).execute(any());
-            then(saveFileVersionPort).should(times(1)).saveFileVersions(any());
-            then(saveFileVersionPort).should(never()).saveFileVersion(any());
-        }
-
-        @Test
         @DisplayName("두 파일이 같은 자리를 가리키면 묶음으로 처리하지 않고 파일마다 따로 commit한다")
         void goesOneByOneForTwoFilesAtOneSpot() {
             givenGroupSpots();
@@ -976,5 +958,12 @@ class CommitFileUploadServiceTest {
             assertThat(results).allSatisfy(r -> assertThat(r.version()).isNotNull());
             then(saveFileVersionPort).should(times(3)).saveFileVersion(any());
         }
+    }
+
+    /** The row a save would have made: the same file, with an id. */
+    private static File withNewId(File f) {
+        return File.withId(new FileId(UUID.randomUUID()), new FileNamespaceId(f.getNamespaceId()), new FileName(f.getName()),
+                new FilePath(f.getPath()), new FileOwnerId(f.getOwnerId()), null, null, f.getStatus(),
+                new FileIsDirectory(f.isDirectory()));
     }
 }

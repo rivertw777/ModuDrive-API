@@ -191,18 +191,8 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
             try {
                 requireSpot(command.getPath(), command.getName());
                 String target = UploadBatchService.child(command.getPath(), command.getName());
-                File folder;
-                try {
-                    // Its own transaction, like a file: one folder failing leaves the others.
-                    folder = transactionTemplate.execute(status -> folderAt(namespaceId, target, ownerId, new HashMap<>()));
-                } catch (BusinessException e) {
-                    if (e.getExceptionCase() != FileExceptionCase.FILE_ALREADY_EXISTS) {
-                        throw e;
-                    }
-                    // Another commit created a folder on the way first (the unique slot): the second
-                    // look finds it. A file in the way fails the same again.
-                    folder = transactionTemplate.execute(status -> folderAt(namespaceId, target, ownerId, new HashMap<>()));
-                }
+                // Its own transaction, like a file: one folder failing leaves the others.
+                File folder = transactionTemplate.execute(status -> folderAt(namespaceId, target, ownerId, new HashMap<>()));
                 return DirectoryResult.created(folder.getId());
             } catch (BusinessException e) {
                 return DirectoryResult.failed(e.getExceptionCase());
@@ -254,19 +244,10 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
                 || group.stream().map(c -> c.getUploadId().value()).distinct().count() < group.size()) {
             return null;
         }
-        for (int attempt = 0; ; attempt++) {
-            try {
-                return transactionTemplate.execute(status -> commitTogetherLocked(group, namespace, uploaded));
-            } catch (BusinessException e) {
-                // A folder on the way made by another commit at the same moment — the same caller's other
-                // group in flight: Postgres held this insert until that one ended, so the second try finds it.
-                if (attempt == 0 && e.getExceptionCase() == FileExceptionCase.FILE_ALREADY_EXISTS) {
-                    continue;
-                }
-                return null;
-            } catch (NotTogether | DataIntegrityViolationException | PessimisticLockingFailureException e) {
-                return null;
-            }
+        try {
+            return transactionTemplate.execute(status -> commitTogetherLocked(group, namespace, uploaded));
+        } catch (NotTogether | BusinessException | DataIntegrityViolationException | PessimisticLockingFailureException e) {
+            return null;
         }
     }
 
@@ -466,9 +447,7 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
         FileOwnerId fileOwnerId = new FileOwnerId(ownerId);
         String parent = "/";
         File folder = null;
-        // One lookup per path segment not yet known. Two commits creating the same missing folder at once: the
-        // second fails on the unique slot (FILE_ALREADY_EXISTS) for that file alone, and its retry
-        // finds the folder.
+        // One lookup per path segment not yet known.
         for (String segment : "/".equals(path) ? new String[0] : path.substring(1).split("/")) {
             // Locked top-down, like a trash locks a subtree: the folder can't be trashed while a file
             // goes in under it, and one trashed meanwhile isn't found — a new one is made instead.
@@ -479,11 +458,17 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
                 continue;
             }
             Optional<File> found = findFilePort.lockActiveByNamespaceIdAndPathAndName(namespaceId, at, segment);
-            if (found.isPresent() && !found.get().isDirectory()) {
+            if (found.isEmpty()) {
+                // Taken meanwhile — another commit making the same folder at once, which the insert
+                // waited out: lock what it made.
+                found = saveFilePort.saveDirectoryIfAbsent(
+                                File.createDirectory(fileNamespaceId, new FileName(segment), new FilePath(at), fileOwnerId))
+                        .or(() -> findFilePort.lockActiveByNamespaceIdAndPathAndName(namespaceId, at, segment));
+            }
+            if (found.isEmpty() || !found.get().isDirectory()) {
                 throw new BusinessException(FileExceptionCase.FILE_ALREADY_EXISTS);
             }
-            folder = found.orElseGet(() -> saveFilePort.saveFile(
-                    File.createDirectory(fileNamespaceId, new FileName(segment), new FilePath(at), fileOwnerId)));
+            folder = found.get();
             known.put(parent, folder);
         }
         return folder;
