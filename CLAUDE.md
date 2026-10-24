@@ -68,7 +68,7 @@ For the full layer breakdown, naming conventions, dependency-direction rules, an
 
 | Module                              | Purpose                                                      |
 |-------------------------------------|--------------------------------------------------------------|
-| `common:core`                       | `@UseCase`/`@WebAdapter`/`@PersistenceAdapter`/`@EventPublisher`/`@EventListener`, `ApiResponse<T>`, `BusinessException`, `ExceptionCase` interface, `SelfValidating`, `LoggingAspect` |
+| `common:core`                       | `@UseCase`/`@WebAdapter`/`@PersistenceAdapter`/`@EventPublisher`/`@EventListener`, `ApiResponse<T>`, `BusinessException`, `ExceptionCase` interface, `SelfValidating` |
 | `common:api`                        | Shared DTOs for cross-service calls (auth, member)           |
 | `common:event`                      | Event DTOs + logical queue names (`*Queues`, used as the queue name as-is) for async cross-service messaging, packaged by the **producing** service (so an event several services consume later still has one owner): member (`MemberSignedUp` → file-service, `SignUpVerificationMailRequested` → mail-service, `MemberQueues`), file (`ShareInviteMailRequested` → mail-service, `FileSharedNotified` → notification-service, `BlocksPurgeRequested` → storage-service, `FileQueues`), auth (`LoginVerificationMailRequested` → mail-service, `AuthQueues`) |
 | `common:infrastructure:jpa`         | `BaseTimeEntity` (JPA auditing), `AuditingConfig`            |
@@ -96,6 +96,8 @@ Server-side sessions — the browser holds only an `HttpOnly` session cookie, ne
 ## Error Handling
 
 Each service defines a `<Domain>ExceptionCase` enum implementing `ExceptionCase` (from `common:core`). Throw `BusinessException(exceptionCase)` from domain/service code. `GlobalExceptionHandler` (in `common:core`) translates these to `ApiResponse.error(...)` responses automatically.
+
+For when and how to log (levels, what never to log, message format), use the `logging` skill.
 
 ## Database Migrations (Flyway)
 
