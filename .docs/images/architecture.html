@@ -13,7 +13,7 @@
           font-weight: 700; font-size: 21px; display: flex; align-items: center; justify-content: center; }
   .spring { border-radius: 50%; background: #6db33f; }
   .label { position: absolute; transform: translateX(-50%); white-space: nowrap; font-size: 20px; font-weight: 500; color: #232f3e; }
-  svg { position: absolute; left: 0; top: 0; }
+  svg.abs { position: absolute; left: 0; top: 0; }
 </style>
 </head>
 <body>
@@ -34,7 +34,7 @@
 <div class="box" style="left:2010px;top:560px;width:290px;height:557px;border:2px solid #f46800;background:#fff7f0"><span class="title" style="color:#c25200">Grafana Cloud</span></div>
 
 <!-- lines -->
-<svg width="2330" height="1188">
+<svg class="abs" width="2330" height="1188">
   <defs>
     <marker id="d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#232f3e"/></marker>
     <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#8a94a3"/></marker>
@@ -65,7 +65,7 @@
 <!-- outside AWS -->
 <div class="tile" style="left:110px;top:172px;background:#24292f">GH</div>
 <div class="label" style="left:110px;top:218px">GitHub Actions</div>
-<svg style="left:72px;top:530px" width="76" height="90"><circle cx="38" cy="20" r="19" fill="#232f3e"/><path d="M2 88a36 32 0 0 1 72 0z" fill="#232f3e"/></svg>
+<svg class="abs" style="left:72px;top:530px" width="76" height="90"><circle cx="38" cy="20" r="19" fill="#232f3e"/><path d="M2 88a36 32 0 0 1 72 0z" fill="#232f3e"/></svg>
 <div class="label" style="left:110px;top:630px">Client</div>
 <div class="tile" style="left:110px;top:1016px;background:#5865f2"><svg width="48" height="38" viewBox="0 0 48 38"><path fill="#fff" d="M40.6 3.2A39 39 0 0 0 31 .2l-1.2 2.5a36 36 0 0 0-11.6 0L17 .2a39 39 0 0 0-9.6 3C1.3 12.3-.4 21.2.5 30a39 39 0 0 0 11.8 6l2.5-4.1a25 25 0 0 1-4-1.9l1-.8a28 28 0 0 0 24.4 0l1 .8a25 25 0 0 1-4 1.9l2.5 4.1a39 39 0 0 0 11.8-6c1-10.2-1.7-19-7.2-26.8zM16 24.6c-2.3 0-4.2-2.1-4.2-4.7s1.8-4.7 4.2-4.7 4.2 2.1 4.2 4.7-1.9 4.7-4.2 4.7zm16 0c-2.3 0-4.2-2.1-4.2-4.7s1.8-4.7 4.2-4.7 4.2 2.1 4.2 4.7-1.9 4.7-4.2 4.7z"/></svg></div>
 <div class="label" style="left:110px;top:1062px">Discord</div>
@@ -90,19 +90,19 @@
 <div class="tile" style="left:875px;top:594px;background:#8c4fff">ALB</div>
 <div class="label" style="left:875px;top:640px">ALB</div>
 
-<div class="tile spring" style="left:1125px;top:297px"><svg width="44" height="44" viewBox="-5 -4 44 44"><path d="M37 6C26 6 9 10 8 27c-.3 4 1 8 3 10 3-7 9-13 17-17-6 5-11 11-14 19 13 2 25-8 23-33z" fill="none" stroke="#fff" stroke-width="3.5" stroke-linejoin="round"/></svg></div>
+<div class="tile spring" style="left:1125px;top:297px"><svg width="44" height="44" viewBox="0 0 44 44"><path d="M37 6C26 6 9 10 8 27c-.3 4 1 8 3 10 3-7 9-13 17-17-6 5-11 11-14 19 13 2 25-8 23-33z" fill="none" stroke="#fff" stroke-width="3.5" stroke-linejoin="round"/></svg></div>
 <div class="label" style="left:1125px;top:343px">Gateway</div>
-<div class="tile spring" style="left:1336px;top:297px"><svg width="44" height="44" viewBox="-5 -4 44 44"><path d="M37 6C26 6 9 10 8 27c-.3 4 1 8 3 10 3-7 9-13 17-17-6 5-11 11-14 19 13 2 25-8 23-33z" fill="none" stroke="#fff" stroke-width="3.5" stroke-linejoin="round"/></svg></div>
+<div class="tile spring" style="left:1336px;top:297px"><svg width="44" height="44" viewBox="0 0 44 44"><path d="M37 6C26 6 9 10 8 27c-.3 4 1 8 3 10 3-7 9-13 17-17-6 5-11 11-14 19 13 2 25-8 23-33z" fill="none" stroke="#fff" stroke-width="3.5" stroke-linejoin="round"/></svg></div>
 <div class="label" style="left:1336px;top:343px">Auth</div>
-<div class="tile spring" style="left:1547px;top:297px"><svg width="44" height="44" viewBox="-5 -4 44 44"><path d="M37 6C26 6 9 10 8 27c-.3 4 1 8 3 10 3-7 9-13 17-17-6 5-11 11-14 19 13 2 25-8 23-33z" fill="none" stroke="#fff" stroke-width="3.5" stroke-linejoin="round"/></svg></div>
+<div class="tile spring" style="left:1547px;top:297px"><svg width="44" height="44" viewBox="0 0 44 44"><path d="M37 6C26 6 9 10 8 27c-.3 4 1 8 3 10 3-7 9-13 17-17-6 5-11 11-14 19 13 2 25-8 23-33z" fill="none" stroke="#fff" stroke-width="3.5" stroke-linejoin="round"/></svg></div>
 <div class="label" style="left:1547px;top:343px">Member</div>
-<div class="tile spring" style="left:1758px;top:297px"><svg width="44" height="44" viewBox="-5 -4 44 44"><path d="M37 6C26 6 9 10 8 27c-.3 4 1 8 3 10 3-7 9-13 17-17-6 5-11 11-14 19 13 2 25-8 23-33z" fill="none" stroke="#fff" stroke-width="3.5" stroke-linejoin="round"/></svg></div>
+<div class="tile spring" style="left:1758px;top:297px"><svg width="44" height="44" viewBox="0 0 44 44"><path d="M37 6C26 6 9 10 8 27c-.3 4 1 8 3 10 3-7 9-13 17-17-6 5-11 11-14 19 13 2 25-8 23-33z" fill="none" stroke="#fff" stroke-width="3.5" stroke-linejoin="round"/></svg></div>
 <div class="label" style="left:1758px;top:343px">File</div>
-<div class="tile spring" style="left:1125px;top:422px"><svg width="44" height="44" viewBox="-5 -4 44 44"><path d="M37 6C26 6 9 10 8 27c-.3 4 1 8 3 10 3-7 9-13 17-17-6 5-11 11-14 19 13 2 25-8 23-33z" fill="none" stroke="#fff" stroke-width="3.5" stroke-linejoin="round"/></svg></div>
+<div class="tile spring" style="left:1125px;top:422px"><svg width="44" height="44" viewBox="0 0 44 44"><path d="M37 6C26 6 9 10 8 27c-.3 4 1 8 3 10 3-7 9-13 17-17-6 5-11 11-14 19 13 2 25-8 23-33z" fill="none" stroke="#fff" stroke-width="3.5" stroke-linejoin="round"/></svg></div>
 <div class="label" style="left:1125px;top:468px">Storage</div>
-<div class="tile spring" style="left:1336px;top:422px"><svg width="44" height="44" viewBox="-5 -4 44 44"><path d="M37 6C26 6 9 10 8 27c-.3 4 1 8 3 10 3-7 9-13 17-17-6 5-11 11-14 19 13 2 25-8 23-33z" fill="none" stroke="#fff" stroke-width="3.5" stroke-linejoin="round"/></svg></div>
+<div class="tile spring" style="left:1336px;top:422px"><svg width="44" height="44" viewBox="0 0 44 44"><path d="M37 6C26 6 9 10 8 27c-.3 4 1 8 3 10 3-7 9-13 17-17-6 5-11 11-14 19 13 2 25-8 23-33z" fill="none" stroke="#fff" stroke-width="3.5" stroke-linejoin="round"/></svg></div>
 <div class="label" style="left:1336px;top:468px">Mail</div>
-<div class="tile spring" style="left:1547px;top:422px"><svg width="44" height="44" viewBox="-5 -4 44 44"><path d="M37 6C26 6 9 10 8 27c-.3 4 1 8 3 10 3-7 9-13 17-17-6 5-11 11-14 19 13 2 25-8 23-33z" fill="none" stroke="#fff" stroke-width="3.5" stroke-linejoin="round"/></svg></div>
+<div class="tile spring" style="left:1547px;top:422px"><svg width="44" height="44" viewBox="0 0 44 44"><path d="M37 6C26 6 9 10 8 27c-.3 4 1 8 3 10 3-7 9-13 17-17-6 5-11 11-14 19 13 2 25-8 23-33z" fill="none" stroke="#fff" stroke-width="3.5" stroke-linejoin="round"/></svg></div>
 <div class="label" style="left:1547px;top:468px">Notification</div>
 <div class="tile" style="left:1758px;top:422px;background:#3f51d1">OT</div>
 <div class="label" style="left:1758px;top:468px">OTel Collector</div>
