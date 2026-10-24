@@ -1,4 +1,5 @@
-{{/* Discord 메시지 — AWS(alertmanager.yaml → AMP)와 로컬(.docker/observability/alertmanager.yml)이 같이 쓴다. */}}
+{{/* Discord 메시지 — AWS(alertmanager.yaml → AMP)와 로컬(.docker/observability/alertmanager.yml)이 같이 쓴다.
+     본문(discord.content) 아래에 제목만 있는 카드(discord.title)가 붙는다. */}}
 {{ define "discord.target" }}{{ or .Labels.routeId .Labels.service }}{{ if .Labels.queue }} · `{{ .Labels.queue }}`{{ end }}{{ if .Labels.name }} · `{{ .Labels.name }}`{{ end }}{{ end }}
 {{ define "discord.message" }}
 {{- if eq (len .Alerts) 1 }}{{ range .Alerts }}
@@ -61,5 +62,15 @@
 - {{ template "discord.target" . }}
 {{- end }}
 {{ end }}
+{{- end }}
+{{- end }}
+
+{{/* 빈 줄 하나 뒤에 카드. 디스코드는 끝 줄바꿈을 지우므로 폭 없는 공백(U+200B)으로 붙잡는다. */}}
+{{ define "discord.content" }}{{ template "discord.message" . }}{{ "\n\u200b" }}{{ end }}
+
+{{ define "discord.title" }}
+{{- if eq (len .Alerts) 1 }}{{ range .Alerts }}{{ .Annotations.title }}{{ if eq .Status "resolved" }} (해제){{ end }}{{ end }}
+{{- else if .Alerts.Firing }}{{ .CommonAnnotations.title }} ({{ len .Alerts.Firing }}건)
+{{- else }}{{ .CommonAnnotations.title }} (해제) ({{ len .Alerts.Resolved }}건)
 {{- end }}
 {{- end }}

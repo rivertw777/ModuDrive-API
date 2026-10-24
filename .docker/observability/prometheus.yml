@@ -2,7 +2,7 @@ global:
   scrape_interval: 15s
   evaluation_interval: 1m
 
-# 알림: 규칙은 여기서 평가하고 Alertmanager → LocalStack SNS → Lambda → Discord로 나간다(AWS와 같은 길).
+# 알림: 규칙은 여기서 평가하고 Alertmanager → Discord로 나간다.
 rule_files:
   - /etc/modudrive/alert-rules.yaml
 

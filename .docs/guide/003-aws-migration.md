@@ -59,8 +59,8 @@
 | 파일 저장 | LocalStack S3 | S3 |
 | 메일 | LocalStack SES → Mailpit(`localhost:8025`) | SES |
 | 시크릿 | `.docker/.env` | SSM Parameter Store, RDS 관리자 비밀번호만 Secrets Manager |
-| 모니터링 | Prometheus, Promtail, Loki, otel-collector, Tempo, Grafana | AMP, CloudWatch Logs, X-Ray, 중앙 ADOT collector |
-| 알림 | Prometheus 규칙 → Alertmanager → SNS → Lambda → Discord (SNS·Lambda는 LocalStack) | AMP 알림 규칙, CloudWatch 경보, Budgets → SNS → Lambda → Discord |
+| 모니터링 | Prometheus, Loki, otel-collector, Tempo, Grafana | AMP, CloudWatch Logs, X-Ray, 중앙 ADOT collector |
+| 알림 | Prometheus 규칙 → Alertmanager → Discord | AMP 알림 규칙, CloudWatch 경보, Budgets → SNS → Lambda → Discord |
 | 인프라 정의 | `.docker/*.yml`, `.docker/localstack/init-aws.sh` | `.infra/`, 환경마다 AWS 계정 하나 |
 | 배포 | `make service` | GitHub Actions (OIDC) → ECR → ECS 새 리비전 |
 
@@ -181,7 +181,7 @@ AWS 계정에서 손으로 할 일이 하나 있다. SES 샌드박스 해제 요
 | 서비스별 DB 비밀번호 | `.env`의 `*_DB_PASSWORD` | SSM SecureString (`random_password`) |
 | DB 관리자 비밀번호 | `.env`의 `POSTGRES_PASSWORD` | RDS가 Secrets Manager에서 관리 |
 | `REDIS_PASSWORD` | `.env` | SSM, 클러스터마다 |
-| Discord 웹후크 2개 | `.env` (LocalStack SSM으로 들어감) | SSM (값은 손으로 넣음, 1-13) |
+| Discord 웹후크 | `.env` | SSM (값은 손으로 넣음, 1-13) |
 | `SQS_*`, `SES_ENDPOINT`, `STORAGE_S3_*`, `LOCALSTACK_AUTH_TOKEN` | `.env` | 없음 (task role, 실제 endpoint) |
 
 값은 ECS 태스크 정의의 `secrets`로 환경 변수에 들어간다. 태스크가 뜰 때 SSM에서 읽어 오므로 태스크 정의에는 남지 않고, 앱은 로컬과 똑같이 `${...}`로 읽는다.
@@ -277,8 +277,8 @@ flowchart LR
 |---|---|---|---|
 | 지표 | Prometheus | Amazon Managed Prometheus (AMP) | collector의 `ecs_observer`가 태스크를 찾아 `:9464`를 긁고 remote write |
 | 트레이스 | otel-collector → Tempo | X-Ray | 앱 OTLP → collector(tail sampling) → X-Ray |
-| 로그 | Promtail → Loki | CloudWatch Logs (보존 14일) | `awslogs` 드라이버. Promtail은 docker socket을 써서 Fargate에서는 못 쓴다 |
-| 알림 | Prometheus 규칙 → Alertmanager → SNS → Lambda → Discord | AMP 알림 규칙 → SNS → Lambda → Discord | |
+| 로그 | otel-collector → Loki | CloudWatch Logs (보존 14일) | `awslogs` 드라이버. 앱의 OTLP 로그 전송은 끈다(`ecs.tf`) |
+| 알림 | Prometheus 규칙 → Alertmanager → Discord | AMP 알림 규칙 → SNS → Lambda → Discord | |
 | 화면 | Grafana | demo는 내 PC의 Grafana(3-4), prod는 Managed Grafana | AMP, X-Ray, CloudWatch 데이터소스 |
 
 앱 설정은 바꿀 게 없다. collector의 Service Connect 이름이 compose와 같은 `otel-collector:4318`이라서 앱 기본값(`application-observability.yml`)이 그대로 맞는다. mail이 Service Connect에 클라이언트로 들어가는 것도 이 때문이다.
@@ -294,7 +294,7 @@ collector는 사이드카가 아니라 한 대만 띄운다. tail sampling(에�
 
 #### 알림
 
-알림이 나가는 길은 로컬과 같다. 로컬은 Prometheus와 Alertmanager 컨테이너가 LocalStack의 SNS와 Lambda로 보내고, AWS는 그 자리에 AMP가 있다. Lambda 코드(`monitoring/discord_forwarder.py`)와 Discord 메시지 양식(`monitoring/discord.tmpl`)은 두 환경이 같은 파일을 쓴다.
+로컬은 Alertmanager가 Discord로 바로 보내고, AWS는 그 자리에 AMP가 있다. AMP Alertmanager는 SNS로만 내보내서 Lambda(`monitoring/discord_forwarder.py`)가 Discord로 넘긴다. Discord 메시지 양식(`monitoring/discord.tmpl`)은 두 환경이 같은 파일을 쓴다.
 
 - 규칙(`monitoring/alert-rules.yaml`)은 로컬 `.docker/observability/alert-rules.yaml`과 쿼리, 기준값, 대기 시간이 같다. 다른 건 확인 명령어(`docker logs` 대신 `aws logs tail`, TraceQL 대신 X-Ray 필터)와 규칙 하나다. ECS에서는 죽은 태스크가 `up = 0`으로 남지 않고 대상 목록에서 아예 사라지기 때문에, AWS에만 `ServiceNoTasks`(`absent(up{service=...})`)가 있다.
 - 묶음(`group_by: [alertname]`), 재알림 간격(4시간), 채널(service, infra, messaging)도 로컬과 같다. CloudWatch 경보·Budgets·GuardDuty까지 합친 채널 구분은 [008 3장](../spec/008-discord-alert-spec.md#3-사용-디스코드-채널)에 있다(`monitoring/alertmanager.yaml`).
