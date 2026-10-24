@@ -1,0 +1,141 @@
+<!doctype html>
+<!-- architecture.jpeg 원본. 고친 뒤 이미지로 뽑는다:
+     chrome-headless-shell --screenshot=architecture.jpeg --window-size=2330,1188 --force-device-scale-factor=1.28 architecture.html -->
+<html>
+<head>
+<meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@500;600;700&display=block" rel="stylesheet">
+<style>
+  body { margin: 0; width: 2330px; height: 1188px; background: #fff; font-family: "IBM Plex Sans", sans-serif; position: relative; overflow: hidden; }
+  .box { position: absolute; box-sizing: border-box; border-radius: 6px; }
+  .box > .title { position: absolute; left: 19px; top: 12px; font-size: 19px; font-weight: 600; }
+  .tile { position: absolute; width: 75px; height: 75px; margin: -37px 0 0 -37px; border-radius: 7px; color: #fff;
+          font-weight: 700; font-size: 21px; display: flex; align-items: center; justify-content: center; }
+  .spring { border-radius: 50%; background: #6db33f; }
+  .label { position: absolute; transform: translateX(-50%); white-space: nowrap; font-size: 20px; font-weight: 500; color: #232f3e; }
+  svg { position: absolute; left: 0; top: 0; }
+</style>
+</head>
+<body>
+
+<!-- containers -->
+<div class="box" style="left:235px;top:32px;width:1733px;height:1133px;border:2px solid #232f3e;border-radius:0"></div>
+<div class="tile" style="left:269px;top:58px;width:68px;height:52px;margin:-26px 0 0 -34px;border-radius:0;background:#232f3e;font-size:24px">aws</div>
+<div class="label" style="left:375px;top:44px;font-size:21px;font-weight:600">AWS Cloud</div>
+
+<div class="box" style="left:500px;top:110px;width:1445px;height:1030px;border:2px dashed #1a9c8f"><span class="title" style="color:#1a9c8f">Asia Pacific (Seoul)</span></div>
+<div class="box" style="left:750px;top:157px;width:1172px;height:585px;border:2px solid #8c4fff"><span class="title" style="color:#8c4fff">VPC</span></div>
+<div class="box" style="left:773px;top:204px;width:204px;height:514px;border:1.5px solid #7aa116;background:#f2f6e8"><span class="title" style="color:#5a7a10">Public subnet</span></div>
+<div class="box" style="left:1008px;top:204px;width:890px;height:296px;border:1.5px solid #1a9c8f;background:#e6f4f3"><span class="title" style="color:#0f7a70">Private subnet · ECS Fargate</span></div>
+<div class="box" style="left:1008px;top:524px;width:890px;height:194px;border:1.5px solid #1a9c8f;background:#e6f4f3"><span class="title" style="color:#0f7a70">Private subnet · Data</span></div>
+<div class="box" style="left:750px;top:782px;width:343px;height:335px;border:1.5px solid #c9ccd1;background:#f6f7f9"><span class="title" style="color:#5f6b7a">Messaging</span></div>
+<div class="box" style="left:1117px;top:782px;width:195px;height:335px;border:1.5px solid #c9ccd1;background:#f6f7f9"><span class="title" style="color:#5f6b7a">Email</span></div>
+<div class="box" style="left:1336px;top:782px;width:586px;height:335px;border:1.5px solid #c9ccd1;background:#f6f7f9"><span class="title" style="color:#5f6b7a">Observability · AWS alarms</span></div>
+<div class="box" style="left:2010px;top:560px;width:290px;height:557px;border:2px solid #f46800;background:#fff7f0"><span class="title" style="color:#c25200">Grafana Cloud</span></div>
+
+<!-- lines -->
+<svg width="2330" height="1188">
+  <defs>
+    <marker id="d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#232f3e"/></marker>
+    <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#8a94a3"/></marker>
+  </defs>
+  <g fill="none" stroke="#232f3e" stroke-width="3" marker-end="url(#d)">
+    <path d="M147 547H203V453H328"/>
+    <path d="M147 594H828"/>
+    <path d="M915 594H985V297H1078"/>
+  </g>
+  <g fill="none" stroke="#8a94a3" stroke-width="2" marker-end="url(#g)">
+    <path d="M147 172H258V657H580"/>
+    <path d="M665 657H745"/>
+    <path d="M415 453H580"/>
+    <path d="M1234 488V565"/>
+    <path d="M1656 488V565"/>
+    <path d="M922 746V777"/>
+    <path d="M1214 746V777"/>
+    <path d="M1628 746V777"/>
+    <path d="M1562 891H1686"/>
+    <path d="M1797 422H2155V556"/>
+    <path d="M2155 1121V1153H190V1016H153"/>
+  </g>
+  <path d="M1768 891H1880V1153" fill="none" stroke="#8a94a3" stroke-width="2"/>
+  <path d="M375 285V405" fill="none" stroke="#8a94a3" stroke-width="2" stroke-dasharray="5 6"/>
+  <text x="2167" y="480" font-size="17" fill="#5f6b7a" font-weight="500">OTLP</text><text x="2167" y="502" font-size="17" fill="#5f6b7a" font-weight="500">remote write</text>
+</svg>
+
+<!-- outside AWS -->
+<div class="tile" style="left:110px;top:172px;background:#24292f">GH</div>
+<div class="label" style="left:110px;top:218px">GitHub Actions</div>
+<svg style="left:72px;top:530px" width="76" height="90"><circle cx="38" cy="20" r="19" fill="#232f3e"/><path d="M2 88a36 32 0 0 1 72 0z" fill="#232f3e"/></svg>
+<div class="label" style="left:110px;top:630px">Client</div>
+<div class="tile" style="left:110px;top:1016px;background:#5865f2"><svg width="48" height="38" viewBox="0 0 48 38"><path fill="#fff" d="M40.6 3.2A39 39 0 0 0 31 .2l-1.2 2.5a36 36 0 0 0-11.6 0L17 .2a39 39 0 0 0-9.6 3C1.3 12.3-.4 21.2.5 30a39 39 0 0 0 11.8 6l2.5-4.1a25 25 0 0 1-4-1.9l1-.8a28 28 0 0 0 24.4 0l1 .8a25 25 0 0 1-4 1.9l2.5 4.1a39 39 0 0 0 11.8-6c1-10.2-1.7-19-7.2-26.8zM16 24.6c-2.3 0-4.2-2.1-4.2-4.7s1.8-4.7 4.2-4.7 4.2 2.1 4.2 4.7-1.9 4.7-4.2 4.7zm16 0c-2.3 0-4.2-2.1-4.2-4.7s1.8-4.7 4.2-4.7 4.2 2.1 4.2 4.7-1.9 4.7-4.2 4.7z"/></svg></div>
+<div class="label" style="left:110px;top:1062px">Discord</div>
+
+<!-- edge -->
+<div class="tile" style="left:375px;top:203px;background:#8c4fff">R53</div>
+<div class="label" style="left:375px;top:249px">Route 53</div>
+<div class="tile" style="left:375px;top:453px;background:#8c4fff">CF</div>
+<div class="label" style="left:375px;top:499px">CloudFront</div>
+<div class="tile" style="left:625px;top:453px;background:#7aa116">S3</div>
+<div class="label" style="left:625px;top:499px">S3 · Web</div>
+<div class="tile" style="left:625px;top:657px;background:#ed7100">ECR</div>
+<div class="label" style="left:625px;top:703px">ECR</div>
+<div class="tile" style="left:625px;top:852px;background:#dd344c">SSM</div>
+<div class="label" style="left:625px;top:898px">Parameter Store</div>
+<div class="tile" style="left:625px;top:1031px;background:#7aa116">S3</div>
+<div class="label" style="left:625px;top:1077px">S3 · Blocks</div>
+
+<!-- VPC -->
+<div class="tile" style="left:875px;top:313px;background:#8c4fff">NAT</div>
+<div class="label" style="left:875px;top:359px">NAT</div>
+<div class="tile" style="left:875px;top:594px;background:#8c4fff">ALB</div>
+<div class="label" style="left:875px;top:640px">ALB</div>
+
+<div class="tile spring" style="left:1125px;top:297px"><svg width="44" height="44" viewBox="-5 -4 44 44"><path d="M37 6C26 6 9 10 8 27c-.3 4 1 8 3 10 3-7 9-13 17-17-6 5-11 11-14 19 13 2 25-8 23-33z" fill="none" stroke="#fff" stroke-width="3.5" stroke-linejoin="round"/></svg></div>
+<div class="label" style="left:1125px;top:343px">Gateway</div>
+<div class="tile spring" style="left:1336px;top:297px"><svg width="44" height="44" viewBox="-5 -4 44 44"><path d="M37 6C26 6 9 10 8 27c-.3 4 1 8 3 10 3-7 9-13 17-17-6 5-11 11-14 19 13 2 25-8 23-33z" fill="none" stroke="#fff" stroke-width="3.5" stroke-linejoin="round"/></svg></div>
+<div class="label" style="left:1336px;top:343px">Auth</div>
+<div class="tile spring" style="left:1547px;top:297px"><svg width="44" height="44" viewBox="-5 -4 44 44"><path d="M37 6C26 6 9 10 8 27c-.3 4 1 8 3 10 3-7 9-13 17-17-6 5-11 11-14 19 13 2 25-8 23-33z" fill="none" stroke="#fff" stroke-width="3.5" stroke-linejoin="round"/></svg></div>
+<div class="label" style="left:1547px;top:343px">Member</div>
+<div class="tile spring" style="left:1758px;top:297px"><svg width="44" height="44" viewBox="-5 -4 44 44"><path d="M37 6C26 6 9 10 8 27c-.3 4 1 8 3 10 3-7 9-13 17-17-6 5-11 11-14 19 13 2 25-8 23-33z" fill="none" stroke="#fff" stroke-width="3.5" stroke-linejoin="round"/></svg></div>
+<div class="label" style="left:1758px;top:343px">File</div>
+<div class="tile spring" style="left:1125px;top:422px"><svg width="44" height="44" viewBox="-5 -4 44 44"><path d="M37 6C26 6 9 10 8 27c-.3 4 1 8 3 10 3-7 9-13 17-17-6 5-11 11-14 19 13 2 25-8 23-33z" fill="none" stroke="#fff" stroke-width="3.5" stroke-linejoin="round"/></svg></div>
+<div class="label" style="left:1125px;top:468px">Storage</div>
+<div class="tile spring" style="left:1336px;top:422px"><svg width="44" height="44" viewBox="-5 -4 44 44"><path d="M37 6C26 6 9 10 8 27c-.3 4 1 8 3 10 3-7 9-13 17-17-6 5-11 11-14 19 13 2 25-8 23-33z" fill="none" stroke="#fff" stroke-width="3.5" stroke-linejoin="round"/></svg></div>
+<div class="label" style="left:1336px;top:468px">Mail</div>
+<div class="tile spring" style="left:1547px;top:422px"><svg width="44" height="44" viewBox="-5 -4 44 44"><path d="M37 6C26 6 9 10 8 27c-.3 4 1 8 3 10 3-7 9-13 17-17-6 5-11 11-14 19 13 2 25-8 23-33z" fill="none" stroke="#fff" stroke-width="3.5" stroke-linejoin="round"/></svg></div>
+<div class="label" style="left:1547px;top:468px">Notification</div>
+<div class="tile" style="left:1758px;top:422px;background:#3f51d1">OT</div>
+<div class="label" style="left:1758px;top:468px">OTel Collector</div>
+
+<div class="tile" style="left:1234px;top:610px;background:#c925d1">RDS</div>
+<div class="label" style="left:1234px;top:656px">RDS PostgreSQL</div>
+<div class="tile" style="left:1656px;top:610px;background:#c925d1">VK</div>
+<div class="label" style="left:1656px;top:656px">ElastiCache (Valkey)</div>
+
+<!-- regional services -->
+<div class="tile" style="left:851px;top:891px;background:#e7157b">SQS</div>
+<div class="label" style="left:851px;top:937px">SQS</div>
+<div class="tile" style="left:999px;top:891px;background:#e7157b">SNS</div>
+<div class="label" style="left:999px;top:937px">SNS</div>
+<div class="tile" style="left:1214px;top:891px;background:#dd344c">SES</div>
+<div class="label" style="left:1214px;top:937px">SES</div>
+<div class="tile" style="left:1520px;top:891px;background:#e7157b">CW</div>
+<div class="label" style="left:1520px;top:937px">CloudWatch</div>
+<div class="tile" style="left:1730px;top:891px;background:#ed7100;font-size:28px">λ</div>
+<div class="label" style="left:1730px;top:937px">Lambda</div>
+<div class="label" style="left:1628px;top:1010px;font-size:17px;color:#5f6b7a">Alarms · Budgets · GuardDuty → SNS → Lambda</div>
+
+<!-- Grafana Cloud -->
+<div class="tile" style="left:2155px;top:650px;background:#f46800">GF</div>
+<div class="label" style="left:2155px;top:696px">Grafana</div>
+<div class="tile" style="left:2085px;top:815px;background:#f46800">MI</div>
+<div class="label" style="left:2085px;top:861px">Mimir</div>
+<div class="tile" style="left:2225px;top:815px;background:#f46800">LK</div>
+<div class="label" style="left:2225px;top:861px">Loki</div>
+<div class="tile" style="left:2085px;top:985px;background:#f46800">TP</div>
+<div class="label" style="left:2085px;top:1031px">Tempo</div>
+<div class="tile" style="left:2225px;top:985px;background:#f46800">AM</div>
+<div class="label" style="left:2225px;top:1031px">Alertmanager</div>
+
+</body>
+</html>
