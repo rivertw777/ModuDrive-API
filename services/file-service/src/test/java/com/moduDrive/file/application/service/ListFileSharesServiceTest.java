@@ -18,7 +18,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Answers;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -41,7 +40,7 @@ class ListFileSharesServiceTest {
 
     @Mock private FindFilePort findFilePort;
     @Mock private FindFileSharePort findFileSharePort;
-    @Mock(answer = Answers.CALLS_REAL_METHODS) private FindMemberByIdPort findMemberByIdPort;
+    @Mock private FindMemberByIdPort findMemberByIdPort;
     @Mock private FileAccessGuard fileAccessGuard;
     @InjectMocks private ListFileSharesService listFileSharesService;
 
@@ -70,7 +69,7 @@ class ListFileSharesServiceTest {
             given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(file));
             given(findFileSharePort.findByFileId(command.getFileId())).willReturn(List.of(share));
             given(fileAccessGuard.ancestorDirectories(any(File.class))).willReturn(List.of());
-            given(findMemberByIdPort.findMemberById(sharedWithUserId)).willReturn(summary);
+            given(findMemberByIdPort.findMemberByIdOrUnknown(sharedWithUserId)).willReturn(summary);
 
             FileSharesView result = listFileSharesService.listFileShares(command);
 
@@ -101,8 +100,7 @@ class ListFileSharesServiceTest {
             given(findFilePort.findById(command.getFileId())).willReturn(Optional.of(file));
             given(findFileSharePort.findByFileId(command.getFileId())).willReturn(List.of(share));
             given(fileAccessGuard.ancestorDirectories(any(File.class))).willReturn(List.of());
-            willThrow(new BusinessException(FileExceptionCase.SHARE_TARGET_NOT_FOUND))
-                    .given(findMemberByIdPort).findMemberById(sharedWithUserId);
+            given(findMemberByIdPort.findMemberByIdOrUnknown(sharedWithUserId)).willReturn(FindMemberByIdPort.UNKNOWN_MEMBER);
 
             FileSharesView result = listFileSharesService.listFileShares(command);
 
@@ -129,7 +127,7 @@ class ListFileSharesServiceTest {
             given(findFileSharePort.findByFileId(command.getFileId())).willReturn(List.of());
             given(fileAccessGuard.ancestorDirectories(any(File.class))).willReturn(List.of(parentDir));
             given(findFileSharePort.findByFileId(new FileId(parentId))).willReturn(List.of(inherited));
-            given(findMemberByIdPort.findMemberById(grantee))
+            given(findMemberByIdPort.findMemberByIdOrUnknown(grantee))
                     .willReturn(new MemberSummary("guest", "guest@modudrive.com"));
 
             FileSharesView result = listFileSharesService.listFileShares(command);
@@ -150,7 +148,7 @@ class ListFileSharesServiceTest {
             given(findFileSharePort.findByFileId(command.getFileId())).willReturn(List.of(direct));
             given(fileAccessGuard.ancestorDirectories(any(File.class))).willReturn(List.of(parentDir));
             given(findFileSharePort.findByFileId(new FileId(parentId))).willReturn(List.of(inherited));
-            given(findMemberByIdPort.findMemberById(grantee))
+            given(findMemberByIdPort.findMemberByIdOrUnknown(grantee))
                     .willReturn(new MemberSummary("guest", "guest@modudrive.com"));
 
             FileSharesView result = listFileSharesService.listFileShares(command);
@@ -176,7 +174,7 @@ class ListFileSharesServiceTest {
             given(fileAccessGuard.ancestorDirectories(any(File.class))).willReturn(List.of(parentDir, nearDir));
             given(findFileSharePort.findByFileId(new FileId(parentId))).willReturn(List.of(rootGrant));
             given(findFileSharePort.findByFileId(new FileId(nearId))).willReturn(List.of(nearGrant));
-            given(findMemberByIdPort.findMemberById(grantee))
+            given(findMemberByIdPort.findMemberByIdOrUnknown(grantee))
                     .willReturn(new MemberSummary("guest", "guest@modudrive.com"));
 
             FileSharesView result = listFileSharesService.listFileShares(command);

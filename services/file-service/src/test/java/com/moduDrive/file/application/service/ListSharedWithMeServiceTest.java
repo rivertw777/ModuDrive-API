@@ -1,6 +1,5 @@
 package com.moduDrive.file.application.service;
 
-import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.file.application.port.in.command.ListSharedWithMeCommand;
 import com.moduDrive.file.application.port.in.usecase.FileView;
 import com.moduDrive.file.application.port.out.FileFavoritePort;
@@ -14,13 +13,11 @@ import com.moduDrive.file.domain.model.FileShare;
 import com.moduDrive.file.domain.model.FileShare.*;
 import com.moduDrive.file.domain.model.FileStatus;
 import com.moduDrive.file.domain.model.Role;
-import com.moduDrive.file.exception.FileExceptionCase;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Answers;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -34,7 +31,6 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.lenient;
 
 @ExtendWith(MockitoExtension.class)
@@ -42,7 +38,7 @@ class ListSharedWithMeServiceTest {
 
     @Mock private FindFileSharePort findFileSharePort;
     @Mock private FindFilePort findFilePort;
-    @Mock(answer = Answers.CALLS_REAL_METHODS) private FindMemberByIdPort findMemberByIdPort;
+    @Mock private FindMemberByIdPort findMemberByIdPort;
     @Mock private FileFavoritePort fileFavoritePort;
     @InjectMocks private ListSharedWithMeService listSharedWithMeService;
 
@@ -85,7 +81,7 @@ class ListSharedWithMeServiceTest {
                     .willReturn(List.of(makeShare(fileId, Role.EDITOR)));
             given(findFilePort.findById(new FileId(fileId)))
                     .willReturn(Optional.of(makeFile(fileId, FileStatus.UPLOADED)));
-            given(findMemberByIdPort.findMemberById(ownerId))
+            given(findMemberByIdPort.findMemberByIdOrUnknown(ownerId))
                     .willReturn(new MemberSummary("홍길동", "owner@modudrive.com"));
 
             List<FileView> result = listSharedWithMeService.listSharedWithMe(command);
@@ -106,8 +102,7 @@ class ListSharedWithMeServiceTest {
                     .willReturn(List.of(makeShare(fileId, Role.VIEWER)));
             given(findFilePort.findById(new FileId(fileId)))
                     .willReturn(Optional.of(makeFile(fileId, FileStatus.UPLOADED)));
-            willThrow(new BusinessException(FileExceptionCase.SHARE_TARGET_NOT_FOUND))
-                    .given(findMemberByIdPort).findMemberById(ownerId);
+            given(findMemberByIdPort.findMemberByIdOrUnknown(ownerId)).willReturn(FindMemberByIdPort.UNKNOWN_MEMBER);
 
             List<FileView> result = listSharedWithMeService.listSharedWithMe(command);
 
@@ -119,7 +114,7 @@ class ListSharedWithMeServiceTest {
         @Test
         void excludesDeletedFiles() {
             UUID fileId = UUID.randomUUID();
-            lenient().when(findMemberByIdPort.findMemberById(any()))
+            lenient().when(findMemberByIdPort.findMemberByIdOrUnknown(any()))
                     .thenReturn(new MemberSummary("홍길동", "owner@modudrive.com"));
             given(findFileSharePort.findBySharedWithUserId(sharedWithUserId))
                     .willReturn(List.of(makeShare(fileId, Role.VIEWER)));
@@ -148,7 +143,7 @@ class ListSharedWithMeServiceTest {
             // — 실제 구글 드라이브에서 확인한 결과 "공유 문서함" 최상위엔 둘 다 뜬다.
             File folder = makeEntry(folderId, "b", "/", true);
             File nestedFile = makeEntry(fileId, "a.txt", "/b", false);
-            lenient().when(findMemberByIdPort.findMemberById(any()))
+            lenient().when(findMemberByIdPort.findMemberByIdOrUnknown(any()))
                     .thenReturn(new MemberSummary("홍길동", "owner@modudrive.com"));
             given(findFileSharePort.findBySharedWithUserId(sharedWithUserId))
                     .willReturn(List.of(makeShare(fileId, Role.EDITOR), makeShare(folderId, Role.VIEWER)));

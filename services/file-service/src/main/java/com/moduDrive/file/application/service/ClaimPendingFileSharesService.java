@@ -32,8 +32,7 @@ class ClaimPendingFileSharesService implements ClaimPendingFileSharesUseCase {
     public void claimPendingFileShares(ClaimPendingFileSharesCommand command) {
         // Don't trust the event's own claim that this member owns this email; ask member-service.
         if (!ownsEmail(command.getMemberId(), command.getGranteeEmail())) {
-            log.warn("Rejected claim: memberId {} does not currently own email {}",
-                    command.getMemberId(), command.getGranteeEmail());
+            log.warn("Rejected claim: memberId={} does not currently own the grantee email", command.getMemberId());
             return;
         }
 

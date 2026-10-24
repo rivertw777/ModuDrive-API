@@ -8,8 +8,7 @@ import com.moduDrive.file.application.port.out.ReferenceBlocksPort;
 import com.moduDrive.file.application.port.out.ReleaseBlocksPort;
 import com.moduDrive.file.domain.model.FileVersion;
 import lombok.RequiredArgsConstructor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 
 import java.time.LocalDateTime;
 import java.util.Collection;
@@ -23,12 +22,12 @@ import java.util.stream.Collectors;
 
 /** The block aggregate — one row per committed block of an owner, with how many version entries
  * point at it (spec 001). */
+@Slf4j
 @PersistenceAdapter
 @RequiredArgsConstructor
 class BlockPersistenceAdapter implements LockCommittedBlocksPort, FindCommittedBlocksPort, ReferenceBlocksPort,
         ReleaseBlocksPort, ClaimUnreferencedBlocksPort {
 
-    private static final Logger logger = LoggerFactory.getLogger(BlockPersistenceAdapter.class);
 
     private final SpringDataBlockRepository blockRepository;
 
@@ -80,7 +79,7 @@ class BlockPersistenceAdapter implements LockCommittedBlocksPort, FindCommittedB
                     counts.values().toArray(Integer[]::new), now);
             if (missing > 0) {
                 // Versions pointing at blocks with no row: references were lost somewhere.
-                logger.error("{} released block(s) of owner {} have no row", missing, ownerId);
+                log.error("{} released block(s) of owner {} have no row", missing, ownerId);
             }
         });
     }
@@ -93,7 +92,7 @@ class BlockPersistenceAdapter implements LockCommittedBlocksPort, FindCommittedB
         long missing = blockRepository.releaseAllOf(fileIds.toArray(UUID[]::new), LocalDateTime.now());
         if (missing > 0) {
             // Versions pointing at blocks with no row: references were lost somewhere.
-            logger.error("{} released block(s) of {} purged file(s) have no row", missing, fileIds.size());
+            log.error("{} released block(s) of {} purged file(s) have no row", missing, fileIds.size());
         }
     }
 

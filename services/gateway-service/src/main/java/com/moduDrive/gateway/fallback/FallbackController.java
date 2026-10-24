@@ -27,7 +27,7 @@ class FallbackController {
         Throwable exception = exchange.getAttribute(ServerWebExchangeUtils.CIRCUITBREAKER_EXECUTION_EXCEPTION_ATTR);
 
         return Mono.justOrEmpty(exception)
-                .doOnNext(ex -> log.error("Fallback triggered for {}", ex.getClass().getSimpleName()))
+                .doOnNext(ex -> log.warn("Fallback triggered for {}", ex.getClass().getSimpleName()))
                 .map(this::handleCircuitBreakerException);
     }
 
