@@ -1,1 +1,2 @@
 com.moduDrive.common.infrastructure.observability.ObservabilityAutoConfiguration
+com.moduDrive.common.infrastructure.observability.LogExportAutoConfiguration

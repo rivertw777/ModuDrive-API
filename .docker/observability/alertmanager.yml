@@ -1,7 +1,6 @@
-# 알림이 Discord까지 가는 길은 AWS와 같다: Prometheus 규칙(alert-rules.yaml) → 여기 → SNS 토픽
-# modudrive-alerts → Lambda(discord_forwarder.py) → Discord. 로컬은 SNS·Lambda가 LocalStack이고
-# (.docker/localstack/init-aws.sh), 웹후크 URL은 Lambda가 LocalStack SSM에서 읽는다.
-# AWS 쪽은 .infra/monitoring/alertmanager.yaml — 묶음·채널·메시지 템플릿(discord.tmpl)까지 같다.
+# 알림이 Discord까지 가는 길: Prometheus 규칙(alert-rules.yaml) → 여기 → Discord 웹후크.
+# AWS(AMP)는 .infra/monitoring/alertmanager.yaml — 묶음·채널·메시지 템플릿(discord.tmpl)까지 같다.
+# 웹후크 주소는 compose가 .docker/.env에서 받아 /alertmanager/webhooks/<채널>에 써 둔다.
 route:
   receiver: service
   # 알림 이름 하나 = 메시지 하나. 서비스·큐마다 따로 보내면 여럿이 동시에 터질 때 웹후크 POST가
@@ -23,38 +22,23 @@ templates:
 
 receivers:
   - name: messaging
-    sns_configs:
-      - api_url: http://localstack:4566
-        topic_arn: arn:aws:sns:ap-northeast-2:000000000000:modudrive-alerts
-        sigv4:
-          region: ap-northeast-2
-          access_key: test
-          secret_key: test
-        subject: '{{ .CommonLabels.alertname }}'
-        message: '{{ template "discord.message" . }}'
-        attributes:
-          channel: messaging
+    discord_configs:
+      - webhook_url_file: /alertmanager/webhooks/messaging
+        # 본문은 content, 그 아래 카드는 제목만 — 발생은 빨강, 해제는 초록(Alertmanager가 상태로 칠한다).
+        content: '{{ template "discord.content" . }}'
+        title: '{{ template "discord.title" . }}'
+        message: ''
   - name: service
-    sns_configs:
-      - api_url: http://localstack:4566
-        topic_arn: arn:aws:sns:ap-northeast-2:000000000000:modudrive-alerts
-        sigv4:
-          region: ap-northeast-2
-          access_key: test
-          secret_key: test
-        subject: '{{ .CommonLabels.alertname }}'
-        message: '{{ template "discord.message" . }}'
-        attributes:
-          channel: service
+    discord_configs:
+      - webhook_url_file: /alertmanager/webhooks/service
+        # 본문은 content, 그 아래 카드는 제목만 — 발생은 빨강, 해제는 초록(Alertmanager가 상태로 칠한다).
+        content: '{{ template "discord.content" . }}'
+        title: '{{ template "discord.title" . }}'
+        message: ''
   - name: infra
-    sns_configs:
-      - api_url: http://localstack:4566
-        topic_arn: arn:aws:sns:ap-northeast-2:000000000000:modudrive-alerts
-        sigv4:
-          region: ap-northeast-2
-          access_key: test
-          secret_key: test
-        subject: '{{ .CommonLabels.alertname }}'
-        message: '{{ template "discord.message" . }}'
-        attributes:
-          channel: infra
+    discord_configs:
+      - webhook_url_file: /alertmanager/webhooks/infra
+        # 본문은 content, 그 아래 카드는 제목만 — 발생은 빨강, 해제는 초록(Alertmanager가 상태로 칠한다).
+        content: '{{ template "discord.content" . }}'
+        title: '{{ template "discord.title" . }}'
+        message: ''

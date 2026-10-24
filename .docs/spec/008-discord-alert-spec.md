@@ -38,8 +38,8 @@
 ## 1. 알림 발송 과정
 
 각 서비스는 자기 상태를 숫자로 내놓는다. 예를 들어 "아직 못 보낸 이벤트가 몇 초째 밀려 있다", "서킷이 열려 있다" 같은 것이다.
-이 숫자를 **지표**라고 부른다. Prometheus가 지표를 모아 두고 규칙으로 검사하다가, 이상하면 Alertmanager → SNS → Lambda를 거쳐 디스코드로 보낸다.
-로컬과 AWS가 같은 길을 쓴다. 로컬은 SNS·Lambda가 LocalStack이고, AWS는 Prometheus·Alertmanager 자리에 AMP가 있다([003-aws-migration.md 1-13](../guide/003-aws-migration.md#1-13-모니터링과-알림)).
+이 숫자를 **지표**라고 부른다. Prometheus가 지표를 모아 두고 규칙으로 검사하다가, 이상하면 Alertmanager가 디스코드 웹후크로 보낸다.
+AWS는 Prometheus·Alertmanager 자리에 AMP가 있고, AMP는 디스코드로 바로 못 보내서 SNS → Lambda를 거친다([003-aws-migration.md 1-13](../guide/003-aws-migration.md#1-13-모니터링과-알림)).
 
 ```mermaid
 flowchart LR
@@ -47,16 +47,12 @@ flowchart LR
     P[("Prometheus<br/>지표 저장")]
     R["알림 규칙<br/>1분마다 검사"]
     A["Alertmanager<br/>묶어서 보내기"]
-    S["SNS 토픽<br/>modudrive-alerts"]
-    L["Lambda<br/>discord-forwarder"]
     D(["Discord<br/>#service · #infra · #messaging"])
 
     M -- "15초마다 수집" --> P
     P --> R
     R -- "문제가 일정 시간 계속되면" --> A
-    A -- "채널 속성과 함께 발행" --> S
-    S --> L
-    L -- "웹후크" --> D
+    A -- "채널별 웹후크" --> D
 ```
 
 | 단계 | 하는 일 |
@@ -64,8 +60,8 @@ flowchart LR
 | 각 서비스 | `:9464/actuator/prometheus` 주소에 지표를 내놓는다 |
 | Prometheus | 15초마다 모든 서비스의 지표를 가져가 저장한다 (AWS는 ADOT가 demo 60초, prod 30초마다) |
 | 알림 규칙 | Prometheus가 1분마다 "이 값이 기준을 넘었나"를 확인한다. 정해 둔 시간(`for`) 동안 계속 넘어야 알림을 보낸다 |
-| Alertmanager | 비슷한 알림을 한 메시지로 묶고 디스코드 문구로 만들어 SNS에 올린다. 고칠 때까지 4시간마다 다시 보낸다 |
-| SNS → Lambda | Lambda(`discord_forwarder.py`)가 메시지의 `channel` 속성으로 웹후크를 골라 디스코드에 보낸다. AWS에선 CloudWatch 경보·Budgets·GuardDuty도 같은 토픽으로 들어온다([5장](#5-aws-전용-경보)) |
+| Alertmanager | 비슷한 알림을 한 메시지로 묶고 디스코드 문구로 만들어, 규칙의 `channel` 라벨에 맞는 웹후크로 보낸다. 고칠 때까지 4시간마다 다시 보낸다 |
+| SNS → Lambda (AWS) | AMP의 Alertmanager는 SNS에 올리고, Lambda(`discord_forwarder.py`)가 메시지의 `channel` 속성으로 웹후크를 골라 디스코드에 보낸다. AWS에선 CloudWatch 경보·Budgets·GuardDuty도 같은 토픽으로 들어온다([5장](#5-aws-전용-경보)) |
 | Discord | 알림에 적힌 채널(`#service`, `#infra`, `#messaging`)로 도착한다([3장](#3-사용-디스코드-채널)) |
 
 ### 1-1. 알림이 오기까지 걸리는 시간
@@ -108,11 +104,10 @@ flowchart LR
 | `.docker/observability/alert-rules.yaml` | 규칙 (2-1, 2-2) | `.infra/monitoring/alert-rules.yaml` |
 | `.infra/monitoring/discord.tmpl` | 메시지 양식 (2-3) | 같은 파일 |
 | `.docker/observability/alertmanager.yml` | 그룹핑·채널 (2-4, 3장) | `.infra/monitoring/alertmanager.yaml` |
-| `.infra/monitoring/discord_forwarder.py` | SNS → 디스코드 전달 | 같은 파일 |
+| `.infra/monitoring/discord_forwarder.py` | AWS의 SNS → 디스코드 전달 | 로컬엔 없음 |
 
 규칙 파일은 로컬과 AWS가 따로다. 쿼리와 기준값은 같고 확인 명령어(docker·Loki·Tempo ↔ CloudWatch·X-Ray)만 다르다. 규칙을 고치면 두 파일을 같이 고친다.
 예외는 둘이다. AWS는 서비스마다 태스크가 여럿일 수 있어 서비스 응답 없음·힙 메모리 부족을 `by (service, instance)`로 태스크마다 따로 보고, 서비스 태스크 없음([4-4](#4-4-서비스-응답-없음))이 하나 더 있다.
-로컬의 SNS 토픽·Lambda·웹후크 저장(SSM)은 `.docker/localstack/init-aws.sh`가 LocalStack이 뜰 때마다 만든다.
 
 ### 2-1. 지표
 
@@ -182,14 +177,14 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 | 서비스, 큐, 서킷 이름 | 지표의 라벨. `by (...)`에 넣은 것만 쓸 수 있다([2-1](#2-1-지표)) |
 | 제목, 사유, 조치, 확인 명령어, 조회·복구 SQL 등 | 규칙의 `annotations`에 적어 둔 문구 |
 
-본문 아래에는 Lambda가 제목 카드(embed)를 붙인다. 발생은 빨간색, 해제는 초록색이라 채널을 훑어볼 때 상태가 바로 보인다.
+본문 아래에는 제목 카드(embed)가 붙는다(로컬은 Alertmanager의 `discord.title`, AWS는 Lambda). 발생은 빨간색, 해제는 초록색이라 채널을 훑어볼 때 상태가 바로 보인다.
 링크는 넣지 않는다. AWS(AMP)에는 열어 볼 화면이 없어서 양식을 하나로 두려고 뺐다. 로컬에서 알림 상태와 일시 중지는 Alertmanager 화면(`http://localhost:9093`)에서 본다.
 
 양식을 고칠 때 알아 둘 것이 있다.
 
 - 같은 알림이 여러 건 동시에 생기면 한 메시지로 묶인다([2-4](#2-4-그룹핑과-재발송)). 이때는 위 예시처럼 다 쓰지 않고,
   건마다 "대상 — 사유"를 한 줄씩만 쓴다. 건마다 명령어까지 달면 몇 건만 모여도 디스코드 글자 수 제한(2000자)을 넘기 때문이다.
-  Lambda도 2000자에서 자른다.
+  Alertmanager와 Lambda도 2000자에서 자른다.
 - 디스코드는 줄바꿈 한 번을 같은 문단으로 이어 붙인다. 항목 사이는 빈 줄로 띄운다.
   단, 코드 블록 뒤에는 디스코드가 여백을 알아서 넣기 때문에 빈 줄을 넣지 않는다.
 - 명령어는 조치 문장 속에 섞지 않고 따로 코드 블록으로 뺀다. 휴대폰에서 길게 눌러 바로 복사할 수 있다.
@@ -221,14 +216,14 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 | `#messaging` | 비동기 이벤트가 멈춤 | 이벤트 전송 적체·실패, 이벤트 처리 실패, 큐 처리 지연 | 원인을 고친 뒤 재처리(리드라이브) | `DISCORD_MESSAGING_WEBHOOK_URL` |
 | `#account` | 계정 수준, 드묾 (AWS만) | 예산 초과, GuardDuty 위협 탐지 | 비용 확인, 보안 대응 | `DISCORD_ACCOUNT_WEBHOOK_URL` |
 
-Lambda(`discord_forwarder.py`)가 메시지마다 채널을 정하고, 그 채널의 웹후크 주소를 SSM에서 읽는다. 주소는 레포에 올리지 않는다.
+웹후크 주소는 레포에 올리지 않는다.
 
-- 4장 알림: 규칙의 `channel` 라벨을 Alertmanager가 SNS 속성 `channel`로 실어 보낸다.
+- 4장 알림: 규칙의 `channel` 라벨로 Alertmanager가 그 채널의 웹후크로 보낸다. AWS는 Alertmanager가 SNS 속성 `channel`로 실어 보내고 Lambda(`discord_forwarder.py`)가 SSM에서 그 채널의 웹후크 주소를 읽는다.
 - CloudWatch 경보: 속성을 실을 수 없어서 경보 이름 앞부분으로 정한다. `queue-age-` → `#messaging`, `service-`·`db-`·`redis-`·`nat-` → `#infra`, 나머지 → `#service`. 새 경보를 만들 땐 이 규칙에 맞게 이름을 짓는다.
 - Budgets·GuardDuty: CloudWatch 경보가 아닌 글이라 `#account`로 간다.
-- 웹후크 주소를 아직 안 넣은 채널(값이 `set-by-hand` 그대로)은 `#service`로 대신 보낸다. 주소를 넣기 전이라고 알림이 사라지지 않게 하려는 것이다.
+- 웹후크 주소를 아직 안 넣은 채널(로컬은 빈 값, AWS는 `set-by-hand` 그대로)은 `#service`로 대신 보낸다. 주소를 넣기 전이라고 알림이 사라지지 않게 하려는 것이다.
 
-- 로컬: `.docker/.env`에 넣으면 LocalStack이 뜰 때 SSM(`/modudrive/DISCORD_*_WEBHOOK_URL`)에 들어간다. 바꾼 뒤엔 LocalStack을 다시 띄운다.
+- 로컬: `.docker/.env`에 넣으면 Alertmanager가 뜰 때 채널별 파일로 써 두고 읽는다. 바꾼 뒤엔 Alertmanager를 다시 띄운다.
 - AWS: SSM에 손으로 한 번 넣는다([003-aws-migration.md 1-13](../guide/003-aws-migration.md#1-13-모니터링과-알림)).
 
 ---
@@ -436,6 +431,6 @@ Budgets는 AWS가 만든 문장을, GuardDuty는 EventBridge 규칙에 적어 �
 
 - [ ] **DLQ 지표를 CloudWatch 경보로**: AWS에선 CloudWatch가 DLQ의 `ApproximateNumberOfMessagesVisible`을 이미 안다.
   DLQ마다 경보를 걸면 앱이 30초마다 세는 코드(`DeadLetterQueueMetrics`)를 없앨 수 있다.
-- [ ] **알림 시스템 자체가 죽었을 때**: Prometheus·Alertmanager·LocalStack이 멈추면 알림이 하나도 오지 않는데, 이를 알려 줄 장치가 없다.
+- [ ] **알림 시스템 자체가 죽었을 때**: Prometheus·Alertmanager가 멈추면 알림이 하나도 오지 않는데, 이를 알려 줄 장치가 없다.
   지표가 아예 없으면 규칙은 조용하다(서비스가 죽은 것만 `up`으로 따로 본다). 로컬에서는 감수하고,
   AWS에선 바깥에서 알림 시스템이 살아 있는지 확인하는 방법(CloudWatch 등)을 위 항목과 함께 정한다.

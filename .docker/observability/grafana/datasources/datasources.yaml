@@ -27,9 +27,11 @@ datasources:
     access: proxy
     url: http://tempo:3200
     jsonData:
+      # trace → 그 trace의 로그 전부(서비스 무관). trace_id는 OTLP로 들어온 로그의 structured metadata다.
       tracesToLogsV2:
         datasourceUid: loki
-        filterByTraceID: true
+        customQuery: true
+        query: '{service_name=~".+"} | trace_id="$${__trace.traceId}"'
 
   - name: Loki
     type: loki
@@ -38,8 +40,9 @@ datasources:
     url: http://loki:3100
     jsonData:
       derivedFields:
-        # 서비스 로그는 JSON(logging.structured.format.console: ecs) — "traceId" 필드(32자리 hex)를 뽑는다.
+        # 로그 → trace: structured metadata trace_id로 Tempo를 연다.
         - datasourceUid: tempo
-          matcherRegex: '"traceId":"([0-9a-f]{32})"'
+          matcherType: label
+          matcherRegex: trace_id
           name: TraceID
           url: '$${__value.raw}'

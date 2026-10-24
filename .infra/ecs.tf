@@ -20,6 +20,8 @@ locals {
         JAVA_TOOL_OPTIONS = "-XX:MaxRAMPercentage=70"
         # Traces go to the app's default, http://otel-collector:4318 — the collector's Service Connect
         # name is the compose one (monitoring.tf).
+        # Logs are read in CloudWatch (stdout); the collector has no logs pipeline.
+        MANAGEMENT_LOGGING_EXPORT_OTLP_ENABLED = "false"
       },
       contains(keys(local.db_names), name) ? {
         # TLS required (Aurora refuses plain connections: rds.force_ssl).
