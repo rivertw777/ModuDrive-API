@@ -19,7 +19,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Answers;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -40,7 +39,7 @@ import static org.mockito.BDDMockito.willThrow;
 class GetFileServiceTest {
 
     @Mock private FindFilePort findFilePort;
-    @Mock(answer = Answers.CALLS_REAL_METHODS) private FindMemberByIdPort findMemberByIdPort;
+    @Mock private FindMemberByIdPort findMemberByIdPort;
     @Mock private FileFavoritePort fileFavoritePort;
     @Mock private FileAccessGuard fileAccessGuard;
     @InjectMocks private GetFileService getFileService;
@@ -90,7 +89,7 @@ class GetFileServiceTest {
             given(fileFavoritePort.isFavorite(callerId, fileId)).willReturn(true);
             given(fileAccessGuard.requirePermission(any(File.class), eq(callerId), eq(Permission.READ)))
                     .willReturn(new FileAccessGuard.Access(Role.EDITOR, grantTo(callerId, LocalDateTime.of(2026, 9, 4, 15, 5))));
-            given(findMemberByIdPort.findMemberById(otherOwnerId))
+            given(findMemberByIdPort.findMemberByIdOrUnknown(otherOwnerId))
                     .willReturn(new MemberSummary("홍길동", "owner@modudrive.com"));
 
             FileView result = getFileService.getFile(command);
@@ -110,7 +109,7 @@ class GetFileServiceTest {
                     .willReturn(Optional.of(fileOwnedBy(otherOwnerId, FileStatus.UPLOADED)));
             given(fileAccessGuard.requirePermission(any(File.class), eq(callerId), eq(Permission.READ)))
                     .willReturn(new FileAccessGuard.Access(Role.VIEWER, inheritedGrant));
-            given(findMemberByIdPort.findMemberById(otherOwnerId))
+            given(findMemberByIdPort.findMemberByIdOrUnknown(otherOwnerId))
                     .willReturn(new MemberSummary("홍길동", "owner@modudrive.com"));
 
             FileView result = getFileService.getFile(command);

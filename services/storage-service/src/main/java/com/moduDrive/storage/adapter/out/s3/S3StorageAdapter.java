@@ -15,8 +15,7 @@ import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.opentelemetry.context.Context;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.ChecksumAlgorithm;
 import software.amazon.awssdk.services.s3.model.ChecksumMode;
@@ -52,10 +51,10 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
+@Slf4j
 @PersistenceAdapter
 class S3StorageAdapter implements RetrieveBlocksPort, DeleteBlocksPort, FindUploadedBlocksPort {
 
-    private static final Logger logger = LoggerFactory.getLogger(S3StorageAdapter.class);
     /** S3 calls one commit's lookup has in flight at once (spec 001 2-3) — HEADs, or listing pages —
      * so one commit doesn't take every seat. */
     static final int LOOKUP_PARALLELISM = 8;
@@ -93,7 +92,7 @@ class S3StorageAdapter implements RetrieveBlocksPort, DeleteBlocksPort, FindUplo
         try {
             return Bulkhead.decorateSupplier(bulkhead, CircuitBreaker.decorateSupplier(circuitBreaker, call)).get();
         } catch (CallNotPermittedException | BulkheadFullException e) {
-            logger.warn("S3 call refused: {}", e.getMessage());
+            log.warn("S3 call refused: {}", e.toString());
             throw new BusinessException(StorageExceptionCase.STORAGE_UNAVAILABLE);
         }
     }
@@ -209,7 +208,7 @@ class S3StorageAdapter implements RetrieveBlocksPort, DeleteBlocksPort, FindUplo
             if (e.getCause() instanceof BusinessException business) {
                 throw business;
             }
-            logger.error("Failed to look up uploaded blocks of owner {}", ownerId, e.getCause());
+            log.warn("Failed to look up uploaded blocks of owner {}: {}", ownerId, e.getCause().toString());
             throw new BusinessException(StorageExceptionCase.STORAGE_ERROR);
         } finally {
             // Once the answer is a failure, the calls still queued would only spend S3 seats on it.
@@ -254,10 +253,10 @@ class S3StorageAdapter implements RetrieveBlocksPort, DeleteBlocksPort, FindUplo
             if (e.statusCode() == 404) {
                 return;
             }
-            logger.error("Failed to look up block {} before deleting it", key, e);
+            log.error("Failed to look up block {} before deleting it", key, e);
             throw new BusinessException(StorageExceptionCase.STORAGE_ERROR);
         } catch (RuntimeException e) {
-            logger.error("Failed to look up block {} before deleting it", key, e);
+            log.error("Failed to look up block {} before deleting it", key, e);
             throw new BusinessException(StorageExceptionCase.STORAGE_ERROR);
         }
         // S3 keeps LastModified to the second, so compare at that precision — a write in the same
@@ -277,7 +276,7 @@ class S3StorageAdapter implements RetrieveBlocksPort, DeleteBlocksPort, FindUplo
             if (e.statusCode() == 412) {
                 return; // rewritten after the HEAD — the new upload keeps it
             }
-            logger.error("Failed to delete block {}", key, e);
+            log.error("Failed to delete block {}", key, e);
             throw new BusinessException(StorageExceptionCase.STORAGE_ERROR);
         }
     }

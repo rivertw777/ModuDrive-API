@@ -22,7 +22,6 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.Answers;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -45,7 +44,7 @@ class ShareFileServiceTest {
     @Mock private FindFileSharePort findFileSharePort;
     @Mock private SaveFileSharePort saveFileSharePort;
     @Mock private FindMemberByEmailPort findMemberByEmailPort;
-    @Mock(answer = Answers.CALLS_REAL_METHODS) private FindMemberByIdPort findMemberByIdPort;
+    @Mock private FindMemberByIdPort findMemberByIdPort;
     @Mock private FileAccessGuard fileAccessGuard;
     @Mock private PublishMailEventPort publishMailEventPort;
     @Mock private PublishNotificationEventPort publishNotificationEventPort;
@@ -75,7 +74,7 @@ class ShareFileServiceTest {
             given(findFileSharePort.existsByFileIdAndSharedWithUserId(command.getFileId(), granteeId))
                     .willReturn(false);
             given(saveFileSharePort.saveFileShare(any(FileShare.class))).willAnswer(inv -> inv.getArgument(0));
-            given(findMemberByIdPort.findMemberById(ownerId)).willReturn(new MemberSummary(OWNER_NAME, OWNER_EMAIL));
+            given(findMemberByIdPort.findMemberByIdOrUnknown(ownerId)).willReturn(new MemberSummary(OWNER_NAME, OWNER_EMAIL));
 
             Optional<FileShare> result = shareFileService.shareFile(command);
 
@@ -119,7 +118,7 @@ class ShareFileServiceTest {
             given(findMemberByEmailPort.findMemberIdByEmail(EMAIL)).willReturn(Optional.empty());
             given(findFileSharePort.existsByFileIdAndGranteeEmail(command.getFileId(), EMAIL)).willReturn(false);
             given(saveFileSharePort.saveFileShare(any(FileShare.class))).willAnswer(inv -> inv.getArgument(0));
-            given(findMemberByIdPort.findMemberById(ownerId)).willReturn(new MemberSummary(OWNER_NAME, OWNER_EMAIL));
+            given(findMemberByIdPort.findMemberByIdOrUnknown(ownerId)).willReturn(new MemberSummary(OWNER_NAME, OWNER_EMAIL));
 
             Optional<FileShare> result = shareFileService.shareFile(command);
 

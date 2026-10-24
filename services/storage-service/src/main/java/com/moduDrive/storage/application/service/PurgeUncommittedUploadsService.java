@@ -9,8 +9,7 @@ import com.moduDrive.storage.application.port.out.FindCommittedBlocksPort;
 import com.moduDrive.storage.application.port.out.FindScheduledUploadsPort;
 import com.moduDrive.storage.domain.model.Blocks;
 import lombok.RequiredArgsConstructor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -25,11 +24,11 @@ import java.util.stream.Collectors;
  * more than {@link Blocks#UPLOAD_TTL} + {@link #MARGIN} ago are claimed — a commit takes a block only
  * within UPLOAD_TTL of that signing, and the URL itself is long expired, so nothing can still use or
  * write them. A block that did get committed is file-service's to delete, so it is left alone. */
+@Slf4j
 @UseCase
 @RequiredArgsConstructor
 class PurgeUncommittedUploadsService implements PurgeUncommittedUploadsUseCase {
 
-    private static final Logger logger = LoggerFactory.getLogger(PurgeUncommittedUploadsService.class);
     private static final int BATCH_SIZE = 100;
     private static final Duration MARGIN = Duration.ofHours(1);
 
@@ -75,7 +74,7 @@ class PurgeUncommittedUploadsService implements PurgeUncommittedUploadsUseCase {
                     .forEach(hash -> deleteBlocksPort.deleteUnlessRewritten(Blocks.key(ownerId, hash), decidedAt));
             return true;
         } catch (RuntimeException e) {
-            logger.warn("Failed to purge {} uncommitted block(s) of owner {}; released for the next run",
+            log.warn("Failed to purge {} uncommitted block(s) of owner {}; released for the next run",
                     hashes.size(), ownerId, e);
             return false;
         }

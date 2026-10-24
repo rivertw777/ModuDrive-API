@@ -18,7 +18,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Answers;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -45,7 +44,7 @@ class RevokeFileShareServiceTest {
     @Mock private FindFilePort findFilePort;
     @Mock private FindFileSharePort findFileSharePort;
     @Mock private DeleteFileSharePort deleteFileSharePort;
-    @Mock(answer = Answers.CALLS_REAL_METHODS) private FindMemberByIdPort findMemberByIdPort;
+    @Mock private FindMemberByIdPort findMemberByIdPort;
     @Mock private FileAccessGuard fileAccessGuard;
     @InjectMocks private RevokeFileShareService revokeFileShareService;
 
@@ -183,7 +182,7 @@ class RevokeFileShareServiceTest {
             given(fileAccessGuard.ancestorDirectories(file)).willReturn(List.of(parent));
             given(findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(parent.getId()), granteeId))
                     .willReturn(Optional.empty());
-            given(findMemberByIdPort.findMemberById(granteeId))
+            given(findMemberByIdPort.findMemberByIdOrUnknown(granteeId))
                     .willReturn(new MemberSummary("guest", "guest@example.com"));
             given(findFileSharePort.findByFileIdAndGranteeEmail(new FileId(parent.getId()), "guest@example.com"))
                     .willReturn(Optional.of(FileShare.withId(new FileShareId(parentShareId),
@@ -204,8 +203,7 @@ class RevokeFileShareServiceTest {
             given(fileAccessGuard.ancestorDirectories(file)).willReturn(List.of(parent));
             given(findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(parent.getId()), granteeId))
                     .willReturn(Optional.empty());
-            willThrow(new RuntimeException("member-service unavailable"))
-                    .given(findMemberByIdPort).findMemberById(granteeId);
+            given(findMemberByIdPort.findMemberByIdOrUnknown(granteeId)).willReturn(FindMemberByIdPort.UNKNOWN_MEMBER);
 
             revokeFileShareService.revokeFileShare(command);
 
@@ -224,7 +222,7 @@ class RevokeFileShareServiceTest {
                     .willReturn(Optional.empty());
             given(findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(parent.getId()), granteeId))
                     .willReturn(Optional.empty());
-            given(findMemberByIdPort.findMemberById(granteeId))
+            given(findMemberByIdPort.findMemberByIdOrUnknown(granteeId))
                     .willReturn(new MemberSummary("river", "river@example.com"));
             given(findFileSharePort.findByFileIdAndGranteeEmail(new FileId(grandParent.getId()), "river@example.com"))
                     .willReturn(Optional.empty());
@@ -234,7 +232,7 @@ class RevokeFileShareServiceTest {
             revokeFileShareService.revokeFileShare(command);
 
             then(deleteFileSharePort).should(times(1)).deleteFileShare(any(FileShareId.class));
-            then(findMemberByIdPort).should(times(1)).findMemberById(granteeId);
+            then(findMemberByIdPort).should(times(1)).findMemberByIdOrUnknown(granteeId);
         }
     }
 
@@ -259,7 +257,7 @@ class RevokeFileShareServiceTest {
             given(fileAccessGuard.ancestorDirectories(file)).willReturn(List.of(parent));
             given(findFileSharePort.findByFileIdAndSharedWithUserId(new FileId(parent.getId()), granteeId))
                     .willReturn(Optional.empty());
-            given(findMemberByIdPort.findMemberById(granteeId))
+            given(findMemberByIdPort.findMemberByIdOrUnknown(granteeId))
                     .willReturn(new MemberSummary("river", "river@example.com"));
             given(findFileSharePort.findByFileIdAndGranteeEmail(new FileId(parent.getId()), "river@example.com"))
                     .willReturn(Optional.empty());

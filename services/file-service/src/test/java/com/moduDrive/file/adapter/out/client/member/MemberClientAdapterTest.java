@@ -3,7 +3,8 @@ package com.moduDrive.file.adapter.out.client.member;
 import com.moduDrive.common.api.dto.member.MemberResponse;
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.common.core.web.ApiResponse;
-import com.moduDrive.file.exception.FileExceptionCase;
+import com.moduDrive.common.infrastructure.resilience4j.CircuitBreakerExceptionCase;
+import com.moduDrive.file.application.port.out.FindMemberByIdPort;
 import feign.FeignException;
 import feign.Request;
 import feign.RequestTemplate;
@@ -95,23 +96,42 @@ class MemberClientAdapterTest {
             given(memberClient.findMemberById(memberId.toString()))
                     .willReturn(ApiResponse.success(new MemberResponse(memberId.toString(), "river", EMAIL)));
 
-            var result = memberClientAdapter.findMemberById(memberId);
+            var result = memberClientAdapter.findMemberByIdOrUnknown(memberId);
 
             assertThat(result.name()).isEqualTo("river");
             assertThat(result.email()).isEqualTo(EMAIL);
         }
 
         @Test
-        void translatesClientErrorToShareTargetNotFound() {
+        void degradesToUnknownWhenLookupFails() {
             UUID memberId = UUID.randomUUID();
             willThrow(new FeignException.NotFound("member not found", request(), null, Map.of()))
                     .given(memberClient).findMemberById(memberId.toString());
 
-            Throwable thrown = catchThrowable(() -> memberClientAdapter.findMemberById(memberId));
+            var result = memberClientAdapter.findMemberByIdOrUnknown(memberId);
 
-            assertThat(thrown).isInstanceOf(BusinessException.class)
-                    .extracting(e -> ((BusinessException) e).getExceptionCase())
-                    .isEqualTo(FileExceptionCase.SHARE_TARGET_NOT_FOUND);
+            assertThat(result).isEqualTo(FindMemberByIdPort.UNKNOWN_MEMBER);
+        }
+
+        @Test
+        void degradesToUnknownWhenMemberServiceIsDown() {
+            UUID memberId = UUID.randomUUID();
+            willThrow(new BusinessException(CircuitBreakerExceptionCase.SERVICE_IS_OPEN))
+                    .given(memberClient).findMemberById(memberId.toString());
+
+            var result = memberClientAdapter.findMemberByIdOrUnknown(memberId);
+
+            assertThat(result).isEqualTo(FindMemberByIdPort.UNKNOWN_MEMBER);
+        }
+
+        @Test
+        void degradesToUnknownWhenResponseHasNoData() {
+            UUID memberId = UUID.randomUUID();
+            given(memberClient.findMemberById(memberId.toString())).willReturn(ApiResponse.success(null));
+
+            var result = memberClientAdapter.findMemberByIdOrUnknown(memberId);
+
+            assertThat(result).isEqualTo(FindMemberByIdPort.UNKNOWN_MEMBER);
         }
     }
 }
