@@ -1,6 +1,6 @@
 # 알림 규칙 전부 — 설계는 .docs/spec/008-discord-alert-spec.md. Prometheus가 1분마다 평가하고
-# Alertmanager(alertmanager.yml)로 넘긴다. AWS에선 같은 규칙이 .infra/monitoring/alert-rules.yaml(AMP)로
-# 돈다 — 규칙을 고치면 그쪽도 같이 고친다. 다른 건 확인 명령어(docker·Loki·Tempo ↔ CloudWatch·X-Ray)뿐이다.
+# Alertmanager(alertmanager.yml)로 넘긴다. AWS에선 같은 규칙이 .infra/monitoring/alert-rules.yaml(demo Grafana Cloud, prod AMP)로
+# 돈다 — 규칙을 고치면 그쪽도 같이 고친다. 다른 건 확인 명령어(docker ↔ ECS, prod는 CloudWatch·X-Ray)뿐이다.
 #
 # outbox: 전송 실패에 횟수 제한이 없어서 인프라 장애가 나도 FAILED 행이 안 생긴다. 테이블만 봐서는 멀쩡해
 # 보이므로 감지는 전적으로 이 규칙들에 달려 있다. consumer: 처리에 실패해 DLQ로 빠진 메시지를 본다 —

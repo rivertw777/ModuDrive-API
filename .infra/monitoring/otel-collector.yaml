@@ -1,11 +1,25 @@
-# Central ADOT collector (monitoring.tf) — the AWS twin of .docker/observability/otel-collector-config.yaml
-# plus the metrics side Prometheus does locally. Rendered by Terraform (templatefile): $${...} is Terraform's.
+# Central collector (monitoring.tf) — the AWS twin of .docker/observability/otel-collector-config.yaml
+# plus the metrics side Prometheus does locally. Out to Grafana Cloud when grafana_cloud is set (the
+# upstream contrib image, as local), else X-Ray and AMP (ADOT).
+# Rendered by Terraform (templatefile): $${...} is Terraform's.
 extensions:
   health_check:
     endpoint: 0.0.0.0:13133
+%{ if grafana_cloud != null ~}
+  # The token is the task's GRAFANA_CLOUD_TOKEN (from SSM); each endpoint has its own user.
+  basicauth/otlp:
+    client_auth:
+      username: "${grafana_cloud.otlp_user}"
+      password: $${env:GRAFANA_CLOUD_TOKEN}
+  basicauth/prometheus:
+    client_auth:
+      username: "${grafana_cloud.prometheus_user}"
+      password: $${env:GRAFANA_CLOUD_TOKEN}
+%{ else ~}
   sigv4auth:
     region: ${region}
     service: aps
+%{ endif ~}
   # Finds every task in the cluster whose container carries ECS_PROMETHEUS_EXPORTER_PORT (ecs.tf) and
   # writes them as Prometheus file_sd targets — task IPs change on every deploy, so no static list.
   ecs_observer:
@@ -34,8 +48,9 @@ receivers:
             # "member-service" ... — what the alert rules and messages name a service by (instance is a task IP).
             - source_labels: [__meta_ecs_container_name]
               target_label: service
-          # AMP bills per sample: keep what the alerts and the usual dashboards read, drop the rest.
-          # Alerting on a new metric → add it here first, or the rule sees nothing.
+          # Keep what the alerts and the usual dashboards read, drop the rest (AMP bills per sample,
+          # Grafana Cloud's free tier stops at 10k series). Alerting on a new metric → add it here first,
+          # or the rule sees nothing.
           metric_relabel_configs:
             - source_labels: [__name__]
               regex: 'modudrive_.*|resilience4j_circuitbreaker_state|spring_cloud_gateway_requests_seconds_.*|http_server_requests_seconds_.*|jvm_memory_used_bytes|jvm_memory_max_bytes|jvm_gc_live_data_size_bytes|jvm_gc_max_data_size_bytes|jvm_gc_pause_seconds_.*|jvm_threads_live_threads|process_cpu_usage|hikaricp_connections_.*'
@@ -62,21 +77,50 @@ processors:
           sampling_percentage: 5
 
 exporters:
+%{ if grafana_cloud != null ~}
+  # Traces to Tempo and logs to Loki, through the stack's OTLP gateway (/v1/traces, /v1/logs).
+  otlphttp/grafana-cloud:
+    endpoint: ${grafana_cloud.otlp_url}
+    auth:
+      authenticator: basicauth/otlp
+  # Metrics by remote write rather than OTLP, so they land with the same names and labels as local.
+  prometheusremotewrite:
+    endpoint: ${grafana_cloud.prometheus_url}/api/prom/push
+    auth:
+      authenticator: basicauth/prometheus
+%{ else ~}
   awsxray:
     region: ${region}
+    # Attributes become unsearchable metadata unless listed here. "user.id" lands as annotation user_id:
+    # X-Ray filter `annotation.user_id = "<uuid>"` (Tempo's `{ span.user.id = "<uuid>" }` locally).
+    indexed_attributes: [user.id]
   prometheusremotewrite:
     endpoint: ${amp_endpoint}api/v1/remote_write
     auth:
       authenticator: sigv4auth
+%{ endif ~}
 
 service:
+%{ if grafana_cloud != null ~}
+  extensions: [health_check, basicauth/otlp, basicauth/prometheus, ecs_observer]
+%{ else ~}
   extensions: [health_check, sigv4auth, ecs_observer]
+%{ endif ~}
   pipelines:
     traces:
       receivers: [otlp]
       processors: [tail_sampling, batch]
-      exporters: [awsxray]
+      exporters: [${grafana_cloud != null ? "otlphttp/grafana-cloud" : "awsxray"}]
     metrics:
       receivers: [prometheus]
       processors: [batch]
       exporters: [prometheusremotewrite]
+%{ if grafana_cloud != null ~}
+    # Not sampled, like local: a request whose trace was dropped still has its logs, with the trace id.
+    # Without Grafana Cloud the logs reach CloudWatch from stdout only (awslogs), and the services
+    # don't export them (ecs.tf).
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlphttp/grafana-cloud]
+%{ endif ~}

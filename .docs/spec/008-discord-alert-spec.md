@@ -39,7 +39,7 @@
 
 각 서비스는 자기 상태를 숫자로 내놓는다. 예를 들어 "아직 못 보낸 이벤트가 몇 초째 밀려 있다", "서킷이 열려 있다" 같은 것이다.
 이 숫자를 **지표**라고 부른다. Prometheus가 지표를 모아 두고 규칙으로 검사하다가, 이상하면 Alertmanager가 디스코드 웹후크로 보낸다.
-AWS는 Prometheus·Alertmanager 자리에 AMP가 있고, AMP는 디스코드로 바로 못 보내서 SNS → Lambda를 거친다([003-aws-migration.md 1-13](../guide/003-aws-migration.md#1-13-모니터링과-알림)).
+로컬과 demo가 같은 길을 쓴다. demo는 Prometheus·Alertmanager 자리에 Grafana Cloud가 있다([003-aws-migration.md 1-13](../guide/003-aws-migration.md#1-13-모니터링과-알림)).
 
 ```mermaid
 flowchart LR
@@ -58,10 +58,9 @@ flowchart LR
 | 단계 | 하는 일 |
 |---|---|
 | 각 서비스 | `:9464/actuator/prometheus` 주소에 지표를 내놓는다 |
-| Prometheus | 15초마다 모든 서비스의 지표를 가져가 저장한다 (AWS는 ADOT가 demo 60초, prod 30초마다) |
+| Prometheus | 15초마다 모든 서비스의 지표를 가져가 저장한다 (AWS는 collector가 demo 60초, prod 30초마다) |
 | 알림 규칙 | Prometheus가 1분마다 "이 값이 기준을 넘었나"를 확인한다. 정해 둔 시간(`for`) 동안 계속 넘어야 알림을 보낸다 |
 | Alertmanager | 비슷한 알림을 한 메시지로 묶고 디스코드 문구로 만들어, 규칙의 `channel` 라벨에 맞는 웹후크로 보낸다. 고칠 때까지 4시간마다 다시 보낸다 |
-| SNS → Lambda (AWS) | AMP의 Alertmanager는 SNS에 올리고, Lambda(`discord_forwarder.py`)가 메시지의 `channel` 속성으로 웹후크를 골라 디스코드에 보낸다. AWS에선 CloudWatch 경보·Budgets·GuardDuty도 같은 토픽으로 들어온다([5장](#5-aws-전용-경보)) |
 | Discord | 알림에 적힌 채널(`#service`, `#infra`, `#messaging`)로 도착한다([3장](#3-사용-디스코드-채널)) |
 
 ### 1-1. 알림이 오기까지 걸리는 시간
@@ -103,10 +102,10 @@ flowchart LR
 |---|---|---|
 | `.docker/observability/alert-rules.yaml` | 규칙 (2-1, 2-2) | `.infra/monitoring/alert-rules.yaml` |
 | `.infra/monitoring/discord.tmpl` | 메시지 양식 (2-3) | 같은 파일 |
-| `.docker/observability/alertmanager.yml` | 그룹핑·채널 (2-4, 3장) | `.infra/monitoring/alertmanager.yaml` |
-| `.infra/monitoring/discord_forwarder.py` | AWS의 SNS → 디스코드 전달 | 로컬엔 없음 |
+| `.docker/observability/alertmanager.yml` | 그룹핑·채널 (2-4, 3장) | demo `.infra/monitoring/alertmanager-grafana-cloud.yaml`, prod `.infra/monitoring/alertmanager.yaml` |
+| `.infra/monitoring/discord_forwarder.py` | AWS 전용 경보의 SNS → 디스코드 전달 ([5장](#5-aws-전용-경보)) | 로컬엔 없음 |
 
-규칙 파일은 로컬과 AWS가 따로다. 쿼리와 기준값은 같고 확인 명령어(docker·Loki·Tempo ↔ CloudWatch·X-Ray)만 다르다. 규칙을 고치면 두 파일을 같이 고친다.
+규칙 파일은 로컬과 AWS가 따로다. 쿼리와 기준값은 같고 확인 명령어만 다르다(docker ↔ ECS, 로그·trace는 demo가 로컬과 같은 Loki·Tempo, prod가 CloudWatch·X-Ray). 규칙을 고치면 두 파일을 같이 고친다.
 예외는 둘이다. AWS는 서비스마다 태스크가 여럿일 수 있어 서비스 응답 없음·힙 메모리 부족을 `by (service, instance)`로 태스크마다 따로 보고, 서비스 태스크 없음([4-4](#4-4-서비스-응답-없음))이 하나 더 있다.
 
 ### 2-1. 지표
@@ -140,7 +139,7 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 `alert-rules.yaml`의 `rules:` 아래 항목 하나가 알림 하나다.
 
 ```yaml
-- alert: OutboxFailed                        # 알림 이름 (영문 — AWS에선 SNS 제목이 된다)
+- alert: OutboxFailed                        # 알림 이름 (영문)
   expr: max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0   # 볼 지표와 기준 (2-1)
   for: 0m                                    # 이 시간 동안 계속 문제여야 보낸다 (없으면 0m)
   labels: {channel: messaging}               # 보낼 채널 (3장)
@@ -177,14 +176,14 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 | 서비스, 큐, 서킷 이름 | 지표의 라벨. `by (...)`에 넣은 것만 쓸 수 있다([2-1](#2-1-지표)) |
 | 제목, 사유, 조치, 확인 명령어, 조회·복구 SQL 등 | 규칙의 `annotations`에 적어 둔 문구 |
 
-본문 아래에는 제목 카드(embed)가 붙는다(로컬은 Alertmanager의 `discord.title`, AWS는 Lambda). 발생은 빨간색, 해제는 초록색이라 채널을 훑어볼 때 상태가 바로 보인다.
-링크는 넣지 않는다. AWS(AMP)에는 열어 볼 화면이 없어서 양식을 하나로 두려고 뺐다. 로컬에서 알림 상태와 일시 중지는 Alertmanager 화면(`http://localhost:9093`)에서 본다.
+본문 아래에는 Alertmanager가 제목 카드(embed, `discord.title`)를 붙인다. 발생은 빨간색, 해제는 초록색이라 채널을 훑어볼 때 상태가 바로 보인다.
+링크는 넣지 않는다. 로컬에서 알림 상태와 일시 중지는 Alertmanager 화면(`http://localhost:9093`)에서 본다.
 
 양식을 고칠 때 알아 둘 것이 있다.
 
 - 같은 알림이 여러 건 동시에 생기면 한 메시지로 묶인다([2-4](#2-4-그룹핑과-재발송)). 이때는 위 예시처럼 다 쓰지 않고,
   건마다 "대상 — 사유"를 한 줄씩만 쓴다. 건마다 명령어까지 달면 몇 건만 모여도 디스코드 글자 수 제한(2000자)을 넘기 때문이다.
-  Alertmanager와 Lambda도 2000자에서 자른다.
+  Alertmanager도 2000자에서 자른다.
 - 디스코드는 줄바꿈 한 번을 같은 문단으로 이어 붙인다. 항목 사이는 빈 줄로 띄운다.
   단, 코드 블록 뒤에는 디스코드가 여백을 알아서 넣기 때문에 빈 줄을 넣지 않는다.
 - 명령어는 조치 문장 속에 섞지 않고 따로 코드 블록으로 뺀다. 휴대폰에서 길게 눌러 바로 복사할 수 있다.
@@ -218,13 +217,13 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 
 웹후크 주소는 레포에 올리지 않는다.
 
-- 4장 알림: 규칙의 `channel` 라벨로 Alertmanager가 그 채널의 웹후크로 보낸다. AWS는 Alertmanager가 SNS 속성 `channel`로 실어 보내고 Lambda(`discord_forwarder.py`)가 SSM에서 그 채널의 웹후크 주소를 읽는다.
-- CloudWatch 경보: 속성을 실을 수 없어서 경보 이름 앞부분으로 정한다. `queue-age-` → `#messaging`, `service-`·`db-`·`redis-`·`nat-` → `#infra`, 나머지 → `#service`. 새 경보를 만들 땐 이 규칙에 맞게 이름을 짓는다.
+- 4장 알림: 규칙의 `channel` 라벨로 Alertmanager가 그 채널의 웹후크로 보낸다.
+- CloudWatch 경보(AWS): Lambda(`discord_forwarder.py`)가 SSM에서 웹후크 주소를 읽어 보낸다. 라벨이 없어서 경보 이름 앞부분으로 채널을 정한다. `queue-age-` → `#messaging`, `service-`·`db-`·`redis-`·`nat-` → `#infra`, 나머지 → `#service`. 새 경보를 만들 땐 이 규칙에 맞게 이름을 짓는다.
 - Budgets·GuardDuty: CloudWatch 경보가 아닌 글이라 `#account`로 간다.
-- 웹후크 주소를 아직 안 넣은 채널(로컬은 빈 값, AWS는 `set-by-hand` 그대로)은 `#service`로 대신 보낸다. 주소를 넣기 전이라고 알림이 사라지지 않게 하려는 것이다.
+- 웹후크 주소를 아직 안 넣은 채널은 `#service`로 대신 보낸다. 주소를 넣기 전이라고 알림이 사라지지 않게 하려는 것이다.
 
 - 로컬: `.docker/.env`에 넣으면 Alertmanager가 뜰 때 채널별 파일로 써 두고 읽는다. 바꾼 뒤엔 Alertmanager를 다시 띄운다.
-- AWS: SSM에 손으로 한 번 넣는다([003-aws-migration.md 1-13](../guide/003-aws-migration.md#1-13-모니터링과-알림)).
+- AWS: SSM에 손으로 한 번 넣는다([003-aws-migration.md 1-13](../guide/003-aws-migration.md#1-13-모니터링과-알림)). demo는 apply가 그 값을 Grafana Cloud의 Alertmanager 설정에 넣는다.
 
 ---
 
@@ -342,7 +341,7 @@ Explore에서 `spring_cloud_gateway_requests_seconds_bucket` 그래프를 띄우
 ## 5. AWS 전용 경보
 
 앱 지표로는 안 보이는 것들은 AWS에서 따로 본다. ALB, NAT, 컨테이너의 CPU·메모리 한도, DB·Redis 내부, 요금, 계정 위협이다.
-로컬에는 이 대상들이 없어서 이 경보들도 없다. 4장 알림과 같은 SNS 토픽을 거쳐 같은 Lambda가 디스코드로 보낸다.
+로컬에는 이 대상들이 없어서 이 경보들도 없다. SNS 토픽을 거쳐 Lambda가 디스코드로 보낸다. 메시지 모양(본문 + 색 카드)은 4장 알림과 같다.
 
 ### 5-1. 발송 과정
 
@@ -371,7 +370,7 @@ flowchart LR
 | AWS 서비스 | 앱이 아니라 AWS가 지표를 낸다. 코드나 수집기 설정이 필요 없고, 1분 단위로 CloudWatch에 쌓인다 |
 | CloudWatch 경보 | 정해 둔 구간(`period`, 5분 등)마다 값을 하나로 줄여(평균·최대·최소) 기준과 비교한다. 연속으로 정한 횟수(`evaluation_periods`)만큼 넘으면 경보(ALARM), 다시 괜찮아지면 정상(OK)이 된다 |
 | Budgets · GuardDuty | CloudWatch 경보가 아니지만 같은 토픽에 바로 올린다. Budgets는 `alert_email`이 있으면 메일로도 보낸다 |
-| SNS → Lambda | 4장 알림과 같은 Lambda다. 이 메시지들엔 `channel` 속성이 없어서 경보 이름 앞부분으로 채널을 고른다. Budgets·GuardDuty는 `#account`다([3장](#3-사용-디스코드-채널)) |
+| SNS → Lambda | 이 메시지들엔 `channel` 라벨이 없어서 경보 이름 앞부분으로 채널을 고른다. Budgets·GuardDuty는 `#account`다([3장](#3-사용-디스코드-채널)) |
 | Discord | `#service`, `#infra`, `#messaging`, `#account` 중 한 곳으로 도착한다 |
 
 4장 알림과 다른 점은 둘이다.

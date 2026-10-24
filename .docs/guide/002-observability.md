@@ -69,40 +69,40 @@ flowchart LR
 
 ### 1-2. 운영 (AWS)
 
-저장과 조회는 전부 AWS 관리형 서비스에 맡기고, 직접 띄우는 건 중앙 ADOT collector 하나뿐이다.
+직접 띄우는 건 중앙 collector 하나뿐이고, 저장과 조회는 관리형 서비스에 맡긴다. demo는 Grafana Cloud(무료 플랜), prod는 AWS 관리형 서비스로 보낸다(`grafana_cloud` 변수).
 
 ```mermaid
 flowchart LR
     S["ECS 태스크<br/>서비스 7개"]
-    C["중앙 ADOT collector<br/>ECS 서비스 1개"]
-    AMP[("AMP")]
-    X[("X-Ray")]
+    C["중앙 collector<br/>ECS 서비스 1개"]
+    GC[("demo: Grafana Cloud<br/>Mimir · Loki · Tempo")]
+    AWS[("prod: AMP · X-Ray")]
     CW[("CloudWatch Logs")]
     ALM["CloudWatch 경보<br/>Budgets · GuardDuty"]
-    G(["Grafana<br/>prod: Managed Grafana<br/>demo: 내 PC (make demo)"])
-    SNS["SNS<br/>modudrive-alerts"]
-    LA["Lambda<br/>discord-forwarder"]
+    SNS["SNS → Lambda<br/>discord-forwarder"]
     D(["Discord"])
 
     C -- ":9464 수집" --> S
-    S -- "OTLP 트레이스" --> C
-    C -- "remote write" --> AMP
-    C -- "tail sampling 뒤" --> X
+    S -- "OTLP 트레이스·로그" --> C
+    C --> GC
+    C --> AWS
     S -- "stdout (awslogs)" --> CW
-    AMP & X & CW --> G
-    AMP -- "알림 규칙" --> SNS
+    GC -- "알림 규칙 → Alertmanager" --> D
+    AWS -- "알림 규칙" --> SNS
     ALM --> SNS
-    SNS --> LA --> D
+    SNS --> D
 ```
 
-| | 로컬 | 운영 |
-|---|---|---|
-| 지표 | Prometheus가 고정 주소 7개를 15초마다 수집 | collector의 `ecs_observer`가 태스크를 찾아 수집(demo 60초, prod 30초)해 AMP로 보낸다. 알림과 기본 화면에 쓰는 지표만 남긴다 |
-| 로그 | otel-collector → Loki, 72시간 | `awslogs` 드라이버 → CloudWatch Logs, 14일. 검색은 Logs Insights |
-| 트레이스 | otel-collector → Tempo | 같은 tail sampling을 거쳐 ADOT collector → X-Ray |
-| 알림 | Prometheus 규칙 → Alertmanager → Discord | AMP 알림 규칙 → SNS → Lambda. 규칙과 양식이 로컬과 같다. CloudWatch 경보(큐 대기, ALB 5xx, gateway 헬스, NAT), Budgets, GuardDuty도 같은 토픽으로 들어온다 |
-| 화면 | Grafana `localhost:3001` | prod는 Managed Grafana, demo는 내 PC의 Grafana(`make demo`, [003-aws-migration.md 3-4](003-aws-migration.md#3-4-지표로그트레이스-보기)) |
-| 설정 | `.docker/observability/` | `.infra/monitoring.tf`, `.infra/monitoring/` |
+| | 로컬 | demo (Grafana Cloud) | prod (AWS) |
+|---|---|---|---|
+| 지표 | Prometheus가 고정 주소 7개를 15초마다 수집 | collector의 `ecs_observer`가 태스크를 찾아 60초마다 수집해 remote write. 알림과 기본 화면에 쓰는 지표만 남긴다 | 같은 방식으로 30초마다 수집해 AMP로 |
+| 로그 | otel-collector → Loki, 72시간 | collector → Loki(OTLP), 14일. stdout은 CloudWatch Logs에도 14일 남는다 | stdout만 `awslogs` 드라이버 → CloudWatch Logs, 14일. 앱의 OTLP 로그 전송은 끈다 |
+| 트레이스 | otel-collector → Tempo | 같은 tail sampling을 거쳐 collector → Tempo | 같은 tail sampling을 거쳐 ADOT collector → X-Ray |
+| 알림 | Prometheus 규칙 → Alertmanager → Discord | Grafana Cloud의 규칙 → Alertmanager → Discord. 로컬과 설정이 같다 | AMP 알림 규칙 → SNS → Lambda → Discord |
+| 화면 | Grafana `localhost:3001` | Grafana Cloud의 Grafana | Managed Grafana |
+| 설정 | `.docker/observability/` | `.infra/monitoring.tf`, `.infra/monitoring/` | 같음 |
+
+CloudWatch 경보(큐 대기, ALB 5xx, gateway 헬스, NAT, CPU·메모리, DB, Redis), Budgets, GuardDuty는 demo와 prod 모두 SNS → Lambda로 Discord에 간다. 앱 지표로는 안 보이는 AWS 쪽 신호라서다.
 
 운영에서 알아 둘 것들이다.
 
@@ -110,7 +110,7 @@ flowchart LR
 - collector를 태스크마다 사이드카로 붙이지 않고 한 대만 두는 건 tail sampling 때문이다. 한 trace의 span이 같은 collector에 모여야 "에러 trace는 전부 남긴다"가 지켜진다.
 - collector의 Service Connect 이름이 로컬과 같은 `otel-collector:4318`이라 앱의 트레이스 설정도 바꿀 게 없다.
 - ALB는 W3C `traceparent`가 아니라 `X-Amzn-Trace-Id`를 붙인다. 그래서 trace는 gateway에서 시작하고, ALB 구간은 ALB 접근 로그(prod만)로 본다.
-- 처음 띄운 뒤에는 X-Ray가 앱의 W3C trace ID를 그대로 받는지 확인한다. 이 ID는 앞 32비트가 타임스탬프가 아니라서, 거절되면 X-Ray ID 생성기를 설정해야 한다.
+- prod는 처음 띄운 뒤 X-Ray가 앱의 W3C trace ID를 그대로 받는지 확인한다. 이 ID는 앞 32비트가 타임스탬프가 아니라서, 거절되면 X-Ray ID 생성기를 설정해야 한다.
 
 ### 1-3. 설정 파일
 
@@ -301,14 +301,16 @@ gateway는 모든 응답에 `X-Trace-Id` 헤더를 붙인다(`TraceIdResponseFil
 
 - Tempo: `{ span.user.id = "<uuid>" }`에 시간 범위를 건다.
 - Loki: `{service_name="file-service"} | userId="<uuid>"`.
+- demo: 로컬과 같은 쿼리를 Grafana Cloud에서 쓴다.
+- prod: X-Ray에서 `annotation.user_id = "<uuid>"`, Logs Insights에서 `filter userId = "<uuid>"`. collector가 `user.id`를 X-Ray annotation으로 넣는다(`indexed_attributes`).
 
 ### 5-4. 신호 사이 이동
 
-| 방향 | 로컬 (Grafana 데이터소스 링크) | 운영 |
-|---|---|---|
-| 로그 → trace | Loki가 로그의 `trace_id`(structured metadata)로 TraceID 링크를 만든다 | 로그의 `traceId` 앞 8자리 뒤에 `-`를 넣고 `1-`을 붙이면 X-Ray trace ID다 |
-| trace → 로그 | Tempo의 `tracesToLogsV2`가 그 `trace_id`의 로그를 모든 서비스에서 찾는다 | X-Ray trace ID에서 `1-`과 `-`를 빼고 Logs Insights에서 `filter traceId = "..."` |
-| 지표 → trace | exemplar (5-2) | Managed Grafana나 `make demo`의 Grafana에서 같은 방식 |
+| 방향 | 로컬 (Grafana 데이터소스 링크) | demo (Grafana Cloud) | prod |
+|---|---|---|---|
+| 로그 → trace | Loki가 로그의 `trace_id`(structured metadata)로 TraceID 링크를 만든다 | 로컬과 같은 링크를 Grafana Cloud의 Loki 데이터소스에 건다 | 없음. Logs Insights 결과의 `traceId`로 X-Ray에서 찾는다 |
+| trace → 로그 | Tempo의 `tracesToLogsV2`가 그 `trace_id`의 로그를 모든 서비스에서 찾는다 | 로컬과 같은 링크를 Grafana Cloud의 Tempo 데이터소스에 건다 | 없음 |
+| 지표 → trace | exemplar (5-2) | 로컬과 같다. collector가 exemplar를 함께 remote write한다 | 없음. AMP는 exemplar를 저장하지 않는다 |
 
 ---
 
@@ -316,7 +318,7 @@ gateway는 모든 응답에 `X-Trace-Id` 헤더를 붙인다(`TraceIdResponseFil
 
 규칙, 문구, 채널, 알림별 대응은 [008 디스코드 알림 스펙](../spec/008-discord-alert-spec.md)이 기준이다. 여기서는 로컬에서 어떻게 돌아가는지만 적는다.
 
-Prometheus가 1분마다 `alert-rules.yaml`을 평가해 Alertmanager로 넘기고, Alertmanager가 알림 이름별로 묶어 채널별 Discord 웹후크로 보낸다. 메시지 양식(`.infra/monitoring/discord.tmpl`)은 운영과 같은 파일이다.
+Prometheus가 1분마다 `alert-rules.yaml`을 평가해 Alertmanager로 넘기고, Alertmanager가 알림 이름별로 묶어 채널별 Discord 웹후크로 보낸다. 메시지 양식(`.infra/monitoring/discord.tmpl`)은 demo와 같은 파일이다.
 
 | 보는 것 | 어디서 |
 |---|---|
@@ -337,8 +339,6 @@ Prometheus가 1분마다 `alert-rules.yaml`을 평가해 Alertmanager로 넘기�
 - 대시보드는 프로비저닝하지 않는다. Explore에서 직접 조회한다.
 - 알림은 Grafana에서 보내지 않는다(6장). Grafana는 보는 화면이다.
 - 데이터소스 사이 링크는 5-4에 있다.
-
-AWS demo 스택을 볼 때 쓰는 Grafana는 이것과 별개다(`make demo`, `localhost:3002`, [003-aws-migration.md 3-4](003-aws-migration.md#3-4-지표로그트레이스-보기)).
 
 ---
 

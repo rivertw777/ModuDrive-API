@@ -208,7 +208,7 @@ variable "alert_email" {
   default = null
 }
 
-# Central ADOT collector (monitoring.tf): one task, never more — tail sampling needs every span of a
+# Central collector (monitoring.tf): one task, never more — tail sampling needs every span of a
 # trace in one process. scrape_interval is how often it reads each task's /actuator/prometheus.
 variable "otel_collector" {
   type = object({
@@ -222,6 +222,22 @@ variable "otel_collector" {
 # through it). Alerts don't depend on it — they're AMP rules (monitoring.tf).
 variable "grafana" {
   type = bool
+}
+
+# Grafana Cloud stack (monitoring.tf): set, traces, logs and metrics go there instead of X-Ray and AMP,
+# and the alert rules and alertmanager run there, posting to Discord themselves. null = AMP + X-Ray.
+# Values from the stack's page on grafana.com; the token is the SSM parameter /<project>/GRAFANA_CLOUD_TOKEN,
+# put by hand before the first apply (003-aws-migration.md 1-13).
+variable "grafana_cloud" {
+  type = object({
+    otlp_url          = string # OpenTelemetry → Configure
+    otlp_user         = string
+    prometheus_url    = string # Prometheus → Details, host only: remote write and the rules API hang off it
+    prometheus_user   = string
+    alertmanager_url  = string # grafana.com/api/instances/<stack>: amInstanceUrl, amInstanceId
+    alertmanager_user = string
+  })
+  default = null
 }
 
 # Copies off this account (backup.tf). Both null = backups stay in this account only.

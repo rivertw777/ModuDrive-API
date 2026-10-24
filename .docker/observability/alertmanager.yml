@@ -1,5 +1,5 @@
 # 알림이 Discord까지 가는 길: Prometheus 규칙(alert-rules.yaml) → 여기 → Discord 웹후크.
-# AWS(AMP)는 .infra/monitoring/alertmanager.yaml — 묶음·채널·메시지 템플릿(discord.tmpl)까지 같다.
+# demo(Grafana Cloud)도 같은 설정이다 — 묶음·채널·메시지 템플릿(discord.tmpl)까지 같다.
 # 웹후크 주소는 compose가 .docker/.env에서 받아 /alertmanager/webhooks/<채널>에 써 둔다.
 route:
   receiver: service

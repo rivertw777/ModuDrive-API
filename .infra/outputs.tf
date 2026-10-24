@@ -57,8 +57,8 @@ output "github_deploy_role_arn" {
 }
 
 output "amp_endpoint" {
-  description = "AMP workspace — the Prometheus data source URL in Grafana"
-  value       = aws_prometheus_workspace.main.prometheus_endpoint
+  description = "AMP workspace — the Prometheus data source URL in Grafana (null with Grafana Cloud)"
+  value       = local.grafana_cloud ? null : aws_prometheus_workspace.main[0].prometheus_endpoint
 }
 
 output "grafana_url" {
