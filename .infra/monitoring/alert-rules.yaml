@@ -1,4 +1,4 @@
-# AMP alert rules — the local rules (.docker/observability/alert-rules.yaml, spec 007): same queries,
+# AMP alert rules — the local rules (.docker/observability/alert-rules.yaml, spec 008): same queries,
 # thresholds and waits. What differs on AWS:
 #   - `service` is the container name (otel-collector.yaml) rather than the scrape host (prometheus.yml)
 #   - hints point at CloudWatch Logs and X-Ray instead of docker logs, Loki and Tempo
