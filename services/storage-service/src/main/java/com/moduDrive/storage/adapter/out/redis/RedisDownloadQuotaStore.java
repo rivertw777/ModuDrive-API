@@ -37,7 +37,7 @@ class RedisDownloadQuotaStore implements DownloadQuotaPort {
             spent = redisRepository.get(key(scope, fileKey));
         } catch (RuntimeException redisUnavailable) {
             // Soft control: an unreachable counter must not take downloads down with it.
-            log.warn("download quota check skipped, Redis unavailable (scope={}, key={})", scope, fileKey, redisUnavailable);
+            log.warn("download quota check skipped, Redis unavailable (scope={}, key={}): {}", scope, fileKey, redisUnavailable.toString());
             return;
         }
         if (spent == null) {
@@ -72,7 +72,7 @@ class RedisDownloadQuotaStore implements DownloadQuotaPort {
                     String.valueOf(bytes),
                     String.valueOf(windowSeconds));
         } catch (RuntimeException redisUnavailable) {
-            log.warn("download quota usage not recorded, Redis unavailable (scope={}, key={})", scope, fileKey, redisUnavailable);
+            log.warn("download quota usage not recorded, Redis unavailable (scope={}, key={}): {}", scope, fileKey, redisUnavailable.toString());
         }
     }
 

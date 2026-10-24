@@ -1,5 +1,5 @@
 #!/bin/bash
-# .docs/perf-test/003-quota-concurrency.md
+# .docs/perf-test/004-quota-concurrency.md
 # run.sh <rounds> <files> <fileBytes> <quotaBytes>
 DIR=$(cd "$(dirname "$0")" && pwd)
 psql() { docker exec -i modudrive-infra-postgres-1 sh -c 'psql -qtA -U $POSTGRES_USER -d file_db' ; }

@@ -50,7 +50,7 @@ class SessionAuthenticationManager implements ReactiveAuthenticationManager {
                 .onErrorMap(WebClientResponseException.class, this::fromAuthServiceResponse)
                 // Open circuit, timeout, connect failure: auth-service didn't answer.
                 .onErrorMap(e -> !(e instanceof AuthenticationException), e -> {
-                    log.error("세션 확인 중 예상치 못한 오류 발생", e);
+                    log.warn("Session check failed, auth-service unavailable: {}", e.toString());
                     return new SessionAuthenticationException(unavailable(e));
                 });
     }
@@ -76,7 +76,7 @@ class SessionAuthenticationManager implements ReactiveAuthenticationManager {
     /** Only a 4xx is auth-service saying "no such session"; a 5xx means it couldn't check. */
     private SessionAuthenticationException fromAuthServiceResponse(WebClientResponseException e) {
         if (!e.getStatusCode().is4xxClientError()) {
-            log.error("세션 확인 실패 — auth-service HTTP {}", e.getStatusCode());
+            log.warn("Session check failed, auth-service HTTP {}", e.getStatusCode());
             return new SessionAuthenticationException(e.getStatusCode().value() == 504
                     ? CircuitBreakerExceptionCase.CONNECTION_TIMEOUT
                     : CircuitBreakerExceptionCase.SERVICE_UNAVAILABLE);
@@ -86,7 +86,7 @@ class SessionAuthenticationManager implements ReactiveAuthenticationManager {
                     .path("message").asText(AuthExceptionCase.UNAUTHORIZED.getMessage());
             return new SessionAuthenticationException(AuthExceptionCase.UNAUTHORIZED.getHttpStatus().name(), message);
         } catch (Exception jsonProcessingException) {
-            log.error("Content 파싱 실패 — HTTP {}", e.getStatusCode(), jsonProcessingException);
+            log.error("Couldn't parse auth-service error body, HTTP {}", e.getStatusCode(), jsonProcessingException);
             return new SessionAuthenticationException(AuthExceptionCase.UNAUTHORIZED);
         }
     }

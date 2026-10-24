@@ -38,13 +38,18 @@ import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -56,8 +61,9 @@ import java.util.stream.Collectors;
  *
  * <p>A request carries a group of files (spec 001 2-3), so which blocks exist is asked once for
  * the whole group — and outside any transaction, storage-service included, so a slow
- * storage-service never holds a DB connection or a block lock here (spec 006 2-4). Each file with
- * nothing missing then gets its own short transaction, which re-checks under the lock. */
+ * storage-service never holds a DB connection or a block lock here (spec 006 2-4). The files with
+ * nothing missing are then committed in one transaction, which re-checks under the locks; if any of
+ * them goes off the plain path, each gets its own short transaction instead. */
 @UseCase
 @RequiredArgsConstructor
 class CommitFileUploadService implements CommitFileUploadUseCase {
@@ -148,44 +154,26 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
         }
         Map<String, Integer> uploaded = found;
 
+        List<Integer> ready = new ArrayList<>();
         for (int i = 0; i < commands.size(); i++) {
             if (results[i] != null) {
                 continue;
             }
-            CommitFileUploadCommand command = commands.get(i);
-            Set<String> distinct = new LinkedHashSet<>(command.getBlocklist().value());
-            List<String> needBlocks = distinct.stream()
+            List<String> needBlocks = commands.get(i).getBlocklist().value().stream().distinct()
                     .filter(h -> !committed.contains(h) && !uploaded.containsKey(h))
                     .toList();
             if (!needBlocks.isEmpty()) {
                 results[i] = storageDown != null ? CommitResult.failed(storageDown) : CommitResult.need(needBlocks);
-                continue;
+            } else {
+                ready.add(i);
             }
-            try {
-                // Its own transaction: one file failing leaves the others committed.
-                results[i] = transactionTemplate.execute(status -> commitLocked(command, namespace, distinct, uploaded));
-            } catch (BusinessException | DataIntegrityViolationException e) {
-                // The same commit sent twice at once (a retry racing the original): the loser hits
-                // a unique slot — the file's, or the uploadId's — and answers with the winner's
-                // version, checked like any resend (alreadyDone).
-                try {
-                    CommitResult done = alreadyDone(command, ownerId,
-                            findFileVersionsPort.findByUploadId(command.getUploadId().value()));
-                    if (done != null) {
-                        results[i] = done;
-                    } else if (e instanceof BusinessException business) {
-                        results[i] = CommitResult.failed(business.getExceptionCase());
-                    } else {
-                        throw e;
-                    }
-                } catch (BusinessException mismatch) {
-                    results[i] = CommitResult.failed(mismatch.getExceptionCase());
-                }
-            } catch (PessimisticLockingFailureException e) {
-                // Postgres broke a lock cycle with another commit or a trash: only this file fails,
-                // and it can be sent again.
-                results[i] = CommitResult.failed(CircuitBreakerExceptionCase.SERVICE_UNAVAILABLE);
-            }
+        }
+
+        List<CommitResult> together = ready.size() > 1
+                ? commitTogether(ready.stream().map(commands::get).toList(), namespace, uploaded) : null;
+        for (int k = 0; k < ready.size(); k++) {
+            int i = ready.get(k);
+            results[i] = together != null ? together.get(k) : commitAlone(commands.get(i), ownerId, namespace, uploaded);
         }
         return List.of(results);
     }
@@ -203,18 +191,8 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
             try {
                 requireSpot(command.getPath(), command.getName());
                 String target = UploadBatchService.child(command.getPath(), command.getName());
-                File folder;
-                try {
-                    // Its own transaction, like a file: one folder failing leaves the others.
-                    folder = transactionTemplate.execute(status -> folderAt(namespaceId, target, ownerId));
-                } catch (BusinessException e) {
-                    if (e.getExceptionCase() != FileExceptionCase.FILE_ALREADY_EXISTS) {
-                        throw e;
-                    }
-                    // Another commit created a folder on the way first (the unique slot): the second
-                    // look finds it. A file in the way fails the same again.
-                    folder = transactionTemplate.execute(status -> folderAt(namespaceId, target, ownerId));
-                }
+                // Its own transaction, like a file: one folder failing leaves the others.
+                File folder = transactionTemplate.execute(status -> folderAt(namespaceId, target, ownerId, new HashMap<>()));
                 return DirectoryResult.created(folder.getId());
             } catch (BusinessException e) {
                 return DirectoryResult.failed(e.getExceptionCase());
@@ -223,6 +201,145 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
                 return DirectoryResult.failed(CircuitBreakerExceptionCase.SERVICE_UNAVAILABLE);
             }
         }).toList();
+    }
+
+    /** One file in its own transaction: it failing leaves the others committed. */
+    private CommitResult commitAlone(CommitFileUploadCommand command, UUID ownerId, Namespace namespace,
+                                     Map<String, Integer> uploaded) {
+        Set<String> distinct = new LinkedHashSet<>(command.getBlocklist().value());
+        try {
+            return transactionTemplate.execute(status -> commitLocked(command, namespace, distinct, uploaded));
+        } catch (BusinessException | DataIntegrityViolationException e) {
+            // The same commit sent twice at once (a retry racing the original): the loser hits
+            // a unique slot — the file's, or the uploadId's — and answers with the winner's
+            // version, checked like any resend (alreadyDone).
+            try {
+                CommitResult done = alreadyDone(command, ownerId,
+                        findFileVersionsPort.findByUploadId(command.getUploadId().value()));
+                if (done != null) {
+                    return done;
+                }
+                if (e instanceof BusinessException business) {
+                    return CommitResult.failed(business.getExceptionCase());
+                }
+                throw e;
+            } catch (BusinessException mismatch) {
+                return CommitResult.failed(mismatch.getExceptionCase());
+            }
+        } catch (PessimisticLockingFailureException e) {
+            // Postgres broke a lock cycle with another commit or a trash: only this file fails,
+            // and it can be sent again.
+            return CommitResult.failed(CircuitBreakerExceptionCase.SERVICE_UNAVAILABLE);
+        }
+    }
+
+    /** The group's files in one transaction — the locks, rows and usage once for all of them, not
+     * once per file. Null when anything goes off the plain path (a slot taken, a block swept, the
+     * quota raced, a lock cycle, a bad blocklist): it is all rolled back and the caller commits the
+     * files one by one, each answering for itself as before. */
+    private List<CommitResult> commitTogether(List<CommitFileUploadCommand> group, Namespace namespace,
+                                              Map<String, Integer> uploaded) {
+        // Two files at one spot, or one uploadId twice: the one-by-one path tells them apart.
+        if (group.stream().map(c -> UploadBatchService.child(c.getPath(), c.getName())).distinct().count() < group.size()
+                || group.stream().map(c -> c.getUploadId().value()).distinct().count() < group.size()) {
+            return null;
+        }
+        try {
+            return transactionTemplate.execute(status -> commitTogetherLocked(group, namespace, uploaded));
+        } catch (NotTogether | BusinessException | DataIntegrityViolationException | PessimisticLockingFailureException e) {
+            return null;
+        }
+    }
+
+    /** Thrown inside the group's transaction to roll it back: the files go one by one instead. */
+    private static final class NotTogether extends RuntimeException {
+        NotTogether() {
+            super(null, null, false, false);
+        }
+    }
+
+    /** commitLocked for a whole group. Blocks first and the drive's usage last, as there; in between
+     * each folder top-down, then the file slots in it — the order a trash locks a subtree. */
+    private List<CommitResult> commitTogetherLocked(List<CommitFileUploadCommand> group, Namespace namespace,
+                                                    Map<String, Integer> uploaded) {
+        UUID ownerId = group.getFirst().getCallerId();
+        NamespaceId namespaceId = new NamespaceId(namespace.getId());
+        Set<String> distinct = new TreeSet<>();
+        group.forEach(c -> distinct.addAll(c.getBlocklist().value()));
+        Map<String, Integer> sizeByHash = new HashMap<>(lockCommittedBlocksPort.lockCommittedBlocks(ownerId, distinct));
+        if (distinct.stream().anyMatch(h -> !sizeByHash.containsKey(h) && !uploaded.containsKey(h))) {
+            throw new NotTogether();  // swept since the unlocked look: needBlocks, file by file
+        }
+        uploaded.forEach(sizeByHash::putIfAbsent);
+        group.forEach(c -> requireShape(c.getBlocklist().value(), sizeByHash, c.getFileSize().value()));
+
+        // Segment by segment ("/a/b" before "/a-b"), the order the folders' rows lock in.
+        Map<String, Set<String>> namesByPath = new TreeMap<>(Comparator.comparing((String path) -> path.replace('/', '\0')));
+        group.forEach(c -> namesByPath.computeIfAbsent(c.getPath(), path -> new LinkedHashSet<>()).add(c.getName()));
+        Map<String, File> bySpot = new HashMap<>();
+        Map<String, File> folders = new HashMap<>();
+        namesByPath.forEach((path, names) -> {
+            folderAt(namespaceId, path, ownerId, folders);
+            findFilePort.lockActiveByNamespaceIdAndPathAndNames(namespaceId, path, names)
+                    .forEach(f -> bySpot.put(UploadBatchService.child(f.getPath(), f.getName()), f));
+        });
+        if (bySpot.values().stream().anyMatch(File::isDirectory)) {
+            throw new NotTogether();  // FILE_ALREADY_EXISTS for that file alone
+        }
+        List<UUID> currentIds = bySpot.values().stream().map(File::getCurrentVersionId).filter(Objects::nonNull).toList();
+        Map<UUID, FileVersion> currentById = currentIds.isEmpty() ? Map.of() : findFileVersionsPort.findAllByIds(currentIds)
+                .stream().collect(Collectors.toMap(FileVersion::getId, Function.identity()));
+
+        List<File> created = group.stream()
+                .filter(c -> !bySpot.containsKey(UploadBatchService.child(c.getPath(), c.getName())))
+                .map(c -> File.create(new FileNamespaceId(namespaceId.value()), new FileName(c.getName()),
+                        new FilePath(c.getPath()), new FileOwnerId(ownerId), new FileIsDirectory(false)))
+                .toList();
+        if (!created.isEmpty()) {
+            saveFilePort.saveFiles(created).forEach(f -> bySpot.put(UploadBatchService.child(f.getPath(), f.getName()), f));
+        }
+
+        CommitResult[] results = new CommitResult[group.size()];
+        List<File> files = new ArrayList<>();
+        List<FileVersion> versions = new ArrayList<>();
+        Map<String, Integer> countByHash = new TreeMap<>();
+        long growth = 0;
+        for (int k = 0; k < group.size(); k++) {
+            CommitFileUploadCommand command = group.get(k);
+            File file = bySpot.get(UploadBatchService.child(command.getPath(), command.getName()));
+            FileVersion current = file.getCurrentVersionId() == null ? null : currentById.get(file.getCurrentVersionId());
+            files.add(file);
+            if (current != null && current.getFileSize().longValue() == command.getFileSize().value()
+                    && current.getHashes().equals(command.getBlocklist().value())) {
+                results[k] = CommitResult.committed(current);  // unchanged content: no new version
+                continue;
+            }
+            command.getBlocklist().value().forEach(hash -> countByHash.merge(hash, 1, Integer::sum));
+            growth += command.getFileSize().value() - (file.getFileSize() == null ? 0 : file.getFileSize());
+            versions.add(FileVersion.create(new FileVersionFileId(file.getId()), new FileVersionOwnerId(ownerId),
+                    command.getFileSize(), command.getUploadId(), command.getBlocklist()));
+        }
+
+        referenceBlocksPort.referenceBlocks(ownerId, sizeByHash, countByHash);
+        List<FileVersion> saved = versions.isEmpty() ? List.of() : saveFileVersionPort.saveFileVersions(versions);
+        List<File> uploadedFiles = new ArrayList<>();
+        for (int k = 0, v = 0; k < group.size(); k++) {
+            if (results[k] == null) {
+                FileVersion version = saved.get(v++);
+                files.get(k).markUploaded(version.getId(), version.getFileSize());
+                uploadedFiles.add(files.get(k));
+                results[k] = CommitResult.committed(version);
+            }
+        }
+        if (!uploadedFiles.isEmpty()) {
+            saveFilePort.saveFiles(uploadedFiles);
+        }
+        // An uploaded file counts as "opened" for 최근 문서함 (spec 001 2-3-1).
+        saveFileAccessPort.recordAccesses(ownerId, files.stream().map(File::getId).toList(), LocalDateTime.now());
+        if (growth != 0 && !updateNamespaceUsagePort.addUsedBytes(namespaceId, growth)) {
+            throw new NotTogether();  // another commit took the room: file by file, the ones that fit go in
+        }
+        return List.of(results);
     }
 
     /** Checks what can be checked without the blocks, and answers a resend of a commit that already
@@ -317,32 +434,42 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
             }
             return existing.get();
         }
-        folderAt(namespaceId, path, ownerId);
+        folderAt(namespaceId, path, ownerId, new HashMap<>());
         return saveFilePort.saveFile(File.create(new FileNamespaceId(namespaceId.value()), new FileName(name),
                 new FilePath(path), new FileOwnerId(ownerId), new FileIsDirectory(false)));
     }
 
     /** The folder at {@code path}, creating it and any folder above it that doesn't exist yet,
-     * top-down; null for the root. A file anywhere on the way is FILE_ALREADY_EXISTS. */
-    private File folderAt(NamespaceId namespaceId, String path, UUID ownerId) {
+     * top-down; null for the root. A file anywhere on the way is FILE_ALREADY_EXISTS. {@code known}
+     * holds the folders this transaction already locked or made, by full path — not looked up again. */
+    private File folderAt(NamespaceId namespaceId, String path, UUID ownerId, Map<String, File> known) {
         FileNamespaceId fileNamespaceId = new FileNamespaceId(namespaceId.value());
         FileOwnerId fileOwnerId = new FileOwnerId(ownerId);
         String parent = "/";
         File folder = null;
-        // One lookup per path segment. Two commits creating the same missing folder at once: the
-        // second fails on the unique slot (FILE_ALREADY_EXISTS) for that file alone, and its retry
-        // finds the folder.
+        // One lookup per path segment not yet known.
         for (String segment : "/".equals(path) ? new String[0] : path.substring(1).split("/")) {
             // Locked top-down, like a trash locks a subtree: the folder can't be trashed while a file
             // goes in under it, and one trashed meanwhile isn't found — a new one is made instead.
-            Optional<File> found = findFilePort.lockActiveByNamespaceIdAndPathAndName(namespaceId, parent, segment);
-            if (found.isPresent() && !found.get().isDirectory()) {
+            String at = parent;
+            parent = UploadBatchService.child(parent, segment);
+            folder = known.get(parent);
+            if (folder != null) {
+                continue;
+            }
+            Optional<File> found = findFilePort.lockActiveByNamespaceIdAndPathAndName(namespaceId, at, segment);
+            if (found.isEmpty()) {
+                // Taken meanwhile — another commit making the same folder at once, which the insert
+                // waited out: lock what it made.
+                found = saveFilePort.saveDirectoryIfAbsent(
+                                File.createDirectory(fileNamespaceId, new FileName(segment), new FilePath(at), fileOwnerId))
+                        .or(() -> findFilePort.lockActiveByNamespaceIdAndPathAndName(namespaceId, at, segment));
+            }
+            if (found.isEmpty() || !found.get().isDirectory()) {
                 throw new BusinessException(FileExceptionCase.FILE_ALREADY_EXISTS);
             }
-            String at = parent;
-            folder = found.orElseGet(() -> saveFilePort.saveFile(
-                    File.createDirectory(fileNamespaceId, new FileName(segment), new FilePath(at), fileOwnerId)));
-            parent = UploadBatchService.child(parent, segment);
+            folder = found.get();
+            known.put(parent, folder);
         }
         return folder;
     }

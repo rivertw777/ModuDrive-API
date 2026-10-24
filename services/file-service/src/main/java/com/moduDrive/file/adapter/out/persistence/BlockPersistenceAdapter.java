@@ -8,8 +8,7 @@ import com.moduDrive.file.application.port.out.ReferenceBlocksPort;
 import com.moduDrive.file.application.port.out.ReleaseBlocksPort;
 import com.moduDrive.file.domain.model.FileVersion;
 import lombok.RequiredArgsConstructor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 
 import java.time.LocalDateTime;
 import java.util.Collection;
@@ -23,12 +22,12 @@ import java.util.stream.Collectors;
 
 /** The block aggregate — one row per committed block of an owner, with how many version entries
  * point at it (spec 001). */
+@Slf4j
 @PersistenceAdapter
 @RequiredArgsConstructor
 class BlockPersistenceAdapter implements LockCommittedBlocksPort, FindCommittedBlocksPort, ReferenceBlocksPort,
         ReleaseBlocksPort, ClaimUnreferencedBlocksPort {
 
-    private static final Logger logger = LoggerFactory.getLogger(BlockPersistenceAdapter.class);
 
     private final SpringDataBlockRepository blockRepository;
 
@@ -75,12 +74,14 @@ class BlockPersistenceAdapter implements LockCommittedBlocksPort, FindCommittedB
             Map<String, Integer> counts = countsByOwner.computeIfAbsent(version.getOwnerId(), owner -> new TreeMap<>());
             version.getHashes().forEach(hash -> counts.merge(hash, 1, Integer::sum));
         }
-        countsByOwner.forEach((ownerId, counts) -> counts.forEach((hash, count) -> {
-            if (blockRepository.release(ownerId, hash, count, now) == 0) {
-                // A version pointing at a block with no row: references were lost somewhere.
-                logger.error("Released block {} of owner {} has no row", hash, ownerId);
+        countsByOwner.forEach((ownerId, counts) -> {
+            long missing = blockRepository.releaseAll(ownerId, counts.keySet().toArray(String[]::new),
+                    counts.values().toArray(Integer[]::new), now);
+            if (missing > 0) {
+                // Versions pointing at blocks with no row: references were lost somewhere.
+                log.error("{} released block(s) of owner {} have no row", missing, ownerId);
             }
-        }));
+        });
     }
 
     @Override
@@ -91,7 +92,7 @@ class BlockPersistenceAdapter implements LockCommittedBlocksPort, FindCommittedB
         long missing = blockRepository.releaseAllOf(fileIds.toArray(UUID[]::new), LocalDateTime.now());
         if (missing > 0) {
             // Versions pointing at blocks with no row: references were lost somewhere.
-            logger.error("{} released block(s) of {} purged file(s) have no row", missing, fileIds.size());
+            log.error("{} released block(s) of {} purged file(s) have no row", missing, fileIds.size());
         }
     }
 

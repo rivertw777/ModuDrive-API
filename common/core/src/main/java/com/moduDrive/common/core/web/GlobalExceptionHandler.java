@@ -5,8 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.moduDrive.common.core.exception.BusinessException;
 import feign.FeignException;
 import lombok.RequiredArgsConstructor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpHeaders;
@@ -26,11 +25,11 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import java.util.Map;
 import java.util.Set;
 
+@Slf4j
 @ControllerAdvice
 @RequiredArgsConstructor
 public class GlobalExceptionHandler {
 
-    private static final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     /** Retry-After on every 503, the gateway's included. Matches the circuit breaker's
      * waitDurationInOpenState, so a client that waits this long retries as the circuit lets a probe through. */
@@ -105,7 +104,7 @@ public class GlobalExceptionHandler {
     // DB or Redis unreachable. 503, not 500, so a caller's circuit breaker counts it and its retry resends it.
     @ExceptionHandler({CannotCreateTransactionException.class, DataAccessResourceFailureException.class})
     public ResponseEntity<ApiResponse<Object>> handleInfrastructureUnavailable(Exception e) {
-        logger.error("Infrastructure unavailable", e);
+        log.error("Infrastructure unavailable", e);
         ApiResponse<Object> response = ApiResponse.error(
                 HttpStatus.SERVICE_UNAVAILABLE,
                 "일시적으로 서비스를 이용할 수 없습니다. 잠시 후 다시 시도해 주세요."
@@ -116,7 +115,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Object>> handleGlobalException(Exception e) {
         // Never echo e.getMessage(): it can carry infra detail like DB constraint names (CWE-209).
-        logger.error("Unhandled exception", e);
+        log.error("Unhandled exception", e);
         ApiResponse<Object> response = ApiResponse.error(
                 HttpStatus.INTERNAL_SERVER_ERROR,
                 "서버 오류가 발생했습니다."

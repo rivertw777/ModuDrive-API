@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 public interface FindFilePort {
 
@@ -29,11 +30,16 @@ public interface FindFilePort {
 
     /** {@link #findActiveByNamespaceIdAndPathAndName} for many names in one folder, in one query. */
     List<File> findActiveByNamespaceIdAndPathAndNames(NamespaceId namespaceId, String path, Collection<String> names);
+    /** The names of the active entries directly in {@code path} — names only, no rows to map. */
+    Set<String> findActiveNamesByNamespaceIdAndPath(NamespaceId namespaceId, String path);
 
     /** {@link #findActiveByNamespaceIdAndPathAndName}, locking the row until the transaction ends —
      * a commit adding a version, so the file can't be trashed (and purged without that version's
      * blocks) halfway through. One trashed while this waited is no longer active and isn't returned. */
     Optional<File> lockActiveByNamespaceIdAndPathAndName(NamespaceId namespaceId, String path, String name);
+    /** {@link #lockActiveByNamespaceIdAndPathAndName} for many names in one folder, in one query,
+     * locked in name order. */
+    List<File> lockActiveByNamespaceIdAndPathAndNames(NamespaceId namespaceId, String path, Collection<String> names);
 
     /** {@code findById}, locking the row — trashing it, so a commit adding a version to it finishes
      * first and the trash doesn't write back the version it read before. */

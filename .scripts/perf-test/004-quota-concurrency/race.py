@@ -1,4 +1,4 @@
-# .docs/perf-test/003-quota-concurrency.md
+# .docs/perf-test/004-quota-concurrency.md
 # Usage: race.py <userId> <files> <fileBytes>  — uploads N distinct blocks, then commits N files at once.
 import sys, os, json, uuid, hashlib, threading, urllib.request
 user, n, size = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])

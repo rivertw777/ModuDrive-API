@@ -62,6 +62,7 @@ import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -419,20 +420,24 @@ class CommitFileUploadServiceTest {
                         new FileNamespaceId(f.getNamespaceId()), new FileName(f.getName()), new FilePath(f.getPath()),
                         new FileOwnerId(f.getOwnerId()), null, null, f.getStatus(), new FileIsDirectory(false));
             });
+            given(saveFilePort.saveDirectoryIfAbsent(any(File.class))).willAnswer(inv -> Optional.of(withNewId(inv.getArgument(0))));
             given(saveFileVersionPort.saveFileVersion(any(FileVersion.class)))
                     .willReturn(FileVersionTestFixture.aVersion(UUID.randomUUID(), newId, 0L, List.of()));
 
             commitOne(new CommitFileUploadCommand(ownerId, "/사진/2024", "a.bin", uploadId, 0L, List.of()));
 
+            ArgumentCaptor<File> folders = ArgumentCaptor.forClass(File.class);
+            then(saveFilePort).should().saveDirectoryIfAbsent(folders.capture());
+            assertThat(folders.getValue()).extracting(File::getPath, File::getName, File::isDirectory)
+                    .containsExactly("/사진", "2024", true);
             ArgumentCaptor<File> saved = ArgumentCaptor.forClass(File.class);
-            then(saveFilePort).should(times(3)).saveFile(saved.capture());
+            then(saveFilePort).should(times(2)).saveFile(saved.capture());
             assertThat(saved.getAllValues())
                     .extracting(File::getPath, File::getName, File::isDirectory)
                     .containsExactly(
-                            tuple("/사진", "2024", true),
                             tuple("/사진/2024", "a.bin", false),
                             tuple("/사진/2024", "a.bin", false));
-            assertThat(saved.getAllValues().get(2).getStatus()).isEqualTo(FileStatus.UPLOADED);
+            assertThat(saved.getAllValues().get(1).getStatus()).isEqualTo(FileStatus.UPLOADED);
         }
 
         @Test
@@ -691,28 +696,27 @@ class CommitFileUploadServiceTest {
             given(findFilePort.lockActiveByNamespaceIdAndPathAndName(any(), eq("/사진"), eq("v1.2"))).willReturn(Optional.empty());
             given(findFilePort.lockActiveByNamespaceIdAndPathAndName(any(), eq("/사진/v1.2"), eq("빈폴더"))).willReturn(Optional.empty());
             File created = folder("/사진/v1.2", "빈폴더");
-            given(saveFilePort.saveFile(any(File.class))).willAnswer(inv ->
-                    "빈폴더".equals(inv.<File>getArgument(0).getName()) ? created : inv.getArgument(0));
+            given(saveFilePort.saveDirectoryIfAbsent(any(File.class))).willAnswer(inv -> Optional.of(
+                    "빈폴더".equals(inv.<File>getArgument(0).getName()) ? created : withNewId(inv.getArgument(0))));
 
             List<DirectoryResult> results = commitFileUploadService.commitDirectories(
                     List.of(new CommitDirectoryCommand(ownerId, "/사진/v1.2", "빈폴더")));
 
             assertThat(results).containsExactly(DirectoryResult.created(created.getId()));
             ArgumentCaptor<File> saved = ArgumentCaptor.forClass(File.class);
-            then(saveFilePort).should(times(2)).saveFile(saved.capture());
+            then(saveFilePort).should(times(2)).saveDirectoryIfAbsent(saved.capture());
             assertThat(saved.getAllValues())
                     .extracting(File::getPath, File::getName, File::isDirectory)
                     .containsExactly(tuple("/사진", "v1.2", true), tuple("/사진/v1.2", "빈폴더", true));
         }
 
         @Test
-        @DisplayName("다른 commit이 같은 폴더를 먼저 만들었으면 다시 찾아 그 폴더를 돌려준다")
-        void findsAFolderAnotherCommitCreatedFirst() {
+        @DisplayName("다른 commit이 같은 폴더를 동시에 만들면, 오류 없이 그 폴더를 잠가 돌려준다")
+        void locksAFolderAnotherCommitMadeAtOnce() {
             File raced = folder("/", "사진");
             given(findFilePort.lockActiveByNamespaceIdAndPathAndName(any(), eq("/"), eq("사진")))
                     .willReturn(Optional.empty(), Optional.of(raced));
-            given(saveFilePort.saveFile(any(File.class)))
-                    .willThrow(new BusinessException(FileExceptionCase.FILE_ALREADY_EXISTS));
+            given(saveFilePort.saveDirectoryIfAbsent(any(File.class))).willReturn(Optional.empty());
 
             List<DirectoryResult> results = commitFileUploadService.commitDirectories(
                     List.of(new CommitDirectoryCommand(ownerId, "/", "사진")));
@@ -778,5 +782,188 @@ class CommitFileUploadServiceTest {
             then(findFilePort).should().findActiveByNamespaceIdAndPathAndNames(any(), eq("/문서"), eq(Set.of("c.bin")));
             then(findFilePort).should(never()).findActiveByNamespaceIdAndPathAndName(any(), any(), any());
         }
+    }
+
+    @Nested
+    @DisplayName("묶음에서 블록이 다 있는 파일이 둘 이상일 때")
+    class WhenSeveralFilesAreReady {
+
+        private final File photo = File.withId(new FileId(UUID.randomUUID()), new FileNamespaceId(namespace.getId()),
+                new FileName("b.bin"), new FilePath("/사진"), new FileOwnerId(ownerId), null, null,
+                FileStatus.UPLOADED, new FileIsDirectory(false));
+
+        private final List<CommitFileUploadCommand> group = List.of(
+                new CommitFileUploadCommand(ownerId, "/사진", "a.bin", UUID.randomUUID(), 1_000L, List.of(HASH_A)),
+                new CommitFileUploadCommand(ownerId, "/사진", "b.bin", UUID.randomUUID(), 1_000L, List.of(HASH_A)),
+                new CommitFileUploadCommand(ownerId, "/문서", "c.bin", UUID.randomUUID(), 3_000L, List.of(HASH_B)));
+
+        /** a.bin and c.bin are new, b.bin (800 bytes now) gets a new version. Sizes past 127, so no two
+         * equal sizes are the same boxed Long. */
+        private void givenGroupSpots() {
+            givenNamespace();
+            givenCommitted(Map.of(HASH_A, 1_000, HASH_B, 3_000));
+            photo.markUploaded(UUID.randomUUID(), 800L);
+            lenient().when(findFilePort.lockActiveByNamespaceIdAndPathAndNames(any(), eq("/사진"), any()))
+                    .thenReturn(List.of(photo));
+            // One by one (the fallback): the same spots, a row at a time.
+            lenient().when(findFilePort.lockActiveByNamespaceIdAndPathAndName(any(), any(), any())).thenReturn(Optional.empty());
+            lenient().when(findFilePort.lockActiveByNamespaceIdAndPathAndName(any(), eq("/사진"), eq("b.bin")))
+                    .thenReturn(Optional.of(photo));
+            lenient().when(saveFilePort.saveFile(any())).thenAnswer(inv -> saveFilePort.saveFiles(List.of(inv.<File>getArgument(0))).getFirst());
+            lenient().when(saveFilePort.saveDirectoryIfAbsent(any())).thenAnswer(inv -> Optional.of(withNewId(inv.getArgument(0))));
+            lenient().when(saveFilePort.saveFiles(any())).thenAnswer(inv -> inv.<List<File>>getArgument(0).stream()
+                    .map(f -> f.getId() != null ? f : File.withId(new FileId(UUID.randomUUID()),
+                            new FileNamespaceId(f.getNamespaceId()), new FileName(f.getName()), new FilePath(f.getPath()),
+                            new FileOwnerId(f.getOwnerId()), null, null, f.getStatus(), new FileIsDirectory(false)))
+                    .toList());
+            lenient().when(saveFileVersionPort.saveFileVersions(any())).thenAnswer(inv -> inv.<List<FileVersion>>getArgument(0)
+                    .stream().map(this::stored).toList());
+            lenient().when(saveFileVersionPort.saveFileVersion(any())).thenAnswer(inv -> stored(inv.getArgument(0)));
+        }
+
+        private FileVersion stored(FileVersion v) {
+            return FileVersionTestFixture.aVersion(UUID.randomUUID(), v.getFileId(), v.getFileSize(), v.getHashes(), v.getUploadId());
+        }
+
+        @Test
+        @DisplayName("트랜잭션 하나에서 잠금·행·참조 수·사용량을 묶음 전체에 한 번씩 처리한다")
+        void commitsTheGroupInOneTransaction() {
+            givenGroupSpots();
+
+            List<CommitResult> results = commitFileUploadService.commit(group);
+
+            assertThat(results).extracting(r -> r.version().getUploadId())
+                    .containsExactlyElementsOf(group.stream().map(c -> c.getUploadId().value()).toList());
+            then(transactionTemplate).should(times(1)).execute(any());
+            then(lockCommittedBlocksPort).should(times(1)).lockCommittedBlocks(ownerId, Set.of(HASH_A, HASH_B));
+            then(referenceBlocksPort).should(times(1)).referenceBlocks(eq(ownerId), any(), eq(Map.of(HASH_A, 2, HASH_B, 1)));
+            then(saveFileVersionPort).should(times(1)).saveFileVersions(any());
+            then(saveFileAccessPort).should(times(1)).recordAccesses(eq(ownerId), any(), any());
+            // 1,000 + (1,000 - 800) + 3,000: the replaced file counts only its growth.
+            then(updateNamespaceUsagePort).should(times(1)).addUsedBytes(new NamespaceId(namespace.getId()), 4_200L);
+            then(findFilePort).should(never()).lockActiveByNamespaceIdAndPathAndName(any(), any(), eq("a.bin"));
+            then(saveFileVersionPort).should(never()).saveFileVersion(any());
+            assertThat(photo.getFileSize()).isEqualTo(1_000L);
+        }
+
+        @Test
+        @DisplayName("현재 버전과 내용이 같은 파일은 새 버전 없이 현재 버전을 돌려준다")
+        void makesNoNewVersionForUnchangedContent() {
+            givenGroupSpots();
+            FileVersion current = FileVersionTestFixture.aVersion(UUID.randomUUID(), photo.getId(), 1_000L, List.of(HASH_A));
+            photo.markUploaded(current.getId(), 1_000L);
+            given(findFileVersionsPort.findAllByIds(List.of(current.getId()))).willReturn(List.of(current));
+
+            List<CommitResult> results = commitFileUploadService.commit(group);
+
+            assertThat(results.get(1).version()).isEqualTo(current);
+            ArgumentCaptor<List<FileVersion>> versions = ArgumentCaptor.captor();
+            then(saveFileVersionPort).should().saveFileVersions(versions.capture());
+            assertThat(versions.getValue()).extracting(FileVersion::getFileSize).containsExactly(1_000L, 3_000L);
+            then(updateNamespaceUsagePort).should().addUsedBytes(new NamespaceId(namespace.getId()), 4_000L);
+        }
+
+        @Test
+        @DisplayName("한 파일의 자리에 폴더가 있으면 묶음을 되돌리고 파일마다 따로 commit해, 그 파일만 실패한다")
+        void fallsBackToOneByOneWhenAFileCannotGoIn() {
+            givenGroupSpots();
+            File folder = File.withId(new FileId(UUID.randomUUID()), new FileNamespaceId(namespace.getId()),
+                    new FileName("c.bin"), new FilePath("/문서"), new FileOwnerId(ownerId), null, null,
+                    FileStatus.UPLOADED, new FileIsDirectory(true));
+            given(findFilePort.lockActiveByNamespaceIdAndPathAndNames(any(), eq("/문서"), any())).willReturn(List.of(folder));
+            given(findFilePort.lockActiveByNamespaceIdAndPathAndName(any(), eq("/문서"), eq("c.bin"))).willReturn(Optional.of(folder));
+
+            List<CommitResult> results = commitFileUploadService.commit(group);
+
+            assertThat(results.get(0).version()).isNotNull();
+            assertThat(results.get(1).version()).isNotNull();
+            assertThat(results.get(2).error()).isEqualTo(FileExceptionCase.FILE_ALREADY_EXISTS);
+            // The group's attempt, then one per file.
+            then(transactionTemplate).should(times(4)).execute(any());
+            then(saveFileVersionPort).should(never()).saveFileVersions(any());
+        }
+
+        @Test
+        @DisplayName("다른 commit이 먼저 용량을 쓰면 묶음을 되돌리고 파일마다 따로 commit해, 들어가는 파일만 들어간다")
+        void fallsBackToOneByOneWhenTheQuotaWasRaced() {
+            givenGroupSpots();
+            // The group's 4,200 bytes don't fit; then a.bin's 1,000 and b.bin's 200 do, c.bin's 3,000 doesn't.
+            given(updateNamespaceUsagePort.addUsedBytes(any(), anyLong())).willReturn(false, true, true, false);
+
+            List<CommitResult> results = commitFileUploadService.commit(group);
+
+            assertThat(results.get(0).version()).isNotNull();
+            assertThat(results.get(1).version()).isNotNull();
+            assertThat(results.get(2).error()).isEqualTo(FileExceptionCase.QUOTA_EXCEEDED);
+        }
+
+        @Test
+        @DisplayName("두 파일이 같은 자리를 가리키면 묶음으로 처리하지 않고 파일마다 따로 commit한다")
+        void goesOneByOneForTwoFilesAtOneSpot() {
+            givenGroupSpots();
+            List<CommitFileUploadCommand> twice = List.of(group.get(1),
+                    new CommitFileUploadCommand(ownerId, "/사진", "b.bin", UUID.randomUUID(), 1_000L, List.of(HASH_A)));
+
+            commitFileUploadService.commit(twice);
+
+            then(transactionTemplate).should(times(2)).execute(any());
+            then(findFilePort).should(never()).lockActiveByNamespaceIdAndPathAndNames(any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("묶음 전체가 현재 버전과 내용이 같으면 버전도 사용량도 건드리지 않는다")
+        void touchesNothingWhenNothingChanged() {
+            givenGroupSpots();
+            List<CommitFileUploadCommand> same = List.of(group.get(1),
+                    new CommitFileUploadCommand(ownerId, "/사진", "d.bin", UUID.randomUUID(), 1_000L, List.of(HASH_A)));
+            File other = File.withId(new FileId(UUID.randomUUID()), new FileNamespaceId(namespace.getId()),
+                    new FileName("d.bin"), new FilePath("/사진"), new FileOwnerId(ownerId), null, null,
+                    FileStatus.UPLOADED, new FileIsDirectory(false));
+            FileVersion photoNow = FileVersionTestFixture.aVersion(UUID.randomUUID(), photo.getId(), 1_000L, List.of(HASH_A));
+            FileVersion otherNow = FileVersionTestFixture.aVersion(UUID.randomUUID(), other.getId(), 1_000L, List.of(HASH_A));
+            photo.markUploaded(photoNow.getId(), 1_000L);
+            other.markUploaded(otherNow.getId(), 1_000L);
+            given(findFilePort.lockActiveByNamespaceIdAndPathAndNames(any(), eq("/사진"), any())).willReturn(List.of(photo, other));
+            given(findFileVersionsPort.findAllByIds(any())).willReturn(List.of(photoNow, otherNow));
+
+            List<CommitResult> results = commitFileUploadService.commit(same);
+
+            assertThat(results).extracting(CommitResult::version).containsExactly(photoNow, otherNow);
+            then(saveFileVersionPort).shouldHaveNoInteractions();
+            then(updateNamespaceUsagePort).shouldHaveNoInteractions();
+        }
+
+        @Test
+        @DisplayName("잠그기 전에 정리 작업이 블록을 지웠으면 파일마다 따로 commit해, 그 블록을 쓰는 파일만 needBlocks로 답한다")
+        void fallsBackToOneByOneWhenABlockWasSwept() {
+            givenGroupSpots();
+            given(lockCommittedBlocksPort.lockCommittedBlocks(eq(ownerId), anyCollection())).willReturn(Map.of(HASH_A, 1_000));
+
+            List<CommitResult> results = commitFileUploadService.commit(group);
+
+            assertThat(results.get(0).version()).isNotNull();
+            assertThat(results.get(1).version()).isNotNull();
+            assertThat(results.get(2).needBlocks()).containsExactly(HASH_B);
+            then(saveFileVersionPort).should(never()).saveFileVersions(any());
+        }
+
+        @Test
+        @DisplayName("묶음이 교착으로 끊기면 파일마다 따로 commit한다")
+        void fallsBackToOneByOneOnALockCycle() {
+            givenGroupSpots();
+            willThrow(new CannotAcquireLockException("deadlock")).given(saveFileVersionPort).saveFileVersions(any());
+
+            List<CommitResult> results = commitFileUploadService.commit(group);
+
+            assertThat(results).allSatisfy(r -> assertThat(r.version()).isNotNull());
+            then(saveFileVersionPort).should(times(3)).saveFileVersion(any());
+        }
+    }
+
+    /** The row a save would have made: the same file, with an id. */
+    private static File withNewId(File f) {
+        return File.withId(new FileId(UUID.randomUUID()), new FileNamespaceId(f.getNamespaceId()), new FileName(f.getName()),
+                new FilePath(f.getPath()), new FileOwnerId(f.getOwnerId()), null, null, f.getStatus(),
+                new FileIsDirectory(f.isDirectory()));
     }
 }

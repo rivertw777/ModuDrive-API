@@ -29,10 +29,13 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
@@ -42,6 +45,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.lenient;
 
 @ExtendWith(MockitoExtension.class)
 class UploadBatchServiceTest {
@@ -89,7 +93,12 @@ class UploadBatchServiceTest {
     }
 
     private void givenExistingInTarget(String target, File... files) {
-        given(findFilePort.findByNamespaceIdAndPath(any(), eq(target))).willReturn(List.of(files));
+        lenient().when(findFilePort.findActiveByNamespaceIdAndPathAndNames(any(), eq(target), any())).thenAnswer(inv -> {
+            Collection<String> names = inv.getArgument(2);
+            return Arrays.stream(files).filter(f -> names.contains(f.getName())).toList();
+        });
+        lenient().when(findFilePort.findActiveNamesByNamespaceIdAndPath(any(), eq(target)))
+                .thenAnswer(inv -> Arrays.stream(files).map(File::getName).collect(Collectors.toSet()));
     }
 
     private static void assertFails(Throwable thrown, FileExceptionCase expected) {

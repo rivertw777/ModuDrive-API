@@ -21,7 +21,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Answers;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -46,7 +45,7 @@ class ListSharedDirectoryServiceTest {
     @Mock private FindFilePort findFilePort;
     @Mock private FindFileSharePort findFileSharePort;
     @Mock private FileFavoritePort fileFavoritePort;
-    @Mock(answer = Answers.CALLS_REAL_METHODS) private FindMemberByIdPort findMemberByIdPort;
+    @Mock private FindMemberByIdPort findMemberByIdPort;
     @Mock private FileAccessGuard fileAccessGuard;
     @InjectMocks private ListSharedDirectoryService listSharedDirectoryService;
 
@@ -54,7 +53,7 @@ class ListSharedDirectoryServiceTest {
     void defaults() {
         lenient().when(fileFavoritePort.favoriteFileIds(any())).thenReturn(Set.of());
         lenient().when(fileAccessGuard.requirePermission(any(), any(), any())).thenReturn(FileAccessGuard.Access.NONE);
-        lenient().when(findMemberByIdPort.findMemberById(any())).thenReturn(new MemberSummary("홍길동", "owner@modudrive.com"));
+        lenient().when(findMemberByIdPort.findMemberByIdOrUnknown(any())).thenReturn(new MemberSummary("홍길동", "owner@modudrive.com"));
         lenient().when(findFileSharePort.findBySharedWithUserIdAndFileIdIn(any(), any())).thenReturn(List.of());
     }
 
