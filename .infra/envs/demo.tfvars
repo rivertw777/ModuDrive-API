@@ -48,12 +48,23 @@ services = {
   notification = { cpu = 512, memory = 1024, min = 1, max = 2 }
 }
 
-# A trial account's first alarm. ~$138 of infrastructure + AMP/X-Ray/logs, with headroom.
+# A trial account's first alarm. ~$138 of infrastructure + logs, with headroom.
 monthly_budget_usd = 150
 alert_email        = null
 
-# The smallest collector; scraping once a minute keeps AMP's per-sample bill near nothing.
+# The smallest collector, scraping once a minute.
 otel_collector = { cpu = 256, memory = 1024, scrape_interval = "60s" }
-grafana        = false # $9/user/month and IAM Identity Center — AMP, X-Ray and CloudWatch consoles do for a trial
+grafana        = false # $9/user/month and IAM Identity Center — Grafana Cloud's free tier below instead
+
+# Grafana Cloud free tier (10k metric series, 50 GB logs and traces a month, 14 days kept) in place of
+# AMP, X-Ray and Managed Grafana: one Grafana with metrics, logs and traces linked, like local.
+grafana_cloud = {
+  otlp_url          = "https://otlp-gateway-prod-ap-northeast-0.grafana.net/otlp"
+  otlp_user         = "1890952"
+  prometheus_url    = "https://prometheus-prod-49-prod-ap-northeast-0.grafana.net"
+  prometheus_user   = "3706127"
+  alertmanager_url  = "https://alertmanager-prod-ap-northeast-0.grafana.net"
+  alertmanager_user = "1850999"
+}
 
 terraform_in_ci = true # a merge into the demo branch applies .infra/ (deploy.yml)

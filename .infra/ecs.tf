@@ -20,9 +20,9 @@ locals {
         JAVA_TOOL_OPTIONS = "-XX:MaxRAMPercentage=70"
         # Traces go to the app's default, http://otel-collector:4318 — the collector's Service Connect
         # name is the compose one (monitoring.tf).
-        # Logs are read in CloudWatch (stdout); the collector has no logs pipeline.
-        MANAGEMENT_LOGGING_EXPORT_OTLP_ENABLED = "false"
       },
+      # Logs go there too only for Grafana Cloud; otherwise CloudWatch (stdout) is where they're read.
+      var.grafana_cloud == null ? { MANAGEMENT_LOGGING_EXPORT_OTLP_ENABLED = "false" } : {},
       contains(keys(local.db_names), name) ? {
         # TLS required (Aurora refuses plain connections: rds.force_ssl).
         SPRING_DATASOURCE_URL      = "jdbc:postgresql://${local.db_address[local.db_instance_of[name]]}:5432/${local.db_names[name]}?sslmode=require"
@@ -131,7 +131,7 @@ resource "aws_ecs_task_definition" "service" {
 
     portMappings = [
       { name = "http", containerPort = each.value, protocol = "tcp", appProtocol = "http" },
-      # Actuator (health, prometheus): the ALB health check and the ADOT collector's scrape.
+      # Actuator (health, prometheus): the ALB health check and the collector's scrape.
       { name = "management", containerPort = 9464, protocol = "tcp" },
     ]
 

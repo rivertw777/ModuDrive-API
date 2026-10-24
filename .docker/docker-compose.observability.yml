@@ -60,7 +60,7 @@ services:
     restart: unless-stopped
 
   # 알림 규칙은 Prometheus가 평가하고(alert-rules.yaml), 묶어서 디스코드로 보내는 건 이것이다.
-  # 메시지 템플릿은 AWS와 한 벌(.infra/monitoring/discord.tmpl)이라 그 폴더를 같이 얹는다.
+  # 메시지 템플릿은 demo와 한 벌(.infra/monitoring/discord.tmpl)이라 그 폴더를 같이 얹는다.
   # 웹후크 주소는 .docker/.env에서 받아 채널별 파일로 쓴다(Alertmanager 설정은 환경 변수를 못 읽는다).
   # 주소가 없는 채널은 service 채널로 보낸다.
   alertmanager:

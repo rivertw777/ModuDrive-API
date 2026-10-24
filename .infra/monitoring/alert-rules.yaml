@@ -1,12 +1,13 @@
-# AMP alert rules — the local rules (.docker/observability/alert-rules.yaml, spec 008): same queries,
-# thresholds and waits. What differs on AWS:
+# Alert rules on Grafana Cloud or AMP (monitoring.tf) — the local rules (.docker/observability/alert-rules.yaml,
+# spec 008): same queries, thresholds and waits. What differs on AWS:
 #   - `service` is the container name (otel-collector.yaml) rather than the scrape host (prometheus.yml)
-#   - hints point at CloudWatch Logs and X-Ray instead of docker logs, Loki and Tempo
+#   - hints point at ECS, and at Loki and Tempo on Grafana Cloud (CloudWatch Logs and X-Ray without it)
+#     instead of docker
 #   - a task that's gone is no `up` series at all rather than up = 0, hence ServiceNoTasks
 # The threshold sits inside the ratio's parentheses (both sides): `and` binds looser than `>`, so
 # `A and B > x` would compare B (the request count), not the ratio.
 # Alert names stay ASCII (they become the SNS subject); `title` is what the message shows.
-# Rendered by Terraform (templatefile): $${...} is Terraform's, {{ ... }} the alert template's.
+# Rendered by Terraform (templatefile): $${...} and %%{...} are Terraform's, {{ ... }} the alert template's.
 groups:
   - name: outbox
     rules:
@@ -19,7 +20,11 @@ groups:
           title: 이벤트 전송 적체
           summary: '대기 중인 이벤트가 **{{ printf "%.0f" $value }}초**째 적체 중'
           action: 로그로 원인 확인 후 SQS 복구
+%{ if loki ~}
+          logs: '{service_name="{{ $labels.service }}"} |= "Outbox send failed"'
+%{ else ~}
           logs: 'aws logs tail /ecs/${project}/{{ $labels.service }} --since 15m --filter-pattern "Outbox send failed"'
+%{ endif ~}
 
       - alert: OutboxFailed
         expr: max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
@@ -79,7 +84,11 @@ groups:
           title: 서킷 열림
           summary: 2분째 닫히지 않음 — 대상 서비스 호출이 계속 실패 중 (502·503·504 · 타임아웃 · 연결 실패)
           action: 서킷이 부르는 서비스의 상태와 로그로 실패 원인 확인
+%{ if loki ~}
+          inspect: '{service_name="{{ $labels.service }}"} |= "{{ $labels.name }}"'
+%{ else ~}
           inspect: 'aws logs tail /ecs/${project}/{{ $labels.service }} --since 15m --filter-pattern "{{ $labels.name }}"'
+%{ endif ~}
 
       - alert: RouteErrorRate
         expr: >-
@@ -94,7 +103,11 @@ groups:
           title: 요청 실패율 높음
           summary: '최근 5분 요청의 **{{ humanizePercentage $value }}**가 5xx로 실패 중'
           action: 그 서비스의 에러 로그로 원인 확인
+%{ if loki ~}
+          inspect: '{service_name="{{ $labels.routeId }}"} | detected_level = "error"'
+%{ else ~}
           inspect: 'aws logs tail /ecs/${project}/{{ $labels.routeId }} --since 15m --filter-pattern ERROR'
+%{ endif ~}
 
       - alert: RouteSlowRate
         expr: >-
@@ -109,8 +122,13 @@ groups:
         annotations:
           title: 느린 요청 많음
           summary: '최근 5분 요청의 **{{ humanizePercentage $value }}**가 1초를 넘김'
+%{ if loki ~}
+          action: Grafana → Explore → Tempo에 아래 쿼리로 느린 trace를 열어 가장 긴 span(DB 쿼리·하위 호출)을 확인
+          inspect: '{ resource.service.name = "{{ $labels.routeId }}" && kind = server && duration > 1s }'
+%{ else ~}
           action: X-Ray 콘솔 → 트레이스에서 아래 필터로 느린 trace를 열어 가장 긴 구간(DB 쿼리·하위 호출)을 확인
           inspect: 'service("{{ $labels.routeId }}") { responsetime > 1 }'
+%{ endif ~}
 
       - alert: HeapHigh
         expr: >-
@@ -123,7 +141,11 @@ groups:
           title: 힙 메모리 부족
           summary: 'GC 직후에도 old 영역의 **{{ humanizePercentage $value }}**가 남아 있음 (GC가 못 따라감 · 곧 OutOfMemoryError)'
           action: 그 시각의 요청(zip·다운로드 등)과 GC 로그 확인, 계속되면 services.<이름>.memory 상향
+%{ if loki ~}
+          inspect: '{service_name="{{ $labels.service }}"} |= "OutOfMemoryError"'
+%{ else ~}
           inspect: 'aws logs tail /ecs/${project}/{{ $labels.service }} --since 15m --filter-pattern OutOfMemoryError'
+%{ endif ~}
 
       - alert: DbPoolExhausted
         expr: max by (service) (increase(hikaricp_connections_timeout_total[5m])) > 0
@@ -132,5 +154,10 @@ groups:
         annotations:
           title: DB 커넥션 부족
           summary: '최근 5분 동안 커넥션을 못 받아 실패(503)한 요청 **{{ printf "%.0f" $value }}건** (풀이 다 쓰임)'
+%{ if loki ~}
+          action: Grafana → Explore → Tempo에 아래 쿼리로 느린 trace를 열어 DB 구간(커넥션 대기·쿼리) 확인, 계속되면 db_pool_size 상향
+          inspect: '{ resource.service.name = "{{ $labels.service }}" && kind = server && duration > 1s }'
+%{ else ~}
           action: X-Ray에서 DB 구간이 긴 trace로 느린 쿼리 확인, 계속되면 db_pool_size 상향
           inspect: 'service("{{ $labels.service }}") { responsetime > 1 }'
+%{ endif ~}

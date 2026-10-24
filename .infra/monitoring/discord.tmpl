@@ -1,4 +1,4 @@
-{{/* Discord 메시지 — AWS(alertmanager.yaml → AMP)와 로컬(.docker/observability/alertmanager.yml)이 같이 쓴다.
+{{/* Discord 메시지 — 로컬(.docker/observability/alertmanager.yml)과 demo가 같이 쓴다.
      본문(discord.content) 아래에 제목만 있는 카드(discord.title)가 붙는다. */}}
 {{ define "discord.target" }}{{ or .Labels.routeId .Labels.service }}{{ if .Labels.queue }} · `{{ .Labels.queue }}`{{ end }}{{ if .Labels.name }} · `{{ .Labels.name }}`{{ end }}{{ end }}
 {{ define "discord.message" }}
