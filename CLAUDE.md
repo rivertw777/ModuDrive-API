@@ -24,7 +24,7 @@ ModuDrive is a cloud-drive microservices backend built with **Spring Boot 4.1.1*
 # Start infra only (Postgres, Redis, LocalStack — local SQS + S3 + SES)
 make infra
 
-# Start the observability stack only (otel-collector, Tempo, Loki, Promtail, Prometheus, Alertmanager, Grafana)
+# Start the observability stack only (otel-collector, Tempo, Loki, Prometheus, Alertmanager, Grafana)
 make observability
 
 # Wipe every data volume (infra + observability) and restart infra + observability + services
@@ -35,12 +35,9 @@ make service
 
 # Test + build image + start a single service
 make member   # or: make gateway, make auth, make file, make storage, make mail, make notification
-
-# Grafana on localhost:3002 for the AWS demo stack (reads its AMP endpoint from terraform output)
-make demo
 ```
 
-Docker Compose files are at `.docker/docker-compose.service.yml` (services), `.docker/docker-compose.infra.yml` (Postgres, Redis, LocalStack — local SQS + S3 + SES, Mailpit — local inbox for SES mail at `localhost:8025`; needs `LOCALSTACK_AUTH_TOKEN` in `.docker/.env`), and `.docker/docker-compose.observability.yml` (Grafana/Tempo/Loki/Prometheus/Alertmanager/OTel — alerts go Prometheus rules → Alertmanager → LocalStack SNS → Lambda → Discord, the same path as AWS). All three attach to `modudrive_network` as an **external** network, created by the `network` Make target (a prerequisite of `infra`/`observability`; `start.sh` creates it inline). Postgres holds one database + login per service (`member_db`/`member_service`, `file_db`/`file_service`, `notification_db`/`notification_service`, `auth_db`/`auth_service`); each login can only connect to its own database. They are created by `.docker/postgres/postgres_init.sh`, which runs only on an empty volume — `make reset` after changing it. Tables come from Flyway, not this script — see [Database Migrations](#database-migrations-flyway). The shared `Dockerfile` lives at `.docker/Dockerfile`, referenced by every service's `build.gradle` via its `docker` task.
+Docker Compose files are at `.docker/docker-compose.service.yml` (services), `.docker/docker-compose.infra.yml` (Postgres, Redis, LocalStack — local SQS + S3 + SES, Mailpit — local inbox for SES mail at `localhost:8025`; needs `LOCALSTACK_AUTH_TOKEN` in `.docker/.env`), and `.docker/docker-compose.observability.yml` (Grafana/Tempo/Loki/Prometheus/Alertmanager/OTel — alerts go Prometheus rules → Alertmanager → Discord, the same path as the demo stack on Grafana Cloud). All three attach to `modudrive_network` as an **external** network, created by the `network` Make target (a prerequisite of `infra`/`observability`; `start.sh` creates it inline). Postgres holds one database + login per service (`member_db`/`member_service`, `file_db`/`file_service`, `notification_db`/`notification_service`, `auth_db`/`auth_service`); each login can only connect to its own database. They are created by `.docker/postgres/postgres_init.sh`, which runs only on an empty volume — `make reset` after changing it. Tables come from Flyway, not this script — see [Database Migrations](#database-migrations-flyway). The shared `Dockerfile` lives at `.docker/Dockerfile`, referenced by every service's `build.gradle` via its `docker` task.
 
 The active Spring profile (`dev`) is injected via `SPRING_PROFILES_ACTIVE` in `docker-compose.service.yml`, not hardcoded in `application.yml`.
 
@@ -78,7 +75,7 @@ For the full layer breakdown, naming conventions, dependency-direction rules, an
 | `common:infrastructure:resilience4j`| `CircuitBreakerEventConfig`, `RetryEventConfig`, `FeignFallbackUtils` |
 | `common:infrastructure:spring-cloud`| `spring-cloud-starter-openfeign` — all services that use Feign depend on this module |
 | `common:infrastructure:swagger`     | Aggregated OpenAPI/Swagger UI config (dev profile)           |
-| `common:infrastructure:observability` | Actuator on management port 9464, Prometheus registry, OTLP tracing to `otel-collector:4318`, `UserIdObservationFilter` — used by every service |
+| `common:infrastructure:observability` | Actuator on management port 9464, Prometheus registry, OTLP traces and logs to `otel-collector:4318`, `UserIdObservationFilter` — used by every service |
 
 Every service depends on `common:core` and `common:infrastructure:observability`. JPA services (member, file, notification, auth) also depend on `common:infrastructure:jpa`.
 

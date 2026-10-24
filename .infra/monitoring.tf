@@ -1,28 +1,113 @@
-# Monitoring (003-aws-migration.md 1-13). Storage and query are managed — AMP for metrics, X-Ray for traces,
-# CloudWatch Logs for logs (awslogs, ecs.tf) — and the one thing this stack runs is the central ADOT
-# collector below. Alerts are the local Prometheus rules on AMP's ruler; they and the AWS-side alarms
-# all go to one SNS topic, which a small Lambda posts to Discord.
+# Monitoring (003-aws-migration.md 1-13). Storage and query are managed, and the one thing this stack
+# runs is the central collector below. Two backends:
+#   - Grafana Cloud (var.grafana_cloud, demo): metrics, logs and traces in one Grafana, as local. The
+#     alert rules run on its ruler and its alertmanager posts to Discord, as local.
+#   - AWS (prod): AMP for metrics, X-Ray for traces, CloudWatch Logs for logs (awslogs, ecs.tf). The
+#     alert rules run on AMP's ruler, out through the SNS topic below.
+# Either way the AWS-side alarms go to one SNS topic, which a small Lambda posts to Discord.
+locals {
+  grafana_cloud = var.grafana_cloud != null
 
-# ---------------------------------------------------------------------------------------------------
-# Metrics: AMP. No customer key even when hardened — metric labels carry no user data (no userId or
-# fileId; 003-aws-migration.md 1-13), and AMP's own key keeps the query side free of KMS grants.
-resource "aws_prometheus_workspace" "main" {
-  alias = var.project
-}
-
-# The rules in monitoring/alert-rules.yaml — same queries and thresholds as
-# .docker/observability/alert-rules.yaml (spec 007), only hints for AWS.
-resource "aws_prometheus_rule_group_namespace" "alerts" {
-  name         = "alerts"
-  workspace_id = aws_prometheus_workspace.main.id
-  data = templatefile("${path.module}/monitoring/alert-rules.yaml", {
+  # The rules in monitoring/alert-rules.yaml — same queries and thresholds as
+  # .docker/observability/alert-rules.yaml (spec 008), only hints for AWS.
+  alert_rules = templatefile("${path.module}/monitoring/alert-rules.yaml", {
     project  = var.project
     services = keys(local.service_ports)
+    loki     = local.grafana_cloud
   })
 }
 
+# ---------------------------------------------------------------------------------------------------
+# Grafana Cloud. The token (access policy with metrics, logs, traces, rules and alerts write) is made
+# on grafana.com and put by hand before the first apply:
+#   aws ssm put-parameter --name /<project>/GRAFANA_CLOUD_TOKEN --type SecureString --value <token>
+data "aws_ssm_parameter" "grafana_cloud_token" {
+  count = local.grafana_cloud ? 1 : 0
+
+  name = "/${var.project}/GRAFANA_CLOUD_TOKEN"
+}
+
+data "aws_ssm_parameter" "discord_webhook" {
+  for_each = local.grafana_cloud ? aws_ssm_parameter.discord_webhook : {}
+
+  name = each.value.name
+}
+
+# Rules and alertmanager config go up through the Mimir APIs — the AWS provider has no say there. The
+# rule namespace is replaced whole, so a group dropped here is dropped there too.
+resource "terraform_data" "grafana_cloud_alerts" {
+  count = local.grafana_cloud ? 1 : 0
+
+  triggers_replace = [
+    local.alert_rules,
+    local.grafana_cloud_alertmanager,
+    sha256(data.aws_ssm_parameter.grafana_cloud_token[0].value),
+  ]
+
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    command     = <<-EOT
+      set -euo pipefail
+      rules="$PROMETHEUS_URL/api/prom/rules/alerts"
+      curl -sS --fail-with-body -u "$PROMETHEUS_USER:$TOKEN" -X DELETE "$rules" || true
+      for group in $${!RULE_GROUP_*}; do
+        curl -sS --fail-with-body -u "$PROMETHEUS_USER:$TOKEN" -H 'Content-Type: application/yaml' \
+          --data-binary "$${!group}" "$rules"
+      done
+      curl -sS --fail-with-body -u "$ALERTMANAGER_USER:$TOKEN" -H 'Content-Type: application/yaml' \
+        --data-binary "$ALERTMANAGER_CONFIG" "$ALERTMANAGER_URL/api/v1/alerts"
+    EOT
+    environment = merge(
+      {
+        PROMETHEUS_URL      = var.grafana_cloud.prometheus_url
+        PROMETHEUS_USER     = var.grafana_cloud.prometheus_user
+        ALERTMANAGER_URL    = var.grafana_cloud.alertmanager_url
+        ALERTMANAGER_USER   = var.grafana_cloud.alertmanager_user
+        ALERTMANAGER_CONFIG = local.grafana_cloud_alertmanager
+        TOKEN               = data.aws_ssm_parameter.grafana_cloud_token[0].value
+      },
+      { for i, g in yamldecode(local.alert_rules).groups : "RULE_GROUP_${i}" => yamlencode(g) },
+    )
+  }
+}
+
+locals {
+  # .docker/observability/alertmanager.yml with the webhook URLs inline: a hosted alertmanager reads no files.
+  # A channel whose URL isn't in yet goes to service's, as local (spec 008 3).
+  discord_webhook = { for k, p in data.aws_ssm_parameter.discord_webhook : k => p.value }
+  grafana_cloud_alertmanager = local.grafana_cloud ? templatefile("${path.module}/monitoring/alertmanager-grafana-cloud.yaml", {
+    webhooks = {
+      for c in ["messaging", "service", "infra"] : c => (
+        startswith(local.discord_webhook["DISCORD_${upper(c)}_WEBHOOK_URL"], "https://")
+        ? local.discord_webhook["DISCORD_${upper(c)}_WEBHOOK_URL"]
+        : local.discord_webhook["DISCORD_SERVICE_WEBHOOK_URL"]
+      )
+    }
+    discord_template = file("${path.module}/monitoring/discord.tmpl")
+  }) : null
+}
+
+# ---------------------------------------------------------------------------------------------------
+# AWS. Metrics: AMP. No customer key even when hardened — metric labels carry no user data (no userId
+# or fileId; 003-aws-migration.md 1-13), and AMP's own key keeps the query side free of KMS grants.
+resource "aws_prometheus_workspace" "main" {
+  count = local.grafana_cloud ? 0 : 1
+
+  alias = var.project
+}
+
+resource "aws_prometheus_rule_group_namespace" "alerts" {
+  count = local.grafana_cloud ? 0 : 1
+
+  name         = "alerts"
+  workspace_id = aws_prometheus_workspace.main[0].id
+  data         = local.alert_rules
+}
+
 resource "aws_prometheus_alert_manager_definition" "alerts" {
-  workspace_id = aws_prometheus_workspace.main.id
+  count = local.grafana_cloud ? 0 : 1
+
+  workspace_id = aws_prometheus_workspace.main[0].id
   definition = templatefile("${path.module}/monitoring/alertmanager.yaml", {
     topic_arn        = aws_sns_topic.alerts.arn
     region           = var.region
@@ -30,9 +115,24 @@ resource "aws_prometheus_alert_manager_definition" "alerts" {
   })
 }
 
+moved {
+  from = aws_prometheus_workspace.main
+  to   = aws_prometheus_workspace.main[0]
+}
+
+moved {
+  from = aws_prometheus_rule_group_namespace.alerts
+  to   = aws_prometheus_rule_group_namespace.alerts[0]
+}
+
+moved {
+  from = aws_prometheus_alert_manager_definition.alerts
+  to   = aws_prometheus_alert_manager_definition.alerts[0]
+}
+
 # ---------------------------------------------------------------------------------------------------
-# Alerts → Discord. Everything that can alert publishes here: AMP's alertmanager, the CloudWatch
-# alarms, Budgets and GuardDuty. Not encrypted: CloudWatch and Budgets can't publish to a topic under
+# Alerts → Discord. Everything that can alert publishes here: AMP's alertmanager (without Grafana
+# Cloud), the CloudWatch alarms, Budgets and GuardDuty. Not encrypted: CloudWatch and Budgets can't publish to a topic under
 # the AWS-managed SNS key, and the messages are alert text, not data.
 resource "aws_sns_topic" "alerts" {
   name = "${var.project}-alerts"
@@ -379,7 +479,7 @@ resource "aws_budgets_budget" "monthly" {
 }
 
 # ---------------------------------------------------------------------------------------------------
-# The central ADOT collector: one task. Every span of a trace has to reach the same process for tail
+# The central collector: one task. Every span of a trace has to reach the same process for tail
 # sampling (errors + over 1s + 5%) to work as it does locally — a sidecar per task would scatter them.
 # If it's down, telemetry pauses and the services carry on (they export async and drop on failure).
 resource "aws_cloudwatch_log_group" "otel_collector" {
@@ -394,13 +494,19 @@ resource "aws_iam_role" "otel_collector" {
 }
 
 data "aws_iam_policy_document" "otel_collector" {
-  statement {
-    actions   = ["aps:RemoteWrite"]
-    resources = [aws_prometheus_workspace.main.arn]
+  dynamic "statement" {
+    for_each = local.grafana_cloud ? [] : [1]
+    content {
+      actions   = ["aps:RemoteWrite"]
+      resources = [aws_prometheus_workspace.main[0].arn]
+    }
   }
-  statement {
-    actions   = ["xray:PutTraceSegments", "xray:PutTelemetryRecords", "xray:GetSamplingRules", "xray:GetSamplingTargets"]
-    resources = ["*"]
+  dynamic "statement" {
+    for_each = local.grafana_cloud ? [] : [1]
+    content {
+      actions   = ["xray:PutTraceSegments", "xray:PutTelemetryRecords", "xray:GetSamplingRules", "xray:GetSamplingTargets"]
+      resources = ["*"]
+    }
   }
   # ecs_observer: finds the tasks to scrape. List/Describe calls don't take resource ARNs here.
   statement {
@@ -431,12 +537,11 @@ resource "aws_ecs_task_definition" "otel_collector" {
     name = "tmp"
   }
 
-  container_definitions = jsonencode([{
+  container_definitions = jsonencode([merge({
     name      = "otel-collector"
-    image     = "public.ecr.aws/aws-observability/aws-otel-collector:v0.49.0"
     essential = true
 
-    # The image's own user (aoc) has nowhere to write — every directory is root's, and Fargate mounts
+    # The image's own user has nowhere to write — every directory is root's, and Fargate mounts
     # the scratch volume root-owned 0755. So uid 0, but without a single capability and on a read-only
     # root filesystem: it can write that one volume and nothing else.
     user                   = "0"
@@ -448,25 +553,6 @@ resource "aws_ecs_task_definition" "otel_collector" {
 
     portMappings = [{ name = "otlp", containerPort = 4318, protocol = "tcp", appProtocol = "http" }]
 
-    # ADOT reads its whole config from this variable.
-    environment = [{
-      name = "AOT_CONFIG_CONTENT"
-      value = templatefile("${path.module}/monitoring/otel-collector.yaml", {
-        region          = var.region
-        cluster         = aws_ecs_cluster.main.name
-        amp_endpoint    = aws_prometheus_workspace.main.prometheus_endpoint
-        scrape_interval = var.otel_collector.scrape_interval
-      })
-    }]
-
-    healthCheck = {
-      command     = ["/healthcheck"]
-      interval    = 30
-      timeout     = 5
-      retries     = 3
-      startPeriod = 30
-    }
-
     logConfiguration = {
       logDriver = "awslogs"
       options = {
@@ -475,7 +561,38 @@ resource "aws_ecs_task_definition" "otel_collector" {
         awslogs-stream-prefix = "ecs"
       }
     }
-  }])
+    }, {
+    # The upstream contrib build, as local — it has the Grafana Cloud exporters and auth that ADOT lacks.
+    # Distroless, so no container health check: the deployment circuit breaker still catches a crash.
+    grafana_cloud = {
+      image       = "otel/opentelemetry-collector-contrib:0.159.0"
+      command     = ["--config=env:OTEL_CONFIG"]
+      environment = [{ name = "OTEL_CONFIG", value = local.otel_collector_config }]
+      secrets     = [{ name = "GRAFANA_CLOUD_TOKEN", valueFrom = one(data.aws_ssm_parameter.grafana_cloud_token[*].arn) }]
+    }
+    aws = {
+      image = "public.ecr.aws/aws-observability/aws-otel-collector:v0.49.0"
+      # ADOT reads its whole config from this variable.
+      environment = [{ name = "AOT_CONFIG_CONTENT", value = local.otel_collector_config }]
+      healthCheck = {
+        command     = ["/healthcheck"]
+        interval    = 30
+        timeout     = 5
+        retries     = 3
+        startPeriod = 30
+      }
+    }
+  }[local.grafana_cloud ? "grafana_cloud" : "aws"])])
+}
+
+locals {
+  otel_collector_config = templatefile("${path.module}/monitoring/otel-collector.yaml", {
+    region          = var.region
+    cluster         = aws_ecs_cluster.main.name
+    amp_endpoint    = local.grafana_cloud ? null : aws_prometheus_workspace.main[0].prometheus_endpoint
+    scrape_interval = var.otel_collector.scrape_interval
+    grafana_cloud   = var.grafana_cloud
+  })
 }
 
 resource "aws_ecs_service" "otel_collector" {

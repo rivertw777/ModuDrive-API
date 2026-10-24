@@ -59,8 +59,8 @@
 | 파일 저장 | LocalStack S3 | S3 |
 | 메일 | LocalStack SES → Mailpit(`localhost:8025`) | SES |
 | 시크릿 | `.docker/.env` | SSM Parameter Store, RDS 관리자 비밀번호만 Secrets Manager |
-| 모니터링 | Prometheus, Promtail, Loki, otel-collector, Tempo, Grafana | AMP, CloudWatch Logs, X-Ray, 중앙 ADOT collector |
-| 알림 | Prometheus 규칙 → Alertmanager → SNS → Lambda → Discord (SNS·Lambda는 LocalStack) | AMP 알림 규칙, CloudWatch 경보, Budgets → SNS → Lambda → Discord |
+| 모니터링 | Prometheus, Loki, otel-collector, Tempo, Grafana | 중앙 collector → demo는 Grafana Cloud, prod는 AMP·X-Ray. 둘 다 stdout은 CloudWatch Logs |
+| 알림 | Prometheus 규칙 → Alertmanager → Discord | demo는 Grafana Cloud 규칙 → Alertmanager → Discord, prod는 AMP 규칙 → SNS → Lambda → Discord. CloudWatch 경보·Budgets는 둘 다 SNS → Lambda → Discord |
 | 인프라 정의 | `.docker/*.yml`, `.docker/localstack/init-aws.sh` | `.infra/`, 환경마다 AWS 계정 하나 |
 | 배포 | `make service` | GitHub Actions (OIDC) → ECR → ECS 새 리비전 |
 
@@ -181,7 +181,8 @@ AWS 계정에서 손으로 할 일이 하나 있다. SES 샌드박스 해제 요
 | 서비스별 DB 비밀번호 | `.env`의 `*_DB_PASSWORD` | SSM SecureString (`random_password`) |
 | DB 관리자 비밀번호 | `.env`의 `POSTGRES_PASSWORD` | RDS가 Secrets Manager에서 관리 |
 | `REDIS_PASSWORD` | `.env` | SSM, 클러스터마다 |
-| Discord 웹후크 2개 | `.env` (LocalStack SSM으로 들어감) | SSM (값은 손으로 넣음, 1-13) |
+| Discord 웹후크 | `.env` (Alertmanager가 읽음) | SSM (값은 손으로 넣음, 1-13) |
+| Grafana Cloud 토큰 | 없음 | SSM (demo만, 값은 손으로 넣음, 1-13) |
 | `SQS_*`, `SES_ENDPOINT`, `STORAGE_S3_*`, `LOCALSTACK_AUTH_TOKEN` | `.env` | 없음 (task role, 실제 endpoint) |
 
 값은 ECS 태스크 정의의 `secrets`로 환경 변수에 들어간다. 태스크가 뜰 때 SSM에서 읽어 오므로 태스크 정의에는 남지 않고, 앱은 로컬과 똑같이 `${...}`로 읽는다.
@@ -249,65 +250,76 @@ aws cloudfront create-invalidation --distribution-id $(terraform output -raw web
 
 ### 1-13. 모니터링과 알림
 
-로컬 스택과 운영 구성 요약은 [002-observability.md](002-observability.md)에 정리돼 있다. AWS에서는 저장소를 전부 관리형으로 두고, 직접 띄우는 건 중앙 ADOT collector ECS 서비스 하나뿐이다(`monitoring.tf`). 로컬에서 쓰던 PromQL 알림, tail sampling, OTLP를 그대로 가져가는 걸 기준으로 삼았다.
+로컬 스택과 운영 구성 요약은 [002-observability.md](002-observability.md)에 정리돼 있다. AWS에서 직접 띄우는 건 중앙 collector ECS 서비스 하나뿐이고(`monitoring.tf`), 저장과 조회는 관리형에 맡긴다. 로컬에서 쓰던 PromQL 알림, tail sampling, OTLP를 그대로 가져가는 걸 기준으로 삼았다.
+
+보내는 곳은 `grafana_cloud` 변수로 고른다.
+
+| | demo (`grafana_cloud` 설정) | prod (`grafana_cloud = null`) |
+|---|---|---|
+| 지표 | Grafana Cloud (Mimir) | AMP |
+| 트레이스 | Grafana Cloud (Tempo) | X-Ray |
+| 로그 | Grafana Cloud (Loki, OTLP) + CloudWatch Logs (stdout) | CloudWatch Logs (stdout)만 |
+| 알림 규칙 | Grafana Cloud의 ruler → Alertmanager → Discord | AMP의 ruler → SNS → Lambda → Discord |
+| 화면 | Grafana Cloud의 Grafana | Managed Grafana |
+| collector 이미지 | `otel/opentelemetry-collector-contrib` (로컬과 같음) | ADOT |
+
+demo는 로컬과 같은 Grafana·Loki·Tempo·Alertmanager 조합이라 쿼리, 데이터소스 링크, 알림 설정을 그대로 쓴다. Grafana Cloud 무료 플랜(지표 1만 시리즈, 로그·trace 각 월 50GB, 보존 14일) 안에 든다.
 
 ```mermaid
 flowchart LR
     S["ECS 태스크<br/>서비스 7개"]
-    C["중앙 ADOT collector<br/>ECS 서비스 1개"]
-    AMP[("AMP")]
-    X[("X-Ray")]
+    C["중앙 collector<br/>ECS 서비스 1개"]
+    GC[("demo: Grafana Cloud")]
+    AWS[("prod: AMP · X-Ray")]
     CW[("CloudWatch Logs")]
     ALM["CloudWatch 경보<br/>Budgets · GuardDuty"]
-    SNS["SNS<br/>modudrive-alerts"]
-    LA["Lambda<br/>discord-forwarder"]
+    SNS["SNS → Lambda<br/>discord-forwarder"]
     D(["Discord"])
 
-    S -- "OTLP 트레이스" --> C
+    S -- "OTLP 트레이스·로그" --> C
     C -- ":9464 수집" --> S
-    C -- "remote write" --> AMP
-    C -- "tail sampling 뒤" --> X
+    C --> GC
+    C --> AWS
     S -- "stdout (awslogs)" --> CW
-    AMP -- "알림 규칙" --> SNS
+    GC -- "알림 규칙 → Alertmanager" --> D
+    AWS -- "알림 규칙" --> SNS
     ALM --> SNS
-    SNS --> LA --> D
+    SNS --> D
 ```
 
-| 신호 | 로컬 | AWS | 수집 방식 |
-|---|---|---|---|
-| 지표 | Prometheus | Amazon Managed Prometheus (AMP) | collector의 `ecs_observer`가 태스크를 찾아 `:9464`를 긁고 remote write |
-| 트레이스 | otel-collector → Tempo | X-Ray | 앱 OTLP → collector(tail sampling) → X-Ray |
-| 로그 | Promtail → Loki | CloudWatch Logs (보존 14일) | `awslogs` 드라이버. Promtail은 docker socket을 써서 Fargate에서는 못 쓴다 |
-| 알림 | Prometheus 규칙 → Alertmanager → SNS → Lambda → Discord | AMP 알림 규칙 → SNS → Lambda → Discord | |
-| 화면 | Grafana | demo는 내 PC의 Grafana(3-4), prod는 Managed Grafana | AMP, X-Ray, CloudWatch 데이터소스 |
-
-앱 설정은 바꿀 게 없다. collector의 Service Connect 이름이 compose와 같은 `otel-collector:4318`이라서 앱 기본값(`application-observability.yml`)이 그대로 맞는다. mail이 Service Connect에 클라이언트로 들어가는 것도 이 때문이다.
+앱 설정은 바꿀 게 없다. collector의 Service Connect 이름이 compose와 같은 `otel-collector:4318`이라서 앱 기본값(`application-observability.yml`)이 그대로 맞는다. mail이 Service Connect에 클라이언트로 들어가는 것도 이 때문이다. prod만 `MANAGEMENT_LOGGING_EXPORT_OTLP_ENABLED=false`로 앱의 OTLP 로그 전송을 끈다(로그는 CloudWatch에서 본다).
 
 #### collector
 
 collector는 사이드카가 아니라 한 대만 띄운다. tail sampling(에러, 1초 초과, 나머지 5%)이 로컬처럼 동작하려면 한 trace의 span이 전부 같은 collector로 모여야 한다. 태스크마다 사이드카를 붙이면 span이 흩어져서 "에러 trace는 전부 남긴다"는 규칙이 깨진다. collector가 죽어도 그동안의 telemetry만 빠질 뿐 서비스에는 영향이 없다. 앱은 비동기로 내보내고 실패하면 버린다.
 
 - 로컬 `prometheus.yml`은 서비스 7개를 `static_configs`로 적어 두지만, ECS에서는 태스크 IP가 바뀌고 서비스마다 태스크가 여러 개다. 그래서 `ecs_observer`가 `ECS_PROMETHEUS_EXPORTER_PORT` 도커 라벨(`ecs.tf`)이 붙은 컨테이너를 찾고, 컨테이너 이름을 `service` 라벨로 붙인다. 로컬도 스크레이프 주소에서 같은 값의 `service` 라벨을 만들기 때문에 알림 규칙과 메시지가 양쪽에서 같다.
-- AMP는 샘플 수로 과금된다. 그래서 알림과 기본 화면에 쓰는 지표만 남기고 나머지는 버린다(`otel-collector.yaml`의 `metric_relabel_configs`). 새 지표로 알림을 만들려면 여기에 먼저 추가한다. 수집 주기는 `otel_collector.scrape_interval`로, demo는 60초, prod는 30초다.
-- ADOT 이미지의 기본 사용자(`aoc`)는 쓸 수 있는 디렉터리가 없다. `ecs_observer`가 대상 목록 파일을 써야 해서 uid 0으로 띄우는 대신, capability를 전부 빼고 루트 파일시스템을 읽기 전용으로 둬서 `/tmp` 볼륨 말고는 아무 데도 못 쓰게 했다.
+- 알림과 기본 화면에 쓰는 지표만 남기고 나머지는 버린다(`otel-collector.yaml`의 `metric_relabel_configs`). AMP는 샘플 수로 과금되고, Grafana Cloud 무료 플랜은 1만 시리즈까지다. 새 지표로 알림을 만들려면 여기에 먼저 추가한다. 수집 주기는 `otel_collector.scrape_interval`로, demo는 60초, prod는 30초다.
+- Grafana Cloud로는 트레이스와 로그를 OTLP로, 지표를 remote write로 보낸다. remote write라야 지표 이름과 라벨이 로컬과 같게 들어간다.
+- 이미지의 기본 사용자는 쓸 수 있는 디렉터리가 없다. `ecs_observer`가 대상 목록 파일을 써야 해서 uid 0으로 띄우는 대신, capability를 전부 빼고 루트 파일시스템을 읽기 전용으로 둬서 `/tmp` 볼륨 말고는 아무 데도 못 쓰게 했다.
+- contrib 이미지는 셸이 없는 이미지라 컨테이너 헬스 체크를 두지 않는다. 뜨지 못하면 배포 서킷 브레이커가 롤백한다.
 - 지표 레이블에는 userId나 fileId를 넣지 않는다. 고유값은 span 태그와 로그에만 둔다. AMP를 고객 관리 키 없이 AWS 소유 키로 두는 것도 이 때문이다.
 
 #### 알림
 
-알림이 나가는 길은 로컬과 같다. 로컬은 Prometheus와 Alertmanager 컨테이너가 LocalStack의 SNS와 Lambda로 보내고, AWS는 그 자리에 AMP가 있다. Lambda 코드(`monitoring/discord_forwarder.py`)와 Discord 메시지 양식(`monitoring/discord.tmpl`)은 두 환경이 같은 파일을 쓴다.
+규칙(`monitoring/alert-rules.yaml`)은 로컬 `.docker/observability/alert-rules.yaml`과 쿼리, 기준값, 대기 시간이 같다. 다른 건 두 가지다.
 
-- 규칙(`monitoring/alert-rules.yaml`)은 로컬 `.docker/observability/alert-rules.yaml`과 쿼리, 기준값, 대기 시간이 같다. 다른 건 확인 명령어(`docker logs` 대신 `aws logs tail`, TraceQL 대신 X-Ray 필터)와 규칙 하나다. ECS에서는 죽은 태스크가 `up = 0`으로 남지 않고 대상 목록에서 아예 사라지기 때문에, AWS에만 `ServiceNoTasks`(`absent(up{service=...})`)가 있다.
-- 묶음(`group_by: [alertname]`), 재알림 간격(4시간), 채널(service, infra, messaging)도 로컬과 같다. CloudWatch 경보·Budgets·GuardDuty까지 합친 채널 구분은 [007 3장](../spec/007-discord-alert-spec.md#3-사용-디스코드-채널)에 있다(`monitoring/alertmanager.yaml`).
-- Lambda는 메시지 본문에 색깔 있는 제목 카드를 붙인다. 발생은 빨강, 해제는 초록이다. Lambda는 VPC 밖에 있어서 NAT가 멈춰도 알림은 나간다.
+- 확인 명령어. `docker` 대신 ECS 명령을 쓰고, 로그와 trace는 demo에서는 로컬과 같은 LogQL·TraceQL을, prod에서는 `aws logs tail`과 X-Ray 필터를 쓴다.
+- 규칙 하나. ECS에서는 죽은 태스크가 `up = 0`으로 남지 않고 대상 목록에서 아예 사라지기 때문에, AWS에만 `ServiceNoTasks`(`absent(up{service=...})`)가 있다.
 
-Managed Grafana의 알림을 쓰지 않는 이유는 세 가지다. demo에는 Managed Grafana가 없고, Managed Grafana의 규칙은 로컬처럼 파일로 둘 수 없으며, Terraform grafana provider로 관리하려면 최대 30일짜리 서비스 계정 토큰을 계속 갈아 줘야 한다. AMP 규칙은 Terraform 리소스 하나라 리뷰도 재현도 된다. 대신 AMP 알림은 SNS로만 나가므로 Discord로 넘겨 줄 Lambda를 둔다.
+묶음(`group_by: [alertname]`), 재알림 간격(4시간), 채널(service, infra, messaging), 메시지 양식(`monitoring/discord.tmpl`)도 로컬과 같다. CloudWatch 경보·Budgets·GuardDuty까지 합친 채널 구분은 [008 3장](../spec/008-discord-alert-spec.md#3-사용-디스코드-채널)에 있다.
 
-앱 지표로는 안 보이는 것들은 CloudWatch 경보로 보고, 같은 SNS 토픽으로 보낸다. 로컬에는 볼 대상(ALB, NAT, 요금, 계정 위협)이 없어서 이 경보들도 없다.
+- **demo**: apply가 규칙과 Alertmanager 설정(`monitoring/alertmanager-grafana-cloud.yaml`)을 Grafana Cloud API로 올린다(`terraform_data.grafana_cloud_alerts`). 규칙, Alertmanager 설정, 토큰 중 하나가 바뀌면 다시 올린다. 웹후크 URL은 SSM 값을 읽어 설정에 넣는다.
+- **prod**: AMP 규칙과 AMP Alertmanager(`monitoring/alertmanager.yaml`)다. AMP Alertmanager는 Discord로 바로 못 보내고 SNS로만 내보내서, Lambda(`monitoring/discord_forwarder.py`)가 Discord로 넘긴다. Lambda는 메시지 본문에 색깔 있는 제목 카드를 붙인다.
 
-경보 목록과 기준은 [007-discord-alert-spec.md 5](../spec/007-discord-alert-spec.md#5-aws-전용-경보)에 있다.
+앱 지표로는 안 보이는 것들은 CloudWatch 경보로 보고, SNS 토픽 → Lambda로 Discord에 보낸다. demo와 prod가 같다. 로컬에는 볼 대상(ALB, NAT, 요금, 계정 위협)이 없어서 이 경보들도 없다. Lambda는 VPC 밖에 있어서 NAT가 멈춰도 알림은 나간다.
 
-Discord 웹후크 URL은 SSM에 손으로 한 번 넣어 두면 Lambda가 읽는다. 채널마다 URL이 다르니 하나씩 넣는다. 안 넣은 채널의 알림은 service 채널로 간다.
-파라미터는 `terraform apply`가 `set-by-hand` 값으로 먼저 만들어 두므로, apply 뒤에 덮어쓴다(apply 전에 만들면 apply가 `ParameterAlreadyExists`로 실패한다).
+경보 목록과 기준은 [008-discord-alert-spec.md 5](../spec/008-discord-alert-spec.md#5-aws-전용-경보)에 있다.
+
+#### 손으로 넣는 값
+
+Discord 웹후크 URL은 SSM에 손으로 한 번 넣는다. 채널마다 URL이 다르니 하나씩 넣는다. Lambda가 못 찾은 채널의 알림은 service 채널로 간다.
+파라미터는 `terraform apply`가 `set-by-hand` 값으로 먼저 만들어 두므로, apply 뒤에 덮어쓴다(apply 전에 만들면 apply가 `ParameterAlreadyExists`로 실패한다). demo는 Alertmanager 설정에 이 값이 들어가므로, 넣은 뒤 apply를 한 번 더 해야 Grafana Cloud에 반영된다.
 
 ```bash
 aws ssm put-parameter --name /modudrive/DISCORD_SERVICE_WEBHOOK_URL   --type SecureString --overwrite --value '<#service 웹후크 URL>'
@@ -318,7 +330,15 @@ aws ssm put-parameter --name /modudrive/DISCORD_ACCOUNT_WEBHOOK_URL   --type Sec
 
 Lambda는 읽은 URL을 컨테이너가 살아 있는 동안 기억한다. 넣기 전에 알림이 한 번 지나갔다면, Lambda가 새로 뜰 때까지 그 채널 알림은 계속 service 채널로 간다.
 
-로그는 LogQL 대신 CloudWatch Logs Insights로 찾는다. 로그가 JSON이라 `filter traceId = "..."`나 `filter userId = "..."`가 바로 된다. ALB는 W3C `traceparent`가 아니라 `X-Amzn-Trace-Id`를 붙이므로 trace는 gateway에서 시작한다. ALB 구간은 ALB 접근 로그로 보는데, 접근 로그는 prod에만 있다.
+Grafana Cloud 토큰(demo)은 Terraform이 만들지 않고 읽기만 하므로, **첫 apply 전에** 넣는다. grafana.com → 스택 → Access Policies에서 `metrics:write`, `logs:write`, `traces:write`, `rules:write`, `alerts:write` 범위로 만든 토큰이다.
+
+```bash
+aws ssm put-parameter --name /modudrive/GRAFANA_CLOUD_TOKEN --type SecureString --value '<토큰>'
+```
+
+토큰을 바꾸면 apply가 규칙을 다시 올리지만, collector는 태스크가 새로 떠야 새 토큰을 읽는다(`aws ecs update-service --cluster modudrive --service otel-collector --force-new-deployment`).
+
+prod에서 로그는 LogQL 대신 CloudWatch Logs Insights로 찾는다. 로그가 JSON이라 `filter traceId = "..."`나 `filter userId = "..."`가 바로 된다. ALB는 W3C `traceparent`가 아니라 `X-Amzn-Trace-Id`를 붙이므로 trace는 gateway에서 시작한다. ALB 구간은 ALB 접근 로그로 보는데, 접근 로그는 prod에만 있다.
 
 #### 다른 선택지
 
@@ -326,18 +346,18 @@ Lambda는 읽은 URL을 컨테이너가 살아 있는 동안 기억한다. 넣�
 |---|---|
 | CloudWatch만 쓰기 | 알림을 CloudWatch Alarm으로 다시 써야 한다. Prometheus 지표를 커스텀 메트릭으로 넣으면 레이블 조합마다 돈이 나가서, 히스토그램 버킷 × URI × 상태 × 태스크만큼 비용이 커진다 |
 | Grafana 스택 직접 운영 | 저장소(S3/EFS), 업그레이드, 장애 대응을 다 떠안는다 |
-| Grafana Cloud | 운영은 제일 편하지만 데이터가 AWS 밖으로 나가 전송 비용이 들고, 양이 늘면 요금이 빠르게 오른다 |
+| demo도 AMP·X-Ray | 지표·로그·trace가 서로 다른 콘솔에 있어 trace 하나를 따라가려면 ID를 손으로 바꿔 찾아야 하고, AMP에는 쿼리 화면이 없어 Grafana를 따로 띄워야 한다 |
 
 #### 비용
 
 비용은 대부분 로그에서 나온다. 그래서 보존 기간을 14일로 둔다.
 
-X-Ray는 trace 건수로 과금되니 tail sampling 비율이 곧 비용이다.
+X-Ray(prod)는 trace 건수로 과금되니 tail sampling 비율이 곧 비용이다. demo는 Grafana Cloud 무료 플랜 한도 안이라 collector 태스크와 CloudWatch Logs만 든다.
 
 #### 처음 apply한 뒤 확인할 것
 
-- `ecs_observer`가 대상을 찾는지. collector 로그에 `getDiscoverableTasks` 오류가 없고, AMP에서 `up{job="services"}`가 서비스마다 나와야 한다. `service` 라벨이 비어 있으면 relabel에 쓴 `__meta_ecs_container_name`이 collector 버전 문서와 같은지 본다.
-- X-Ray가 앱의 W3C trace ID를 그대로 받는지. 이 ID는 앞 32비트가 타임스탬프가 아니다. 안 받으면 X-Ray ID 생성기를 설정한다.
+- `ecs_observer`가 대상을 찾는지. collector 로그에 `getDiscoverableTasks` 오류가 없고, Grafana Cloud(prod는 AMP)에서 `up{job="services"}`가 서비스마다 나와야 한다. `service` 라벨이 비어 있으면 relabel에 쓴 `__meta_ecs_container_name`이 collector 버전 문서와 같은지 본다.
+- prod는 X-Ray가 앱의 W3C trace ID를 그대로 받는지. 이 ID는 앞 32비트가 타임스탬프가 아니다. 안 받으면 X-Ray ID 생성기를 설정한다.
 - 알림 하나를 일부러 울려서 Discord까지 오는지. 예를 들어 notification 서비스를 0개로 줄이면 `ServiceNoTasks`가 온다.
 - collector 한 대의 CPU와 메모리. 특히 `decision_wait`(30초) 동안 쌓이는 span 양을 본다.
 
@@ -451,13 +471,13 @@ tfvars의 값을 바꿀 때 데이터가 날아가거나 서비스가 끊기는 
 | 보안 강화 (`hardened`) | 끔. WAF, Service Connect TLS, 감사 로그, GuardDuty 없음 |
 | 삭제 방지, Container Insights | 끔 |
 | 지표 수집 주기 | 60초 |
-| 화면 | Managed Grafana 없음. 내 PC의 Grafana로 본다 (3-4) |
+| 모니터링 | Grafana Cloud 무료 플랜 (1-13, 3-4) |
 | 인프라 배포 | `demo` 브랜치에 병합하면 CI가 apply (2-3) |
 | 월 예산 알림 | $150 |
 
 ### 3-2. 비용
 
-서울 리전 기준, 트래픽이 붙기 전에 월 $138쯤 든다.
+서울 리전 기준, 트래픽이 붙기 전에 월 $130쯤 든다.
 
 | 항목 | 월 |
 |---|---|
@@ -466,10 +486,10 @@ tfvars의 값을 바꿀 때 데이터가 날아가거나 서비스가 끊기는 
 | RDS | ~$21 |
 | ElastiCache | ~$18 |
 | NAT 인스턴스 (공인 IP 포함) | ~$8 |
-| 모니터링 (collector Spot ~$4, AMP ~$8, 경보 ~$1) | ~$13 |
+| 모니터링 (collector Spot ~$4, 경보 ~$1, Grafana Cloud 무료) | ~$5 |
 | 로그 등 | ~$5 |
 
-X-Ray, Lambda, Budgets는 이 규모에선 무료 구간 안에 든다.
+Lambda, Budgets는 이 규모에선 무료 구간 안에 든다.
 
 비용 때문에 이렇게 골랐다.
 
@@ -479,7 +499,7 @@ X-Ray, Lambda, Budgets는 이 규모에선 무료 구간 안에 든다.
 - 태스크는 0.5 vCPU / 1 GB로 하나씩 두고(0.25 vCPU는 요청마다 CPU가 120%까지 차서 올렸다, 메모리는 절반도 안 쓴다) 오토스케일을 껐다. 트래픽이 몰리면 비용이 오르는 대신 느려진다. 기동도 느려서 헬스 체크 유예 시간을 길게 잡았다(`ecs.tf`의 `startPeriod`).
 - DB는 인스턴스 한 대에 4개를 모았다. 서비스마다 DB와 로그인이 따로인 건 prod와 같다.
 - Redis는 로컬처럼 하나를 같이 쓴다.
-- Managed Grafana는 사용자당 월 $9에 IAM Identity Center 설정까지 필요해서 뺐다.
+- 모니터링은 AMP·X-Ray·Managed Grafana(사용자당 월 $9) 대신 Grafana Cloud 무료 플랜으로 보낸다.
 
 ### 3-3. 감수하는 것
 
@@ -491,20 +511,17 @@ X-Ray, Lambda, Budgets는 이 규모에선 무료 구간 안에 든다.
 
 ### 3-4. 지표·로그·트레이스 보기
 
-demo에는 Managed Grafana가 없다. 트레이스는 X-Ray 콘솔에서, 로그는 CloudWatch Logs Insights에서 볼 수 있지만 AMP에는 쿼리 화면이 없다. 그래서 볼 일이 있을 때 내 PC에서 Grafana를 띄워 demo에 붙인다.
+grafana.com에서 스택의 Grafana(`https://<스택>.grafana.net`)를 연다. Explore에서 로컬과 같은 쿼리를 쓴다.
 
-```bash
-make demo                                # http://localhost:3002
-docker stop modudrive-demo-grafana-1     # 끌 때
-```
+- 지표: `grafanacloud-<스택>-prom` 데이터소스. 이름과 라벨이 로컬과 같다.
+- 로그: `grafanacloud-<스택>-logs`. `{service_name="file-service"} | trace_id="<trace id>"`, `| userId="<uuid>"`.
+- 트레이스: `grafanacloud-<스택>-traces`. `{ span.user.id = "<uuid>" }`.
+- 알림: Alerting → Alert rules에서 데이터소스 관리 규칙(`alerts` 네임스페이스)을 본다.
 
-- AMP, X-Ray, CloudWatch 데이터소스가 미리 들어 있다(`.docker/demo/grafana/`).
-- 접속은 내 `~/.aws` 자격 증명으로 한다. 프로필은 `AWS_PROFILE`로 고른다. 읽기만 하므로 AMP 조회, X-Ray 조회, Logs Insights 쿼리 권한이면 된다.
-- AWS에 새로 만들 건 없다. 비용은 조회한 만큼만 나온다(AMP 쿼리, Logs Insights 스캔량).
-- 로컬 개발 스택과는 네트워크(`modudrive-demo`), 포트, 컨테이너가 따로다.
-- AMP 주소는 demo 상태의 출력 `amp_endpoint`에서 읽는다. `.infra`가 demo backend로 init돼 있어야 한다(2-1).
+로그와 trace 사이 링크는 로컬(`.docker/observability/grafana/datasources/datasources.yaml`)과 같은 설정을 Grafana Cloud의 Loki·Tempo 데이터소스에 넣는다.
 
-트레이스에서 로그로 넘어가는 건 손으로 한다. X-Ray trace ID `1-6703a1b2-9f8e…`에서 `1-`과 `-`를 빼면 로그의 32자리 `traceId`가 되고, 그 값으로 Logs Insights를 검색한다.
+- Loki: Derived fields에 `trace_id`(Type `Label`) → Tempo 데이터소스.
+- Tempo: Trace to logs에 Loki 데이터소스, Use custom query 켜고 `{service_name=~".+"} | trace_id="${__trace.traceId}"`.
 
 ---
 

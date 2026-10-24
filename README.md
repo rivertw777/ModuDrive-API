@@ -98,7 +98,8 @@
 - [인증 스펙](./.docs/spec/004-auth-spec.md)
 - [비동기 메시징 스펙](./.docs/spec/005-messaging-spec.md)
 - [장애 대응 (Resilience) 스펙](./.docs/spec/006-resilience-spec.md)
-- [디스코드 알림 스펙](./.docs/spec/007-discord-alert-spec.md)
+- [로깅 스펙](./.docs/spec/007-logging-spec.md)
+- [디스코드 알림 스펙](./.docs/spec/008-discord-alert-spec.md)
 
 <br>
 

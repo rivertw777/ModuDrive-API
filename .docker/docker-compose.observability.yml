@@ -6,7 +6,7 @@ name: modudrive-observability
 #
 # 설정은 파일 단위가 아니라 디렉터리 단위로 마운트한다. 단일 파일 bind mount는 컨테이너 생성 시점의
 # inode에 묶여서, 에디터 저장/git checkout처럼 파일을 새 inode로 교체하면 컨테이너가 옛 내용을 보거나
-# 재시작 시 기동 실패한다(promtail 무한 재시작 원인).
+# 재시작 시 기동 실패한다.
 
 services:
 
@@ -44,23 +44,6 @@ services:
       - loki_data:/loki
     restart: unless-stopped
 
-  promtail:
-    image: grafana/promtail:3.6.8
-    networks:
-      - modudrive_network
-    command: ["-config.file=/etc/modudrive/promtail-config.yaml"]
-    volumes:
-      - ./observability:/etc/modudrive:ro
-      # docker.sock을 :ro로 마운트해도 Docker Engine API 자체는 전부 열린다(호스트 root 상당 권한).
-      # 로컬 dev compose 전용 트레이드오프 — 공유 호스트/서버로 절대 승격하지 말 것.
-      # .raw = Docker Desktop VM 안의 소켓. WSL 쪽 /var/run/docker.sock을 파일 마운트하면
-      # Docker Desktop 재시작 시 WSL 마운트가 준비되기 전에 컨테이너가 떠서 exit 127로 죽는다.
-      - /var/run/docker.sock.raw:/var/run/docker.sock:ro
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
-    depends_on:
-      loki:
-        condition: service_started
-    restart: unless-stopped
 
   prometheus:
     image: prom/prometheus:v3.14.0
@@ -76,16 +59,29 @@ services:
       - prometheus_data:/prometheus
     restart: unless-stopped
 
-  # 알림 규칙은 Prometheus가 평가하고(alert-rules.yaml), 묶어서 LocalStack SNS로 보내는 건 이것 —
-  # AWS의 AMP alertmanager 자리다. SNS → Lambda → Discord는 docker-compose.infra.yml의 LocalStack.
-  # 메시지 템플릿은 AWS와 한 벌(.infra/monitoring/discord.tmpl)이라 그 폴더를 같이 얹는다.
+  # 알림 규칙은 Prometheus가 평가하고(alert-rules.yaml), 묶어서 디스코드로 보내는 건 이것이다.
+  # 메시지 템플릿은 demo와 한 벌(.infra/monitoring/discord.tmpl)이라 그 폴더를 같이 얹는다.
+  # 웹후크 주소는 .docker/.env에서 받아 채널별 파일로 쓴다(Alertmanager 설정은 환경 변수를 못 읽는다).
+  # 주소가 없는 채널은 service 채널로 보낸다.
   alertmanager:
     image: prom/alertmanager:v0.34.1
     networks:
       - modudrive_network
     ports:
       - "127.0.0.1:9093:9093"
-    command: ["--config.file=/etc/modudrive/alertmanager.yml", "--storage.path=/alertmanager", "--web.external-url=http://localhost:9093"]
+    environment:
+      - DISCORD_SERVICE_WEBHOOK_URL=${DISCORD_SERVICE_WEBHOOK_URL:-}
+      - DISCORD_INFRA_WEBHOOK_URL=${DISCORD_INFRA_WEBHOOK_URL:-}
+      - DISCORD_MESSAGING_WEBHOOK_URL=${DISCORD_MESSAGING_WEBHOOK_URL:-}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        mkdir -p /alertmanager/webhooks
+        hook() { case "$$1" in https://*) echo "$$1" ;; *) echo "$$DISCORD_SERVICE_WEBHOOK_URL" ;; esac; }
+        hook "$$DISCORD_SERVICE_WEBHOOK_URL" > /alertmanager/webhooks/service
+        hook "$$DISCORD_INFRA_WEBHOOK_URL" > /alertmanager/webhooks/infra
+        hook "$$DISCORD_MESSAGING_WEBHOOK_URL" > /alertmanager/webhooks/messaging
+        exec /bin/alertmanager --config.file=/etc/modudrive/alertmanager.yml --storage.path=/alertmanager --web.external-url=http://localhost:9093
     volumes:
       - ./observability:/etc/modudrive:ro
       - ../.infra/monitoring:/etc/alertmanager/shared:ro

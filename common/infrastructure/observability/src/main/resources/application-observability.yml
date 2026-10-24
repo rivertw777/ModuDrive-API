@@ -8,6 +8,11 @@ management:
       export:
         otlp:
           endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://otel-collector:4318}/v1/traces
+    # Logs go the same way (LogExportAutoConfiguration); stdout keeps them too, for docker logs and CloudWatch.
+    logging:
+      export:
+        otlp:
+          endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://otel-collector:4318}/v1/logs
   tracing:
     sampling:
       # Export everything; the otel-collector's tail_sampling decides what is kept

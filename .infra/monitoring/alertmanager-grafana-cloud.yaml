@@ -1,0 +1,27 @@
+# Grafana Cloud alertmanager (monitoring.tf): .docker/observability/alertmanager.yml with the webhook URLs
+# inline — routing, channels and the message (discord.tmpl) are the same. Rendered by Terraform (templatefile).
+alertmanager_config: |
+  route:
+    receiver: service
+    group_by: [alertname]
+    group_interval: 1m
+    repeat_interval: 4h
+    routes:
+      - receiver: messaging
+        matchers: [channel="messaging"]
+      - receiver: infra
+        matchers: [channel="infra"]
+  templates:
+    - discord
+  receivers:
+%{ for channel, url in webhooks ~}
+    - name: ${channel}
+      discord_configs:
+        - webhook_url: ${url}
+          content: '{{ template "discord.content" . }}'
+          title: '{{ template "discord.title" . }}'
+          message: ''
+%{ endfor ~}
+template_files:
+  discord: |
+    ${indent(4, discord_template)}

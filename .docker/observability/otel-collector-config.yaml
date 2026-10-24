@@ -33,6 +33,10 @@ exporters:
     endpoint: tempo:4317
     tls:
       insecure: true
+  # Loki's native OTLP intake: service.name becomes the service_name label, trace_id/span_id and the
+  # log attributes (userId, exception) structured metadata.
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
 
 service:
   pipelines:
@@ -40,4 +44,9 @@ service:
       receivers: [otlp]
       processors: [tail_sampling, batch]
       exporters: [otlp/tempo]
+    # 로그는 샘플링하지 않는다 — trace가 버려진 요청도 로그는 trace_id와 함께 남는다.
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlphttp/loki]
     # metrics 파이프라인은 없다: Prometheus가 각 서비스의 /actuator/prometheus를 직접 스크레이프한다.

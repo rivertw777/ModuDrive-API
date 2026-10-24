@@ -1,6 +1,6 @@
-# 알림 규칙 전부 — 설계는 .docs/spec/007-discord-alert-spec.md. Prometheus가 1분마다 평가하고
-# Alertmanager(alertmanager.yml)로 넘긴다. AWS에선 같은 규칙이 .infra/monitoring/alert-rules.yaml(AMP)로
-# 돈다 — 규칙을 고치면 그쪽도 같이 고친다. 다른 건 확인 명령어(docker·Loki·Tempo ↔ CloudWatch·X-Ray)뿐이다.
+# 알림 규칙 전부 — 설계는 .docs/spec/008-discord-alert-spec.md. Prometheus가 1분마다 평가하고
+# Alertmanager(alertmanager.yml)로 넘긴다. AWS에선 같은 규칙이 .infra/monitoring/alert-rules.yaml(demo Grafana Cloud, prod AMP)로
+# 돈다 — 규칙을 고치면 그쪽도 같이 고친다. 다른 건 확인 명령어(docker ↔ ECS, prod는 CloudWatch·X-Ray)뿐이다.
 #
 # outbox: 전송 실패에 횟수 제한이 없어서 인프라 장애가 나도 FAILED 행이 안 생긴다. 테이블만 봐서는 멀쩡해
 # 보이므로 감지는 전적으로 이 규칙들에 달려 있다. consumer: 처리에 실패해 DLQ로 빠진 메시지를 본다 —
@@ -28,7 +28,7 @@ groups:
           # 적체 지표는 어느 큐가 얼마나 밀렸는지까지만 알지 왜 막혔는지는 모른다 — OutboxRelay는 일시적 실패를
           # 로그로만 남기고 재시도한다. 그 한 줄로 바로 갈 수 있게 쿼리를 싣는다(Grafana → Explore → Loki).
           # 조회 SQL은 싣지 않는다: PENDING 행은 사람이 손댈 게 없고, 밀린 시간은 이미 사유에 있다.
-          logs: '{service="{{ $labels.service }}"} |= "Outbox send failed"'
+          logs: '{service_name="{{ $labels.service }}"} |= "Outbox send failed"'
 
       # FAILED는 사람이 손대기 전까지 사라지지 않는다. 한 건이라도 있으면 그대로 방치된다는 뜻이라
       # 지속 조건 없이 바로 알린다 — 인프라 장애로는 생기지 않으므로 한 번에 한두 건이다.
