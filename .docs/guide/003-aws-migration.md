@@ -297,14 +297,14 @@ collector는 사이드카가 아니라 한 대만 띄운다. tail sampling(에�
 알림이 나가는 길은 로컬과 같다. 로컬은 Prometheus와 Alertmanager 컨테이너가 LocalStack의 SNS와 Lambda로 보내고, AWS는 그 자리에 AMP가 있다. Lambda 코드(`monitoring/discord_forwarder.py`)와 Discord 메시지 양식(`monitoring/discord.tmpl`)은 두 환경이 같은 파일을 쓴다.
 
 - 규칙(`monitoring/alert-rules.yaml`)은 로컬 `.docker/observability/alert-rules.yaml`과 쿼리, 기준값, 대기 시간이 같다. 다른 건 확인 명령어(`docker logs` 대신 `aws logs tail`, TraceQL 대신 X-Ray 필터)와 규칙 하나다. ECS에서는 죽은 태스크가 `up = 0`으로 남지 않고 대상 목록에서 아예 사라지기 때문에, AWS에만 `ServiceNoTasks`(`absent(up{service=...})`)가 있다.
-- 묶음(`group_by: [alertname]`), 재알림 간격(4시간), 채널(service, infra, messaging)도 로컬과 같다. CloudWatch 경보·Budgets·GuardDuty까지 합친 채널 구분은 [007 3장](../spec/007-discord-alert-spec.md#3-사용-디스코드-채널)에 있다(`monitoring/alertmanager.yaml`).
+- 묶음(`group_by: [alertname]`), 재알림 간격(4시간), 채널(service, infra, messaging)도 로컬과 같다. CloudWatch 경보·Budgets·GuardDuty까지 합친 채널 구분은 [008 3장](../spec/008-discord-alert-spec.md#3-사용-디스코드-채널)에 있다(`monitoring/alertmanager.yaml`).
 - Lambda는 메시지 본문에 색깔 있는 제목 카드를 붙인다. 발생은 빨강, 해제는 초록이다. Lambda는 VPC 밖에 있어서 NAT가 멈춰도 알림은 나간다.
 
 Managed Grafana의 알림을 쓰지 않는 이유는 세 가지다. demo에는 Managed Grafana가 없고, Managed Grafana의 규칙은 로컬처럼 파일로 둘 수 없으며, Terraform grafana provider로 관리하려면 최대 30일짜리 서비스 계정 토큰을 계속 갈아 줘야 한다. AMP 규칙은 Terraform 리소스 하나라 리뷰도 재현도 된다. 대신 AMP 알림은 SNS로만 나가므로 Discord로 넘겨 줄 Lambda를 둔다.
 
 앱 지표로는 안 보이는 것들은 CloudWatch 경보로 보고, 같은 SNS 토픽으로 보낸다. 로컬에는 볼 대상(ALB, NAT, 요금, 계정 위협)이 없어서 이 경보들도 없다.
 
-경보 목록과 기준은 [007-discord-alert-spec.md 5](../spec/007-discord-alert-spec.md#5-aws-전용-경보)에 있다.
+경보 목록과 기준은 [008-discord-alert-spec.md 5](../spec/008-discord-alert-spec.md#5-aws-전용-경보)에 있다.
 
 Discord 웹후크 URL은 SSM에 손으로 한 번 넣어 두면 Lambda가 읽는다. 채널마다 URL이 다르니 하나씩 넣는다. 안 넣은 채널의 알림은 service 채널로 간다.
 파라미터는 `terraform apply`가 `set-by-hand` 값으로 먼저 만들어 두므로, apply 뒤에 덮어쓴다(apply 전에 만들면 apply가 `ParameterAlreadyExists`로 실패한다).

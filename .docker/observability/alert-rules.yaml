@@ -1,4 +1,4 @@
-# 알림 규칙 전부 — 설계는 .docs/spec/007-discord-alert-spec.md. Prometheus가 1분마다 평가하고
+# 알림 규칙 전부 — 설계는 .docs/spec/008-discord-alert-spec.md. Prometheus가 1분마다 평가하고
 # Alertmanager(alertmanager.yml)로 넘긴다. AWS에선 같은 규칙이 .infra/monitoring/alert-rules.yaml(AMP)로
 # 돈다 — 규칙을 고치면 그쪽도 같이 고친다. 다른 건 확인 명령어(docker·Loki·Tempo ↔ CloudWatch·X-Ray)뿐이다.
 #

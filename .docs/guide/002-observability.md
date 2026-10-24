@@ -305,7 +305,7 @@ gateway는 모든 응답에 `X-Trace-Id` 헤더를 붙인다(`TraceIdResponseFil
 
 ## 6. 알림
 
-규칙, 문구, 채널, 알림별 대응은 [007 디스코드 알림 스펙](../spec/007-discord-alert-spec.md)이 기준이다. 여기서는 로컬에서 어떻게 돌아가는지만 적는다.
+규칙, 문구, 채널, 알림별 대응은 [008 디스코드 알림 스펙](../spec/008-discord-alert-spec.md)이 기준이다. 여기서는 로컬에서 어떻게 돌아가는지만 적는다.
 
 알림은 운영과 같은 길로 나간다. Prometheus가 1분마다 `alert-rules.yaml`을 평가해 Alertmanager로 넘기고, Alertmanager는 알림 이름별로 묶어 LocalStack SNS(`modudrive-alerts`)에 올린다. SNS가 Lambda(`modudrive-discord-forwarder`)를 부르면 Lambda가 웹후크 URL을 LocalStack SSM에서 읽어 Discord로 보낸다. Lambda 코드(`.infra/monitoring/discord_forwarder.py`)와 메시지 양식(`.infra/monitoring/discord.tmpl`)은 운영과 같은 파일이다.
 

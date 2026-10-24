@@ -11,7 +11,7 @@ resource "aws_prometheus_workspace" "main" {
 }
 
 # The rules in monitoring/alert-rules.yaml — same queries and thresholds as
-# .docker/observability/alert-rules.yaml (spec 007), only hints for AWS.
+# .docker/observability/alert-rules.yaml (spec 008), only hints for AWS.
 resource "aws_prometheus_rule_group_namespace" "alerts" {
   name         = "alerts"
   workspace_id = aws_prometheus_workspace.main.id
