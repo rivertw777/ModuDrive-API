@@ -122,6 +122,7 @@ CloudWatch 경보(큐 대기, ALB 5xx, gateway 헬스, NAT, CPU·메모리, DB, 
 | `.docker/observability/alert-rules.yaml` | 알림 규칙 9개 |
 | `.docker/observability/alertmanager.yml` | 알림 묶음, 재발송, 채널 |
 | `.docker/observability/grafana/datasources/datasources.yaml` | Grafana 데이터소스 (Prometheus, Tempo, Loki와 그 사이 링크) |
+| `.docker/observability/grafana/dashboards/` | 대시보드 3개 (7장). demo에도 같은 파일을 올린다 |
 | `common/infrastructure/observability` | 앱 쪽 공통 모듈. 의존성과 `application-observability.yml`, `UserIdObservationFilter` |
 
 모든 서비스가 공통 모듈에 의존하고, 각자 `application.yml`의 `spring.config.import`로 `classpath:application-observability.yml`을 불러온다.
@@ -308,9 +309,9 @@ gateway는 모든 응답에 `X-Trace-Id` 헤더를 붙인다(`TraceIdResponseFil
 
 | 방향 | 로컬 (Grafana 데이터소스 링크) | demo (Grafana Cloud) | prod |
 |---|---|---|---|
-| 로그 → trace | Loki가 로그의 `trace_id`(structured metadata)로 TraceID 링크를 만든다 | 로컬과 같은 링크를 Grafana Cloud의 Loki 데이터소스에 건다 | 없음. Logs Insights 결과의 `traceId`로 X-Ray에서 찾는다 |
-| trace → 로그 | Tempo의 `tracesToLogsV2`가 그 `trace_id`의 로그를 모든 서비스에서 찾는다 | 로컬과 같은 링크를 Grafana Cloud의 Tempo 데이터소스에 건다 | 없음 |
-| 지표 → trace | exemplar (5-2) | 로컬과 같다. collector가 exemplar를 함께 remote write한다 | 없음. AMP는 exemplar를 저장하지 않는다 |
+| 로그 → trace | Loki가 로그의 `trace_id`(structured metadata)로 TraceID 링크를 만든다 | 로컬과 같다. Grafana Cloud 기본 Loki 데이터소스에 들어 있다 | 없음. Logs Insights 결과의 `traceId`로 X-Ray에서 찾는다 |
+| trace → 로그 | Tempo의 `tracesToLogsV2`가 그 `trace_id`의 로그를 모든 서비스에서 찾는다 | Grafana Cloud 기본 Tempo 데이터소스가 span 시간 앞뒤 2초의 로그를 연다. `trace_id`로 거르지는 않는다 | 없음 |
+| 지표 → trace | exemplar (5-2) | 로컬과 같다. collector가 exemplar를 함께 remote write하고, `ModuDrive Prometheus` 데이터소스가 `trace_id`로 Tempo를 연다([003-aws-migration.md 3-4](003-aws-migration.md#3-4-지표로그트레이스-보기)) | 없음. AMP는 exemplar를 저장하지 않는다 |
 
 ---
 
@@ -336,7 +337,16 @@ Prometheus가 1분마다 `alert-rules.yaml`을 평가해 Alertmanager로 넘기�
 `grafana/grafana`, `localhost:3001`. 3000은 ModuDrive-WEB(Vite)이 쓴다.
 
 - 익명 사용자는 Viewer로 들어온다. admin 비밀번호는 `GRAFANA_ADMIN_PASSWORD`다.
-- 대시보드는 프로비저닝하지 않는다. Explore에서 직접 조회한다.
+- 대시보드는 `ModuDrive` 폴더에 셋이다. 파일이 기준이라 화면에서 고친 건 저장되지 않는다. JSON을 고치고 Grafana를 다시 띄운다.
+
+| 대시보드 | 보는 것 |
+|---|---|
+| Overview | 서비스 응답, 울리는 알림, gateway 라우트별 요청·5xx·1초 넘는 비율·p95(exemplar), 서비스별 요청·에러·느린 URI, 에러 로그 |
+| JVM & DB | 힙, GC 뒤 old 영역 비율, GC, CPU, 스레드, Hikari 커넥션(사용·대기·실패·획득 시간·점유 시간) |
+| Messaging & Resilience | outbox 적체·FAILED, DLQ, 서킷 상태 |
+
+- 알림이 보는 패널은 알림 규칙과 같은 식에 기준선을 그어 두었다.
+- 데이터소스는 대시보드 변수(`prom`, `logs`)로 고른다. 로컬은 `Prometheus`·`Loki`, demo는 `ModuDrive Prometheus`·`grafanacloud-<스택>-logs`가 자동으로 잡힌다.
 - 알림은 Grafana에서 보내지 않는다(6장). Grafana는 보는 화면이다.
 - 데이터소스 사이 링크는 5-4에 있다.
 

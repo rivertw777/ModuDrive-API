@@ -513,15 +513,32 @@ Lambda, Budgets는 이 규모에선 무료 구간 안에 든다.
 
 grafana.com에서 스택의 Grafana(`https://<스택>.grafana.net`)를 연다. Explore에서 로컬과 같은 쿼리를 쓴다.
 
-- 지표: `grafanacloud-<스택>-prom` 데이터소스. 이름과 라벨이 로컬과 같다.
+- 지표: `ModuDrive Prometheus` 데이터소스(아래). 이름과 라벨이 로컬과 같다.
 - 로그: `grafanacloud-<스택>-logs`. `{service_name="file-service"} | trace_id="<trace id>"`, `| userId="<uuid>"`.
 - 트레이스: `grafanacloud-<스택>-traces`. `{ span.user.id = "<uuid>" }`.
 - 알림: Alerting → Alert rules에서 데이터소스 관리 규칙(`alerts` 네임스페이스)을 본다.
+- 대시보드: `ModuDrive` 폴더. 로컬과 같은 파일(`.docker/observability/grafana/dashboards/`)이다. 고친 뒤에는 Editor 이상 서비스 계정 토큰으로 다시 올린다.
 
-로그와 trace 사이 링크는 로컬(`.docker/observability/grafana/datasources/datasources.yaml`)과 같은 설정을 Grafana Cloud의 Loki·Tempo 데이터소스에 넣는다.
+```bash
+for f in .docker/observability/grafana/dashboards/*.json; do
+  jq '{dashboard: ., folderUid: "modudrive", overwrite: true}' "$f" |
+    curl -sS -H "Authorization: Bearer $GRAFANA_TOKEN" -H 'Content-Type: application/json' \
+      --data-binary @- https://<스택>.grafana.net/api/dashboards/db
+done
+```
 
-- Loki: Derived fields에 `trace_id`(Type `Label`) → Tempo 데이터소스.
-- Tempo: Trace to logs에 Loki 데이터소스, Use custom query 켜고 `{service_name=~".+"} | trace_id="${__trace.traceId}"`.
+로그와 trace 사이 링크는 Grafana Cloud 기본 데이터소스에 들어 있다. 두 데이터소스는 읽기 전용이라 설정을 바꿀 수 없다.
+
+- 로그 → trace: Loki의 derived field `traceID (field)`가 `trace_id`(structured metadata)로 Tempo를 연다. 로컬과 같다.
+- trace → 로그: Tempo의 Trace to logs가 span 시간 앞뒤 2초의 로그를 연다. 로컬처럼 `trace_id`로 거르지는 않으므로, 정확히 보려면 Loki에서 `| trace_id="<trace id>"`로 찾는다.
+- 지표 → trace: 기본 `grafanacloud-<스택>-prom`은 exemplar의 `traceID` 라벨을 찾아서 우리 exemplar(`trace_id`)에는 링크가 안 생긴다. 그래서 같은 Mimir를 보는 Prometheus 데이터소스를 하나 더 두고 exemplar 라벨을 `trace_id`로 잡았다.
+
+| 항목 | 값 |
+|---|---|
+| 이름, uid | `ModuDrive Prometheus`, `modudrive-prom` |
+| URL | Prometheus Details의 URL + `/api/prom` |
+| Basic auth | User는 Prometheus user ID, Password는 metrics read만 있는 access policy(`modudrive-grafana-read`) 토큰 |
+| Exemplars | Internal link, `grafanacloud-<스택>-traces`, Label name `trace_id` |
 
 ---
 
