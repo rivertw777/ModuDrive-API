@@ -195,6 +195,13 @@ variable "hardened" {
   type = bool
 }
 
+# Seconds the ALB keeps sending a stopping gateway task's in-flight requests before cutting them — every
+# deploy waits it out. Uploads and downloads stream, so prod keeps it longer than the 30s a typical API
+# would use; demo trades a cut-off stream mid-deploy for a faster rollout.
+variable "alb_deregistration_delay" {
+  type = number
+}
+
 # Monthly AWS budget in USD for this account. Forecast past it or actual past 80% → the alerts topic
 # (monitoring.tf), and alert_email if set.
 variable "monthly_budget_usd" {

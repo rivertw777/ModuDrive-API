@@ -41,9 +41,8 @@ resource "aws_lb_target_group" "gateway" {
     healthy_threshold = 2
   }
 
-  # Draining waits this long for in-flight requests on a stopping task. Uploads and downloads stream,
-  # so keep it longer than the 30s a typical API would use.
-  deregistration_delay = 60
+  # Draining waits this long for in-flight requests on a stopping task (variables.tf).
+  deregistration_delay = var.alb_deregistration_delay
 }
 
 # api.<domain> with a DNS-validated certificate. Without a domain there's only plain HTTP — enough to
