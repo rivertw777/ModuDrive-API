@@ -49,7 +49,6 @@ __pycache__/
 *.tfstate
 *.tfstate.*
 *.tfvars
-!*.tfvars.example
 # Sizing only, no secrets — committed: envs/{demo,prod}.tfvars.
 !.infra/envs/*.tfvars
 .infra/backend.hcl

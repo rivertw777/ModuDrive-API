@@ -1,6 +1,7 @@
 # Everything a task needs that isn't in its image, as SSM SecureString parameters — free, unlike
 # Secrets Manager, which is kept for the RDS master password it rotates (rds.tf, 003-aws-migration.md 1-10).
-# ECS hands them to tasks as the env vars the app already reads (${MEMBER_DB_PASSWORD} ...).
+# ECS hands them to tasks as env vars: SPRING_DATASOURCE_PASSWORD / REDIS_PASSWORD to the services,
+# ${MEMBER_DB_PASSWORD} ... to db-init.
 locals {
   db_logins = {
     member       = "MEMBER_DB_PASSWORD"
@@ -54,31 +55,8 @@ moved {
   to   = aws_ssm_parameter.redis_password["auth"]
 }
 
-# Former AES-256 key for file blocks. Nothing reads it since blocks go to S3 as-is through presigned
-# URLs (spec 001 2-4), and blocks written with it are unreadable to the app (spec 001 2-3; reset). Kept
-# only because prevent_destroy refuses a plain removal — once no old block is left anywhere (backup
-# copies included), drop the lifecycle blocks in one apply, then the resources in the next.
-resource "random_bytes" "storage_encryption_key" {
-  length = 32
-
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-
-resource "aws_ssm_parameter" "storage_encryption_key" {
-  name   = "/${var.project}/STORAGE_ENCRYPTION_KEY"
-  type   = "SecureString"
-  key_id = local.kms_key_arn
-  value  = random_bytes.storage_encryption_key.base64
-
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-
-# Discord webhooks are made in Discord, not here: the parameters exist so tasks and Grafana can point
-# at them, and their value is set once by hand (aws ssm put-parameter --overwrite) and left alone.
+# Discord webhooks are made in Discord, not here: the parameters exist so the Discord forwarder Lambda and
+# Grafana can point at them, and their value is set once by hand (aws ssm put-parameter --overwrite) and left alone.
 resource "aws_ssm_parameter" "discord_webhook" {
   for_each = toset([for c in ["MESSAGING", "SERVICE", "INFRA", "ACCOUNT"] : "DISCORD_${c}_WEBHOOK_URL"])
 

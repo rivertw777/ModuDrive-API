@@ -9,7 +9,7 @@ resource "aws_ecr_repository" "service" {
   }
 }
 
-# Old images go; the last 30 stay so a rollback is just an older image_tag.
+# Old images go; the last 30 stay so a rollback is a deploy of an older commit (its SHA image is still here).
 resource "aws_ecr_lifecycle_policy" "service" {
   for_each = aws_ecr_repository.service
 

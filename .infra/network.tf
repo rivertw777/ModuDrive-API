@@ -21,7 +21,7 @@ module "vpc" {
   private_subnets  = slice(["10.0.10.0/23", "10.0.12.0/23", "10.0.14.0/23"], 0, var.az_count)
   database_subnets = slice(["10.0.20.0/24", "10.0.21.0/24", "10.0.22.0/24"], 0, var.az_count)
 
-  # One per AZ, so an AZ outage doesn't cut the other AZ's egress (SES, Discord). ~$45/month each.
+  # One per AZ, so an AZ outage doesn't cut the other AZ's egress (SES, the collector's exports). ~$45/month each.
   # Without them the module still makes a private route table per AZ, routed below to the instance.
   enable_nat_gateway     = var.nat == "gateway"
   one_nat_gateway_per_az = var.nat == "gateway"

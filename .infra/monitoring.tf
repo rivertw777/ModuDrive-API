@@ -647,10 +647,16 @@ resource "aws_ecs_service" "otel_collector" {
   depends_on = [aws_route.private_nat_instance, aws_iam_role_policy_attachment.ecs_infrastructure, aws_iam_role_policy.ecs_infrastructure_kms]
 }
 
+# Created before the old one goes: a description change replaces the group, and the running collector
+# holds the old one until its task moves.
 resource "aws_security_group" "otel_collector" {
-  name        = "${var.project}-otel-collector"
-  description = "Central ADOT collector"
+  name_prefix = "${var.project}-otel-collector-"
+  description = "Central OTel collector"
   vpc_id      = module.vpc.vpc_id
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # Every service sends its spans here…

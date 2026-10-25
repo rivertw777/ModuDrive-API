@@ -35,5 +35,5 @@ management:
 logging:
   structured:
     format:
-      # One-line JSON console logs, so traceId/spanId are searchable fields in Loki and CloudWatch Logs Insights.
+      # One-line JSON console logs, so traceId/spanId are searchable fields in CloudWatch Logs Insights.
       console: ecs

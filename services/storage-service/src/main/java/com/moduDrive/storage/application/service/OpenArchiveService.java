@@ -21,7 +21,7 @@ import java.util.zip.Deflater;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
-/** Streams the zip block by block, like a single download — only one decrypted block is ever in
+/** Streams the zip block by block, like a single download — only one block is ever in
  * memory. {@link ZipOutputStream} writes UTF-8 names and switches to ZIP64 on its own past 4GB or
  * 65,535 entries. The layout is re-resolved here rather than trusted from prepare, so access
  * revoked in between still counts. */

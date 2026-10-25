@@ -57,7 +57,7 @@ import java.util.stream.Collectors;
 /** The commit of spec 001 2-3: the client sends a file's blocklist and where it goes, gets back the
  * blocks the server doesn't have yet, uploads those to storage-service, and commits again. Commits
  * that come back with {@code needBlocks} change nothing — no file or folder row exists until the
- * version does — so asking again is also how an interrupted upload finds where it stopped (2-1).
+ * version does — so asking again is also how an interrupted upload finds where it stopped (2-4-3).
  *
  * <p>A request carries a group of files (spec 001 2-3), so which blocks exist is asked once for
  * the whole group — and outside any transaction, storage-service included, so a slow

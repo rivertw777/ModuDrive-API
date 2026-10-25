@@ -49,7 +49,7 @@ variable "image_tag" {
 # differs. No defaults: every plan names its whole set with -var-file — envs/demo.tfvars (the trial
 # stack) or envs/prod.tfvars — never a mix.
 
-# How the tasks (always in private subnets) reach the internet — ECR, SSM, SQS, SES, Discord:
+# How the tasks (always in private subnets) reach the internet — ECR, SSM, SQS, SES, the collector's exports:
 #   "gateway"  — a managed NAT gateway per AZ (~$45/month each), nothing to run
 #   "instance" — one t4g.micro NAT instance (fck-nat, ~$11/month with its IP), a single point for
 #                outbound traffic only — inbound comes through the ALB either way

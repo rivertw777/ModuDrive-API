@@ -312,9 +312,9 @@ flowchart LR
 
 - **키**: 큐 이름 + 중복 제거 id(`outbox-<행 id>`). 같은 이벤트면 항상 같은 값이고,
   큐 이름을 붙여야 행 id가 서비스끼리 겹쳐도 안 부딪친다.
-- **확인이 아니라 선점이다.** 묻지 않고 바로 쓰고, 쓰기 성공 여부로 판단한다.
-  - DB: `processed_event`에 insert → `uk_processed_event`가 두 번째를 막는다
-  - Redis: `SETNX processed:<큐>:<중복 제거 id>` → 키가 없을 때만 써진다
+- DB: `processed_event`를 SELECT로 먼저 확인하고, insert는 처리 뒤 같은 트랜잭션에서 한다
+  ([4-1-2](#4-1-2-처리-기록)). 동시에 처리된 두 번째는 `uk_processed_event`가 막아 롤백 후 재시도된다
+- Redis: **확인이 아니라 선점이다.** `SETNX processed:<큐>:<중복 제거 id>` → 키가 없을 때만 써진다
 - 처리에 실패하면 선점도 같이 풀린다([4-1-2](#4-1-2-처리-기록)).
 - 구현: `common:infrastructure:messaging`의 `ProcessedEvents` 포트 + JPA/Redis 구현.
 
@@ -344,8 +344,9 @@ flowchart LR
 
 | 구분 | 예 | 처리 |
 |---|---|---|
-| 재처리 가능 | SES·네트워크 타임아웃, DB 락, **분류에 없는 모든 예외** | 지수 백오프(1s → 2s → 4s)로 재시도, 4번째도 실패하면 DLQ — 사유 `Retries exhausted after 4 attempts: <마지막 예외>` |
-| 재처리 불가 | `IllegalArgumentException`, `NullPointerException`, `ClassCastException`, 검증 실패(`ValidationException`), 페이로드 타입 변환 실패 | 한 번 실패하면 바로 DLQ, 원본 본문 + 사유(`DeadLetterReason`) 보관 |
+| 결과 불명 | SES 타임아웃 | `RetryLaterException` — 60초 뒤 다시 받는다. Redis 선점 키는 지우지 않고 만료되게 둔다 |
+| 재처리 가능 | 네트워크 타임아웃, DB 락, **분류에 없는 모든 예외** | 지수 백오프(1s → 2s → 4s)로 재시도, 4번째도 실패하면 DLQ — 사유 `Retries exhausted after 4 attempts: <마지막 예외>` |
+| 재처리 불가 | `IllegalArgumentException`, `NullPointerException`, `ClassCastException`, 검증 실패(`ValidationException`), 페이로드 타입 변환 실패, 하위 시스템의 거절(`PermanentConsumeException`, 예: SES 400) | 한 번 실패하면 바로 DLQ, 원본 본문 + 사유(`DeadLetterReason`) 보관 |
 
 - 분류에 없는 예외는 **재처리 가능**으로 본다 — 잘못 버려서 사람이 되살리는 쪽이 더 비싸다.
 - 재시도 횟수와 DLQ 이름은 앱에 안 적고 **큐 설정에서 읽는다**.
@@ -367,7 +368,7 @@ flowchart LR
 | 4. redrive | DLQ → 원래 큐로 되돌린다. AWS 콘솔의 `Start DLQ redrive` 버튼 또는 `aws sqs start-message-move-task --source-arn <dlq-arn>` |
 | 5. 재처리 | 멱등성 기록(`processed_event`)은 처리에 성공했을 때만 남으므로, DLQ로 빠진 메시지는 기록이 없어 그대로 다시 처리된다 ([4-1-2](#4-1-2-처리-기록)) |
 
-버릴 메시지는 DLQ에서 지우면 끝이다. 아무것도 안 하면 SQS 보관 기간(기본 4일, 최대 14일)이 지나 사라진다.
+버릴 메시지는 DLQ에서 지우면 끝이다. 아무것도 안 하면 SQS 보관 기간(AWS 14일, 로컬 기본 4일)이 지나 사라진다.
 
 #### 4-2-2. 처리 실패 시 알림
 

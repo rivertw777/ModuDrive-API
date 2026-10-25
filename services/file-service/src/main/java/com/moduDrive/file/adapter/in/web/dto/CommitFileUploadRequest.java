@@ -13,7 +13,7 @@ import java.util.UUID;
 
 /** A group of files committed together (spec 001 2-3); the service also caps the group's
  * blocklists at 1,280 hashes in total. {@code directories} are the folders of an uploaded folder
- * tree that no file creates (2-2) — either list may be left out, not both. */
+ * tree that no file creates (2-6) — either list may be left out, not both. */
 public record CommitFileUploadRequest(
         @Size(max = 100) List<@NotNull @Valid File> files,
         @Size(max = 1000) List<@NotNull @Valid Directory> directories

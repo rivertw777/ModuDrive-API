@@ -158,9 +158,7 @@ CloudWatch 경보(큐 대기, ALB 5xx, gateway 헬스, NAT, CPU·메모리, DB, 
 - 백분위 히스토그램(버킷 70개쯤) 대신 버킷 다섯 개만 둔 건 시계열 수 때문이다. Prometheus도, AWS의 AMP(샘플 수 과금)도 시계열 수만큼 비용이 든다.
 - 1s 버킷은 "느린 요청" 알림이 읽고, collector가 1초 넘는 trace를 전부 남기는 기준(4-2)과도 같다. 이 버킷을 빼면 알림이 조용히 멈춘다.
 
-DB 쿼리 계측(4-4)을 붙이면서 JDBC 지표도 같이 생긴다. `jdbc_query_seconds`(쿼리 시간), `jdbc_connection_seconds`(커넥션을 잡고 있던 시간), `jdbc_connections_active`·`idle`(풀 상태) 같은 것들이다. 레이블은 DB 이름, 드라이버, 풀 이름, 에러 여부 정도라 쿼리가 늘어도 시계열은 늘지 않는다. AWS에서는 collector가 이 지표를 걸러 내서 AMP에는 가지 않는다(커넥션 풀은 `hikaricp_connections_*`로 본다).
-
-업로드·다운로드 성공률 지표는 따로 만들지 않았다. storage-service가 서버에서 직접 S3에 올리므로(presigned URL이 아니다) 실패가 전부 `http_server_requests_seconds_count{uri=..., outcome=...}`에 이미 잡힌다.
+DB 쿼리 계측(4-4)을 붙이면서 JDBC 지표도 같이 생긴다. `jdbc_query_seconds`(쿼리 시간), `jdbc_connection_seconds`(커넥션을 잡고 있던 시간), `jdbc_connections_active`·`idle`(풀 상태) 같은 것들이다. 레이블은 DB 이름, 드라이버, 풀 이름, 에러 여부 정도라 쿼리가 늘어도 시계열은 늘지 않는다. collector의 keep 목록에 없어서 로컬·AWS 어디에도 저장되지 않는다(커넥션 풀은 `hikaricp_connections_*`로 본다).
 
 지표 레이블에는 userId나 fileId 같은 고유값을 넣지 않는다. 사용자마다 시계열이 하나씩 생겨 Prometheus가 감당하지 못한다. 고유값은 span 태그와 로그 필드에만 둔다.
 
