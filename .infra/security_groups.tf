@@ -1,5 +1,5 @@
 # One security group per service; inbound only from the callers that really call it
-# (003-aws-migration.md 1-12). /internal/** has no auth of its own — these rules are what keeps, say, a
+# (002-aws-migration.md 1-12). /internal/** has no auth of its own — these rules are what keeps, say, a
 # compromised gateway away from member's internal APIs. Add a Feign/WebClient call → add its caller
 # here, or it times out only on AWS (compose has everything open).
 locals {
@@ -211,7 +211,7 @@ resource "aws_vpc_security_group_ingress_rule" "vpc_endpoints" {
   to_port                      = 443
 }
 
-# Outbound is open on every group; the inbound rules carry the isolation (003-aws-migration.md 1-12).
+# Outbound is open on every group; the inbound rules carry the isolation (002-aws-migration.md 1-12).
 resource "aws_vpc_security_group_egress_rule" "all" {
   for_each = merge(
     { for name, sg in aws_security_group.service : name => sg.id },

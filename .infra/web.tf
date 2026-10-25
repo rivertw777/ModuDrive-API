@@ -1,5 +1,5 @@
 # ModuDrive-WEB: the built SPA (dist/) in a private bucket, served by CloudFront at app.<domain>
-# (003-aws-migration.md 1-11). Domain-bound like the API's HTTPS: nothing here until domain_name is set.
+# (002-aws-migration.md 1-11). Domain-bound like the API's HTTPS: nothing here until domain_name is set.
 
 # CloudFront only takes certificates from us-east-1.
 provider "aws" {

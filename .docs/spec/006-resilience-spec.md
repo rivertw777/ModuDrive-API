@@ -451,5 +451,5 @@ Redis를 용도별 클러스터로 나눈다 (`.infra/redis.tf`, 어느 서비�
 |---|---|---|
 | `resilience4j_circuitbreaker_not_permitted_calls_total` — 서킷이 막은 호출 수 (서비스·서킷별) | 최근 2분에 1건 이상인 상태가 2분 지속 | 대상 서비스 호출이 계속 실패해 사용자 요청이 막히고 있다 (502·503·504 · 타임아웃 · 연결 실패) |
 
-(상세 내용은 [008-discord-alert-spec.md 4](008-discord-alert-spec.md#4-사용-알림) 참고)
+(상세 내용은 [009-discord-alert-spec.md 4](009-discord-alert-spec.md#4-사용-알림) 참고)
 

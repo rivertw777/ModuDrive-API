@@ -29,7 +29,7 @@ variable "account_id" {
 
 # WEB and API must share one registrable domain (app.<domain> / api.<domain>): the session cookie is
 # SameSite=Strict + host-only, and *.cloudfront.net / *.elb.amazonaws.com are each their own site
-# (003-aws-migration.md 1-11). Null until a domain is bought — everything domain-bound (Route 53 zone,
+# (002-aws-migration.md 1-11). Null until a domain is bought — everything domain-bound (Route 53 zone,
 # SES identity) is skipped until then.
 variable "domain_name" {
   type    = string
@@ -234,7 +234,7 @@ variable "grafana" {
 # Grafana Cloud stack (monitoring.tf): set, traces, logs and metrics go there instead of X-Ray and AMP,
 # and the alert rules and alertmanager run there, posting to Discord themselves. null = AMP + X-Ray.
 # Values from the stack's page on grafana.com; the token is the SSM parameter /<project>/GRAFANA_CLOUD_TOKEN,
-# put by hand before the first apply (003-aws-migration.md 1-13).
+# put by hand before the first apply (002-aws-migration.md 1-13).
 variable "grafana_cloud" {
   type = object({
     otlp_url          = string # OpenTelemetry → Configure

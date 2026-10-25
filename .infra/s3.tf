@@ -1,6 +1,6 @@
 # File blocks. The WEB PUTs them here directly through presigned URLs storage-service signs (spec 001
 # 2-4); the bucket encrypts them — with the customer KMS key when hardened (prod), SSE-S3 otherwise. The
-# task role gets object access only — no CreateBucket (003-aws-migration.md 1-8).
+# task role gets object access only — no CreateBucket (002-aws-migration.md 1-8).
 resource "aws_s3_bucket" "storage" {
   bucket = "${var.project}-storage-${data.aws_caller_identity.current.account_id}"
 

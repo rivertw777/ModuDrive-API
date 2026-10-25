@@ -9,7 +9,7 @@ spring:
   reactor:
     context-propagation: auto
   # Per-route request timer (spring_cloud_gateway_requests_seconds_*) — off by default since Gateway 5.
-  # The route error and slow-request alerts read it (spec 008 4).
+  # The route error and slow-request alerts read it (spec 009 4).
   cloud:
     gateway:
       server:

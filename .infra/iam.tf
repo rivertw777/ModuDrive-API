@@ -104,7 +104,7 @@ data "aws_iam_policy_document" "task" {
   }
 
   # Blocks: put through the presigned URLs it signs, get on download and lookup, delete on purge.
-  # No CreateBucket (003-aws-migration.md 1-8).
+  # No CreateBucket (002-aws-migration.md 1-8).
   dynamic "statement" {
     for_each = each.key == "storage" ? [1] : []
     content {

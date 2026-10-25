@@ -1,7 +1,7 @@
 {
   "uid": "modudrive-overview",
   "title": "ModuDrive · Overview",
-  "description": "요청·에러·지연(RED)과 에러 로그. 알림 규칙과 같은 식을 쓴다(.docs/spec/008-discord-alert-spec.md)",
+  "description": "요청·에러·지연(RED)과 에러 로그. 알림 규칙과 같은 식을 쓴다(.docs/spec/009-discord-alert-spec.md)",
   "tags": [
     "modudrive"
   ],

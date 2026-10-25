@@ -1,4 +1,4 @@
-# Monitoring (003-aws-migration.md 1-13). Storage and query are managed, and the one thing this stack
+# Monitoring (002-aws-migration.md 1-13). Storage and query are managed, and the one thing this stack
 # runs is the central collector below. Two backends:
 #   - Grafana Cloud (var.grafana_cloud, demo): metrics, logs and traces in one Grafana, as local. The
 #     alert rules run on its ruler and its alertmanager posts to Discord, as local.
@@ -9,7 +9,7 @@ locals {
   grafana_cloud = var.grafana_cloud != null
 
   # The rules in monitoring/alert-rules.yaml — same queries and thresholds as
-  # .docker/observability/alert-rules.yaml (spec 008), only hints for AWS.
+  # .docker/observability/alert-rules.yaml (spec 009), only hints for AWS.
   alert_rules = templatefile("${path.module}/monitoring/alert-rules.yaml", {
     project  = var.project
     services = keys(local.service_ports)
@@ -133,7 +133,7 @@ resource "terraform_data" "grafana_cloud_dashboards" {
 
 locals {
   # .docker/observability/alertmanager.yml with the webhook URLs inline: a hosted alertmanager reads no files.
-  # A channel whose URL isn't in yet goes to service's, as local (spec 008 3).
+  # A channel whose URL isn't in yet goes to service's, as local (spec 009 3).
   discord_webhook = { for k, p in data.aws_ssm_parameter.discord_webhook : k => p.value }
   grafana_cloud_alertmanager = local.grafana_cloud ? templatefile("${path.module}/monitoring/alertmanager-grafana-cloud.yaml", {
     webhooks = {
@@ -149,7 +149,7 @@ locals {
 
 # ---------------------------------------------------------------------------------------------------
 # AWS. Metrics: AMP. No customer key even when hardened — metric labels carry no user data (no userId
-# or fileId; 003-aws-migration.md 1-13), and AMP's own key keeps the query side free of KMS grants.
+# or fileId; 002-aws-migration.md 1-13), and AMP's own key keeps the query side free of KMS grants.
 resource "aws_prometheus_workspace" "main" {
   count = local.grafana_cloud ? 0 : 1
 
