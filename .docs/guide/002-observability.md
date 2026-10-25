@@ -146,6 +146,7 @@ CloudWatch 경보(큐 대기, ALB 5xx, gateway 헬스, NAT, CPU·메모리, DB, 
 - 대상 7개는 `otel-collector-config.yaml`의 `prometheus` receiver `static_configs`에 `<서비스>:9464`로 적어 뒀다. 서비스를 추가하면 여기도 추가해야 한다.
 - 스크레이프 주소에서 포트를 떼어 `service` 라벨을 붙인다(`member-service:9464` → `member-service`). 알림 규칙과 Discord 메시지가 이 라벨로 서비스를 가리킨다.
 - `--storage.tsdb.retention.time=14d`. demo(Grafana Cloud)와 같다.
+- 알림과 대시보드가 읽는 지표만 남긴다(collector의 `metric_relabel_configs`, demo와 같은 목록). 새 지표로 알림이나 패널을 만들려면 로컬과 `.infra/monitoring/otel-collector.yaml` 두 곳에 먼저 추가한다.
 - `--enable-feature=exemplar-storage`로 exemplar를 저장한다(5-2).
 - `--web.external-url=http://localhost:9090`. 알림에 붙는 "어느 규칙에서 왔나" 링크가 이 주소로 만들어진다.
 
