@@ -39,7 +39,7 @@
 
 각 서비스는 자기 상태를 숫자로 내놓는다. 예를 들어 "아직 못 보낸 이벤트가 몇 초째 밀려 있다", "서킷이 열려 있다" 같은 것이다.
 이 숫자를 **지표**라고 부른다. Prometheus가 지표를 모아 두고 규칙으로 검사하다가, 이상하면 Alertmanager가 디스코드 웹후크로 보낸다.
-로컬과 demo가 같은 길을 쓴다. demo는 Prometheus·Alertmanager 자리에 Grafana Cloud가 있다([003-aws-migration.md 1-13](../guide/003-aws-migration.md#1-13-모니터링과-알림)).
+로컬과 demo가 같은 길을 쓴다. demo는 Prometheus·Alertmanager 자리에 Grafana Cloud가 있다([002-aws-migration.md 1-13](../guide/002-aws-migration.md#1-13-모니터링과-알림)).
 
 ```mermaid
 flowchart LR
@@ -226,7 +226,7 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 - 웹후크 주소를 아직 안 넣은 채널은 `#service`로 대신 보낸다. 주소를 넣기 전이라고 알림이 사라지지 않게 하려는 것이다.
 
 - 로컬: `.docker/.env`에 넣으면 Alertmanager가 뜰 때 채널별 파일로 써 두고 읽는다. 바꾼 뒤엔 Alertmanager를 다시 띄운다.
-- AWS: SSM에 손으로 한 번 넣는다([003-aws-migration.md 1-13](../guide/003-aws-migration.md#1-13-모니터링과-알림)). demo는 apply가 그 값을 Grafana Cloud의 Alertmanager 설정에 넣는다.
+- AWS: SSM에 손으로 한 번 넣는다([002-aws-migration.md 1-13](../guide/002-aws-migration.md#1-13-모니터링과-알림)). demo는 apply가 그 값을 Grafana Cloud의 Alertmanager 설정에 넣는다.
 
 ---
 
@@ -423,7 +423,7 @@ Budgets는 AWS가 만든 문장을, GuardDuty는 EventBridge 규칙에 적어 �
 | Redis 메모리 높음 (demo) | `#infra` | Redis가 차 갈 때 — noeviction이라 가득 차면 쓰기(로그인·업로드)가 실패한다 | `redis-memory-<클러스터>`: ElastiCache `DatabaseMemoryUsagePercentage` 최대 `> 80`% | 5분 |
 | NAT 인스턴스 상태 검사 실패 (demo) | `#infra` | NAT가 멈춰 바깥 통신(SQS·SES·이미지 받기)만 끊길 때 — 서비스는 떠 있다 | `nat-instance-status`: EC2 `StatusCheckFailed` 최대 `> 0` | 3분 (1분 × 3) |
 | 예산 초과 | `#account` | 이번 달 사용액이 예산의 80%를 넘었거나, 월말 예상이 100%를 넘을 때. 크레딧을 빼기 전 금액으로 본다 — 무료 플랜은 크레딧이 청구액을 0으로 만들고, 다 쓰면 계정이 닫힌다 (`alert_email`이 있으면 메일로도) | Budgets: 실제 `>= 80`%, 예상 `>= 100`% | AWS가 비용을 집계할 때 (하루 몇 번) |
-| GuardDuty 위협 탐지 (prod) | `#account` | 계정 수준의 위협이 탐지됐을 때 ([003 4-6](../guide/003-aws-migration.md)) | GuardDuty 심각도 `>= 7` | 탐지 후 몇 분 |
+| GuardDuty 위협 탐지 (prod) | `#account` | 계정 수준의 위협이 탐지됐을 때 ([002 4-6](../guide/002-aws-migration.md)) | GuardDuty 심각도 `>= 7` | 탐지 후 몇 분 |
 
 알림 이름 옆 (demo)·(prod)는 그 환경에만 있다는 뜻이고, 없는 것은 둘 다에 있다. prod는 Aurora·MemoryDB라 DB·Redis 경보가 아직 없다.
 기다리는 시간은 `period × evaluation_periods`이고, 여기에 지표가 CloudWatch에 올라오는 지연(보통 1~3분)이 더해진다([5-2](#5-2-알림이-오기까지-걸리는-시간)).

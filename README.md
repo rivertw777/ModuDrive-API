@@ -99,7 +99,8 @@
 - [비동기 메시징 스펙](./.docs/spec/005-messaging-spec.md)
 - [장애 대응 (Resilience) 스펙](./.docs/spec/006-resilience-spec.md)
 - [로깅 스펙](./.docs/spec/007-logging-spec.md)
-- [디스코드 알림 스펙](./.docs/spec/008-discord-alert-spec.md)
+- [모니터링 스펙](./.docs/spec/008-observability-spec.md)
+- [디스코드 알림 스펙](./.docs/spec/009-discord-alert-spec.md)
 
 <br>
 
@@ -110,8 +111,7 @@
 <br>
 
 - [DB 마이그레이션 (Flyway)](./.docs/guide/001-db-migration.md)
-- [모니터링](./.docs/guide/002-observability.md)
-- [AWS 마이그레이션](./.docs/guide/003-aws-migration.md)
+- [AWS 마이그레이션](./.docs/guide/002-aws-migration.md)
 
 <br>
 

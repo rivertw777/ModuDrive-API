@@ -1,5 +1,5 @@
 # Alert rules on Grafana Cloud or AMP (monitoring.tf) — the local rules (.docker/observability/alert-rules.yaml,
-# spec 008): same queries, thresholds and waits. What differs on AWS:
+# spec 009): same queries, thresholds and waits. What differs on AWS:
 #   - `service` is the container name (otel-collector.yaml) rather than the scrape host (prometheus.yml)
 #   - hints point at ECS, and at Loki and Tempo on Grafana Cloud (CloudWatch Logs and X-Ray without it)
 #     instead of docker

@@ -1,5 +1,5 @@
 # Everything a task needs that isn't in its image, as SSM SecureString parameters — free, unlike
-# Secrets Manager, which is kept for the RDS master password it rotates (rds.tf, 003-aws-migration.md 1-10).
+# Secrets Manager, which is kept for the RDS master password it rotates (rds.tf, 002-aws-migration.md 1-10).
 # ECS hands them to tasks as env vars: SPRING_DATASOURCE_PASSWORD / REDIS_PASSWORD to the services,
 # ${MEMBER_DB_PASSWORD} ... to db-init.
 locals {

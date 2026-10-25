@@ -6,7 +6,7 @@ description: Logging rules for ModuDrive services — when to log at all, which 
 # Logging Rules (ModuDrive)
 
 Format, collection and retention (OTLP → Loki; ECS JSON on stdout → CloudWatch Logs on AWS) are in
-`.docs/guide/002-observability.md` §3. This skill covers only what to write in code.
+`.docs/spec/008-observability-spec.md` §3. This skill covers only what to write in code.
 
 ## Log only where an exception stops
 

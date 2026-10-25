@@ -1,8 +1,10 @@
-# 모니터링
+# 모니터링 스펙
 
 지표, 로그, 트레이스를 모으고, 알림을 보내고, 문제가 생겼을 때 원인까지 따라가는 방법을 정리한 문서다.
-1장에서 로컬과 운영(AWS) 구성을 나란히 보여 주고, 2장부터는 로컬 기준으로 설명한다. 운영 쪽 상세는 [003-aws-migration.md 1-13](003-aws-migration.md#1-13-모니터링과-알림)에 있다.
-코드가 기준이다. 로컬 설정은 `.docker/observability/`, AWS는 `.infra/monitoring.tf`, 앱 쪽은 `common/infrastructure/observability`를 같이 보면서 읽으면 된다.
+1장에서 로컬과 운영(AWS) 구성을 나란히 보여 주고, 2장부터는 로컬 기준으로 설명한다. 운영 쪽 상세는 [002-aws-migration.md 1-13](../guide/002-aws-migration.md#1-13-모니터링과-알림)에 있다.
+로컬 설정은 `.docker/observability/`, AWS는 `.infra/monitoring.tf`, 앱 쪽은 `common/infrastructure/observability`를 같이 보면서 읽으면 된다.
+
+⚠️ 이 문서가 기준입니다. 코드가 이 문서와 다르면 코드를 고치고, 동작을 바꾸려면 이 문서를 먼저 고칩니다.
 
 ---
 
@@ -257,7 +259,7 @@ trace가 서비스를 넘어가려면 호출할 때 `traceparent` 헤더(W3C)가
 |---|---|
 | gateway → 서비스 (WebClient, Netty) | 별도 설정 없이 이어진다 |
 | 서비스 → 서비스 (Feign) | `feign-micrometer`가 있어야 계측되고 헤더가 실린다(`common:infrastructure:spring-cloud`). 없으면 받는 쪽에서 trace가 새로 시작된다 |
-| 서비스 → SQS → 서비스 | outbox에 헤더를 같이 저장하고, relay가 보낼 때 Observation을 열고, 컨슈머가 이어받는다. `application-sqs.yml`의 SQS observation이 켜져 있어야 한다([005 메시징](../spec/005-messaging-spec.md) 6장) |
+| 서비스 → SQS → 서비스 | outbox에 헤더를 같이 저장하고, relay가 보낼 때 Observation을 열고, 컨슈머가 이어받는다. `application-sqs.yml`의 SQS observation이 켜져 있어야 한다([005 메시징](005-messaging-spec.md) 6장) |
 | gateway 안 (WebFlux) | `spring.reactor.context-propagation: auto`. 없으면 스레드가 바뀌면서 로그의 `traceId`가 빈다 |
 
 ### 4-4. span에 담기는 것
@@ -313,13 +315,13 @@ gateway는 모든 응답에 `X-Trace-Id` 헤더를 붙인다(`TraceIdResponseFil
 |---|---|---|---|
 | 로그 → trace | Loki가 로그의 `trace_id`(structured metadata)로 TraceID 링크를 만든다 | 로컬과 같다. Grafana Cloud 기본 Loki 데이터소스에 들어 있다 | 없음. Logs Insights 결과의 `traceId`로 X-Ray에서 찾는다 |
 | trace → 로그 | Tempo의 `tracesToLogsV2`가 그 `trace_id`의 로그를 모든 서비스에서 찾는다 | Grafana Cloud 기본 Tempo 데이터소스가 span 시간 앞뒤 2초의 로그를 연다. `trace_id`로 거르지는 않는다 | 없음 |
-| 지표 → trace | exemplar (5-2) | 로컬과 같다. collector가 exemplar를 함께 remote write하고, `ModuDrive Prometheus` 데이터소스가 `trace_id`로 Tempo를 연다([003-aws-migration.md 3-4](003-aws-migration.md#3-4-지표로그트레이스-보기)) | 없음. AMP는 exemplar를 저장하지 않는다 |
+| 지표 → trace | exemplar (5-2) | 로컬과 같다. collector가 exemplar를 함께 remote write하고, `ModuDrive Prometheus` 데이터소스가 `trace_id`로 Tempo를 연다([002-aws-migration.md 3-4](../guide/002-aws-migration.md#3-4-지표로그트레이스-보기)) | 없음. AMP는 exemplar를 저장하지 않는다 |
 
 ---
 
 ## 6. 알림
 
-규칙, 문구, 채널, 알림별 대응은 [008 디스코드 알림 스펙](../spec/008-discord-alert-spec.md)이 기준이다. 여기서는 로컬에서 어떻게 돌아가는지만 적는다.
+규칙, 문구, 채널, 알림별 대응은 [009 디스코드 알림 스펙](009-discord-alert-spec.md)이 기준이다. 여기서는 로컬에서 어떻게 돌아가는지만 적는다.
 
 Prometheus가 1분마다 `alert-rules.yaml`을 평가해 Alertmanager로 넘기고, Alertmanager가 알림 이름별로 묶어 채널별 Discord 웹후크로 보낸다. 메시지 양식(`.infra/monitoring/discord.tmpl`)은 demo와 같은 파일이다.
 
