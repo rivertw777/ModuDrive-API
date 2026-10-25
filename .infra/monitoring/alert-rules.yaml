@@ -76,13 +76,13 @@ groups:
           inspect: 'aws ecs describe-services --cluster ${project} --services {{ $labels.service }} --query "services[0].events[:5]"'
 
       - alert: CircuitOpen
-        expr: max by (service, name) (resilience4j_circuitbreaker_state{state=~"open|half_open"}) > 0
+        expr: sum by (service, name) (increase(resilience4j_circuitbreaker_not_permitted_calls_total[2m])) > 0
         for: 2m
         labels:
           channel: service
         annotations:
           title: 서킷 열림
-          summary: 2분째 닫히지 않음 — 대상 서비스 호출이 계속 실패 중 (502·503·504 · 타임아웃 · 연결 실패)
+          summary: '최근 2분 동안 서킷이 막은 호출 **{{ printf "%.0f" $value }}건** — 대상 서비스 호출이 계속 실패 중 (502·503·504 · 타임아웃 · 연결 실패)'
           action: 서킷이 부르는 서비스의 상태와 로그로 실패 원인 확인
 %{ if loki ~}
           inspect: '{service_name="{{ $labels.service }}"} |= "{{ $labels.name }}"'

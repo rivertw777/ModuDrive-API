@@ -166,10 +166,10 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 
 대상: gateway-service · `memberServiceCircuitBreaker`
 
-사유: 2분째 닫히지 않음 — 대상 서비스 호출이 계속 실패 중 (502·503·504 · 타임아웃 · 연결 실패)
+사유: 최근 2분 동안 서킷이 막은 호출 **37건** — 대상 서비스 호출이 계속 실패 중 (502·503·504 · 타임아웃 · 연결 실패)
 조치: 서킷이 부르는 서비스의 상태와 로그로 실패 원인 확인
 확인 명령어
-  docker logs modudrive-service-gateway-service-1 2>&1 | grep "memberServiceCircuitBreaker"
+  {service_name="gateway-service"} |= "memberServiceCircuitBreaker"
 ```
 
 메시지에 넣을 수 있는 내용은 두 가지다.
@@ -239,7 +239,7 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 | 이벤트 처리 실패 | `#messaging` | 받는 쪽 서비스가 처리를 포기한 메시지가 DLQ에 있을 때 | `max by (service, queue) (modudrive_dlq_messages) > 0` | 바로 |
 | 서비스 응답 없음 | `#service` | 서비스가 응답하지 않을 때 (프로세스가 죽음) | `min by (service) (up{job="services"}) < 1` | 2분 |
 | 서비스 태스크 없음 (AWS) | `#service` | 서비스의 태스크가 하나도 수집되지 않을 때 (기동 실패 · 배포 롤백 반복) | 서비스마다 `absent(up{job="services",service="<서비스>"})` | 2분 |
-| 서킷 열림 | `#service` | 서비스는 떠 있지만, 그 서비스로 가는 호출이 계속 실패할 때 | `max by (service, name) (resilience4j_circuitbreaker_state{state=~"open\|half_open"}) > 0` | 2분 |
+| 서킷 열림 | `#service` | 서비스는 떠 있지만, 그 서비스로 가는 호출이 계속 실패해 서킷이 호출을 막고 있을 때 | `sum by (service, name) (increase(resilience4j_circuitbreaker_not_permitted_calls_total[2m])) > 0` | 2분 |
 | 요청 실패율 높음 | `#service` | 게이트웨이를 지난 요청이 5xx로 많이 실패할 때 | 5xx 비율 `> 5%` 이면서 5분간 5xx `>= 10`건 (`spring_cloud_gateway_requests_seconds_count`, 경로별) | 2분 |
 | 느린 요청 많음 | `#service` | 게이트웨이를 지난 요청이 에러 없이 느려졌을 때 | 1초 초과 비율 `> 5%` 이면서 5분간 1초 초과 `>= 10`건 (`spring_cloud_gateway_requests_seconds_bucket{le="1.0"}`, 경로별, storage-service 제외) | 2분 |
 | 힙 메모리 부족 | `#infra` | 힙이 차서 GC가 따라가지 못할 때 | GC 직후 old 영역 사용률 `> 90%` (`jvm_gc_live_data_size_bytes` / `jvm_gc_max_data_size_bytes`) | 5분 |
@@ -283,11 +283,12 @@ AWS(ECS)에선 죽은 태스크가 0이 되지 않고 수집 대상에서 아예
 상대 서비스가 떠 있어도 502·503·504를 돌려주거나 제한 시간 안에 답하지 않으면 서킷이 열린다. 이런 경우는 서비스 응답 없음 알림으로는 잡히지 않는다.
 500은 세지 않는다. 500은 대개 그 요청의 문제라 상대가 아픈 게 아니기 때문이다. 500은 [4-6](#4-6-요청-실패율-높음)이 잡는다.
 
-서킷은 10초 뒤 스스로 다시 시도해 보기 때문에, 한 번 열린 것만으로는 알리지 않는다. 2분 동안 계속 닫히지 않을 때 알린다.
+서킷이 열려 있는지(상태)가 아니라 서킷이 실제로 호출을 막고 있는지(`not_permitted_calls`)를 본다. 2분 동안 계속 막고 있을 때 알린다.
+열린 서킷은 10초 뒤 다음 요청이 오면 반열림(`half_open`)으로 넘어가 시험 호출 3건을 보내 보고, 그 결과로 닫히거나 다시 열린다. 요청이 없으면 상태가 바뀌지 않아서, 상태로 알리면 대상이 복구된 뒤에도 알림이 풀리지 않는다. 막힌 호출로 보면 사용자가 실제로 영향을 받을 때만 울린다.
 메시지의 대상은 "호출하는 서비스 · 서킷 이름(호출받는 쪽)"이다. 예를 들어 member-service가 아프면 gateway, auth, file의 서킷이 모두 열려, 한 메시지에 세 줄로 온다.
 
 **받으면:** 서킷 이름에 적힌 서비스(호출받는 쪽)의 상태와 로그를 본다.
-상대가 살아난 뒤에도 요청이 없으면 서킷이 닫히지 않아 해제 알림이 늦게 올 수 있다.
+요청이 끊기면 막힌 호출도 없어 알림이 풀린다. 서킷이 아직 열려 있는지는 Messaging & Resilience 대시보드의 서킷 상태에서 본다.
 
 ### 4-6. 요청 실패율 높음
 

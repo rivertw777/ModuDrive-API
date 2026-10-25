@@ -314,7 +314,7 @@
         "type": "prometheus",
         "uid": "${prom}"
       },
-      "description": "알림 CircuitOpen: open·half_open이 2분",
+      "description": "열림·반열림은 요청이 와야 바뀐다. 알림은 아래 막은 호출로 본다",
       "targets": [
         {
           "refId": "A",
@@ -374,6 +374,81 @@
         "y": 18,
         "w": 24,
         "h": 10
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "서킷이 막은 호출 (2분)",
+      "description": "알림 CircuitOpen: 0보다 큰 상태가 2분. 열린 서킷이 사용자 요청을 막고 있다",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prom}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prom}"
+          },
+          "expr": "sum by (service, name) (increase(resilience4j_circuitbreaker_not_permitted_calls_total{service=~\"$service\"}[2m]))",
+          "legendFormat": "{{service}} · {{name}}",
+          "exemplar": false,
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 7,
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 24,
+        "h": 8
       }
     }
   ],

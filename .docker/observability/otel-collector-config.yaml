@@ -37,7 +37,7 @@ receivers:
           # 새 지표로 알림·패널을 만들려면 두 파일 모두에 먼저 추가한다.
           metric_relabel_configs:
             - source_labels: [__name__]
-              regex: 'modudrive_.*|resilience4j_circuitbreaker_state|spring_cloud_gateway_requests_seconds_.*|http_server_requests_seconds_.*|jvm_memory_used_bytes|jvm_memory_max_bytes|jvm_gc_live_data_size_bytes|jvm_gc_max_data_size_bytes|jvm_gc_pause_seconds_.*|jvm_threads_live_threads|process_cpu_usage|hikaricp_connections_.*'
+              regex: 'modudrive_.*|resilience4j_circuitbreaker_state|resilience4j_circuitbreaker_not_permitted_calls_total|spring_cloud_gateway_requests_seconds_.*|http_server_requests_seconds_.*|jvm_memory_used_bytes|jvm_memory_max_bytes|jvm_gc_live_data_size_bytes|jvm_gc_max_data_size_bytes|jvm_gc_pause_seconds_.*|jvm_threads_live_threads|process_cpu_usage|hikaricp_connections_.*'
               action: keep
 
 processors:
