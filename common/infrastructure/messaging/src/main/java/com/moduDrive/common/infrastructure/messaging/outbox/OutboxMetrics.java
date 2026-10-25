@@ -41,7 +41,8 @@ class OutboxMetrics {
         failedByQueue = MultiGauge.builder(FAILED_METER_NAME)
                 .description("Outbox rows parked for a human to deal with")
                 .register(registry);
-        refresh();
+        // No query here: the relay refreshes every second from its first tick, and creating the bean
+        // shouldn't need the database (the image's AOT training run has none).
     }
 
     void refresh() {

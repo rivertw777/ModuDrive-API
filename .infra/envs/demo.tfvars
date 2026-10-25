@@ -48,6 +48,9 @@ services = {
   notification = { cpu = 512, memory = 1024, min = 1, max = 2 }
 }
 
+# A download cut off mid-deploy is acceptable on a trial stack; the rollout waits a minute less.
+alb_deregistration_delay = 15
+
 # A trial account's first alarm. ~$138 of infrastructure + logs, with headroom.
 monthly_budget_usd = 150
 alert_email        = null

@@ -57,6 +57,9 @@ services = {
 monthly_budget_usd = 8000
 alert_email        = null
 
+# Streaming uploads and downloads finish before a stopping task is cut off.
+alb_deregistration_delay = 60
+
 otel_collector = { cpu = 1024, memory = 2048, scrape_interval = "30s" }
 grafana        = true
 
