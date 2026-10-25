@@ -16,4 +16,4 @@ storage:
       path: /var/tempo/traces
     wal:
       path: /var/tempo/wal
-# Tempo 3 monolithic 모드엔 compactor 블록이 없다(컴팩션은 내부 live-store가 한다). 보존 기간은 기본값.
+# Tempo 3 monolithic 모드엔 compactor 블록이 없다(컴팩션은 내부 live-store가 한다). 보존 기간은 기본값 14일(demo와 같다).

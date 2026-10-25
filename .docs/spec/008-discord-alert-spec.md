@@ -44,12 +44,14 @@
 ```mermaid
 flowchart LR
     M["각 서비스<br/>지표를 내놓음"]
+    C["collector<br/>지표 수집"]
     P[("Prometheus<br/>지표 저장")]
     R["알림 규칙<br/>1분마다 검사"]
     A["Alertmanager<br/>묶어서 보내기"]
     D(["Discord<br/>#service · #infra · #messaging"])
 
-    M -- "15초마다 수집" --> P
+    M -- "15초마다 수집" --> C
+    C -- "remote write" --> P
     P --> R
     R -- "문제가 일정 시간 계속되면" --> A
     A -- "채널별 웹후크" --> D
@@ -58,7 +60,8 @@ flowchart LR
 | 단계 | 하는 일 |
 |---|---|
 | 각 서비스 | `:9464/actuator/prometheus` 주소에 지표를 내놓는다 |
-| Prometheus | 15초마다 모든 서비스의 지표를 가져가 저장한다 (AWS는 collector가 demo 60초, prod 30초마다) |
+| collector | 15초마다 모든 서비스의 지표를 가져가 Prometheus로 보낸다 (AWS는 demo 60초, prod 30초마다) |
+| Prometheus | 지표를 저장한다. AWS는 그 자리에 demo는 Grafana Cloud, prod는 AMP가 있다 |
 | 알림 규칙 | Prometheus가 1분마다 "이 값이 기준을 넘었나"를 확인한다. 정해 둔 시간(`for`) 동안 계속 넘어야 알림을 보낸다 |
 | Alertmanager | 비슷한 알림을 한 메시지로 묶고 디스코드 문구로 만들어, 규칙의 `channel` 라벨에 맞는 웹후크로 보낸다. 고칠 때까지 4시간마다 다시 보낸다 |
 | Discord | 알림에 적힌 채널(`#service`, `#infra`, `#messaging`)로 도착한다([3장](#3-사용-디스코드-채널)) |
@@ -69,7 +72,7 @@ flowchart LR
 
 | 순서 | 걸리는 시간 | 이유 |
 |---|---|---|
-| 1. 지표 수집 | 최대 15초 (AWS demo 60초, prod 30초) | Prometheus가 15초마다 가져간다. AWS는 `otel_collector.scrape_interval`(`envs/*.tfvars`)을 따른다 |
+| 1. 지표 수집 | 최대 15초 (AWS demo 60초, prod 30초) | collector가 15초마다 가져간다. AWS는 `otel_collector.scrape_interval`(`envs/*.tfvars`)을 따른다 |
 | 2. 발견 | 최대 1분 | 규칙을 1분마다 검사한다. 처음 발견하면 "대기(Pending)" 상태가 된다 |
 | 3. 지속 확인 | `for` (알림마다 다름) | 이 시간 동안 계속 문제여야 "발생(Firing)"이 된다. 중간에 한 번이라도 괜찮아지면 처음부터 다시 센다 |
 | 4. 발송 대기 | 30초 | 같이 묶을 알림이 더 있는지 잠깐 기다렸다 보낸다 |
@@ -131,7 +134,7 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 - **`by (...)` 안에 적은 라벨만 알림 메시지에 쓸 수 있다.** 여기서 빠진 라벨은 조회 결과에 남지 않는다.
 - **라벨 값은 짧고 가짓수가 적어야 한다.** 라벨 값이 하나 달라질 때마다 Prometheus는 따로 저장하고, 알림도 따로 만든다.
   그래서 요청 ID나 바이트 수처럼 매번 바뀌는 값은 라벨에 넣지 않는다.
-- `service` 라벨은 서비스가 내놓는 게 아니라 Prometheus가 붙인다(로컬은 스크레이프 주소, AWS는 컨테이너 이름). 메시지의 "대상"은 이 라벨이나 게이트웨이 경로(`routeId`)다.
+- `service` 라벨은 서비스가 내놓는 게 아니라 collector가 붙인다(로컬은 스크레이프 주소, AWS는 컨테이너 이름). 메시지의 "대상"은 이 라벨이나 게이트웨이 경로(`routeId`)다.
 - 라벨 조합이 사라지면 그 알림은 해제된다. 예를 들어 FAILED 행을 고쳐서 그 큐의 실패가 0건이 되면 해당 지표가 없어지고, 알림이 풀린다.
 
 ### 2-2. 규칙
@@ -177,7 +180,7 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 | 제목, 사유, 조치, 확인 명령어, 조회·복구 SQL 등 | 규칙의 `annotations`에 적어 둔 문구 |
 
 본문 아래에는 Alertmanager가 제목 카드(embed, `discord.title`)를 붙인다. 발생은 빨간색, 해제는 초록색이라 채널을 훑어볼 때 상태가 바로 보인다.
-링크는 넣지 않는다. 로컬에서 알림 상태와 일시 중지는 Alertmanager 화면(`http://localhost:9093`)에서 본다.
+링크는 넣지 않는다. 알림 상태와 일시 중지는 Grafana의 Alerting 화면에서 본다(로컬 `http://localhost:3001`, demo는 Grafana Cloud).
 
 양식을 고칠 때 알아 둘 것이 있다.
 
@@ -266,7 +269,7 @@ SQS가 "이 메시지는 받을 수 없다"며 거절한 이벤트다. 큐가 �
 
 ### 4-4. 서비스 응답 없음
 
-Prometheus가 15초마다 지표를 가져가는데, 2분 내내 응답이 없으면 알린다. 대부분 프로세스가 죽은 경우다.
+collector가 15초마다 지표를 가져가는데, 2분 내내 응답이 없으면 알린다. 대부분 프로세스가 죽은 경우다.
 재배포할 때도 잠깐 내려가기 때문에, 그 정도로는 울리지 않도록 2분을 기다린다.
 
 AWS(ECS)에선 죽은 태스크가 0이 되지 않고 수집 대상에서 아예 사라진다. 그러면 `up` 값 자체가 없어 이 알림이 조용하므로,

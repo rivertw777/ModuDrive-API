@@ -25,7 +25,7 @@ schema_config:
         period: 24h
 
 limits_config:
-  retention_period: 72h
+  retention_period: 336h # 14일, demo(Grafana Cloud)와 같다
 
 # retention_period는 compactor가 retention_enabled로 돌 때만 실제로 지워진다 — 없으면 무제한 증가.
 compactor:

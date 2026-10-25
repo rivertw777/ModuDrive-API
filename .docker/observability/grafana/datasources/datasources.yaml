@@ -46,3 +46,14 @@ datasources:
           matcherRegex: trace_id
           name: TraceID
           url: '$${__value.raw}'
+
+  # Alerting 화면에서 지금 울리는 알림과 일시 중지(silence)를 본다 — demo(Grafana Cloud)와 같은 화면.
+  # 규칙은 Prometheus 데이터소스가 보여 준다. 보내는 건 여전히 Alertmanager다.
+  - name: Alertmanager
+    type: alertmanager
+    uid: alertmanager
+    access: proxy
+    url: http://alertmanager:9093
+    jsonData:
+      implementation: prometheus
+      handleGrafanaManagedAlerts: false

@@ -5,6 +5,31 @@ receivers:
         endpoint: 0.0.0.0:4317
       http:
         endpoint: 0.0.0.0:4318
+  # 지표는 demo(.infra/monitoring/otel-collector.yaml)처럼 collector가 긁어 remote write로 Prometheus에 넣는다.
+  # 액추에이터는 management.server.port(9464)로 앱 포트와 분리되어 있고, gateway의 SecurityConfig가
+  # /actuator/**를 permitAll로 열어 두므로 인증 없이 긁힌다.
+  prometheus:
+    config:
+      global:
+        scrape_interval: 15s
+      scrape_configs:
+        - job_name: services
+          metrics_path: /actuator/prometheus
+          static_configs:
+            - targets:
+                - gateway-service:9464
+                - member-service:9464
+                - auth-service:9464
+                - file-service:9464
+                - storage-service:9464
+                - mail-service:9464
+                - notification-service:9464
+          # 알림 규칙과 메시지는 service 라벨로 서비스를 가리킨다 — demo가 컨테이너 이름으로 붙이는 것과
+          # 같은 값이다. instance(호스트:포트)는 AWS에선 태스크 IP라 쓰지 않는다.
+          relabel_configs:
+            - source_labels: [__address__]
+              regex: '(.+):\d+'
+              target_label: service
 
 processors:
   batch: {}
@@ -37,6 +62,9 @@ exporters:
   # log attributes (userId, exception) structured metadata.
   otlphttp/loki:
     endpoint: http://loki:3100/otlp
+  # exemplar(버킷마다의 trace_id)도 같이 간다 — Prometheus의 exemplar-storage가 받는다.
+  prometheusremotewrite:
+    endpoint: http://prometheus:9090/api/v1/write
 
 service:
   pipelines:
@@ -49,4 +77,7 @@ service:
       receivers: [otlp]
       processors: [batch]
       exporters: [otlphttp/loki]
-    # metrics 파이프라인은 없다: Prometheus가 각 서비스의 /actuator/prometheus를 직접 스크레이프한다.
+    metrics:
+      receivers: [prometheus]
+      processors: [batch]
+      exporters: [prometheusremotewrite]
