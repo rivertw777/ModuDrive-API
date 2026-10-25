@@ -1,4 +1,4 @@
-# grafana/dashboards/*.json — demo(Grafana Cloud)에는 같은 파일을 API로 올린다(.docs/guide/003-aws-migration.md 3-4).
+# grafana/dashboards/*.json — demo(Grafana Cloud)에는 terraform apply가 같은 파일을 올린다(.infra/monitoring.tf).
 apiVersion: 1
 providers:
   - name: modudrive
