@@ -52,7 +52,7 @@ flowchart LR
     AM["Alertmanager<br/>localhost:9093"]
     D(["Discord"])
 
-    C -- ":9464 지표, 15초마다 수집" --> S
+    C -- ":9464 지표, 60초마다 수집" --> S
     S -- "OTLP 트레이스 · 로그" --> C
     C --> T
     C --> L
@@ -63,7 +63,7 @@ flowchart LR
 
 | 신호 | 수집 | 저장 | 보는 곳 |
 |---|---|---|---|
-| 지표 | otel-collector가 서비스마다 `:9464/actuator/prometheus`를 15초마다 긁어 remote write | Prometheus (`prometheus_data`, 14일) | Grafana, `localhost:9090` |
+| 지표 | otel-collector가 서비스마다 `:9464/actuator/prometheus`를 60초마다 긁어 remote write | Prometheus (`prometheus_data`, 14일) | Grafana, `localhost:9090` |
 | 로그 | 서비스 → otel-collector → Loki (OTLP) | Loki (`loki_data`, 14일) | Grafana → Loki |
 | 트레이스 | 서비스 → otel-collector(tail sampling) → Tempo | Tempo (`tempo_data`, 14일) | Grafana → Tempo |
 | 알림 | Prometheus 규칙 → Alertmanager → Discord | | Discord, Grafana → Alerting |
@@ -96,7 +96,7 @@ flowchart LR
 
 | | 로컬 | demo (Grafana Cloud) | prod (AWS) |
 |---|---|---|---|
-| 지표 | collector가 고정 주소 7개를 15초마다 수집해 Prometheus로 remote write | collector의 `ecs_observer`가 태스크를 찾아 60초마다 수집해 remote write. 알림과 기본 화면에 쓰는 지표만 남긴다 | 같은 방식으로 30초마다 수집해 AMP로 |
+| 지표 | collector가 고정 주소 7개를 60초마다 수집해 Prometheus로 remote write | collector의 `ecs_observer`가 태스크를 찾아 60초마다 수집해 remote write. 알림과 기본 화면에 쓰는 지표만 남긴다 | 같은 방식으로 30초마다 수집해 AMP로 |
 | 로그 | otel-collector → Loki, 14일 | collector → Loki(OTLP), 14일. stdout은 CloudWatch Logs에도 14일 남는다 | stdout만 `awslogs` 드라이버 → CloudWatch Logs, 14일. 앱의 OTLP 로그 전송은 끈다 |
 | 트레이스 | otel-collector → Tempo | 같은 tail sampling을 거쳐 collector → Tempo | 같은 tail sampling을 거쳐 ADOT collector → X-Ray |
 | 알림 | Prometheus 규칙 → Alertmanager → Discord | Grafana Cloud의 규칙 → Alertmanager → Discord. 로컬과 설정이 같다 | AMP 알림 규칙 → SNS → Lambda → Discord |
@@ -216,7 +216,7 @@ flowchart LR
     G(["Grafana Explore"])
 
     S -- "OTLP HTTP :4318" --> C
-    C -- "에러 · 1초 초과 · 나머지 5%<br/>OTLP gRPC :4317" --> T
+    C -- "에러 · 1초 초과 · 나머지 5%<br/>OTLP HTTP :4318" --> T
     T --> G
 ```
 
@@ -233,7 +233,7 @@ flowchart LR
 
 보낼 곳은 `management.opentelemetry.tracing.export.otlp.endpoint`다(Boot 3의 `management.otlp.tracing.endpoint`는 Boot 4에서 조용히 무시된다). 기본값은 `http://otel-collector:4318/v1/traces`이고, IDE에서 서비스를 직접 띄울 땐 `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318`로 바꾼다. 앱은 비동기로 보내고 실패하면 버리기 때문에 collector가 죽어도 서비스에는 영향이 없다.
 
-collector는 `otel/opentelemetry-collector-contrib`이고 호스트에는 `127.0.0.1:4317/4318`로만 연다(IDE에서 띄운 서비스가 붙을 때 쓴다). 파이프라인은 셋이다. traces는 `otlp`로 받아 `tail_sampling`과 `batch`를 거쳐 Tempo로, logs는 샘플링 없이 `batch`만 거쳐 Loki로, metrics는 `prometheus` receiver로 긁어 Prometheus로 remote write한다(2-2).
+collector는 `otel/opentelemetry-collector-contrib`이고 호스트에는 `127.0.0.1:4318`(OTLP HTTP)로만 연다(IDE에서 띄운 서비스가 붙을 때 쓴다). 파이프라인은 셋이다. traces는 `otlp`로 받아 `tail_sampling`과 `batch`를 거쳐 Tempo로, logs는 샘플링 없이 `batch`만 거쳐 Loki로, metrics는 `prometheus` receiver로 긁어 Prometheus로 remote write한다(2-2).
 
 Tempo는 `grafana/tempo` monolithic 모드에 로컬 파일시스템(`/var/tempo`)을 쓴다. 보존은 기본값 14일이다. 호스트 포트는 없고 Grafana로만 본다.
 
@@ -372,5 +372,5 @@ make reset           # 볼륨을 전부 지우고 다시 띄운다 (지표, 로�
 
 ### 알려진 갭
 
-- 서비스는 collector가 15초마다 `/actuator/prometheus`를 긁는 요청도 trace로 남긴다. 5% 표본에 걸린 것들이 Tempo에 섞여 보인다. 거슬리면 `ObservationPredicate`로 actuator 경로를 빼면 된다.
-- collector 설정의 exporter 이름 `otlp/tempo`가 deprecated 경고를 낸다(`"otlp" alias is deprecated; use "otlp_grpc"`). 동작에는 문제가 없다.
+- 서비스는 collector가 60초마다 `/actuator/prometheus`를 긁는 요청도 trace로 남긴다. 5% 표본에 걸린 것들이 Tempo에 섞여 보인다. 거슬리면 `ObservationPredicate`로 actuator 경로를 빼면 된다.
+- collector 설정의 exporter 이름 `otlphttp`, `prometheusremotewrite`가 deprecated 경고를 낸다(`"otlphttp" alias is deprecated; use "otlp_http"`). demo 설정과 같은 이름을 쓰려고 그대로 둔다. 동작에는 문제가 없다.
