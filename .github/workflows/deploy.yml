@@ -130,21 +130,49 @@ jobs:
 
       - uses: actions/checkout@v4
         if: steps.ready.outputs.ok == 'true'
+        with:
+          fetch-depth: 0 # the diff below needs the previous head
+
+      # Which services' code changed since the last push to this branch: only those are tested, built and
+      # pushed. common/, the build files and the Dockerfile reach every service. A manual run, or a
+      # previous head that isn't in the history (force push), builds everything.
+      - id: changes
+        if: steps.ready.outputs.ok == 'true'
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "${{ github.event_name }}" != push ] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            echo "build=$SERVICES" >> "$GITHUB_OUTPUT"; echo "all=true" >> "$GITHUB_OUTPUT"
+            echo "Building every service (no previous head to compare)"; exit 0
+          fi
+          files=$(git diff --name-only "$BEFORE" HEAD)
+          if grep -qE '^(common/|build\.gradle$|settings\.gradle$|gradle/|gradle\.properties$|gradlew|\.docker/Dockerfile$)' <<< "$files"; then
+            echo "build=$SERVICES" >> "$GITHUB_OUTPUT"; echo "all=true" >> "$GITHUB_OUTPUT"
+            echo "Shared code changed: building every service"; exit 0
+          fi
+          build=$(for svc in $SERVICES; do grep -q "^services/$svc-service/" <<< "$files" && printf '%s ' "$svc"; done)
+          echo "build=$build" >> "$GITHUB_OUTPUT"; echo "all=false" >> "$GITHUB_OUTPUT"
+          echo "Changed services: ${build:-none}"
 
       - uses: actions/setup-java@v4
-        if: steps.ready.outputs.ok == 'true'
+        if: steps.ready.outputs.ok == 'true' && steps.changes.outputs.build != ''
         with:
           distribution: temurin
           java-version: 25
 
       - uses: gradle/actions/setup-gradle@v4
-        if: steps.ready.outputs.ok == 'true'
+        if: steps.ready.outputs.ok == 'true' && steps.changes.outputs.build != ''
 
       # Persistence tests run on Testcontainers Postgres (Docker is on the runner); the SQS queue
       # test needs a LocalStack token — a repository secret, the same for every environment.
       - name: Test and build
-        if: steps.ready.outputs.ok == 'true'
-        run: ./gradlew build
+        if: steps.ready.outputs.ok == 'true' && steps.changes.outputs.build != ''
+        run: |
+          if [ "${{ steps.changes.outputs.all }}" = true ]; then
+            ./gradlew build
+          else
+            ./gradlew $(printf ':services:%s-service:build ' ${{ steps.changes.outputs.build }})
+          fi
         env:
           LOCALSTACK_AUTH_TOKEN: ${{ secrets.LOCALSTACK_AUTH_TOKEN }}
 
@@ -160,12 +188,12 @@ jobs:
 
       # Repositories are immutable: a SHA already pushed (a re-run) is skipped, not overwritten.
       - name: Push images
-        if: steps.ready.outputs.ok == 'true'
+        if: steps.ready.outputs.ok == 'true' && steps.changes.outputs.build != ''
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
           todo=()
-          for svc in $SERVICES; do
+          for svc in ${{ steps.changes.outputs.build }}; do
             if aws ecr describe-images --repository-name "$PROJECT/$svc-service" --image-ids imageTag="$TAG" >/dev/null 2>&1; then
               echo "$PROJECT/$svc-service:$TAG already pushed"
             else
@@ -197,15 +225,32 @@ jobs:
       # Starts from the family's latest revision, so a task-definition change Terraform registered
       # since the last deploy rolls out with this one. Schema changes must suit the old and the new
       # code both: Flyway runs as the first new task starts, while old tasks still serve.
+      # A service whose code didn't change rolls out, on its running image, only when the latest revision
+      # differs from the running one in more than the image — every apply re-registers the revisions, so
+      # their ARNs differ even when nothing in them did.
       - name: Roll out
         if: steps.ready.outputs.ok == 'true'
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
+          BUILD: ${{ steps.changes.outputs.build }}
         run: |
           declare -A revision
+          rolled=()
           for svc in $SERVICES; do
             aws ecs describe-task-definition --task-definition "$PROJECT-$svc" --query taskDefinition > current.json
-            jq --arg image "$REGISTRY/$PROJECT/$svc-service:$TAG" '
+            if [[ " $BUILD " == *" $svc "* ]]; then
+              image="$REGISTRY/$PROJECT/$svc-service:$TAG"
+            else
+              running=$(aws ecs describe-services --cluster "$PROJECT" --services "$svc-service" \
+                --query 'services[0].taskDefinition' --output text)
+              aws ecs describe-task-definition --task-definition "$running" --query taskDefinition > running.json
+              strip='del(.containerDefinitions[0].image, .taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)'
+              if [ "$(jq -S "$strip" current.json)" = "$(jq -S "$strip" running.json)" ]; then
+                echo "$svc-service unchanged"; continue
+              fi
+              image=$(jq -r '.containerDefinitions[0].image' running.json)
+            fi
+            jq --arg image "$image" '
               .containerDefinitions[0].image = $image
               | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)
             ' current.json > next.json
@@ -214,10 +259,12 @@ jobs:
             aws ecs update-service --cluster "$PROJECT" --service "$svc-service" \
               --task-definition "${revision[$svc]}" >/dev/null
             echo "$svc-service → ${revision[$svc]}"
+            rolled+=("$svc")
           done
+          [ ${#rolled[@]} -eq 0 ] && { echo "Nothing to roll out"; exit 0; }
 
           # services-stable gives up after 10 minutes; a slow start on demo's half vCPU can need more.
-          service_names=$(printf '%s-service ' $SERVICES)
+          service_names=$(printf '%s-service ' "${rolled[@]}")
           for attempt in 1 2 3; do
             aws ecs wait services-stable --cluster "$PROJECT" --services $service_names && break  # word-split on purpose
             [ "$attempt" = 3 ] && { echo "services did not settle"; exit 1; }
@@ -225,7 +272,7 @@ jobs:
 
           # Stable can also mean the deployment circuit breaker rolled back to the old revision.
           failed=0
-          for svc in $SERVICES; do
+          for svc in "${rolled[@]}"; do
             running=$(aws ecs describe-services --cluster "$PROJECT" --services "$svc-service" \
               --query 'services[0].taskDefinition' --output text)
             if [ "$running" != "${revision[$svc]}" ]; then
