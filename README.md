@@ -1,4 +1,17 @@
-## 1. 서비스 개요
+<div align="center">
+
+<img src=".docs/images/logo.png" width="320" alt="ModuDrive">
+
+ModuDrive에서 언제 어디서나 간편하게,<br>
+소중한 파일을 안전하게 관리하고 자유롭게 공유하세요.
+
+🔗 <a href="https://app.modudrive.help"><b>app.modudrive.help</b></a>
+
+</div>
+
+<br>
+
+## 1. 개요
 
 <br>
 
@@ -10,32 +23,50 @@
 
 <br>
 
-<div align="center">
-<table align="center">
-  <tr><th>서비스 링크</th></tr>
-  <tr><td align="center"><a href="https://app.modudrive.help">https://app.modudrive.help</a></td></tr>
+### 서비스 화면
+
+<br>
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src=".docs/images/screens/home.jpg" alt="홈">
+      <p align="center"><b>홈</b></p>
+    </td>
+    <td width="50%" valign="top">
+      <img src=".docs/images/screens/upload.png" alt="업로드">
+      <p align="center"><b>업로드</b></p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src=".docs/images/screens/share.png" alt="공유">
+      <p align="center"><b>공유</b></p>
+    </td>
+    <td width="50%" valign="top">
+      <img src=".docs/images/screens/storage.png" alt="저장용량">
+      <p align="center"><b>저장용량</b></p>
+    </td>
+  </tr>
 </table>
-</div>
 
 <br>
 
 ---
 
-## 2. 프로젝트 목표
+## 2. 핵심 구현
 
 <br>
 
-- **효율적인 업로드**: 블록 해시 기반 업로드로 중복 전송을 없애고, 끊긴 업로드를 이어 올리기
+**블록 기반 업로드** &nbsp; 파일을 4MB 블록의 해시 목록으로 표현합니다. 서버에 없는 블록만 Presigned URL로 S3에 직접 올리고, 끊긴 업로드는 남은 블록부터 이어 올립니다.
 
-- **정합성**: Transactional Outbox로 서비스 간 비동기 통신의 정합성 보장
+**메시징 정합성** &nbsp; 서비스 간 이벤트는 Transactional Outbox로 DB 변경과 함께 기록해 SQS로 보내고, 받는 쪽은 중복 처리를 막습니다. 끝내 처리하지 못한 메시지는 DLQ로 옮기고 알림을 보냅니다.
 
-- **장애 격리**: 서킷 브레이커·재시도·시간 제한으로 외부 API 장애가 서비스 전체로 번지지 않게 하기
+**장애 격리** &nbsp; 서비스 간 호출과 외부 API(메일 발송)에 서킷 브레이커·재시도·시간 제한을 걸어, 한 곳의 장애가 전체로 번지지 않게 했습니다.
 
-- **관측성**: 게이트웨이부터 메시지 소비까지 이어지는 분산 트레이싱 구축
+**관측성** &nbsp; 게이트웨이부터 메시지 소비까지 하나의 trace로 이어지고, 지표·로그·trace가 서로 연결됩니다. 장애는 Discord 채널별로 알립니다.
 
-- **모니터링**: 서버 장애 시 Discord로 알림을 보내는 모니터링 시스템 구축
-
-- **IaC**: Terraform으로 AWS 인프라를 코드로 구성하고, GitHub Actions로 배포 자동화
+**인프라 자동화** &nbsp; AWS 인프라를 Terraform으로 구성하고, GitHub Actions가 바뀐 서비스만 테스트·빌드해 ECS에 배포합니다.
 
 <br>
 
@@ -46,7 +77,7 @@
 <br>
 
 <p align="center">
-  <img src=".docs/images/architecture.jpeg" width="75%" alt="시스템 아키텍처">
+  <img src=".docs/images/architecture.jpeg" width="90%" alt="시스템 아키텍처">
 </p>
 
 <div align="center">
@@ -161,7 +192,7 @@
     </tr>
     <tr>
         <td align="center"><strong>Monitoring</strong></td>
-        <td align="center"> <img src="https://img.shields.io/badge/OpenTelemetry-425CC7?logo=opentelemetry&logoColor=white"/> <img src="https://img.shields.io/badge/Prometheus-E6522C?logo=prometheus&logoColor=white"/> <img src="https://img.shields.io/badge/Grafana-F46800?logo=grafana&logoColor=white"/> </td>
+        <td align="center"> <img src="https://img.shields.io/badge/OpenTelemetry-425CC7?logo=opentelemetry&logoColor=white"/> <img src="https://img.shields.io/badge/Grafana%20Cloud-F46800?logo=grafana&logoColor=white"/> </td>
     </tr>
     <tr>
         <td align="center"><strong>Alert</strong></td>
