@@ -210,7 +210,7 @@ jobs:
               set -e
               image="$REGISTRY/$PROJECT/$svc-service:$TAG"
               dir="services/$svc-service/build/docker"
-              docker build --build-arg JAR_FILE="$(basename "$(ls "$dir"/*.jar)")" -t "$image" "$dir"
+              docker build --build-arg JAR_FILE="$(basename "$(ls "$dir"/*.jar)")" --build-arg AOT=true -t "$image" "$dir"
               docker push "$image"
             ) > "push-$svc.log" 2>&1 &
             pids+=($!)
