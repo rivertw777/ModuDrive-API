@@ -522,6 +522,7 @@ grafana.com에서 스택의 Grafana(`https://<스택>.grafana.net`)를 연다. E
 
 - 로그 → trace: Loki의 derived field `traceID (field)`가 `trace_id`(structured metadata)로 Tempo를 연다. 로컬과 같다.
 - trace → 로그: Tempo의 Trace to logs가 span 시간 앞뒤 2초의 로그를 연다. 로컬처럼 `trace_id`로 거르지는 않으므로, 정확히 보려면 Loki에서 `| trace_id="<trace id>"`로 찾는다.
+- 지표 → trace: exemplar는 저장되지만 Prometheus 데이터소스의 trace 링크가 `traceID` 라벨을 찾아서(우리 exemplar는 `trace_id`) 링크가 생기지 않는다. 점에 뜨는 `trace_id`를 Tempo에서 연다.
 
 ---
 
