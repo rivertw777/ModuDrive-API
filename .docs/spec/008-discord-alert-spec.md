@@ -44,12 +44,14 @@
 ```mermaid
 flowchart LR
     M["각 서비스<br/>지표를 내놓음"]
+    C["collector<br/>지표 수집"]
     P[("Prometheus<br/>지표 저장")]
     R["알림 규칙<br/>1분마다 검사"]
     A["Alertmanager<br/>묶어서 보내기"]
     D(["Discord<br/>#service · #infra · #messaging"])
 
-    M -- "15초마다 수집" --> P
+    M -- "60초마다 수집" --> C
+    C -- "remote write" --> P
     P --> R
     R -- "문제가 일정 시간 계속되면" --> A
     A -- "채널별 웹후크" --> D
@@ -58,7 +60,8 @@ flowchart LR
 | 단계 | 하는 일 |
 |---|---|
 | 각 서비스 | `:9464/actuator/prometheus` 주소에 지표를 내놓는다 |
-| Prometheus | 15초마다 모든 서비스의 지표를 가져가 저장한다 (AWS는 collector가 demo 60초, prod 30초마다) |
+| collector | 60초마다 모든 서비스의 지표를 가져가 Prometheus로 보낸다 (demo와 같다. prod는 30초) |
+| Prometheus | 지표를 저장한다. AWS는 그 자리에 demo는 Grafana Cloud, prod는 AMP가 있다 |
 | 알림 규칙 | Prometheus가 1분마다 "이 값이 기준을 넘었나"를 확인한다. 정해 둔 시간(`for`) 동안 계속 넘어야 알림을 보낸다 |
 | Alertmanager | 비슷한 알림을 한 메시지로 묶고 디스코드 문구로 만들어, 규칙의 `channel` 라벨에 맞는 웹후크로 보낸다. 고칠 때까지 4시간마다 다시 보낸다 |
 | Discord | 알림에 적힌 채널(`#service`, `#infra`, `#messaging`)로 도착한다([3장](#3-사용-디스코드-채널)) |
@@ -69,18 +72,18 @@ flowchart LR
 
 | 순서 | 걸리는 시간 | 이유 |
 |---|---|---|
-| 1. 지표 수집 | 최대 15초 (AWS demo 60초, prod 30초) | Prometheus가 15초마다 가져간다. AWS는 `otel_collector.scrape_interval`(`envs/*.tfvars`)을 따른다 |
+| 1. 지표 수집 | 최대 60초 (prod 30초) | collector가 60초마다 가져간다. AWS는 `otel_collector.scrape_interval`(`envs/*.tfvars`)을 따른다 |
 | 2. 발견 | 최대 1분 | 규칙을 1분마다 검사한다. 처음 발견하면 "대기(Pending)" 상태가 된다 |
 | 3. 지속 확인 | `for` (알림마다 다름) | 이 시간 동안 계속 문제여야 "발생(Firing)"이 된다. 중간에 한 번이라도 괜찮아지면 처음부터 다시 센다 |
 | 4. 발송 대기 | 30초 | 같이 묶을 알림이 더 있는지 잠깐 기다렸다 보낸다 |
 
-예를 들어 서킷 열림은 `for`가 2분이라, 서킷이 열리고 2분 반에서 4분 사이에 알림이 온다.
+예를 들어 서킷 열림은 `for`가 2분이라, 서킷이 열리고 2분 반에서 4분 반 사이에 알림이 온다.
 
 문제가 사라진 뒤 ✅ 해제 알림이 오기까지는 이렇다.
 
 | 순서 | 걸리는 시간 | 이유 |
 |---|---|---|
-| 1. 지표 수집 | 최대 15초 | 위와 같다 |
+| 1. 지표 수집 | 최대 60초 | 위와 같다 |
 | 2. 발견 | 최대 1분 | 다음 검사에서 괜찮아진 걸 보면 바로 해제한다. 해제할 때는 `for`만큼 기다리지 않는다 |
 | 3. 발송 대기 | 최대 1분 | 이미 보낸 알림은 1분 간격으로만 다시 보낼 수 있다([2-4](#2-4-그룹핑과-재발송)) |
 
@@ -131,7 +134,7 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 - **`by (...)` 안에 적은 라벨만 알림 메시지에 쓸 수 있다.** 여기서 빠진 라벨은 조회 결과에 남지 않는다.
 - **라벨 값은 짧고 가짓수가 적어야 한다.** 라벨 값이 하나 달라질 때마다 Prometheus는 따로 저장하고, 알림도 따로 만든다.
   그래서 요청 ID나 바이트 수처럼 매번 바뀌는 값은 라벨에 넣지 않는다.
-- `service` 라벨은 서비스가 내놓는 게 아니라 Prometheus가 붙인다(로컬은 스크레이프 주소, AWS는 컨테이너 이름). 메시지의 "대상"은 이 라벨이나 게이트웨이 경로(`routeId`)다.
+- `service` 라벨은 서비스가 내놓는 게 아니라 collector가 붙인다(로컬은 스크레이프 주소, AWS는 컨테이너 이름). 메시지의 "대상"은 이 라벨이나 게이트웨이 경로(`routeId`)다.
 - 라벨 조합이 사라지면 그 알림은 해제된다. 예를 들어 FAILED 행을 고쳐서 그 큐의 실패가 0건이 되면 해당 지표가 없어지고, 알림이 풀린다.
 
 ### 2-2. 규칙
@@ -163,10 +166,10 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 
 대상: gateway-service · `memberServiceCircuitBreaker`
 
-사유: 2분째 닫히지 않음 — 대상 서비스 호출이 계속 실패 중 (502·503·504 · 타임아웃 · 연결 실패)
+사유: 최근 2분 동안 서킷이 막은 호출 **37건** — 대상 서비스 호출이 계속 실패 중 (502·503·504 · 타임아웃 · 연결 실패)
 조치: 서킷이 부르는 서비스의 상태와 로그로 실패 원인 확인
 확인 명령어
-  docker logs modudrive-service-gateway-service-1 2>&1 | grep "memberServiceCircuitBreaker"
+  {service_name="gateway-service"} |= "memberServiceCircuitBreaker"
 ```
 
 메시지에 넣을 수 있는 내용은 두 가지다.
@@ -177,7 +180,7 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 | 제목, 사유, 조치, 확인 명령어, 조회·복구 SQL 등 | 규칙의 `annotations`에 적어 둔 문구 |
 
 본문 아래에는 Alertmanager가 제목 카드(embed, `discord.title`)를 붙인다. 발생은 빨간색, 해제는 초록색이라 채널을 훑어볼 때 상태가 바로 보인다.
-링크는 넣지 않는다. 로컬에서 알림 상태와 일시 중지는 Alertmanager 화면(`http://localhost:9093`)에서 본다.
+링크는 넣지 않는다. 알림 상태와 일시 중지는 Grafana의 Alerting 화면에서 본다(로컬 `http://localhost:3001`, demo는 Grafana Cloud).
 
 양식을 고칠 때 알아 둘 것이 있다.
 
@@ -236,7 +239,7 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 | 이벤트 처리 실패 | `#messaging` | 받는 쪽 서비스가 처리를 포기한 메시지가 DLQ에 있을 때 | `max by (service, queue) (modudrive_dlq_messages) > 0` | 바로 |
 | 서비스 응답 없음 | `#service` | 서비스가 응답하지 않을 때 (프로세스가 죽음) | `min by (service) (up{job="services"}) < 1` | 2분 |
 | 서비스 태스크 없음 (AWS) | `#service` | 서비스의 태스크가 하나도 수집되지 않을 때 (기동 실패 · 배포 롤백 반복) | 서비스마다 `absent(up{job="services",service="<서비스>"})` | 2분 |
-| 서킷 열림 | `#service` | 서비스는 떠 있지만, 그 서비스로 가는 호출이 계속 실패할 때 | `max by (service, name) (resilience4j_circuitbreaker_state{state=~"open\|half_open"}) > 0` | 2분 |
+| 서킷 열림 | `#service` | 서비스는 떠 있지만, 그 서비스로 가는 호출이 계속 실패해 서킷이 호출을 막고 있을 때 | `sum by (service, name) (increase(resilience4j_circuitbreaker_not_permitted_calls_total[2m])) > 0` | 2분 |
 | 요청 실패율 높음 | `#service` | 게이트웨이를 지난 요청이 5xx로 많이 실패할 때 | 5xx 비율 `> 5%` 이면서 5분간 5xx `>= 10`건 (`spring_cloud_gateway_requests_seconds_count`, 경로별) | 2분 |
 | 느린 요청 많음 | `#service` | 게이트웨이를 지난 요청이 에러 없이 느려졌을 때 | 1초 초과 비율 `> 5%` 이면서 5분간 1초 초과 `>= 10`건 (`spring_cloud_gateway_requests_seconds_bucket{le="1.0"}`, 경로별, storage-service 제외) | 2분 |
 | 힙 메모리 부족 | `#infra` | 힙이 차서 GC가 따라가지 못할 때 | GC 직후 old 영역 사용률 `> 90%` (`jvm_gc_live_data_size_bytes` / `jvm_gc_max_data_size_bytes`) | 5분 |
@@ -266,7 +269,7 @@ SQS가 "이 메시지는 받을 수 없다"며 거절한 이벤트다. 큐가 �
 
 ### 4-4. 서비스 응답 없음
 
-Prometheus가 15초마다 지표를 가져가는데, 2분 내내 응답이 없으면 알린다. 대부분 프로세스가 죽은 경우다.
+collector가 60초마다 지표를 가져가는데, 2분 내내 응답이 없으면 알린다. 대부분 프로세스가 죽은 경우다.
 재배포할 때도 잠깐 내려가기 때문에, 그 정도로는 울리지 않도록 2분을 기다린다.
 
 AWS(ECS)에선 죽은 태스크가 0이 되지 않고 수집 대상에서 아예 사라진다. 그러면 `up` 값 자체가 없어 이 알림이 조용하므로,
@@ -280,11 +283,12 @@ AWS(ECS)에선 죽은 태스크가 0이 되지 않고 수집 대상에서 아예
 상대 서비스가 떠 있어도 502·503·504를 돌려주거나 제한 시간 안에 답하지 않으면 서킷이 열린다. 이런 경우는 서비스 응답 없음 알림으로는 잡히지 않는다.
 500은 세지 않는다. 500은 대개 그 요청의 문제라 상대가 아픈 게 아니기 때문이다. 500은 [4-6](#4-6-요청-실패율-높음)이 잡는다.
 
-서킷은 10초 뒤 스스로 다시 시도해 보기 때문에, 한 번 열린 것만으로는 알리지 않는다. 2분 동안 계속 닫히지 않을 때 알린다.
+서킷이 열려 있는지(상태)가 아니라 서킷이 실제로 호출을 막고 있는지(`not_permitted_calls`)를 본다. 2분 동안 계속 막고 있을 때 알린다.
+열린 서킷은 10초 뒤 다음 요청이 오면 반열림(`half_open`)으로 넘어가 시험 호출 3건을 보내 보고, 그 결과로 닫히거나 다시 열린다. 요청이 없으면 상태가 바뀌지 않아서, 상태로 알리면 대상이 복구된 뒤에도 알림이 풀리지 않는다. 막힌 호출로 보면 사용자가 실제로 영향을 받을 때만 울린다.
 메시지의 대상은 "호출하는 서비스 · 서킷 이름(호출받는 쪽)"이다. 예를 들어 member-service가 아프면 gateway, auth, file의 서킷이 모두 열려, 한 메시지에 세 줄로 온다.
 
 **받으면:** 서킷 이름에 적힌 서비스(호출받는 쪽)의 상태와 로그를 본다.
-상대가 살아난 뒤에도 요청이 없으면 서킷이 닫히지 않아 해제 알림이 늦게 올 수 있다.
+요청이 끊기면 막힌 호출도 없어 알림이 풀린다. 서킷이 아직 열려 있는지는 Messaging & Resilience 대시보드의 서킷 상태에서 본다.
 
 ### 4-6. 요청 실패율 높음
 

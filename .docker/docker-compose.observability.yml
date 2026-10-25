@@ -17,7 +17,6 @@ services:
     ports:
       # 서비스는 전부 modudrive_network 안에서 otel-collector:4318로 붙는다.
       # 호스트 바인딩은 IDE에서 직접 띄운 서비스를 로컬로 붙일 때만 필요 — loopback만 연다.
-      - "127.0.0.1:4317:4317"   # OTLP gRPC
       - "127.0.0.1:4318:4318"   # OTLP HTTP
     command: ["--config=/etc/modudrive/otel-collector-config.yaml"]
     volumes:
@@ -52,8 +51,10 @@ services:
     ports:
       - "127.0.0.1:9090:9090"
     # exemplar-storage: keep the trace_id each histogram bucket carries (Grafana links it to Tempo).
+    # remote-write-receiver: the collector pushes the metrics here, as demo pushes to Grafana Cloud.
+    # retention 14d: demo(Grafana Cloud)와 같다.
     # web.external-url: 알림의 "어느 규칙에서 왔나" 링크(generatorURL)가 이 주소로 만들어진다.
-    command: ["--config.file=/etc/modudrive/prometheus.yml", "--storage.tsdb.path=/prometheus", "--enable-feature=exemplar-storage", "--web.external-url=http://localhost:9090"]
+    command: ["--config.file=/etc/modudrive/prometheus.yml", "--storage.tsdb.path=/prometheus", "--enable-feature=exemplar-storage", "--web.enable-remote-write-receiver", "--storage.tsdb.retention.time=14d", "--web.external-url=http://localhost:9090"]
     volumes:
       - ./observability:/etc/modudrive:ro
       - prometheus_data:/prometheus

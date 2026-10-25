@@ -15,6 +15,7 @@ datasources:
     url: http://prometheus:9090
     isDefault: true
     jsonData:
+      timeInterval: 60s # the collector's scrape interval, as demo's ModuDrive Prometheus
       # Histogram buckets carry the trace_id of a request that landed in them (exemplars) — Explore draws
       # them as dots on the graph, and clicking one opens the trace in Tempo.
       exemplarTraceIdDestinations:
@@ -46,3 +47,14 @@ datasources:
           matcherRegex: trace_id
           name: TraceID
           url: '$${__value.raw}'
+
+  # Alerting 화면에서 지금 울리는 알림과 일시 중지(silence)를 본다 — demo(Grafana Cloud)와 같은 화면.
+  # 규칙은 Prometheus 데이터소스가 보여 준다. 보내는 건 여전히 Alertmanager다.
+  - name: Alertmanager
+    type: alertmanager
+    uid: alertmanager
+    access: proxy
+    url: http://alertmanager:9093
+    jsonData:
+      implementation: prometheus
+      handleGrafanaManagedAlerts: false

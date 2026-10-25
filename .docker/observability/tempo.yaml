@@ -5,15 +5,15 @@ distributor:
   receivers:
     otlp:
       protocols:
-        grpc:
-          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
 
 storage:
   trace:
-    # 로컬 전용 파일시스템 백엔드. AWS는 Tempo 대신 X-Ray(.infra/monitoring/otel-collector.yaml).
+    # 로컬 전용 파일시스템 백엔드. demo는 Grafana Cloud Tempo, prod는 X-Ray(.infra/monitoring/otel-collector.yaml).
     backend: local
     local:
       path: /var/tempo/traces
     wal:
       path: /var/tempo/wal
-# Tempo 3 monolithic 모드엔 compactor 블록이 없다(컴팩션은 내부 live-store가 한다). 보존 기간은 기본값.
+# Tempo 3 monolithic 모드엔 compactor 블록이 없다(컴팩션은 내부 live-store가 한다). 보존 기간은 기본값 14일(demo와 같다).

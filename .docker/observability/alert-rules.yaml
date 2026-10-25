@@ -68,7 +68,7 @@ groups:
       # 2분을 버텨야 알린다 — 재배포로 잠깐 내려가는 것까지 알릴 필요는 없다.
       # (AWS엔 ServiceNoTasks가 하나 더 있다: ECS에선 죽은 태스크가 0이 아니라 대상 목록에서 사라진다.)
       - alert: ServiceDown
-        expr: min by (service) (up{job="services"}) < 1
+        expr: min by (service, instance) (up{job="services"}) < 1
         for: 2m
         labels:
           channel: service
@@ -79,24 +79,22 @@ groups:
           inspect: 'docker ps -a --filter name={{ $labels.service }} / docker logs --tail 100 modudrive-service-{{ $labels.service }}-1'
 
       # 서비스는 떠 있는데 그 서비스로 가는 호출이 계속 실패하는 경우 — 5xx·타임아웃·Redis/DB 막힘. 스크레이프는
-      # 성공하니 위 규칙으로는 안 보인다. 한 번 열린 건 알리지 않는다: 10초 뒤 스스로 다시 확인하고, 재배포 중에도
+      # 성공하니 위 규칙으로는 안 보인다. 한 번 잠깐 막힌 건 알리지 않는다: 재배포 중에도
       # 잠깐 열린다(그건 WARN 로그로 충분). 2분은 위 규칙과 같은 기준이다.
-      # half_open도 센다 — 장애가 이어지면 open과 half_open을 10초마다 오가므로 open만 보면 값이 번갈아
-      # 바뀌어 for가 계속 초기화된다. 둘을 합쳐야 "닫히지 않은 시간"이 이어진다.
       # service(부르는 쪽)와 name(불리는 쪽 — 서킷 이름이 대상 서비스 기준)으로 묶는다. member-service 하나가
       # 아프면 auth·file·gateway에서 각각 오지만, 어느 경로가 막혔는지 바로 보이는 쪽을 택했다.
-      # 요청이 없으면 open에서 half_open으로 넘어가지 않아(automaticTransitionFromOpenToHalfOpenEnabled 기본 false)
-      # 대상이 복구된 뒤에도 다음 요청이 올 때까지 해제가 늦을 수 있다.
+      # 상태(open·half_open)가 아니라 서킷이 막은 호출을 본다. 서킷은 요청이 와야 half_open으로 넘어가고 시험 호출
+      # 3건이 차야 닫혀서, 요청이 없으면 대상이 복구돼도 상태가 그대로 남는다 — 상태로 알리면 알림이 안 풀린다.
       - alert: CircuitOpen
-        expr: max by (service, name) (resilience4j_circuitbreaker_state{state=~"open|half_open"}) > 0
+        expr: sum by (service, name) (increase(resilience4j_circuitbreaker_not_permitted_calls_total[2m])) > 0
         for: 2m
         labels:
           channel: service
         annotations:
           title: 서킷 열림
-          summary: 2분째 닫히지 않음 — 대상 서비스 호출이 계속 실패 중 (502·503·504 · 타임아웃 · 연결 실패)
+          summary: '최근 2분 동안 서킷이 막은 호출 **{{ printf "%.0f" $value }}건** — 대상 서비스 호출이 계속 실패 중 (502·503·504 · 타임아웃 · 연결 실패)'
           action: 서킷이 부르는 서비스의 상태와 로그로 실패 원인 확인
-          inspect: 'docker logs modudrive-service-{{ $labels.service }}-1 2>&1 | grep "{{ $labels.name }}"'
+          inspect: '{service_name="{{ $labels.service }}"} |= "{{ $labels.name }}"'
 
       # 사용자가 실제로 에러를 보고 있는지를 본다. 위 두 규칙은 원인 쪽만 본다 — 프로세스가 죽었나(up),
       # 502/503/504나 연결 실패가 이어지나(서킷). DB·Redis 연결 실패는 GlobalExceptionHandler가 503으로 바꿔 서킷이
@@ -116,7 +114,7 @@ groups:
           title: 요청 실패율 높음
           summary: '최근 5분 요청의 **{{ humanizePercentage $value }}**가 5xx로 실패 중'
           action: 그 서비스의 에러 로그로 원인 확인
-          inspect: 'docker logs modudrive-service-{{ $labels.routeId }}-1 2>&1 | grep -E "ERROR|Exception"'
+          inspect: '{service_name="{{ $labels.routeId }}"} | detected_level = "error"'
 
       # 에러 없이 느려지는 경우 — DB 쿼리·커넥션 풀 고갈·하위 서비스 지연. 위 규칙들은 실패만 센다.
       # 게이트웨이를 지난 요청 중 1초를 넘긴 비율을 경로별로 본다. 1초는 otel-collector의 slow-requests 정책과
@@ -146,8 +144,8 @@ groups:
       # old GC가 한 번도 안 돌았으면 0이다. 컨테이너 메모리(힙 밖 포함)는 앱 지표로 안 보인다(AWS의 service-memory-*).
       - alert: HeapHigh
         expr: >-
-          max by (service) (jvm_gc_live_data_size_bytes)
-          / max by (service) (jvm_gc_max_data_size_bytes > 0) > 0.9
+          max by (service, instance) (jvm_gc_live_data_size_bytes)
+          / max by (service, instance) (jvm_gc_max_data_size_bytes > 0) > 0.9
         for: 5m
         labels:
           channel: infra
@@ -155,7 +153,7 @@ groups:
           title: 힙 메모리 부족
           summary: 'GC 직후에도 old 영역의 **{{ humanizePercentage $value }}**가 남아 있음 (GC가 못 따라감 · 곧 OutOfMemoryError)'
           action: 그 시각의 요청(zip·다운로드 등)과 GC 로그 확인, 계속되면 메모리 상향
-          inspect: 'docker logs modudrive-service-{{ $labels.service }}-1 2>&1 | grep -E "OutOfMemoryError|GC"'
+          inspect: '{service_name="{{ $labels.service }}"} |= "OutOfMemoryError"'
 
       # 풀(maximum-pool-size)이 다 쓰여 3초(connection-timeout) 안에 커넥션을 못 받은 요청 — 그 요청은 503이 됐다.
       # 오래 쥐고 있는 트랜잭션이나 느린 쿼리가 원인이다. 대기 수(hikaricp_connections_pending)는 안 본다: 수집하는

@@ -293,8 +293,8 @@ flowchart LR
 
 collector는 사이드카가 아니라 한 대만 띄운다. tail sampling(에러, 1초 초과, 나머지 5%)이 로컬처럼 동작하려면 한 trace의 span이 전부 같은 collector로 모여야 한다. 태스크마다 사이드카를 붙이면 span이 흩어져서 "에러 trace는 전부 남긴다"는 규칙이 깨진다. collector가 죽어도 그동안의 telemetry만 빠질 뿐 서비스에는 영향이 없다. 앱은 비동기로 내보내고 실패하면 버린다.
 
-- 로컬 `prometheus.yml`은 서비스 7개를 `static_configs`로 적어 두지만, ECS에서는 태스크 IP가 바뀌고 서비스마다 태스크가 여러 개다. 그래서 `ecs_observer`가 `ECS_PROMETHEUS_EXPORTER_PORT` 도커 라벨(`ecs.tf`)이 붙은 컨테이너를 찾고, 컨테이너 이름을 `service` 라벨로 붙인다. 로컬도 스크레이프 주소에서 같은 값의 `service` 라벨을 만들기 때문에 알림 규칙과 메시지가 양쪽에서 같다.
-- 알림과 기본 화면에 쓰는 지표만 남기고 나머지는 버린다(`otel-collector.yaml`의 `metric_relabel_configs`). AMP는 샘플 수로 과금되고, Grafana Cloud 무료 플랜은 1만 시리즈까지다. 새 지표로 알림을 만들려면 여기에 먼저 추가한다. 수집 주기는 `otel_collector.scrape_interval`로, demo는 60초, prod는 30초다.
+- 로컬 collector는 서비스 7개를 `static_configs`로 적어 두지만, ECS에서는 태스크 IP가 바뀌고 서비스마다 태스크가 여러 개다. 그래서 `ecs_observer`가 `ECS_PROMETHEUS_EXPORTER_PORT` 도커 라벨(`ecs.tf`)이 붙은 컨테이너를 찾고, 컨테이너 이름을 `service` 라벨로 붙인다. 로컬도 스크레이프 주소에서 같은 값의 `service` 라벨을 만들기 때문에 알림 규칙과 메시지가 양쪽에서 같다.
+- 알림과 기본 화면에 쓰는 지표만 남기고 나머지는 버린다(`otel-collector.yaml`의 `metric_relabel_configs`). AMP는 샘플 수로 과금되고, Grafana Cloud 무료 플랜은 1만 시리즈까지다. 로컬 collector도 같은 목록이다. 새 지표로 알림을 만들려면 두 곳에 먼저 추가한다. 수집 주기는 `otel_collector.scrape_interval`로, demo는 60초, prod는 30초다.
 - Grafana Cloud로는 트레이스와 로그를 OTLP로, 지표를 remote write로 보낸다. remote write라야 지표 이름과 라벨이 로컬과 같게 들어간다.
 - 이미지의 기본 사용자는 쓸 수 있는 디렉터리가 없다. `ecs_observer`가 대상 목록 파일을 써야 해서 uid 0으로 띄우는 대신, capability를 전부 빼고 루트 파일시스템을 읽기 전용으로 둬서 `/tmp` 볼륨 말고는 아무 데도 못 쓰게 했다.
 - contrib 이미지는 셸이 없는 이미지라 컨테이너 헬스 체크를 두지 않는다. 뜨지 못하면 배포 서킷 브레이커가 롤백한다.
