@@ -24,7 +24,7 @@ not something CI blocks on. The recipe to wire it in is in
 
 **Excluded from coverage measurement:**
 `adapter/in/web/dto/**` (request/response records — no logic to test),
-`config/**` and `adapter/in/web/config/**` (`@Configuration` bean wiring),
+`config/**` (`@Configuration` bean wiring),
 `*Application.java` (bootstrap entry point). Feign client interfaces
 (`adapter/out/client/*/<Name>Client.java`) are also exempt — they're a raw
 HTTP contract with no logic; the `<Name>ClientAdapter` that wraps them is
@@ -115,6 +115,8 @@ class SignUpMemberServiceTest {
     @Mock private SignUpMemberPort signUpMemberPort;
     @Mock private EncodePasswordPort encodePasswordPort;
     @Mock private CheckEmailExistsPort checkEmailExistsPort;
+    @Mock private EmailVerificationTokenPort emailVerificationTokenPort;
+    @Mock private PublishMemberEventPort publishMemberEventPort;
     @InjectMocks private SignUpMemberService signUpMemberService;
 
     private final SignUpMemberCommand command = new SignUpMemberCommand(
@@ -128,6 +130,8 @@ class SignUpMemberServiceTest {
         @Test
         void createsMember() {
             given(checkEmailExistsPort.existsByEmail(command.getMemberEmail())).willReturn(false);
+            given(emailVerificationTokenPort.consumeVerified(command.getMemberEmail().emailValue()))
+                    .willReturn(true);
             given(encodePasswordPort.encodePassword(command.getMemberPassword()))
                     .willReturn(new MemberPassword("encoded-password"));
 
@@ -283,7 +287,6 @@ test {
 
 def coverageExclusions = [
         '**/adapter/in/web/dto/**',
-        '**/adapter/in/web/config/**',
         '**/config/**',
         '**/*Application.class',
         '**/adapter/out/client/**/*Client.class'

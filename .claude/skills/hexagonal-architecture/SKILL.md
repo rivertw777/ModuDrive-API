@@ -56,7 +56,7 @@ adapter/config conventions below only where they apply.
 config/
   <Concern>Config.java        Root-level, sibling to domain/application/adapter.
                                Composition-root bean wiring not owned by one
-                               adapter (security beans, encoders, cookie props).
+                               adapter (security beans, encoders, S3/SES clients).
 domain/
   model/<Entity>.java        Pure business object, no framework deps
   vo/<Vo>.java                Standalone value object (only when it isn't owned
@@ -71,7 +71,6 @@ exception/
   <Domain>ExceptionCase.java  enum implements ExceptionCase (from common:core)
 adapter/
   in/web/controller/<Verb><Entity>Controller.java   Package-private, @WebAdapter
-  in/web/config/<Concern>Config.java                 Adapter-scoped config (Swagger, etc.)
   in/web/dto/<Verb><Entity>Request.java              Request/response records
   in/web/mapper/<Entity>ResponseMapper.java          Domain -> response DTO
   out/persistence/<Entity>PersistenceAdapter.java    @PersistenceAdapter
@@ -82,7 +81,7 @@ adapter/
   out/messaging/Outbox<Domain>EventPublisher.java     Outbox publisher, @EventPublisher
   out/client/<service>/<Service>ClientAdapter.java  Feign/WebClient adapter, @Component
   out/<tech>/<Tech><Thing>Store.java                 Non-JPA stores, packaged by technology
-                                                     (redis/, memory/, s3/), @Component
+                                                     (redis/, s3/), @Component
 ```
 
 ## Domain model
@@ -266,25 +265,10 @@ class plays the same translation role directly — see
 
 ## Configuration classes
 
-Two places, chosen by scope — modeled on `buckpal`'s split between
-`BuckPalConfiguration` (root, wires cross-cutting beans) and adapter-internal
-specifics (see the [wikibook/clean-architecture](https://github.com/wikibook/clean-architecture)
-reference implementation this convention is based on):
-
-- **`config/<Concern>Config.java`** (root, sibling to `domain/application/adapter`) —
-  a bean is used across layers or isn't owned by any single adapter: password
-  encoders, session cookie properties, security beans. Package-private
-  `@Configuration` classes; Spring wires them via component scanning like any
-  other stereotype.
-- **`adapter/in/web/config/<Concern>Config.java`** (or `adapter/out/.../config/`) —
-  a bean only configures that one adapter's concern and would disappear if the
-  adapter did: Swagger/OpenAPI docs for the REST layer, a Feign client
-  customizer for an out adapter. Never put these at the root — they're not
-  cross-cutting, they're adapter detail.
-
-Don't dump both kinds into a single flat `adapter/config/` bucket — that's
-what erases the distinction and makes every config class look equally
-foundational.
+`config/<Concern>Config.java` (root, sibling to `domain/application/adapter`):
+password encoders, security beans, S3/SES clients. Package-private
+`@Configuration` classes; Spring wires them via component scanning like any
+other stereotype. Don't add an `adapter/config/` bucket.
 
 ## Error handling
 

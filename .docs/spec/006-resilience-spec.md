@@ -251,7 +251,7 @@ flowchart LR
 
 #### 2-2-3. 응답
 
-실패하면 `SessionAuthenticationFailureHandler`가 답한다.
+실패하면 `CustomAuthenticationEntryPoint`가 답한다.
 
 | 원인 | HTTP | 메시지 |
 |---|---|---|

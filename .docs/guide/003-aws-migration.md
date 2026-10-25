@@ -157,7 +157,7 @@ AWS 버킷(`modudrive-storage-<계정>`)은 Terraform이 만든다. storage-serv
 
 - 퍼블릭 액세스는 막혀 있고, HTTPS가 아닌 요청은 버킷 정책이 거절한다.
 - 블록은 받은 바이트 그대로 저장되고 버킷이 암호화한다. demo는 SSE-S3, prod는 KMS 고객 관리 키라 버킷 읽기 권한만으로는 원본을 읽지 못한다.
-- 버킷 CORS는 WEB 출처의 `PUT`과 서명된 헤더(`if-none-match`, `x-amz-checksum-sha256`)만 연다.
+- 버킷 CORS는 WEB 출처의 `PUT`과 `content-type`, 서명된 헤더(`if-none-match`, `x-amz-checksum-sha256`)만 연다.
 - 블록은 오래됐다고 지우지 않는다. 지우는 건 앱이다(`storage-blocks-purge-requested`). 수명 주기 규칙은 7일 넘게 끝나지 않은 multipart 업로드를 치우고, prod에서는 30일 지난 이전 버전도 지운다(4-4).
 
 ### 1-9. 메일
@@ -245,7 +245,7 @@ aws cloudfront create-invalidation --distribution-id $(terraform output -raw web
 | `otel-collector-sg` | 모든 서비스 | 4318 | 트레이스(OTLP). 반대로 collector는 모든 서비스의 9464를 수집한다 |
 
 - Feign이나 WebClient 호출을 새로 만들면 이 표와 Terraform 규칙을 같이 고친다. 빠뜨리면 로컬에서는 멀쩡하다가 AWS에서만 타임아웃이 난다. 호출 목록은 `grep -rn "@FeignClient\|clients\." services/*/src/main`으로 확인한다.
-- 관리 포트(9464)는 중앙 ADOT collector에만 열고, gateway만 예외로 ALB에도 연다.
+- 관리 포트(9464)는 중앙 collector에만 열고, gateway만 예외로 ALB에도 연다.
 - 보안 그룹은 네트워크 수준이라, 허용된 서비스가 허용되지 않은 경로를 부르는 것까지는 못 막는다(예: file이 member의 로그인 확인 API를 부르는 경우).
 
 ### 1-13. 모니터링과 알림
@@ -467,7 +467,7 @@ tfvars의 값을 바꿀 때 데이터가 날아가거나 서비스가 끊기는 
 | AZ | 2개 |
 | NAT | NAT 인스턴스 1대 (t4g.micro, fck-nat) |
 | VPC 엔드포인트 | S3 게이트웨이만 |
-| ECS | Fargate Spot, 전부 0.5 vCPU / 1 GB, 서비스마다 1개 고정 (오토스케일 없음) |
+| ECS | Fargate Spot, 전부 0.5 vCPU / 1 GB, 서비스마다 1개, CPU 60%를 넘으면 최대 2개 |
 | DB | RDS 1대 (db.t4g.micro, 단일 AZ)에 DB 4개, 백업 1일(무료 플랜 한도) |
 | Redis | ElastiCache 1개 (cache.t4g.micro, 노드 1개), 모든 서비스가 같이 씀 |
 | 메일 | SES (`noreply@modudrive.help`, 1-9) |
@@ -500,7 +500,7 @@ Lambda, Budgets는 이 규모에선 무료 구간 안에 든다.
 - NAT 게이트웨이는 AZ마다 월 $45쯤이라 NAT 인스턴스 한 대로 대신했다. 태스크마다 공인 IPv4를 붙이는 방법(7개에 ~$26)보다도 싸다.
 - 인터페이스 엔드포인트는 두지 않았다. AZ 2개에 6개를 두면 월 $110쯤 나온다. AWS API 호출은 NAT로 나간다.
 - AZ는 2개다. 세 번째 AZ는 ALB 공인 IPv4만 늘리고 시험용으로는 얻는 게 없다.
-- 태스크는 0.5 vCPU / 1 GB로 하나씩 두고(0.25 vCPU는 요청마다 CPU가 120%까지 차서 올렸다, 메모리는 절반도 안 쓴다) 오토스케일을 껐다. 트래픽이 몰리면 비용이 오르는 대신 느려진다. 기동도 느려서 헬스 체크 유예 시간을 길게 잡았다(`ecs.tf`의 `startPeriod`).
+- 태스크는 0.5 vCPU / 1 GB로 하나씩 두고(0.25 vCPU는 요청마다 CPU가 120%까지 차서 올렸다, 메모리는 절반도 안 쓴다) 오토스케일은 2개까지만 둔다. 그 이상 몰리면 비용이 오르는 대신 느려진다. 기동도 느려서 헬스 체크 유예 시간을 길게 잡았다(`ecs.tf`의 `startPeriod`).
 - DB는 인스턴스 한 대에 4개를 모았다. 서비스마다 DB와 로그인이 따로인 건 prod와 같다.
 - Redis는 로컬처럼 하나를 같이 쓴다.
 - 모니터링은 AMP·X-Ray·Managed Grafana(사용자당 월 $9) 대신 Grafana Cloud 무료 플랜으로 보낸다.
