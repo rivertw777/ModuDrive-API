@@ -68,6 +68,7 @@ grafana_cloud = {
   prometheus_user   = "3706127"
   alertmanager_url  = "https://alertmanager-prod-ap-northeast-0.grafana.net"
   alertmanager_user = "1850999"
+  grafana_url       = "https://shortsunflower2583.grafana.net"
 }
 
 terraform_in_ci = true # a merge into the demo branch applies .infra/ (deploy.yml)

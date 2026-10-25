@@ -123,7 +123,7 @@ CloudWatch 경보(큐 대기, ALB 5xx, gateway 헬스, NAT, CPU·메모리, DB, 
 | `.docker/observability/alert-rules.yaml` | 알림 규칙 9개 |
 | `.docker/observability/alertmanager.yml` | 알림 묶음, 재발송, 채널 |
 | `.docker/observability/grafana/datasources/datasources.yaml` | Grafana 데이터소스 (Prometheus, Tempo, Loki와 그 사이 링크) |
-| `.docker/observability/grafana/dashboards/` | 대시보드 3개 (7장). demo에도 같은 파일을 올린다 |
+| `.docker/observability/grafana/dashboards/` | 대시보드 3개 (7장). demo에는 terraform apply가 같은 파일을 올린다 |
 | `common/infrastructure/observability` | 앱 쪽 공통 모듈. 의존성과 `application-observability.yml`, `UserIdObservationFilter` |
 
 모든 서비스가 공통 모듈에 의존하고, 각자 `application.yml`의 `spring.config.import`로 `classpath:application-observability.yml`을 불러온다.

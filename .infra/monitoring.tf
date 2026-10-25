@@ -27,6 +27,14 @@ data "aws_ssm_parameter" "grafana_cloud_token" {
   name = "/${var.project}/GRAFANA_CLOUD_TOKEN"
 }
 
+# Dashboards go through the stack's Grafana API, which takes a Grafana service account token (Editor), also
+# made by hand: aws ssm put-parameter --name /<project>/GRAFANA_SETUP_TOKEN --type SecureString --value <glsa_…>
+data "aws_ssm_parameter" "grafana_setup_token" {
+  count = local.grafana_cloud ? 1 : 0
+
+  name = "/${var.project}/GRAFANA_SETUP_TOKEN"
+}
+
 data "aws_ssm_parameter" "discord_webhook" {
   for_each = local.grafana_cloud ? aws_ssm_parameter.discord_webhook : {}
 
@@ -67,6 +75,58 @@ resource "terraform_data" "grafana_cloud_alerts" {
         TOKEN               = data.aws_ssm_parameter.grafana_cloud_token[0].value
       },
       { for i, g in yamldecode(local.alert_rules).groups : "RULE_GROUP_${i}" => yamlencode(g) },
+    )
+  }
+}
+
+# The local dashboards (.docker/observability/grafana/dashboards/) into the ModuDrive folder. The folder is
+# synced whole, as local provisions it: a dashboard whose file is gone is deleted there too.
+locals {
+  dashboards = { for f in fileset("${path.module}/../.docker/observability/grafana/dashboards", "*.json") :
+  f => file("${path.module}/../.docker/observability/grafana/dashboards/${f}") }
+}
+
+resource "terraform_data" "grafana_cloud_dashboards" {
+  count = local.grafana_cloud ? 1 : 0
+
+  triggers_replace = [
+    local.dashboards,
+    sha256(data.aws_ssm_parameter.grafana_setup_token[0].value),
+  ]
+
+  provisioner "local-exec" {
+    interpreter = ["python3", "-c"]
+    command     = <<-EOT
+      import json, os, urllib.error, urllib.request
+
+      def call(method, path, body=None):
+          req = urllib.request.Request(os.environ["GRAFANA_URL"] + path, method=method,
+              data=None if body is None else json.dumps(body).encode(),
+              headers={"Authorization": "Bearer " + os.environ["TOKEN"], "Content-Type": "application/json"})
+          with urllib.request.urlopen(req) as res:
+              return json.load(res)
+
+      try:
+          call("POST", "/api/folders", {"uid": "modudrive", "title": "ModuDrive"})
+      except urllib.error.HTTPError as e:
+          if e.code not in (409, 412):  # already there
+              raise
+      uids = set()
+      for name, text in os.environ.items():
+          if name.startswith("DASHBOARD_"):
+              dashboard = dict(json.loads(text), id=None)
+              uids.add(dashboard["uid"])
+              call("POST", "/api/dashboards/db", {"dashboard": dashboard, "folderUid": "modudrive", "overwrite": True})
+      for hit in call("GET", "/api/search?type=dash-db&folderUIDs=modudrive"):
+          if hit["uid"] not in uids:
+              call("DELETE", "/api/dashboards/uid/" + hit["uid"])
+    EOT
+    environment = merge(
+      {
+        GRAFANA_URL = var.grafana_cloud.grafana_url
+        TOKEN       = data.aws_ssm_parameter.grafana_setup_token[0].value
+      },
+      { for f, text in local.dashboards : "DASHBOARD_${trimsuffix(f, ".json")}" => text },
     )
   }
 }

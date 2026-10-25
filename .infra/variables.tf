@@ -243,6 +243,7 @@ variable "grafana_cloud" {
     prometheus_user   = string
     alertmanager_url  = string # grafana.com/api/instances/<stack>: amInstanceUrl, amInstanceId
     alertmanager_user = string
+    grafana_url       = string # https://<stack>.grafana.net — dashboards go up through its API
   })
   default = null
 }
