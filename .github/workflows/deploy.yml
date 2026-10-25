@@ -150,7 +150,7 @@ jobs:
             echo "build=$SERVICES" >> "$GITHUB_OUTPUT"; echo "all=true" >> "$GITHUB_OUTPUT"
             echo "Shared code changed: building every service"; exit 0
           fi
-          build=$(for svc in $SERVICES; do grep -q "^services/$svc-service/" <<< "$files" && printf '%s ' "$svc"; done)
+          build=$(for svc in $SERVICES; do if grep -q "^services/$svc-service/" <<< "$files"; then printf '%s ' "$svc"; fi; done)
           echo "build=$build" >> "$GITHUB_OUTPUT"; echo "all=false" >> "$GITHUB_OUTPUT"
           echo "Changed services: ${build:-none}"
 
