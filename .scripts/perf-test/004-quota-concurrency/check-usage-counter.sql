@@ -3,6 +3,6 @@
 select n.id, n.used_bytes, coalesce(s.total, 0) as actual
 from namespace n
 left join (select namespace_id, sum(file_size) as total from file
-           where is_directory = false and status <> 'PENDING' and deleted_at is null
+           where is_directory = false and deleted_at is null
            group by namespace_id) s on s.namespace_id = n.id
 where n.used_bytes <> coalesce(s.total, 0);

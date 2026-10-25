@@ -63,7 +63,7 @@ flowchart LR
 | collector | 60초마다 모든 서비스의 지표를 가져가 Prometheus로 보낸다 (demo와 같다. prod는 30초) |
 | Prometheus | 지표를 저장한다. AWS는 그 자리에 demo는 Grafana Cloud, prod는 AMP가 있다 |
 | 알림 규칙 | Prometheus가 1분마다 "이 값이 기준을 넘었나"를 확인한다. 정해 둔 시간(`for`) 동안 계속 넘어야 알림을 보낸다 |
-| Alertmanager | 비슷한 알림을 한 메시지로 묶고 디스코드 문구로 만들어, 규칙의 `channel` 라벨에 맞는 웹후크로 보낸다. 고칠 때까지 4시간마다 다시 보낸다 |
+| Alertmanager | 비슷한 알림을 한 메시지로 묶고 디스코드 문구로 만들어, 규칙의 `channel` 라벨에 맞는 웹후크로 보낸다(prod는 SNS → `discord_forwarder.py`). 고칠 때까지 4시간마다 다시 보낸다 |
 | Discord | 알림에 적힌 채널(`#service`, `#infra`, `#messaging`)로 도착한다([3장](#3-사용-디스코드-채널)) |
 
 ### 1-1. 알림이 오기까지 걸리는 시간
@@ -106,10 +106,10 @@ flowchart LR
 | `.docker/observability/alert-rules.yaml` | 규칙 (2-1, 2-2) | `.infra/monitoring/alert-rules.yaml` |
 | `.infra/monitoring/discord.tmpl` | 메시지 양식 (2-3) | 같은 파일 |
 | `.docker/observability/alertmanager.yml` | 그룹핑·채널 (2-4, 3장) | demo `.infra/monitoring/alertmanager-grafana-cloud.yaml`, prod `.infra/monitoring/alertmanager.yaml` |
-| `.infra/monitoring/discord_forwarder.py` | AWS 전용 경보의 SNS → 디스코드 전달 ([5장](#5-aws-전용-경보)) | 로컬엔 없음 |
+| `.infra/monitoring/discord_forwarder.py` | AWS 전용 경보([5장](#5-aws-전용-경보))와 prod 4장 알림의 SNS → 디스코드 전달 | 로컬엔 없음 |
 
 규칙 파일은 로컬과 AWS가 따로다. 쿼리와 기준값은 같고 확인 명령어만 다르다(docker ↔ ECS, 로그·trace는 demo가 로컬과 같은 Loki·Tempo, prod가 CloudWatch·X-Ray). 규칙을 고치면 두 파일을 같이 고친다.
-예외는 둘이다. AWS는 서비스마다 태스크가 여럿일 수 있어 서비스 응답 없음·힙 메모리 부족을 `by (service, instance)`로 태스크마다 따로 보고, 서비스 태스크 없음([4-4](#4-4-서비스-응답-없음))이 하나 더 있다.
+예외는 AWS에만 있는 서비스 태스크 없음([4-4](#4-4-서비스-응답-없음)) 하나다.
 
 ### 2-1. 지표
 
@@ -179,7 +179,7 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 | 서비스, 큐, 서킷 이름 | 지표의 라벨. `by (...)`에 넣은 것만 쓸 수 있다([2-1](#2-1-지표)) |
 | 제목, 사유, 조치, 확인 명령어, 조회·복구 SQL 등 | 규칙의 `annotations`에 적어 둔 문구 |
 
-본문 아래에는 Alertmanager가 제목 카드(embed, `discord.title`)를 붙인다. 발생은 빨간색, 해제는 초록색이라 채널을 훑어볼 때 상태가 바로 보인다.
+본문 아래에는 Alertmanager(prod는 Lambda)가 제목 카드(embed, `discord.title`)를 붙인다. 발생은 빨간색, 해제는 초록색이라 채널을 훑어볼 때 상태가 바로 보인다.
 링크는 넣지 않는다. 알림 상태와 일시 중지는 Grafana의 Alerting 화면에서 본다(로컬 `http://localhost:3001`, demo는 Grafana Cloud).
 
 양식을 고칠 때 알아 둘 것이 있다.
@@ -220,7 +220,7 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 
 웹후크 주소는 레포에 올리지 않는다.
 
-- 4장 알림: 규칙의 `channel` 라벨로 Alertmanager가 그 채널의 웹후크로 보낸다.
+- 4장 알림: 규칙의 `channel` 라벨로 Alertmanager가 그 채널의 웹후크로 보낸다. prod는 SNS로 보내고 Lambda가 `channel` 속성으로 웹후크를 고른다.
 - CloudWatch 경보(AWS): Lambda(`discord_forwarder.py`)가 SSM에서 웹후크 주소를 읽어 보낸다. 라벨이 없어서 경보 이름 앞부분으로 채널을 정한다. `queue-age-` → `#messaging`, `service-`·`db-`·`redis-`·`nat-` → `#infra`, 나머지 → `#service`. 새 경보를 만들 땐 이 규칙에 맞게 이름을 짓는다.
 - Budgets·GuardDuty: CloudWatch 경보가 아닌 글이라 `#account`로 간다.
 - 웹후크 주소를 아직 안 넣은 채널은 `#service`로 대신 보낸다. 주소를 넣기 전이라고 알림이 사라지지 않게 하려는 것이다.
@@ -237,7 +237,7 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 | 이벤트 전송 적체 | `#messaging` | 이벤트가 SQS로 못 나가고 2분 넘게 밀려 있을 때 | `max by (service, queue) (modudrive_outbox_lag_seconds) > 120` | 5분 |
 | 이벤트 전송 실패 | `#messaging` | SQS가 거절해서 사람이 직접 처리해야 할 이벤트가 생겼을 때 | `max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0` | 바로 |
 | 이벤트 처리 실패 | `#messaging` | 받는 쪽 서비스가 처리를 포기한 메시지가 DLQ에 있을 때 | `max by (service, queue) (modudrive_dlq_messages) > 0` | 바로 |
-| 서비스 응답 없음 | `#service` | 서비스가 응답하지 않을 때 (프로세스가 죽음) | `min by (service) (up{job="services"}) < 1` | 2분 |
+| 서비스 응답 없음 | `#service` | 서비스가 응답하지 않을 때 (프로세스가 죽음) | `min by (service, instance) (up{job="services"}) < 1` | 2분 |
 | 서비스 태스크 없음 (AWS) | `#service` | 서비스의 태스크가 하나도 수집되지 않을 때 (기동 실패 · 배포 롤백 반복) | 서비스마다 `absent(up{job="services",service="<서비스>"})` | 2분 |
 | 서킷 열림 | `#service` | 서비스는 떠 있지만, 그 서비스로 가는 호출이 계속 실패해 서킷이 호출을 막고 있을 때 | `sum by (service, name) (increase(resilience4j_circuitbreaker_not_permitted_calls_total[2m])) > 0` | 2분 |
 | 요청 실패율 높음 | `#service` | 게이트웨이를 지난 요청이 5xx로 많이 실패할 때 | 5xx 비율 `> 5%` 이면서 5분간 5xx `>= 10`건 (`spring_cloud_gateway_requests_seconds_count`, 경로별) | 2분 |

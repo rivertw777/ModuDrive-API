@@ -11,14 +11,14 @@ spring:
 storage:
   s3:
     endpoint: ${STORAGE_S3_ENDPOINT:}  # blank = real AWS S3
-    # What presigned upload URLs point at — the browser PUTs blocks there (spec 001 6). Blank = real AWS S3.
+    # What presigned upload URLs point at — the browser PUTs blocks there (spec 001 2-4). Blank = real AWS S3.
     public-endpoint: ${STORAGE_S3_PUBLIC_ENDPOINT:}
     bucket: ${STORAGE_S3_BUCKET}
     access-key: ${STORAGE_S3_ACCESS_KEY:}  # blank = default credential chain (ECS task role)
     secret-key: ${STORAGE_S3_SECRET_KEY:}
     region: ${STORAGE_S3_REGION}
   block-size: ${STORAGE_BLOCK_SIZE}
-  # Block upload URLs per user per 24h (spec 001 6-2) — 25,600 × 4MB = 100GB. Caps what uncommitted
+  # Block upload URLs per user per 24h (spec 001 2-4) — 25,600 × 4MB = 100GB. Caps what uncommitted
   # uploads can pile up in S3 and Redis before the sweep.
   upload-blocks-per-window: ${STORAGE_UPLOAD_BLOCKS_PER_WINDOW:25600}
   # Per-file download volume per rolling window before that file is blocked (Google Drive style).

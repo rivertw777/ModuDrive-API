@@ -24,7 +24,7 @@ output "storage_bucket" {
 }
 
 output "ssm_parameter_arns" {
-  description = "Secrets for ECS task definitions, by env var name"
+  description = "SSM SecureString parameters (task, db-init and alert secrets), by parameter name"
   value = merge(
     { for key, param in aws_ssm_parameter.db_password : local.db_logins[key] => param.arn },
     { for name, param in aws_ssm_parameter.discord_webhook : name => param.arn },

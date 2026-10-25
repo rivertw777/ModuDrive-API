@@ -81,7 +81,7 @@ def main():
                 with conn.transaction():
                     ns, owner, root = seed(cur, n)
                 res["move_wait"].append(op(cur, "move", owner, root, contend=(res["move"][-1]["ms"] / 2, "/bench/d3")))
-                cur.execute("select n.used_bytes, coalesce((select sum(file_size) from file f where f.namespace_id=n.id and not is_directory and status<>'PENDING' and deleted_at is null),0) from namespace n where id=%s", (ns,))
+                cur.execute("select n.used_bytes, coalesce((select sum(file_size) from file f where f.namespace_id=n.id and not is_directory and deleted_at is null),0) from namespace n where id=%s", (ns,))
                 print("  usage check", cur.fetchone(), flush=True)
             summary = {}
             for k, v in res.items():

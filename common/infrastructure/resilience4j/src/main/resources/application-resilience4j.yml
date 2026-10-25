@@ -36,7 +36,6 @@ resilience4j:
         slowCallDurationThreshold: 10s
         waitDurationInOpenState: 10s
         permittedNumberOfCallsInHalfOpenState: 3
-        recordSlowCalls: true
         record-exceptions:
           - feign.RetryableException
           - feign.FeignException.GatewayTimeout

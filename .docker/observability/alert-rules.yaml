@@ -7,7 +7,7 @@
 # 옮겨진 뒤엔 원래 큐가 다시 비어 보인다. services: 그 지표가 아예 안 올 때를 본다.
 #
 # 알림 이름은 ASCII(AWS에선 SNS 제목이 된다), 메시지에 보이는 이름은 title이다.
-# service 라벨은 prometheus.yml이 스크레이프 주소에서 붙인다(AWS는 컨테이너 이름) — 템플릿이 그걸 찍는다.
+# service 라벨은 otel-collector-config.yaml이 스크레이프 주소에서 붙인다(AWS는 컨테이너 이름) — 템플릿이 그걸 찍는다.
 # 기준값은 괄호 안에 둔다: `and`가 `>`보다 느슨하게 묶여서 `A and B > x`면 비율이 아니라 B(건수)를 비교한다.
 groups:
   - name: outbox

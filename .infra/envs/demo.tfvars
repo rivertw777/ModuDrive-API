@@ -1,4 +1,4 @@
-# demo — what actually runs, a trial stack: the whole system up for the least money (~$138/month
+# demo — what actually runs, a trial stack: the whole system up for the least money (~$130/month
 # in Seoul, before traffic). Cut whatever cost can be cut here; isolation and redundancy are shown in
 # prod.tfvars instead. terraform plan -var-file=envs/demo.tfvars
 #
@@ -51,7 +51,7 @@ services = {
 # A download cut off mid-deploy is acceptable on a trial stack; the rollout waits a minute less.
 alb_deregistration_delay = 15
 
-# A trial account's first alarm. ~$138 of infrastructure + logs, with headroom.
+# A trial account's first alarm. ~$130 of infrastructure + logs, with headroom.
 monthly_budget_usd = 150
 alert_email        = null
 
