@@ -5,7 +5,14 @@ repositories {
 }
 
 dependencies {
-    api 'org.springframework.cloud:spring-cloud-starter-circuitbreaker-resilience4j'
+    // Spring Cloud 2025.1 still brings resilience4j-spring-boot3, whose retry metrics auto-config orders
+    // itself after Boot 3's MetricsAutoConfiguration and so never binds on Boot 4 (no retry metrics).
+    // Drop it for the Boot 4 module until spring-cloud-circuitbreaker 5.1 ships it.
+    api('org.springframework.cloud:spring-cloud-starter-circuitbreaker-resilience4j') {
+        exclude group: 'io.github.resilience4j', module: 'resilience4j-spring-boot3'
+    }
+    api platform('io.github.resilience4j:resilience4j-bom:2.4.0')
+    api 'io.github.resilience4j:resilience4j-spring-boot4:2.4.0' // not in resilience4j-bom 2.4.0
     implementation project(':common:infrastructure:spring-cloud')
 
     implementation project(':common:core')
