@@ -270,7 +270,7 @@
       "gridPos": {
         "x": 0,
         "y": 9,
-        "w": 8,
+        "w": 6,
         "h": 8
       }
     },
@@ -327,9 +327,9 @@
       },
       "id": 5,
       "gridPos": {
-        "x": 8,
+        "x": 6,
         "y": 9,
-        "w": 8,
+        "w": 6,
         "h": 8
       }
     },
@@ -385,16 +385,92 @@
       },
       "id": 6,
       "gridPos": {
-        "x": 16,
+        "x": 12,
         "y": 9,
-        "w": 8,
+        "w": 6,
+        "h": 8
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "컨테이너 메모리 (힙 밖 포함)",
+      "description": "프로세스 RSS / 컨테이너 한도. 넘치면 느려지지 않고 OOM으로 죽는다. AWS는 경보 service-memory-*가 90%에서 울린다",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prom}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prom}"
+          },
+          "expr": "max by (service) (modudrive_memory_rss_bytes{service=~\"$service\"}) / max by (service) (modudrive_memory_limit_bytes{service=~\"$service\"})",
+          "legendFormat": "{{service}}",
+          "exemplar": false,
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.9
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 7,
+      "gridPos": {
+        "x": 18,
+        "y": 9,
+        "w": 6,
         "h": 8
       }
     },
     {
       "type": "row",
       "title": "DB 커넥션 (Hikari)",
-      "id": 7,
+      "id": 8,
       "collapsed": false,
       "gridPos": {
         "x": 0,
@@ -467,7 +543,7 @@
           "sort": "desc"
         }
       },
-      "id": 8,
+      "id": 9,
       "gridPos": {
         "x": 0,
         "y": 18,
@@ -525,7 +601,7 @@
           "sort": "desc"
         }
       },
-      "id": 9,
+      "id": 10,
       "gridPos": {
         "x": 8,
         "y": 18,
@@ -600,7 +676,7 @@
           "sort": "desc"
         }
       },
-      "id": 10,
+      "id": 11,
       "gridPos": {
         "x": 16,
         "y": 18,
@@ -658,7 +734,7 @@
           "sort": "desc"
         }
       },
-      "id": 11,
+      "id": 12,
       "gridPos": {
         "x": 0,
         "y": 26,
@@ -716,7 +792,7 @@
           "sort": "desc"
         }
       },
-      "id": 12,
+      "id": 13,
       "gridPos": {
         "x": 12,
         "y": 26,

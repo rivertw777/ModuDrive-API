@@ -324,7 +324,7 @@ Explore에서 `spring_cloud_gateway_requests_seconds_bucket` 그래프를 띄우
 - **GC 직후에 남은 양을 본다**: 힙 사용량에는 아직 안 치운 쓰레기도 들어간다. 게다가 요청이 없으면 GC가 돌지 않아서, 바쁜 시간이 지난 뒤 쓰레기로 90%가 찬 채 몇 시간이고 머물 수 있다.
   그래서 오래 사는 객체가 있는 old 영역에서 GC가 치우고도 남은 양(`jvm_gc_live_data_size_bytes`)을 그 영역의 최대(`jvm_gc_max_data_size_bytes`)로 나눈다. 치워도 90%가 남았다면 진짜로 모자란 것이다.
 - **old GC 전에는 0이다**: 이 값은 old 영역 GC가 돌 때 바뀐다. 한 번도 안 돌았으면 0이라 울리지 않는다.
-- **컨테이너 메모리는 못 본다**: 힙 밖 메모리(Metaspace, 스레드, 버퍼)까지 합친 값은 앱 지표에 없다. AWS에선 `service-memory-*` 경보([5장](#5-aws-전용-경보))가 따로 본다.
+- **컨테이너 메모리는 이 규칙이 보지 않는다**: 힙 밖 메모리(Metaspace, 스레드, 버퍼)까지 합친 값은 AWS에선 `service-memory-*` 경보([5장](#5-aws-전용-경보))가 본다. 대시보드는 JVM & DB의 컨테이너 메모리 패널(`modudrive_memory_rss_bytes` / `modudrive_memory_limit_bytes`)이다.
   힙은 컨테이너의 70%(`MaxRAMPercentage`)다. 힙 밖이 100~150MB라 75%면 1GB 태스크에서 힙이 다 늘기만 해도 그 경보 기준(90%)에 닿았다.
 
 **받으면:** 그 시각의 요청(zip, 다운로드 등 큰 응답)과 로그의 `OutOfMemoryError`를 본다. 계속되면 메모리를 올린다.
