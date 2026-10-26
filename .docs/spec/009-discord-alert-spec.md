@@ -433,7 +433,7 @@ Budgets는 AWS가 만든 문장을, GuardDuty는 EventBridge 규칙에 적어 �
 ## 6. TODO
 
 - [ ] **DLQ 지표를 CloudWatch 경보로**: AWS에선 CloudWatch가 DLQ의 `ApproximateNumberOfMessagesVisible`을 이미 안다.
-  DLQ마다 경보를 걸면 앱이 30초마다 세는 코드(`DeadLetterQueueMetrics`)를 없앨 수 있다.
+  DLQ마다 경보를 걸면 앱이 30초마다 세는 코드(`QueueDepthMetrics`)를 없앨 수 있다.
 - [ ] **알림 시스템 자체가 죽었을 때**: Prometheus·Alertmanager가 멈추면 알림이 하나도 오지 않는데, 이를 알려 줄 장치가 없다.
   지표가 아예 없으면 규칙은 조용하다(서비스가 죽은 것만 `up`으로 따로 본다). 로컬에서는 감수하고,
   AWS에선 바깥에서 알림 시스템이 살아 있는지 확인하는 방법(CloudWatch 등)을 위 항목과 함께 정한다.

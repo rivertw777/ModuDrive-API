@@ -290,14 +290,73 @@
       "gridPos": {
         "x": 0,
         "y": 9,
-        "w": 24,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "큐 대기 메시지",
+      "description": "소비하는 큐에서 아직 안 받아 간 메시지 (처리 중·지연 제외). 줄지 않고 쌓이면 컨슈머가 느리거나 멈춘 것. AWS는 경보 queue-age-*가 가장 오래된 메시지 300초에서 울린다",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prom}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prom}"
+          },
+          "expr": "max by (queue) (modudrive_queue_messages)",
+          "legendFormat": "{{queue}}",
+          "exemplar": false,
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 5,
+      "gridPos": {
+        "x": 12,
+        "y": 9,
+        "w": 12,
         "h": 8
       }
     },
     {
       "type": "row",
       "title": "서킷 브레이커 (006-resilience-spec)",
-      "id": 5,
+      "id": 6,
       "collapsed": false,
       "gridPos": {
         "x": 0,
@@ -368,7 +427,7 @@
         "mergeValues": true,
         "rowHeight": 0.8
       },
-      "id": 6,
+      "id": 7,
       "gridPos": {
         "x": 0,
         "y": 18,
@@ -443,7 +502,7 @@
           "sort": "desc"
         }
       },
-      "id": 7,
+      "id": 8,
       "gridPos": {
         "x": 0,
         "y": 28,

@@ -47,7 +47,7 @@
 
 - 스케줄 작업: `PurgeExpiredTrashService`, `PruneFileVersionsService`, `PurgeUncommittedUploadsService`
 - 실패해도 요청은 성공시키는 부가 작업: `RecordFileAccessService`, `RedisDownloadQuotaStore`
-- outbox 릴레이·정리 루프: `OutboxRelay`, `JpaProcessedEvents`, `DeadLetterQueueMetrics`
+- outbox 릴레이·정리 루프: `OutboxRelay`, `JpaProcessedEvents`, `QueueDepthMetrics`
 
 ---
 
