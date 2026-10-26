@@ -14,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.validation.BindingResult;
+import org.springframework.web.ErrorResponse;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestHeaderException;
@@ -114,6 +115,14 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Object>> handleGlobalException(Exception e) {
+        // Spring's own 4xx (no such path, unsupported media type ...) carry their status. Answering them 500
+        // would let any scanner probing random paths trip the gateway's error-rate alert.
+        if (e instanceof ErrorResponse errorResponse && errorResponse.getStatusCode().is4xxClientError()) {
+            HttpStatus status = HttpStatus.valueOf(errorResponse.getStatusCode().value());
+            String message = status == HttpStatus.NOT_FOUND ? "요청한 경로를 찾을 수 없습니다." : "잘못된 요청입니다.";
+            ApiResponse<Object> response = ApiResponse.error(status, message);
+            return ResponseEntity.status(status).body(response);
+        }
         // Never echo e.getMessage(): it can carry infra detail like DB constraint names (CWE-209).
         log.error("Unhandled exception", e);
         ApiResponse<Object> response = ApiResponse.error(
