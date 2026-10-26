@@ -245,6 +245,10 @@ trace를 전부 남기면 저장량이 감당이 안 되고, 앞단에서 고정
 | `slow-requests` | 1초 넘게 걸림 | 느린 요청 알림(1초 기준)에 걸린 요청은 trace가 반드시 남는다 |
 | `baseline-sample` | 나머지 중 5% | 정상 요청이 어떻게 생겼는지 비교할 표본 |
 
+`health-checks`(drop)는 위 정책보다 앞선다. 서버 span의 `uri`가 `/actuator/*`나 `/readyz`인 trace — ECS 헬스체크, Route 53 헬스체크, collector의 지표 수집 — 는 5xx여도 버린다.
+
+Spring Security의 span은 만들지 않는다(`management.observations.enable.spring.security: false`). 접근을 거부하면 이 span이 에러 상태가 되어, 로그인 안 한 401이 전부 `errors`로 남았다.
+
 `decision_wait`는 30초다. trace의 첫 span이 도착한 뒤 이만큼 기다렸다가 판단한다. gateway 타임아웃(15초)보다 길게 잡아야 느린 요청의 늦게 오는 span까지 모인 뒤에 판단할 수 있다.
 
 정상 요청은 5%만 남으므로, trace가 이어지는지 확인하는 테스트를 할 때는 collector 설정에서 `sampling_percentage: 100`, `decision_wait: 5s`로 잠깐 바꾸고 `restart otel-collector` 한 뒤 끝나면 되돌린다.
@@ -371,5 +375,4 @@ make reset           # 볼륨을 전부 지우고 다시 띄운다 (지표, 로�
 
 ### 알려진 갭
 
-- 서비스는 collector가 60초마다 `/actuator/prometheus`를 긁는 요청도 trace로 남긴다. 5% 표본에 걸린 것들이 Tempo에 섞여 보인다. 거슬리면 `ObservationPredicate`로 actuator 경로를 빼면 된다.
 - collector 설정의 exporter 이름 `otlphttp`, `prometheusremotewrite`가 deprecated 경고를 낸다(`"otlphttp" alias is deprecated; use "otlp_http"`). demo 설정과 같은 이름을 쓰려고 그대로 둔다. 동작에는 문제가 없다.
