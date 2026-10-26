@@ -263,7 +263,7 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 | 지표 수집 끊김 | `#infra` | 어느 서비스의 지표도 들어오지 않을 때 (collector 다운 · 저장소 전송 실패) | `absent(up{job="services"})` | 2분 (끊기고 약 7분 뒤, [4-10](#4-10-지표-수집-끊김)) |
 | 서킷 열림 | `#service` | 서비스는 떠 있지만, 그 서비스로 가는 호출이 계속 실패해 서킷이 호출을 막고 있을 때 | `sum by (service, name) (increase(resilience4j_circuitbreaker_not_permitted_calls_total[2m])) > 0` | 2분 |
 | 요청 실패율 높음 | `#service` | 게이트웨이를 지난 요청이 5xx로 많이 실패할 때 | 5xx 비율 `> 5%` 이면서 5분간 5xx `>= 10`건 (`spring_cloud_gateway_requests_seconds_count`, 경로별) | 2분 |
-| 느린 요청 많음 | `#service` | 게이트웨이를 지난 요청이 에러 없이 느려졌을 때 | 1초 초과 비율 `> 5%` 이면서 5분간 1초 초과 `>= 10`건 (`spring_cloud_gateway_requests_seconds_bucket{le="1.0"}`, 경로별, storage-service 제외) | 2분 |
+| 느린 요청 많음 | `#service` | 게이트웨이를 지난 요청이 에러 없이 느려졌을 때 | 1초 초과 비율 `> 5%` 이면서 5분간 1초 초과 `>= 10`건 (`spring_cloud_gateway_requests_seconds_bucket{le="1"}`, 경로별, storage-service 제외) | 2분 |
 | 힙 메모리 부족 | `#infra` | 힙이 차서 GC가 따라가지 못할 때 | GC 직후 old 영역 사용률 `> 90%` (`jvm_gc_live_data_size_bytes` / `jvm_gc_max_data_size_bytes`) | 5분 |
 | DB 커넥션 부족 | `#service` | 커넥션 풀이 다 쓰여 요청이 커넥션을 못 받고 실패할 때 | `max by (service) (increase(hikaricp_connections_timeout_total[5m])) > 0` | 바로 |
 
