@@ -8,6 +8,10 @@ alertmanager_config: |
     group_interval: 1m
     repeat_interval: 4h
     routes:
+      - receiver: heartbeat
+        matchers: [channel="heartbeat"]
+        group_wait: 0s
+        repeat_interval: 5m
       - receiver: messaging
         matchers: [channel="messaging"]
       - receiver: infra
@@ -15,6 +19,18 @@ alertmanager_config: |
   templates:
     - discord
   receivers:
+    # The Lambda pings the heartbeat service instead of posting to Discord — so the ping proves SNS and
+    # the Lambda alive too.
+    - name: heartbeat
+      sns_configs:
+        - topic_arn: ${topic_arn}
+          sigv4:
+            region: ${region}
+          subject: Watchdog
+          message: heartbeat
+          send_resolved: false
+          attributes:
+            channel: heartbeat
     - name: messaging
       sns_configs:
         - topic_arn: ${topic_arn}

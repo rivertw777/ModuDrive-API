@@ -69,3 +69,16 @@ resource "aws_ssm_parameter" "discord_webhook" {
     ignore_changes = [value]
   }
 }
+
+# The ping URL of the heartbeat check (healthchecks.io), made there and set by hand like the webhooks. The
+# Watchdog alert pings it every 5 minutes; when the pings stop, healthchecks.io alerts on its own.
+resource "aws_ssm_parameter" "heartbeat_url" {
+  name   = "/${var.project}/HEARTBEAT_URL"
+  type   = "SecureString"
+  key_id = local.kms_key_arn
+  value  = "set-by-hand"
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+}

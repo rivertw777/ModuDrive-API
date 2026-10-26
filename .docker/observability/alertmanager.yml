@@ -12,6 +12,11 @@ route:
   repeat_interval: 4h
   # 규칙이 붙인 channel 라벨로 웹후크가 갈린다. 라벨이 없으면 service 채널.
   routes:
+    # Watchdog(항상 울림)의 heartbeat. demo·prod는 5분마다 바깥 heartbeat 서비스에 ping하고, 로컬은 버린다.
+    - receiver: heartbeat
+      matchers: [channel="heartbeat"]
+      group_wait: 0s
+      repeat_interval: 5m
     - receiver: messaging
       matchers: [channel="messaging"]
     - receiver: infra
@@ -21,6 +26,7 @@ templates:
   - /etc/alertmanager/shared/discord.tmpl
 
 receivers:
+  - name: heartbeat
   - name: messaging
     discord_configs:
       - webhook_url_file: /alertmanager/webhooks/messaging

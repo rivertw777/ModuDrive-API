@@ -4,7 +4,8 @@
 #     alert rules run on its ruler and its alertmanager posts to Discord, as local.
 #   - AWS (prod): AMP for metrics, X-Ray for traces, CloudWatch Logs for logs (awslogs, ecs.tf). The
 #     alert rules run on AMP's ruler, out through the SNS topic below.
-# Either way the AWS-side alarms go to one SNS topic, which a small Lambda posts to Discord.
+# Either way the AWS-side alarms go to one SNS topic, which a small Lambda posts to Discord. The Watchdog
+# alert pings a heartbeat service (healthchecks.io), which alerts on its own when the pings stop.
 locals {
   grafana_cloud = var.grafana_cloud != null
 
@@ -40,6 +41,12 @@ data "aws_ssm_parameter" "discord_webhook" {
   for_each = local.grafana_cloud ? aws_ssm_parameter.discord_webhook : {}
 
   name = each.value.name
+}
+
+data "aws_ssm_parameter" "heartbeat_url" {
+  count = local.grafana_cloud ? 1 : 0
+
+  name = aws_ssm_parameter.heartbeat_url.name
 }
 
 # Rules and alertmanager config go up through the Mimir APIs — the AWS provider has no say there. The
@@ -137,7 +144,9 @@ locals {
   # .docker/observability/alertmanager.yml with the webhook URLs inline: a hosted alertmanager reads no files.
   # A channel whose URL isn't in yet goes to service's, as local (spec 009 3).
   discord_webhook = { for k, p in data.aws_ssm_parameter.discord_webhook : k => p.value }
+  heartbeat_url   = one(data.aws_ssm_parameter.heartbeat_url[*].value)
   grafana_cloud_alertmanager = local.grafana_cloud ? templatefile("${path.module}/monitoring/alertmanager-grafana-cloud.yaml", {
+    heartbeat_url = startswith(local.heartbeat_url, "https://") ? local.heartbeat_url : null
     webhooks = {
       for c in ["messaging", "service", "infra"] : c => (
         startswith(local.discord_webhook["DISCORD_${upper(c)}_WEBHOOK_URL"], "https://")
@@ -246,6 +255,7 @@ resource "aws_lambda_function" "discord_forwarder" {
       SERVICE_WEBHOOK_PARAM   = aws_ssm_parameter.discord_webhook["DISCORD_SERVICE_WEBHOOK_URL"].name
       INFRA_WEBHOOK_PARAM     = aws_ssm_parameter.discord_webhook["DISCORD_INFRA_WEBHOOK_URL"].name
       ACCOUNT_WEBHOOK_PARAM   = aws_ssm_parameter.discord_webhook["DISCORD_ACCOUNT_WEBHOOK_URL"].name
+      HEARTBEAT_URL_PARAM     = aws_ssm_parameter.heartbeat_url.name
     }
   }
 
@@ -277,7 +287,7 @@ data "aws_iam_policy_document" "discord_forwarder" {
   }
   statement {
     actions   = ["ssm:GetParameter"]
-    resources = [for p in aws_ssm_parameter.discord_webhook : p.arn]
+    resources = concat([for p in aws_ssm_parameter.discord_webhook : p.arn], [aws_ssm_parameter.heartbeat_url.arn])
   }
   dynamic "statement" {
     for_each = var.hardened ? [1] : []

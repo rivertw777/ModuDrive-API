@@ -7,6 +7,10 @@ alertmanager_config: |
     group_interval: 1m
     repeat_interval: 4h
     routes:
+      - receiver: heartbeat
+        matchers: [channel="heartbeat"]
+        group_wait: 0s
+        repeat_interval: 5m
       - receiver: messaging
         matchers: [channel="messaging"]
       - receiver: infra
@@ -14,6 +18,13 @@ alertmanager_config: |
   templates:
     - discord
   receivers:
+    # No URL in SSM yet: the pings are dropped, as local.
+    - name: heartbeat
+%{ if heartbeat_url != null ~}
+      webhook_configs:
+        - url: ${heartbeat_url}
+          send_resolved: false
+%{ endif ~}
 %{ for channel, url in webhooks ~}
     - name: ${channel}
       discord_configs:
