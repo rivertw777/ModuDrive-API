@@ -856,7 +856,7 @@
     },
     {
       "type": "row",
-      "title": "서비스 (각 서비스가 받은 요청, actuator 제외)",
+      "title": "서비스 (각 서비스가 받은 요청 — gateway는 위 라우트 행, actuator 제외)",
       "id": 14,
       "collapsed": false,
       "gridPos": {
@@ -882,7 +882,7 @@
             "type": "prometheus",
             "uid": "${prom}"
           },
-          "expr": "sum by (service) (rate(http_server_requests_seconds_count{service=~\"$service\", uri!~\"/actuator.*\"}[5m]))",
+          "expr": "sum by (service) (rate(http_server_requests_seconds_count{service=~\"$service\", service!=\"gateway-service\", uri!~\"/actuator.*\"}[5m]))",
           "legendFormat": "{{service}}",
           "exemplar": false,
           "range": true,
@@ -940,7 +940,7 @@
             "type": "prometheus",
             "uid": "${prom}"
           },
-          "expr": "sum by (service) (rate(http_server_requests_seconds_count{service=~\"$service\", uri!~\"/actuator.*\", outcome=\"SERVER_ERROR\"}[5m])) / sum by (service) (rate(http_server_requests_seconds_count{service=~\"$service\", uri!~\"/actuator.*\"}[5m]))",
+          "expr": "sum by (service) (rate(http_server_requests_seconds_count{service=~\"$service\", service!=\"gateway-service\", uri!~\"/actuator.*\", outcome=\"SERVER_ERROR\"}[5m])) / sum by (service) (rate(http_server_requests_seconds_count{service=~\"$service\", service!=\"gateway-service\", uri!~\"/actuator.*\"}[5m]))",
           "legendFormat": "{{service}}",
           "exemplar": false,
           "range": true,
@@ -999,7 +999,7 @@
             "type": "prometheus",
             "uid": "${prom}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le, service) (rate(http_server_requests_seconds_bucket{service=~\"$service\", uri!~\"/actuator.*\"}[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le, service) (rate(http_server_requests_seconds_bucket{service=~\"$service\", service!=\"gateway-service\", uri!~\"/actuator.*\"}[5m])))",
           "legendFormat": "{{service}}",
           "exemplar": true,
           "range": true,
@@ -1057,7 +1057,7 @@
             "type": "prometheus",
             "uid": "${prom}"
           },
-          "expr": "topk(10, sum by (service, method, uri) (rate(http_server_requests_seconds_sum{service=~\"$service\", uri!~\"/actuator.*\"}[5m])) / sum by (service, method, uri) (rate(http_server_requests_seconds_count{service=~\"$service\", uri!~\"/actuator.*\"}[5m])))",
+          "expr": "topk(10, sum by (service, method, uri) (rate(http_server_requests_seconds_sum{service=~\"$service\", service!=\"gateway-service\", uri!~\"/actuator.*\"}[5m])) / sum by (service, method, uri) (rate(http_server_requests_seconds_count{service=~\"$service\", service!=\"gateway-service\", uri!~\"/actuator.*\"}[5m])))",
           "legendFormat": "{{service}} {{method}} {{uri}}",
           "exemplar": false,
           "range": true,
@@ -1115,7 +1115,7 @@
             "type": "prometheus",
             "uid": "${prom}"
           },
-          "expr": "sum by (service, method, uri, status) (rate(http_server_requests_seconds_count{service=~\"$service\", uri!~\"/actuator.*\", status=~\"[45]..\"}[5m])) > 0",
+          "expr": "sum by (service, method, uri, status) (rate(http_server_requests_seconds_count{service=~\"$service\", service!=\"gateway-service\", uri!~\"/actuator.*\", status=~\"[45]..\"}[5m])) > 0",
           "legendFormat": "{{service}} {{method}} {{uri}} {{status}}",
           "exemplar": false,
           "range": true,
