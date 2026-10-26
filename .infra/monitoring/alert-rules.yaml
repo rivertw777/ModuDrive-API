@@ -4,6 +4,7 @@
 #   - hints point at ECS, and at Loki and Tempo on Grafana Cloud (CloudWatch Logs and X-Ray without it)
 #     instead of docker
 #   - a task that's gone is no `up` series at all rather than up = 0, hence ServiceNoTasks
+#   - Watchdog's ping goes out through Grafana Cloud's alertmanager (demo) or SNS → Lambda (prod)
 # The threshold sits inside the ratio's parentheses (both sides): `and` binds looser than `>`, so
 # `A and B > x` would compare B (the request count), not the ratio.
 # Alert names stay ASCII (they become the SNS subject); `title` is what the message shows.
@@ -49,6 +50,16 @@ groups:
           action: 메시지의 DeadLetterReason으로 원인 확인 후 수정 → 원래 큐로 리드라이브
           inspect: 'aws sqs receive-message --queue-url $(aws sqs get-queue-url --queue-name {{ $labels.queue }}-dlq --query QueueUrl --output text) --message-attribute-names All'
           redrive: 'aws sqs start-message-move-task --source-arn <{{ $labels.queue }}-dlq의 ARN>'
+
+  # Always firing: the alertmanager pings the heartbeat service with it, which alerts when the pings stop.
+  - name: watchdog
+    rules:
+      - alert: Watchdog
+        expr: vector(1)
+        labels:
+          channel: heartbeat
+        annotations:
+          title: 알림 경로 heartbeat
 
   - name: services
     rules:

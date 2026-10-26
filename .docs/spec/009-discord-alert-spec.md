@@ -31,7 +31,9 @@
   - [5-2. 알림이 오기까지 걸리는 시간](#5-2-알림이-오기까지-걸리는-시간)
   - [5-3. 알림 메시지](#5-3-알림-메시지)
   - [5-4. 경보 목록](#5-4-경보-목록)
-- [6. TODO](#6-todo)
+- [6. 알림 경로 감시](#6-알림-경로-감시)
+  - [6-1. heartbeat](#6-1-heartbeat)
+- [7. TODO](#7-todo)
 
 ---
 
@@ -224,6 +226,7 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 - CloudWatch 경보(AWS): Lambda(`discord_forwarder.py`)가 SSM에서 웹후크 주소를 읽어 보낸다. 라벨이 없어서 경보 이름 앞부분으로 채널을 정한다. `queue-age-` → `#messaging`, `service-`·`db-`·`redis-`·`nat-` → `#infra`, 나머지 → `#service`. 새 경보를 만들 땐 이 규칙에 맞게 이름을 짓는다.
 - Budgets·GuardDuty: CloudWatch 경보가 아닌 글이라 `#account`로 간다.
 - 웹후크 주소를 아직 안 넣은 채널은 `#service`로 대신 보낸다. 주소를 넣기 전이라고 알림이 사라지지 않게 하려는 것이다.
+- heartbeat(`channel: heartbeat`)는 Discord로 가지 않고 바깥 heartbeat 서비스로 간다([6-1](#6-1-heartbeat)).
 
 - 로컬: `.docker/.env`에 넣으면 Alertmanager가 뜰 때 채널별 파일로 써 두고 읽는다. 바꾼 뒤엔 Alertmanager를 다시 띄운다.
 - AWS: SSM에 손으로 한 번 넣는다([002-aws-migration.md 1-13](../guide/002-aws-migration.md#1-13-모니터링과-알림)). demo는 apply가 그 값을 Grafana Cloud의 Alertmanager 설정에 넣는다.
@@ -430,10 +433,28 @@ Budgets는 AWS가 만든 문장을, GuardDuty는 EventBridge 규칙에 적어 �
 
 ---
 
-## 6. TODO
+## 6. 알림 경로 감시
+
+4·5장 알림은 보내는 쪽이 살아 있어야 온다. 규칙 평가, Alertmanager, SNS, Lambda, 웹후크 중 하나만 멈춰도 알림이 조용히 끊기고,
+조용한 것과 멀쩡한 것이 구분되지 않는다. 그래서 알림 경로 자체를 따로 본다.
+
+### 6-1. heartbeat
+
+`Watchdog` 규칙은 항상 울린다(`vector(1)`). Alertmanager가 이걸 5분마다 바깥 heartbeat 서비스(healthchecks.io)의 ping 주소로 보내고, ping이 끊기면 healthchecks.io가 알린다.
+알림 경로 안에서는 자기가 멈춘 걸 알릴 수 없어서 바깥에 맡긴다.
+
+| 환경 | ping이 지나가는 길 | 살아 있는지 확인되는 것 |
+|---|---|---|
+| 로컬 | 보내지 않는다 (빈 receiver) | 없음 |
+| demo | Grafana Cloud 규칙 → Alertmanager → webhook | Grafana Cloud의 규칙 평가, Alertmanager |
+| prod | AMP 규칙 → Alertmanager → SNS → Lambda → ping | AMP의 규칙 평가, Alertmanager, SNS, Lambda |
+
+- 규칙의 `channel: heartbeat` 라벨로 따로 빠지고 Discord로는 가지 않는다. 해제가 없는 알림이라 `repeat_interval` 5분으로 계속 다시 보낸다.
+- ping 주소는 SSM `/modudrive/HEARTBEAT_URL`에 손으로 넣는다([002-aws-migration.md 1-13](../guide/002-aws-migration.md#1-13-모니터링과-알림)). 아직 `set-by-hand`면 ping을 버린다.
+- healthchecks.io의 체크는 Period 5분, Grace 5분으로 둔다. ping이 10분 넘게 안 오면 알린다.
+- Grafana의 "울리는 알림" 숫자(Overview)에서는 뺀다.
+
+## 7. TODO
 
 - [ ] **DLQ 지표를 CloudWatch 경보로**: AWS에선 CloudWatch가 DLQ의 `ApproximateNumberOfMessagesVisible`을 이미 안다.
   DLQ마다 경보를 걸면 앱이 30초마다 세는 코드(`QueueDepthMetrics`)를 없앨 수 있다.
-- [ ] **알림 시스템 자체가 죽었을 때**: Prometheus·Alertmanager가 멈추면 알림이 하나도 오지 않는데, 이를 알려 줄 장치가 없다.
-  지표가 아예 없으면 규칙은 조용하다(서비스가 죽은 것만 `up`으로 따로 본다). 로컬에서는 감수하고,
-  AWS에선 바깥에서 알림 시스템이 살아 있는지 확인하는 방법(CloudWatch 등)을 위 항목과 함께 정한다.

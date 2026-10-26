@@ -132,7 +132,7 @@
     {
       "type": "stat",
       "title": "울리는 알림",
-      "description": "지금 firing인 알림 규칙 수 (Alertmanager로 나간 것)",
+      "description": "지금 firing인 알림 규칙 수 (Alertmanager로 나간 것, 항상 울리는 Watchdog은 뺀다)",
       "datasource": {
         "type": "prometheus",
         "uid": "${prom}"
@@ -144,7 +144,7 @@
             "type": "prometheus",
             "uid": "${prom}"
           },
-          "expr": "count(ALERTS{alertstate=\"firing\"}) or vector(0)",
+          "expr": "count(ALERTS{alertstate=\"firing\", alertname!=\"Watchdog\"}) or vector(0)",
           "legendFormat": "__auto",
           "exemplar": false,
           "range": false,
