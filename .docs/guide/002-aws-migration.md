@@ -319,6 +319,8 @@ collector는 사이드카가 아니라 한 대만 띄운다. tail sampling(에�
 
 경보 목록과 기준은 [009-discord-alert-spec.md 5](../spec/009-discord-alert-spec.md#5-aws-전용-경보)에 있다.
 
+- Lambda가 Discord로 못 보내면(웹후크 폐기 등) 그 실패 경보(`discord-forwarder-errors`)는 Lambda를 거치지 않고 `alert_email` 메일로만 간다. `alert_email`이 없으면 만들지 않는다([009 6-2](../spec/009-discord-alert-spec.md#6-2-discord-전달-실패-aws)).
+
 #### 손으로 넣는 값
 
 Discord 웹후크 URL은 SSM에 손으로 한 번 넣는다. 채널마다 URL이 다르니 하나씩 넣는다. Lambda가 못 찾은 채널의 알림은 service 채널로 간다.
@@ -338,6 +340,8 @@ heartbeat ping 주소도 같은 방식이다. [healthchecks.io](https://healthch
 ```bash
 aws ssm put-parameter --name /modudrive/HEARTBEAT_URL --type SecureString --overwrite --value 'https://hc-ping.com/<uuid>'
 ```
+
+Discord 전달 실패 경보를 받으려면 `envs/<env>.tfvars`의 `alert_email`에 메일 주소를 넣고 apply한 뒤, AWS가 보내는 확인 메일(SNS 구독)에서 Confirm을 누른다. 예산 알림 메일도 같은 주소로 간다.
 
 Grafana Cloud 토큰(demo)은 Terraform이 만들지 않고 읽기만 하므로, **첫 apply 전에** 넣는다. grafana.com → 스택 → Access Policies에서 `metrics:write`, `logs:write`, `traces:write`, `rules:write`, `alerts:write` 범위로 만든 토큰이다.
 

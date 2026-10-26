@@ -316,6 +316,40 @@ resource "aws_sns_topic_subscription" "discord_forwarder" {
   endpoint  = aws_lambda_function.discord_forwarder.arn
 }
 
+# The forwarder failing (Discord refusing a revoked webhook, say) drops the alert after the async retries,
+# and the alarm saying so can't go through it — so it goes by mail alone, and only with alert_email.
+resource "aws_sns_topic" "forwarder_failures" {
+  count = var.alert_email == null ? 0 : 1
+
+  name = "${var.project}-forwarder-failures"
+}
+
+resource "aws_sns_topic_subscription" "forwarder_failures" {
+  count = var.alert_email == null ? 0 : 1
+
+  topic_arn = aws_sns_topic.forwarder_failures[0].arn
+  protocol  = "email"
+  endpoint  = var.alert_email
+}
+
+resource "aws_cloudwatch_metric_alarm" "discord_forwarder_errors" {
+  count = var.alert_email == null ? 0 : 1
+
+  alarm_name          = "discord-forwarder-errors"
+  alarm_description   = "Discord 전달 실패: discord-forwarder Lambda가 실패해 CloudWatch 경보·예산·GuardDuty 알림이 Discord에 안 감 — 로그 확인 (aws logs tail /aws/lambda/${var.project}-discord-forwarder --since 1h), 웹후크가 폐기됐으면 SSM 값 교체"
+  namespace           = "AWS/Lambda"
+  metric_name         = "Errors"
+  dimensions          = { FunctionName = aws_lambda_function.discord_forwarder.function_name }
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 1
+  threshold           = 0
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.forwarder_failures[0].arn]
+  ok_actions          = [aws_sns_topic.forwarder_failures[0].arn]
+}
+
 # ---------------------------------------------------------------------------------------------------
 # AWS-side alarms — what the app's own metrics can't see. Names stay ASCII (SNS subjects are built
 # from them); the description's "title: details" is what reaches Discord.
