@@ -13,6 +13,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.transaction.CannotCreateTransactionException;
+import org.springframework.web.ErrorResponseException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
@@ -39,6 +40,28 @@ class GlobalExceptionHandlerTest {
             assertThat(response.getBody().getMessage())
                     .isEqualTo("서버 오류가 발생했습니다.")
                     .doesNotContain("uk_member_email");
+        }
+
+        @Test
+        @DisplayName("Spring이 4xx로 정한 예외(없는 경로 등)는 그 상태로 답한다")
+        void keepsTheStatusOfSpringsOwnClientErrors() {
+            // NoResourceFoundException (spring-webmvc, not on this module's classpath) is an ErrorResponse like this.
+            ErrorResponseException e = new ErrorResponseException(HttpStatus.NOT_FOUND);
+
+            ResponseEntity<ApiResponse<Object>> response = handler.handleGlobalException(e);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+            assertThat(response.getBody().getMessage()).isEqualTo("요청한 경로를 찾을 수 없습니다.");
+        }
+
+        @Test
+        @DisplayName("Spring 예외라도 5xx면 500으로 답한다")
+        void stillAnswers500ForSpringsServerErrors() {
+            ErrorResponseException e = new ErrorResponseException(HttpStatus.SERVICE_UNAVAILABLE);
+
+            ResponseEntity<ApiResponse<Object>> response = handler.handleGlobalException(e);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
 
