@@ -80,6 +80,14 @@ processors:
         type: status_code
         status_code:
           status_codes: [ERROR]
+      # Spring leaves the span of a 5xx it answered (exception handler, gateway) unset, not ERROR — kept by
+      # the span's status tag (the HTTP status) instead.
+      - name: server-errors
+        type: string_attribute
+        string_attribute:
+          key: status
+          values: ['5..']
+          enabled_regex_matching: true
       - name: slow-requests
         type: latency
         latency:
