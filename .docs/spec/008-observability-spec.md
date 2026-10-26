@@ -1,7 +1,7 @@
 # 모니터링 스펙
 
 지표, 로그, 트레이스를 모으고, 알림을 보내고, 문제가 생겼을 때 원인까지 따라가는 방법을 정리한 문서다.
-1장에서 로컬과 운영(AWS) 구성을 나란히 보여 주고, 2장부터는 로컬 기준으로 설명한다. 운영 쪽 상세는 [002-aws-migration.md 1-13](../guide/002-aws-migration.md#1-13-모니터링과-알림)에 있다.
+1장에서 로컬과 demo(AWS) 구성을 나란히 보여 주고, 2장부터는 로컬 기준으로 설명한다. demo 쪽 상세는 [002-aws-migration.md 1-13](../guide/002-aws-migration.md#1-13-모니터링과-알림)에 있다.
 로컬 설정은 `.docker/observability/`, AWS는 `.infra/monitoring.tf`, 앱 쪽은 `common/infrastructure/observability`를 같이 보면서 읽으면 된다.
 
 ⚠️ 이 문서가 기준입니다. 코드가 이 문서와 다르면 코드를 고치고, 동작을 바꾸려면 이 문서를 먼저 고칩니다.
@@ -12,7 +12,7 @@
 
 - [1. 구성](#1-구성)
   - [1-1. 로컬](#1-1-로컬)
-  - [1-2. 운영 (AWS)](#1-2-운영-aws)
+  - [1-2. demo (AWS)](#1-2-demo-aws)
   - [1-3. 설정 파일](#1-3-설정-파일)
 - [2. 지표](#2-지표)
   - [2-1. 액추에이터](#2-1-액추에이터)
@@ -39,7 +39,7 @@
 
 ## 1. 구성
 
-앱 코드와 설정은 로컬과 운영이 같다. 서비스는 어디서든 `:9464`로 지표를 내놓고, `otel-collector:4318`로 트레이스와 로그를 보낸다. stdout에도 JSON 로그를 찍는다. 그걸 받아 가는 쪽만 다르다.
+앱 코드와 설정은 로컬과 demo가 같다. 서비스는 어디서든 `:9464`로 지표를 내놓고, `otel-collector:4318`로 트레이스와 로그를 보낸다. stdout에도 JSON 로그를 찍는다. 그걸 받아 가는 쪽만 다르다.
 
 ### 1-1. 로컬
 
@@ -70,51 +70,47 @@ flowchart LR
 | 트레이스 | 서비스 → otel-collector(tail sampling) → Tempo | Tempo (`tempo_data`, 14일) | Grafana → Tempo |
 | 알림 | Prometheus 규칙 → Alertmanager → Discord | | Discord, Grafana → Alerting |
 
-### 1-2. 운영 (AWS)
+### 1-2. demo (AWS)
 
-직접 띄우는 건 중앙 collector 하나뿐이고, 저장과 조회는 관리형 서비스에 맡긴다. demo는 Grafana Cloud(무료 플랜), prod는 AWS 관리형 서비스로 보낸다(`grafana_cloud` 변수).
+직접 띄우는 건 중앙 collector 하나뿐이고, 저장과 조회는 Grafana Cloud(무료 플랜)에 맡긴다(`grafana_cloud` 변수).
 
 ```mermaid
 flowchart LR
     S["ECS 태스크<br/>서비스 7개"]
     C["중앙 collector<br/>ECS 서비스 1개"]
-    GC[("demo: Grafana Cloud<br/>Mimir · Loki · Tempo")]
-    AWS[("prod: AMP · X-Ray")]
+    GC[("Grafana Cloud<br/>Mimir · Loki · Tempo")]
     CW[("CloudWatch Logs")]
-    ALM["CloudWatch 경보<br/>Budgets · GuardDuty"]
+    ALM["CloudWatch 경보<br/>Budgets"]
     SNS["SNS → Lambda<br/>discord-forwarder"]
     D(["Discord"])
 
     C -- ":9464 수집" --> S
     S -- "OTLP 트레이스·로그" --> C
     C --> GC
-    C --> AWS
     S -- "stdout (awslogs)" --> CW
     GC -- "알림 규칙 → Alertmanager" --> D
-    AWS -- "알림 규칙" --> SNS
     ALM --> SNS
     SNS --> D
 ```
 
-| | 로컬 | demo (Grafana Cloud) | prod (AWS) |
-|---|---|---|---|
-| 지표 | collector가 고정 주소 7개를 60초마다 수집해 Prometheus로 remote write | collector의 `ecs_observer`가 태스크를 찾아 60초마다 수집해 remote write. 알림과 기본 화면에 쓰는 지표만 남긴다 | 같은 방식으로 30초마다 수집해 AMP로 |
-| 로그 | otel-collector → Loki, 14일 | collector → Loki(OTLP), 14일. stdout은 CloudWatch Logs에도 14일 남는다 | stdout만 `awslogs` 드라이버 → CloudWatch Logs, 14일. 앱의 OTLP 로그 전송은 끈다 |
-| 트레이스 | otel-collector → Tempo | 같은 tail sampling을 거쳐 collector → Tempo | 같은 tail sampling을 거쳐 ADOT collector → X-Ray |
-| 알림 | Prometheus 규칙 → Alertmanager → Discord | Grafana Cloud의 규칙 → Alertmanager → Discord. 로컬과 설정이 같다 | AMP 알림 규칙 → SNS → Lambda → Discord |
-| 화면 | Grafana `localhost:3001` | Grafana Cloud의 Grafana | Managed Grafana |
-| 설정 | `.docker/observability/` | `.infra/monitoring.tf`, `.infra/monitoring/` | 같음 |
+| | 로컬 | demo (Grafana Cloud) |
+|---|---|---|
+| 지표 | collector가 고정 주소 7개를 60초마다 수집해 Prometheus로 remote write | collector의 `ecs_observer`가 태스크를 찾아 60초마다 수집해 remote write. 알림과 기본 화면에 쓰는 지표만 남긴다 |
+| 로그 | otel-collector → Loki, 14일 | collector → Loki(OTLP), 14일. stdout은 CloudWatch Logs에도 14일 남는다 |
+| 트레이스 | otel-collector → Tempo | 같은 tail sampling을 거쳐 collector → Tempo |
+| 알림 | Prometheus 규칙 → Alertmanager → Discord | Grafana Cloud의 규칙 → Alertmanager → Discord. 로컬과 설정이 같다 |
+| 화면 | Grafana `localhost:3001` | Grafana Cloud의 Grafana |
+| 설정 | `.docker/observability/` | `.infra/monitoring.tf`, `.infra/monitoring/` |
 
-CloudWatch 경보(큐 대기, ALB 5xx, gateway 헬스, NAT, CPU·메모리, DB, Redis, 바깥에서 본 API 접속), Budgets, GuardDuty는 demo와 prod 모두 SNS → Lambda로 Discord에 간다. 앱 지표로는 안 보이는 AWS 쪽 신호라서다.
+CloudWatch 경보(큐 대기, ALB 5xx, gateway 헬스, NAT, CPU·메모리, DB, Redis, 바깥에서 본 API 접속)와 Budgets는 SNS → Lambda로 Discord에 간다. 앱 지표로는 안 보이는 AWS 쪽 신호라서다.
 알림 경로 자체는 바깥 heartbeat 서비스와 메일로 따로 본다([009 6장](009-discord-alert-spec.md#6-알림-경로-감시)).
 
-운영에서 알아 둘 것들이다.
+demo에서 알아 둘 것들이다.
 
-- `service` 라벨은 로컬이 스크레이프 주소에서, 운영이 컨테이너 이름에서 붙이는데 값이 같아서(`member-service`) 알림 규칙을 그대로 쓴다. 운영에만 있는 규칙은 `ServiceNoTasks` 하나다. ECS에서는 죽은 태스크가 `up = 0`으로 남지 않고 수집 대상에서 사라지기 때문이다.
+- `service` 라벨은 로컬이 스크레이프 주소에서, demo가 컨테이너 이름에서 붙이는데 값이 같아서(`member-service`) 알림 규칙을 그대로 쓴다. demo에만 있는 규칙은 `ServiceNoTasks` 하나다. ECS에서는 죽은 태스크가 `up = 0`으로 남지 않고 수집 대상에서 사라지기 때문이다.
 - collector를 태스크마다 사이드카로 붙이지 않고 한 대만 두는 건 tail sampling 때문이다. 한 trace의 span이 같은 collector에 모여야 "에러 trace는 전부 남긴다"가 지켜진다.
 - collector의 Service Connect 이름이 로컬과 같은 `otel-collector:4318`이라 앱의 트레이스 설정도 바꿀 게 없다.
-- ALB는 W3C `traceparent`가 아니라 `X-Amzn-Trace-Id`를 붙인다. 그래서 trace는 gateway에서 시작하고, ALB 구간은 ALB 접근 로그(prod만)로 본다.
-- prod는 처음 띄운 뒤 X-Ray가 앱의 W3C trace ID를 그대로 받는지 확인한다. 이 ID는 앞 32비트가 타임스탬프가 아니라서, 거절되면 X-Ray ID 생성기를 설정해야 한다.
+- ALB는 W3C `traceparent`가 아니라 `X-Amzn-Trace-Id`를 붙인다. 그래서 trace는 gateway에서 시작하고, ALB 구간은 trace에 없다.
 
 ### 1-3. 설정 파일
 
@@ -158,7 +154,7 @@ CloudWatch 경보(큐 대기, ALB 5xx, gateway 헬스, NAT, CPU·메모리, DB, 
 `application-observability.yml`의 `management.metrics.distribution.slo`로 요청 시간을 히스토그램으로 낸다. 버킷은 100ms, 300ms, 1s, 3s, 10s다.
 
 - `http.server.requests`(각 서비스)와 `spring.cloud.gateway.requests`(gateway의 경로별) 두 가지다.
-- 백분위 히스토그램(버킷 70개쯤) 대신 버킷 다섯 개만 둔 건 시계열 수 때문이다. Prometheus도, AWS의 AMP(샘플 수 과금)도 시계열 수만큼 비용이 든다.
+- 백분위 히스토그램(버킷 70개쯤) 대신 버킷 다섯 개만 둔 건 시계열 수 때문이다. Prometheus도, demo의 Grafana Cloud(무료 플랜은 시계열 1만 개까지)도 시계열 수만큼 부담이 된다.
 - 1s 버킷은 "느린 요청" 알림이 읽고, collector가 1초 넘는 trace를 전부 남기는 기준(4-2)과도 같다. 이 버킷을 빼면 알림이 조용히 멈춘다.
 
 DB 쿼리 계측(4-4)을 붙이면서 JDBC 지표도 같이 생긴다. `jdbc_query_seconds`(쿼리 시간), `jdbc_connection_seconds`(커넥션을 잡고 있던 시간), `jdbc_connections_active`·`idle`(풀 상태) 같은 것들이다. 레이블은 DB 이름, 드라이버, 풀 이름, 에러 여부 정도라 쿼리가 늘어도 시계열은 늘지 않는다. collector의 keep 목록에 없어서 로컬·AWS 어디에도 저장되지 않는다(커넥션 풀은 `hikaricp_connections_*`로 본다).
@@ -309,15 +305,14 @@ gateway는 모든 응답에 `X-Trace-Id` 헤더를 붙인다(`TraceIdResponseFil
 - Tempo: `{ span.user.id = "<uuid>" }`에 시간 범위를 건다.
 - Loki: `{service_name="file-service"} | userId="<uuid>"`.
 - demo: 로컬과 같은 쿼리를 Grafana Cloud에서 쓴다.
-- prod: X-Ray에서 `annotation.user_id = "<uuid>"`, Logs Insights에서 `filter userId = "<uuid>"`. collector가 `user.id`를 X-Ray annotation으로 넣는다(`indexed_attributes`).
 
 ### 5-4. 신호 사이 이동
 
-| 방향 | 로컬 (Grafana 데이터소스 링크) | demo (Grafana Cloud) | prod |
-|---|---|---|---|
-| 로그 → trace | Loki가 로그의 `trace_id`(structured metadata)로 TraceID 링크를 만든다 | 로컬과 같다. Grafana Cloud 기본 Loki 데이터소스에 들어 있다 | 없음. Logs Insights 결과의 `traceId`로 X-Ray에서 찾는다 |
-| trace → 로그 | Tempo의 `tracesToLogsV2`가 그 `trace_id`의 로그를 모든 서비스에서 찾는다 | 로컬과 같다. `ModuDrive Tempo` 데이터소스에 같은 쿼리를 넣었다([002-aws-migration.md 3-4](../guide/002-aws-migration.md#3-4-지표로그트레이스-보기)) | 없음 |
-| 지표 → trace | exemplar (5-2) | 로컬과 같다. collector가 exemplar를 함께 remote write하고, `ModuDrive Prometheus` 데이터소스가 `trace_id`로 Tempo를 연다([002-aws-migration.md 3-4](../guide/002-aws-migration.md#3-4-지표로그트레이스-보기)) | 없음. AMP는 exemplar를 저장하지 않는다 |
+| 방향 | 로컬 (Grafana 데이터소스 링크) | demo (Grafana Cloud) |
+|---|---|---|
+| 로그 → trace | Loki가 로그의 `trace_id`(structured metadata)로 TraceID 링크를 만든다 | 로컬과 같다. Grafana Cloud 기본 Loki 데이터소스에 들어 있다 |
+| trace → 로그 | Tempo의 `tracesToLogsV2`가 그 `trace_id`의 로그를 모든 서비스에서 찾는다 | 로컬과 같다. `ModuDrive Tempo` 데이터소스에 같은 쿼리를 넣었다([002-aws-migration.md 3-4](../guide/002-aws-migration.md#3-4-지표로그트레이스-보기)) |
+| 지표 → trace | exemplar (5-2) | 로컬과 같다. collector가 exemplar를 함께 remote write하고, `ModuDrive Prometheus` 데이터소스가 `trace_id`로 Tempo를 연다([002-aws-migration.md 3-4](../guide/002-aws-migration.md#3-4-지표로그트레이스-보기)) |
 
 ---
 
@@ -333,7 +328,7 @@ Prometheus가 1분마다 `alert-rules.yaml`을 평가해 Alertmanager로 넘기�
 | 지금 울리는 알림, 일시 중지(silence) | Grafana → Alerting → Alert groups·Silences에서 `Alertmanager` 선택. `localhost:9093`에도 있다 |
 | Discord로 보냈는지 | `docker logs modudrive-observability-alertmanager-1`에서 `Notify for alerts failed`(실패) |
 
-- 항상 울리는 `Watchdog`은 demo·prod에선 바깥 heartbeat 서비스로 ping을 보내지만 로컬은 버린다([009 6-1](009-discord-alert-spec.md#6-1-heartbeat)). Alertmanager 화면에 늘 하나 떠 있는 게 정상이다.
+- 항상 울리는 `Watchdog`은 demo에선 바깥 heartbeat 서비스로 ping을 보내지만 로컬은 버린다([009 6-1](009-discord-alert-spec.md#6-1-heartbeat)). Alertmanager 화면에 늘 하나 떠 있는 게 정상이다.
 - 웹후크 URL은 `.docker/.env`의 `DISCORD_*_WEBHOOK_URL`에 넣는다. Alertmanager가 뜰 때 `/alertmanager/webhooks/<채널>` 파일로 써 두므로, 바꾼 뒤엔 Alertmanager를 다시 띄운다.
 - Discord 전송이 실패하면 Alertmanager가 재시도한다.
 

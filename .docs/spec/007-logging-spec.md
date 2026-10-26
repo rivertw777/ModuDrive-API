@@ -4,7 +4,7 @@
 
 ⚠️ 이 문서가 기준입니다. 코드가 이 문서와 다르면 코드를 고치고, 동작을 바꾸려면 이 문서를 먼저 고칩니다.
 
-로그 형식(ECS JSON)과 수집·보관(로컬 Loki, AWS CloudWatch Logs)은 [008-observability-spec.md 3](008-observability-spec.md#3-로그)에 있다.
+로그 형식(ECS JSON)과 수집·보관(로컬 Loki, demo Grafana Cloud Loki)은 [008-observability-spec.md 3](008-observability-spec.md#3-로그)에 있다.
 
 ---
 
@@ -61,7 +61,7 @@
 | DEBUG | 요청·메시지마다 생기는 세부 내용 | 멱등성 검사로 건너뜀, 재시도 한 번 |
 
 - 요청·메시지마다 INFO 이상을 남기지 않는다. 요청 경로·상태·지연은 이미 트레이스와 지표에 있다.
-- 운영에서 DEBUG를 켜지 않는다. 원인은 지표, 트레이스, WARN·ERROR 로그로 찾는다.
+- demo(AWS)에서 DEBUG를 켜지 않는다. 원인은 지표, 트레이스, WARN·ERROR 로그로 찾는다.
 - 게이트웨이 5xx 알림의 `inspect` 명령은 해당 서비스 로그를 `ERROR`로 걸러 보여 준다(`.infra/monitoring/alert-rules.yaml`). ERROR 한 줄 한 줄이 장애 때 읽을 가치가 있어야 한다.
 - 의존 서비스가 죽어 있는 동안 요청마다 반복되는 실패(fallback, 열린 서킷)는 WARN이나 DEBUG다. 서킷 상태 전환 로그가 이미 한 번 알려 준다.
 
