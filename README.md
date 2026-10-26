@@ -30,23 +30,23 @@ ModuDrive에서 언제 어디서나 간편하게,<br>
 
 <table>
   <tr>
-    <td width="50%" valign="top">
-      <img src=".docs/images/screens/home.jpg" alt="홈">
-      <p align="center"><b>홈</b></p>
+    <td width="50%" align="center">
+      <img src=".docs/images/screens/home.jpg" vspace="7" alt="홈"><br>
+      <b>홈</b>
     </td>
-    <td width="50%" valign="top">
-      <img src=".docs/images/screens/upload.png" alt="업로드">
-      <p align="center"><b>업로드</b></p>
+    <td width="50%" align="center">
+      <img src=".docs/images/screens/upload.png" vspace="7" alt="업로드"><br>
+      <b>업로드</b>
     </td>
   </tr>
   <tr>
-    <td width="50%" valign="top">
-      <img src=".docs/images/screens/share.png" alt="공유">
-      <p align="center"><b>공유</b></p>
+    <td width="50%" align="center">
+      <img src=".docs/images/screens/share.png" vspace="7" alt="공유"><br>
+      <b>공유</b>
     </td>
-    <td width="50%" valign="top">
-      <img src=".docs/images/screens/storage.png" alt="저장용량">
-      <p align="center"><b>저장용량</b></p>
+    <td width="50%" align="center">
+      <img src=".docs/images/screens/storage.png" vspace="7" alt="저장용량"><br>
+      <b>저장용량</b>
     </td>
   </tr>
 </table>
