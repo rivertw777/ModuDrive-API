@@ -74,6 +74,16 @@ processors:
                 key: uri
                 values: ['/actuator/.*', '/readyz']
                 enabled_regex_matching: true
+      # 헬스체크가 Redis 상태를 보는 INFO는 서버 span 밖에서 혼자 trace가 된다. 앱은 INFO를 쓰지 않는다.
+      - name: redis-health-checks
+        type: drop
+        drop:
+          drop_sub_policy:
+            - name: redis-info
+              type: string_attribute
+              string_attribute:
+                key: db.operation
+                values: [INFO]
       - name: errors
         type: status_code
         status_code:
