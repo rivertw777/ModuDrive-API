@@ -101,6 +101,7 @@ services:
       - GF_SERVER_ROOT_URL=http://localhost:3001
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/dashboards/modudrive/overview.json
     volumes:
       # provisioning 디렉터리째 덮으면 이미지가 갖고 있는 dashboards/·plugins/가 사라져서
       # 부팅 때마다 에러를 뱉는다. 우리가 쓰는 것만 얹는다.

@@ -521,7 +521,7 @@ grafana.com에서 스택의 Grafana(`https://<스택>.grafana.net`)를 연다. E
 - 로그: `grafanacloud-<스택>-logs`. `{service_name="file-service"} | trace_id="<trace id>"`, `| userId="<uuid>"`.
 - 트레이스: `grafanacloud-<스택>-traces`. `{ span.user.id = "<uuid>" }`.
 - 알림: Alerting → Alert rules에서 데이터소스 관리 규칙(`alerts` 네임스페이스)을 본다.
-- 대시보드: `ModuDrive` 폴더. 로컬과 같은 파일(`.docker/observability/grafana/dashboards/`)을 apply가 올린다(`terraform_data.grafana_cloud_dashboards`, Editor 서비스 계정 토큰 SSM `/<project>/GRAFANA_SETUP_TOKEN`). 파일을 지우면 거기서도 지운다.
+- 대시보드: `ModuDrive` 폴더. 로컬과 같은 파일(`.docker/observability/grafana/dashboards/`)을 apply가 올린다(`terraform_data.grafana_cloud_dashboards`, Admin 서비스 계정 토큰 SSM `/<project>/GRAFANA_SETUP_TOKEN`). 파일을 지우면 거기서도 지운다. 홈은 Overview다.
 
 로그와 trace 사이 링크는 Grafana Cloud 기본 데이터소스에 들어 있다. 두 데이터소스는 읽기 전용이라 설정을 바꿀 수 없다.
 
