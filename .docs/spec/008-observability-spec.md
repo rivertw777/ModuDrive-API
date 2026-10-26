@@ -105,7 +105,7 @@ flowchart LR
 | 화면 | Grafana `localhost:3001` | Grafana Cloud의 Grafana | Managed Grafana |
 | 설정 | `.docker/observability/` | `.infra/monitoring.tf`, `.infra/monitoring/` | 같음 |
 
-CloudWatch 경보(큐 대기, ALB 5xx, gateway 헬스, NAT, CPU·메모리, DB, Redis), Budgets, GuardDuty는 demo와 prod 모두 SNS → Lambda로 Discord에 간다. 앱 지표로는 안 보이는 AWS 쪽 신호라서다.
+CloudWatch 경보(큐 대기, ALB 5xx, gateway 헬스, NAT, CPU·메모리, DB, Redis, 바깥에서 본 API 접속), Budgets, GuardDuty는 demo와 prod 모두 SNS → Lambda로 Discord에 간다. 앱 지표로는 안 보이는 AWS 쪽 신호라서다.
 알림 경로 자체는 바깥 heartbeat 서비스와 메일로 따로 본다([009 6장](009-discord-alert-spec.md#6-알림-경로-감시)).
 
 운영에서 알아 둘 것들이다.
