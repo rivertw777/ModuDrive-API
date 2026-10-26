@@ -35,6 +35,7 @@
   - [5-4. 경보 목록](#5-4-경보-목록)
 - [6. 알림 경로 감시](#6-알림-경로-감시)
   - [6-1. heartbeat](#6-1-heartbeat)
+  - [6-2. Discord 전달 실패 (AWS)](#6-2-discord-전달-실패-aws)
 - [7. TODO](#7-todo)
 
 ---
@@ -243,7 +244,7 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 - CloudWatch 경보(AWS): Lambda(`discord_forwarder.py`)가 SSM에서 웹후크 주소를 읽어 보낸다. 라벨이 없어서 경보 이름 앞부분으로 채널을 정한다. `queue-age-` → `#messaging`, `service-`·`db-`·`redis-`·`nat-` → `#infra`, 나머지 → `#service`. 새 경보를 만들 땐 이 규칙에 맞게 이름을 짓는다.
 - Budgets·GuardDuty: CloudWatch 경보가 아닌 글이라 `#account`로 간다.
 - 웹후크 주소를 아직 안 넣은 채널은 `#service`로 대신 보낸다. 주소를 넣기 전이라고 알림이 사라지지 않게 하려는 것이다.
-- heartbeat(`channel: heartbeat`)는 Discord로 가지 않고 바깥 heartbeat 서비스로 간다([6-1](#6-1-heartbeat)).
+- Discord로 가지 않는 것이 둘 있다. heartbeat(`channel: heartbeat`)는 바깥 heartbeat 서비스로 가고([6-1](#6-1-heartbeat)), Discord 전달 실패는 메일로 간다([6-2](#6-2-discord-전달-실패-aws)).
 
 - 로컬: `.docker/.env`에 넣으면 Alertmanager가 뜰 때 채널별 파일로 써 두고 읽는다. 바꾼 뒤엔 Alertmanager를 다시 띄운다.
 - AWS: SSM에 손으로 한 번 넣는다([002-aws-migration.md 1-13](../guide/002-aws-migration.md#1-13-모니터링과-알림)). demo는 apply가 그 값을 Grafana Cloud의 Alertmanager 설정에 넣는다.
@@ -484,6 +485,18 @@ Budgets는 AWS가 만든 문장을, GuardDuty는 EventBridge 규칙에 적어 �
 - ping 주소는 SSM `/modudrive/HEARTBEAT_URL`에 손으로 넣는다([002-aws-migration.md 1-13](../guide/002-aws-migration.md#1-13-모니터링과-알림)). 아직 `set-by-hand`면 ping을 버린다.
 - healthchecks.io의 체크는 Period 5분, Grace 5분으로 둔다. ping이 10분 넘게 안 오면 알린다.
 - Grafana의 "울리는 알림" 숫자(Overview)에서는 뺀다.
+
+### 6-2. Discord 전달 실패 (AWS)
+
+5장 경보는 SNS → Lambda가 Discord로 보낸다. Discord가 거절하면(웹후크 폐기, 429) Lambda가 실패하고, 재시도 두 번 뒤 그 알림은 버려진다.
+이걸 Discord로 알리면 같은 길로 가서 받지 못하므로, Lambda 실패만 따로 경보를 걸어 메일로 보낸다.
+
+| 알림 | 받는 곳 | 조건 | 기다리는 시간 |
+|---|---|---|---|
+| Discord 전달 실패 | `alert_email` 메일 | `discord-forwarder-errors`: Lambda `Errors` 합 `> 0` | 5분 |
+
+- `alert_email`(`envs/*.tfvars`)이 있을 때만 만든다. apply 뒤 AWS가 보내는 확인 메일에서 Confirm을 눌러야 받는다.
+- 메일 본문은 CloudWatch 경보 JSON 그대로다. `AlarmDescription`에 조치가 있다.
 
 ## 7. TODO
 
