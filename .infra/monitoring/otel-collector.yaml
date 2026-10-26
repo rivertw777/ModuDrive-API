@@ -53,7 +53,7 @@ receivers:
           # or the rule sees nothing.
           metric_relabel_configs:
             - source_labels: [__name__]
-              regex: 'modudrive_.*|resilience4j_circuitbreaker_state|resilience4j_circuitbreaker_not_permitted_calls_total|spring_cloud_gateway_requests_seconds_.*|http_server_requests_seconds_.*|jvm_memory_used_bytes|jvm_memory_max_bytes|jvm_gc_live_data_size_bytes|jvm_gc_max_data_size_bytes|jvm_gc_pause_seconds_.*|jvm_threads_live_threads|process_cpu_usage|hikaricp_connections_.*|lettuce_seconds_.*'
+              regex: 'modudrive_.*|resilience4j_circuitbreaker_state|resilience4j_circuitbreaker_not_permitted_calls_total|resilience4j_retry_calls_total|resilience4j_timelimiter_calls_total|http_client_requests_seconds_.*|spring_cloud_gateway_requests_seconds_.*|http_server_requests_seconds_.*|jvm_memory_used_bytes|jvm_memory_max_bytes|jvm_gc_live_data_size_bytes|jvm_gc_max_data_size_bytes|jvm_gc_pause_seconds_.*|jvm_threads_live_threads|process_cpu_usage|hikaricp_connections_.*|lettuce_seconds_.*'
               action: keep
 
 processors:
