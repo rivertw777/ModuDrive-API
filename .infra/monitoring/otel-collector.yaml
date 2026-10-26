@@ -88,6 +88,17 @@ processors:
                 key: uri
                 values: ['/actuator/.*', '/readyz']
                 enabled_regex_matching: true
+      # The health check's Redis INFO runs outside any server span, so it is a trace of its own. The app
+      # never sends INFO.
+      - name: redis-health-checks
+        type: drop
+        drop:
+          drop_sub_policy:
+            - name: redis-info
+              type: string_attribute
+              string_attribute:
+                key: db.operation
+                values: [INFO]
       - name: errors
         type: status_code
         status_code:
