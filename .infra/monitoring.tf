@@ -27,8 +27,9 @@ data "aws_ssm_parameter" "grafana_cloud_token" {
   name = "/${var.project}/GRAFANA_CLOUD_TOKEN"
 }
 
-# Dashboards go through the stack's Grafana API, which takes a Grafana service account token (Editor), also
-# made by hand: aws ssm put-parameter --name /<project>/GRAFANA_SETUP_TOKEN --type SecureString --value <glsa_…>
+# Dashboards go through the stack's Grafana API, which takes a Grafana service account token (Admin: setting
+# the org's home dashboard needs it), also made by hand:
+#   aws ssm put-parameter --name /<project>/GRAFANA_SETUP_TOKEN --type SecureString --value <glsa_…>
 data "aws_ssm_parameter" "grafana_setup_token" {
   count = local.grafana_cloud ? 1 : 0
 
@@ -120,6 +121,7 @@ resource "terraform_data" "grafana_cloud_dashboards" {
       for hit in call("GET", "/api/search?type=dash-db&folderUIDs=modudrive"):
           if hit["uid"] not in uids:
               call("DELETE", "/api/dashboards/uid/" + hit["uid"])
+      call("PUT", "/api/org/preferences", {"homeDashboardUID": "modudrive-overview"})
     EOT
     environment = merge(
       {

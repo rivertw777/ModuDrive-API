@@ -342,10 +342,11 @@ Prometheus가 1분마다 `alert-rules.yaml`을 평가해 Alertmanager로 넘기�
 
 - 익명 사용자는 Viewer로 들어온다. admin 비밀번호는 `GRAFANA_ADMIN_PASSWORD`다.
 - 대시보드는 `ModuDrive` 폴더에 셋이다. 파일이 기준이라 화면에서 고친 건 저장되지 않는다. JSON을 고치고 Grafana를 다시 띄운다.
+- 홈은 Overview다(demo도 같다). 위쪽 `ModuDrive` 링크로 나머지 둘로 간다.
 
 | 대시보드 | 보는 것 |
 |---|---|
-| Overview | 서비스 응답, 울리는 알림, gateway 라우트별 요청·5xx·1초 넘는 비율·p95(exemplar), 서비스별 요청·에러·느린 URI, 에러 로그 |
+| Overview | 맨 위 숫자 8개(다운된 서비스·울리는 알림·요청·5xx·1초 넘는 비율·메시징 이상·서킷이 막은 호출·JVM·DB 이상, 뒤의 셋은 누르면 해당 대시보드), gateway 라우트별 요청·5xx·1초 넘는 비율·p95(exemplar), 서비스별 요청·에러·느린 URI, 에러 로그 |
 | JVM & DB | 힙, GC 뒤 old 영역 비율, GC, CPU, 스레드, Hikari 커넥션(사용·대기·실패·획득 시간·점유 시간) |
 | Messaging & Resilience | outbox 적체·FAILED, DLQ, 서킷 상태 |
 

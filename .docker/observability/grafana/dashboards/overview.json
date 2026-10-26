@@ -5,6 +5,18 @@
   "tags": [
     "modudrive"
   ],
+  "links": [
+    {
+      "title": "ModuDrive",
+      "type": "dashboards",
+      "tags": [
+        "modudrive"
+      ],
+      "asDropdown": false,
+      "includeVars": false,
+      "keepTime": true
+    }
+  ],
   "timezone": "browser",
   "schemaVersion": 39,
   "refresh": "1m",
@@ -58,8 +70,8 @@
   "panels": [
     {
       "type": "stat",
-      "title": "서비스 응답",
-      "description": "스크레이프가 되는 서비스 비율",
+      "title": "다운된 서비스",
+      "description": "스크레이프가 안 되는 서비스 수. 알림 ServiceDown",
       "datasource": {
         "type": "prometheus",
         "uid": "${prom}"
@@ -71,7 +83,7 @@
             "type": "prometheus",
             "uid": "${prom}"
           },
-          "expr": "count(up{job=\"services\"} == 1) / count(up{job=\"services\"})",
+          "expr": "count(up{job=\"services\"} == 0) or vector(0)",
           "legendFormat": "__auto",
           "exemplar": false,
           "range": false,
@@ -81,20 +93,21 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "percentunit",
+          "unit": "short",
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "green",
                 "value": null
               },
               {
-                "color": "green",
+                "color": "red",
                 "value": 1
               }
             ]
-          }
+          },
+          "decimals": 0
         },
         "overrides": []
       },
@@ -112,7 +125,7 @@
       "gridPos": {
         "x": 0,
         "y": 0,
-        "w": 6,
+        "w": 3,
         "h": 4
       }
     },
@@ -154,7 +167,14 @@
                 "value": 1
               }
             ]
-          }
+          },
+          "links": [
+            {
+              "title": "알림 목록",
+              "url": "/alerting/list"
+            }
+          ],
+          "decimals": 0
         },
         "overrides": []
       },
@@ -170,16 +190,15 @@
       },
       "id": 2,
       "gridPos": {
-        "x": 6,
+        "x": 3,
         "y": 0,
-        "w": 6,
+        "w": 3,
         "h": 4
       }
     },
     {
       "type": "stat",
       "title": "요청 (gateway)",
-      "description": "",
       "datasource": {
         "type": "prometheus",
         "uid": "${prom}"
@@ -226,16 +245,15 @@
       },
       "id": 3,
       "gridPos": {
-        "x": 12,
+        "x": 6,
         "y": 0,
-        "w": 6,
+        "w": 3,
         "h": 4
       }
     },
     {
       "type": "stat",
       "title": "5xx 비율 (gateway)",
-      "description": "",
       "datasource": {
         "type": "prometheus",
         "uid": "${prom}"
@@ -290,16 +308,277 @@
       },
       "id": 4,
       "gridPos": {
+        "x": 9,
+        "y": 0,
+        "w": 3,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "1초 넘는 비율 (gateway)",
+      "description": "storage-service 제외. 알림 RouteSlowRate",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prom}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prom}"
+          },
+          "expr": "(1 - sum(rate(spring_cloud_gateway_requests_seconds_bucket{le=\"1.0\", routeId!=\"storage-service\"}[5m])) / sum(rate(spring_cloud_gateway_requests_seconds_count{routeId!=\"storage-service\"}[5m]))) or vector(0)",
+          "legendFormat": "__auto",
+          "exemplar": false,
+          "range": false,
+          "instant": true,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.05
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "id": 5,
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 3,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "메시징 이상",
+      "description": "DLQ 메시지 + outbox FAILED 행 + 120초 넘게 밀린 outbox 큐. 알림 DlqMessages·OutboxFailed·OutboxLag",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prom}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prom}"
+          },
+          "expr": "(sum(max by (queue) (modudrive_dlq_messages)) or vector(0)) + (sum(max by (service, queue, reason, detail) (modudrive_outbox_failed)) or vector(0)) + (count(max by (service, queue) (modudrive_outbox_lag_seconds) > 120) or vector(0))",
+          "legendFormat": "__auto",
+          "exemplar": false,
+          "range": false,
+          "instant": true,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "links": [
+            {
+              "title": "Messaging & Resilience",
+              "url": "/d/modudrive-messaging?${__url_time_range}"
+            }
+          ],
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "id": 6,
+      "gridPos": {
+        "x": 15,
+        "y": 0,
+        "w": 3,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "서킷이 막은 호출 (2분)",
+      "description": "알림 CircuitOpen",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prom}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prom}"
+          },
+          "expr": "sum(increase(resilience4j_circuitbreaker_not_permitted_calls_total[2m])) or vector(0)",
+          "legendFormat": "__auto",
+          "exemplar": false,
+          "range": false,
+          "instant": true,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "links": [
+            {
+              "title": "Messaging & Resilience",
+              "url": "/d/modudrive-messaging?${__url_time_range}"
+            }
+          ],
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "id": 7,
+      "gridPos": {
         "x": 18,
         "y": 0,
-        "w": 6,
+        "w": 3,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "JVM·DB 이상",
+      "description": "GC 뒤 old 영역 90% 넘은 인스턴스 + 커넥션을 못 받은 서비스(5분). 알림 HeapHigh·DbPoolExhausted",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prom}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prom}"
+          },
+          "expr": "(count(max by (service, instance) (jvm_gc_live_data_size_bytes) / max by (service, instance) (jvm_gc_max_data_size_bytes > 0) > 0.9) or vector(0)) + (count(max by (service) (increase(hikaricp_connections_timeout_total[5m])) > 0) or vector(0))",
+          "legendFormat": "__auto",
+          "exemplar": false,
+          "range": false,
+          "instant": true,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "links": [
+            {
+              "title": "JVM & DB",
+              "url": "/d/modudrive-jvm-db?${__url_time_range}"
+            }
+          ],
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "id": 8,
+      "gridPos": {
+        "x": 21,
+        "y": 0,
+        "w": 3,
         "h": 4
       }
     },
     {
       "type": "row",
       "title": "API (gateway 라우트) — 사용자가 겪는 것",
-      "id": 5,
+      "id": 9,
       "collapsed": false,
       "gridPos": {
         "x": 0,
@@ -359,7 +638,7 @@
           "sort": "desc"
         }
       },
-      "id": 6,
+      "id": 10,
       "gridPos": {
         "x": 0,
         "y": 5,
@@ -434,7 +713,7 @@
           "sort": "desc"
         }
       },
-      "id": 7,
+      "id": 11,
       "gridPos": {
         "x": 12,
         "y": 5,
@@ -509,7 +788,7 @@
           "sort": "desc"
         }
       },
-      "id": 8,
+      "id": 12,
       "gridPos": {
         "x": 0,
         "y": 13,
@@ -567,7 +846,7 @@
           "sort": "desc"
         }
       },
-      "id": 9,
+      "id": 13,
       "gridPos": {
         "x": 12,
         "y": 13,
@@ -578,7 +857,7 @@
     {
       "type": "row",
       "title": "서비스 (각 서비스가 받은 요청, actuator 제외)",
-      "id": 10,
+      "id": 14,
       "collapsed": false,
       "gridPos": {
         "x": 0,
@@ -638,7 +917,7 @@
           "sort": "desc"
         }
       },
-      "id": 11,
+      "id": 15,
       "gridPos": {
         "x": 0,
         "y": 22,
@@ -697,7 +976,7 @@
           "sort": "desc"
         }
       },
-      "id": 12,
+      "id": 16,
       "gridPos": {
         "x": 8,
         "y": 22,
@@ -755,7 +1034,7 @@
           "sort": "desc"
         }
       },
-      "id": 13,
+      "id": 17,
       "gridPos": {
         "x": 16,
         "y": 22,
@@ -813,7 +1092,7 @@
           "sort": "desc"
         }
       },
-      "id": 14,
+      "id": 18,
       "gridPos": {
         "x": 0,
         "y": 30,
@@ -871,7 +1150,7 @@
           "sort": "desc"
         }
       },
-      "id": 15,
+      "id": 19,
       "gridPos": {
         "x": 12,
         "y": 30,
@@ -882,7 +1161,7 @@
     {
       "type": "row",
       "title": "에러 로그",
-      "id": 16,
+      "id": 20,
       "collapsed": false,
       "gridPos": {
         "x": 0,
@@ -929,7 +1208,7 @@
           "placement": "bottom"
         }
       },
-      "id": 17,
+      "id": 21,
       "gridPos": {
         "x": 0,
         "y": 39,
@@ -961,7 +1240,7 @@
         "sortOrder": "Descending",
         "enableLogDetails": true
       },
-      "id": 18,
+      "id": 22,
       "gridPos": {
         "x": 0,
         "y": 45,
