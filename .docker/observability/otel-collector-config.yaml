@@ -62,6 +62,18 @@ processors:
   tail_sampling:
     decision_wait: 30s
     policies:
+      # 헬스체크·지표 수집 요청(ECS 헬스체크, Route 53 /readyz, collector의 /actuator/prometheus)은 trace째
+      # 버린다. drop은 다른 정책보다 앞선다.
+      - name: health-checks
+        type: drop
+        drop:
+          drop_sub_policy:
+            - name: health-check-uri
+              type: string_attribute
+              string_attribute:
+                key: uri
+                values: ['/actuator/.*', '/readyz']
+                enabled_regex_matching: true
       - name: errors
         type: status_code
         status_code:

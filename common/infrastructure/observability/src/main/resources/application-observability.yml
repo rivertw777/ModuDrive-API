@@ -22,6 +22,11 @@ management:
     web:
       exposure:
         include: health,prometheus
+  observations:
+    enable:
+      # Spring Security marks a denied request's spans ERROR, so every 401 kept its trace through the
+      # collector's errors policy. The filter-chain spans add nothing a request span doesn't show.
+      spring.security: false
   metrics:
     distribution:
       # Request histograms for latency alerts (the slow-request rule reads the 1s bucket) and exemplars
