@@ -55,7 +55,6 @@ services = {
 }
 
 monthly_budget_usd = 8000
-alert_email        = null
 
 # Streaming uploads and downloads finish before a stopping task is cut off.
 alb_deregistration_delay = 60
