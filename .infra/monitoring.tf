@@ -521,6 +521,67 @@ resource "aws_cloudwatch_metric_alarm" "redis_memory" {
   ok_actions          = local.alarm_actions
 }
 
+# From outside, the way a user comes in: DNS, certificate, WAF, ALB, gateway (/readyz, gateway's
+# application.yml). Every alarm above sees from inside, so a broken record or an expired certificate
+# fires none of them. Route 53 publishes the check's status in us-east-1 only, and an alarm acts only on a
+# topic in its own region — hence the second topic there, onto the same Lambda.
+resource "aws_route53_health_check" "api" {
+  count = local.domain_based ? 1 : 0
+
+  fqdn              = "api.${var.domain_name}"
+  type              = "HTTPS"
+  port              = 443
+  resource_path     = "/readyz"
+  request_interval  = 30
+  failure_threshold = 3
+
+  tags = { Name = "${var.project}-api" }
+}
+
+resource "aws_sns_topic" "alerts_us_east_1" {
+  count    = local.domain_based ? 1 : 0
+  provider = aws.us_east_1
+
+  name = "${var.project}-alerts"
+}
+
+resource "aws_sns_topic_subscription" "discord_forwarder_us_east_1" {
+  count    = local.domain_based ? 1 : 0
+  provider = aws.us_east_1
+
+  topic_arn = aws_sns_topic.alerts_us_east_1[0].arn
+  protocol  = "lambda"
+  endpoint  = aws_lambda_function.discord_forwarder.arn
+}
+
+resource "aws_lambda_permission" "discord_forwarder_us_east_1" {
+  count = local.domain_based ? 1 : 0
+
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.discord_forwarder.function_name
+  principal     = "sns.amazonaws.com"
+  source_arn    = aws_sns_topic.alerts_us_east_1[0].arn
+}
+
+resource "aws_cloudwatch_metric_alarm" "api_unreachable" {
+  count    = local.domain_based ? 1 : 0
+  provider = aws.us_east_1
+
+  alarm_name          = "api-unreachable"
+  alarm_description   = "외부 접속 실패: 바깥에서 https://api.${var.domain_name}/readyz 확인이 2분째 실패, 사용자가 서비스에 못 들어옴 — DNS·인증서·WAF·ALB·gateway 순서로 확인 (curl -sv https://api.${var.domain_name}/readyz)"
+  namespace           = "AWS/Route53"
+  metric_name         = "HealthCheckStatus"
+  dimensions          = { HealthCheckId = aws_route53_health_check.api[0].id }
+  statistic           = "Minimum"
+  period              = 60
+  evaluation_periods  = 2
+  threshold           = 1
+  comparison_operator = "LessThanThreshold"
+  treat_missing_data  = "breaching"
+  alarm_actions       = [aws_sns_topic.alerts_us_east_1[0].arn]
+  ok_actions          = [aws_sns_topic.alerts_us_east_1[0].arn]
+}
+
 # High-severity GuardDuty findings (hardened, audit.tf), as one line of text.
 resource "aws_cloudwatch_event_rule" "guardduty" {
   count = var.hardened ? 1 : 0

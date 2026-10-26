@@ -319,6 +319,7 @@ collector는 사이드카가 아니라 한 대만 띄운다. tail sampling(에�
 
 경보 목록과 기준은 [009-discord-alert-spec.md 5](../spec/009-discord-alert-spec.md#5-aws-전용-경보)에 있다.
 
+- 바깥에서 본 API 접속은 Route 53 헬스 체크가 `https://api.<도메인>/readyz`를 30초마다 부른다. 헬스 체크 지표가 us-east-1에만 있어서 그 경보와 SNS 토픽만 us-east-1에 두고, 같은 Lambda가 구독한다. 도메인이 있는 환경에만 생긴다.
 - Lambda가 Discord로 못 보내면(웹후크 폐기 등) 그 실패 경보(`discord-forwarder-errors`)는 Lambda를 거치지 않고 `alert_email` 메일로만 간다. `alert_email`이 없으면 만들지 않는다([009 6-2](../spec/009-discord-alert-spec.md#6-2-discord-전달-실패-aws)).
 
 #### 손으로 넣는 값

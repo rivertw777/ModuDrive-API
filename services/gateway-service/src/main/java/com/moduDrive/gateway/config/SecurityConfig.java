@@ -51,6 +51,8 @@ class SecurityConfig {
                         // to the host — the public app port returns 404 for /actuator/** regardless. Network
                         // isolation is the guard here, so Prometheus can scrape without a token.
                         .pathMatchers("/actuator/**").permitAll()
+                        // The external health check (Route 53) — the readiness group's state only, no details.
+                        .pathMatchers(HttpMethod.GET, "/readyz").permitAll()
                         .anyExchange().authenticated()
                 )
                 // Nothing to store between requests: the session lives in auth-service, checked once per
