@@ -316,24 +316,39 @@ resource "aws_sns_topic_subscription" "discord_forwarder" {
   endpoint  = aws_lambda_function.discord_forwarder.arn
 }
 
+# The mail that budget alerts also go to, and the forwarder's failures go to alone. Read from SSM rather than
+# passed as a variable: the repo and its Actions logs are public (a SecureString prints as sensitive in the
+# plan), and a plan run by hand can't leave it out. Put by hand before the first apply, like the Grafana
+# Cloud token; anything without an @ ("none") means no mail:
+#   aws ssm put-parameter --name /<project>/ALERT_EMAIL --type SecureString --value <address>
+data "aws_ssm_parameter" "alert_email" {
+  name = "/${var.project}/ALERT_EMAIL"
+}
+
+locals {
+  alert_email = strcontains(data.aws_ssm_parameter.alert_email.value, "@") ? data.aws_ssm_parameter.alert_email.value : null
+  # Whether there is one isn't secret, and count can't take a sensitive value.
+  alert_mail = nonsensitive(local.alert_email != null)
+}
+
 # The forwarder failing (Discord refusing a revoked webhook, say) drops the alert after the async retries,
-# and the alarm saying so can't go through it — so it goes by mail alone, and only with alert_email.
+# and the alarm saying so can't go through it — so it goes by mail alone.
 resource "aws_sns_topic" "forwarder_failures" {
-  count = var.alert_email == null ? 0 : 1
+  count = local.alert_mail ? 1 : 0
 
   name = "${var.project}-forwarder-failures"
 }
 
 resource "aws_sns_topic_subscription" "forwarder_failures" {
-  count = var.alert_email == null ? 0 : 1
+  count = local.alert_mail ? 1 : 0
 
   topic_arn = aws_sns_topic.forwarder_failures[0].arn
   protocol  = "email"
-  endpoint  = var.alert_email
+  endpoint  = local.alert_email
 }
 
 resource "aws_cloudwatch_metric_alarm" "discord_forwarder_errors" {
-  count = var.alert_email == null ? 0 : 1
+  count = local.alert_mail ? 1 : 0
 
   alarm_name          = "discord-forwarder-errors"
   alarm_description   = "Discord 전달 실패: discord-forwarder Lambda가 실패해 CloudWatch 경보·예산·GuardDuty 알림이 Discord에 안 감 — 로그 확인 (aws logs tail /aws/lambda/${var.project}-discord-forwarder --since 1h), 웹후크가 폐기됐으면 SSM 값 교체"
@@ -630,7 +645,7 @@ resource "aws_budgets_budget" "monthly" {
     threshold_type             = "PERCENTAGE"
     notification_type          = "ACTUAL"
     subscriber_sns_topic_arns  = [aws_sns_topic.alerts.arn]
-    subscriber_email_addresses = var.alert_email == null ? [] : [var.alert_email]
+    subscriber_email_addresses = local.alert_mail ? [local.alert_email] : []
   }
 
   notification {
@@ -639,7 +654,7 @@ resource "aws_budgets_budget" "monthly" {
     threshold_type             = "PERCENTAGE"
     notification_type          = "FORECASTED"
     subscriber_sns_topic_arns  = [aws_sns_topic.alerts.arn]
-    subscriber_email_addresses = var.alert_email == null ? [] : [var.alert_email]
+    subscriber_email_addresses = local.alert_mail ? [local.alert_email] : []
   }
 
   depends_on = [aws_sns_topic_policy.alerts]
