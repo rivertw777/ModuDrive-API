@@ -123,8 +123,8 @@ CloudWatch 경보(큐 대기, ALB 5xx, gateway 헬스, NAT, CPU·메모리, DB, 
 | `.docker/docker-compose.observability.yml` | 로컬 스택 전체 (compose 프로젝트 `modudrive-observability`) |
 | `.docker/observability/*.yaml`, `*.yml` | 컴포넌트별 설정. 디렉터리째 `/etc/modudrive`로 마운트한다(8장) |
 | `.docker/observability/otel-collector-config.yaml` | tail sampling 정책 |
-| `.docker/observability/alert-rules.yaml` | 알림 규칙 10개 (heartbeat `Watchdog` 포함) |
-| `.docker/observability/alertmanager.yml` | 알림 묶음, 재발송, 채널 |
+| `.docker/observability/alert-rules.yaml` | 알림 규칙 11개 (heartbeat `Watchdog` 포함) |
+| `.docker/observability/alertmanager.yml` | 알림 묶음, 재발송, 채널, 같이 울리는 알림 누르기 |
 | `.docker/observability/grafana/datasources/datasources.yaml` | Grafana 데이터소스 (Prometheus, Tempo, Loki와 그 사이 링크) |
 | `.docker/observability/grafana/dashboards/` | 대시보드 3개 (7장). demo에는 terraform apply가 같은 파일을 올린다 |
 | `common/infrastructure/observability` | 앱 쪽 공통 모듈. 의존성과 `application-observability.yml`, `UserIdObservationFilter` |
