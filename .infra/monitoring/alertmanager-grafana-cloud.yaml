@@ -15,6 +15,12 @@ alertmanager_config: |
         matchers: [channel="messaging"]
       - receiver: infra
         matchers: [channel="infra"]
+  inhibit_rules:
+    - source_matchers: [alertname=~"ServiceDown|ServiceNoTasks"]
+      target_matchers: [alertname=~"CircuitOpen|RouteErrorRate|RouteSlowRate"]
+      equal: [target]
+    - source_matchers: [alertname="CollectorDown"]
+      target_matchers: [alertname="ServiceNoTasks"]
   templates:
     - discord
   receivers:

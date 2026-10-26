@@ -15,6 +15,7 @@
   - [2-2. 규칙](#2-2-규칙)
   - [2-3. 알림 메시지](#2-3-알림-메시지)
   - [2-4. 그룹핑과 재발송](#2-4-그룹핑과-재발송)
+  - [2-5. 같이 울리는 알림 누르기](#2-5-같이-울리는-알림-누르기)
 - [3. 사용 디스코드 채널](#3-사용-디스코드-채널)
 - [4. 사용 알림](#4-사용-알림)
   - [4-1. 이벤트 전송 적체](#4-1-이벤트-전송-적체)
@@ -26,6 +27,7 @@
   - [4-7. 느린 요청 많음](#4-7-느린-요청-많음)
   - [4-8. 힙 메모리 부족](#4-8-힙-메모리-부족)
   - [4-9. DB 커넥션 부족](#4-9-db-커넥션-부족)
+  - [4-10. 지표 수집 끊김](#4-10-지표-수집-끊김)
 - [5. AWS 전용 경보](#5-aws-전용-경보)
   - [5-1. 발송 과정](#5-1-발송-과정)
   - [5-2. 알림이 오기까지 걸리는 시간](#5-2-알림이-오기까지-걸리는-시간)
@@ -107,7 +109,7 @@ flowchart LR
 |---|---|---|
 | `.docker/observability/alert-rules.yaml` | 규칙 (2-1, 2-2) | `.infra/monitoring/alert-rules.yaml` |
 | `.infra/monitoring/discord.tmpl` | 메시지 양식 (2-3) | 같은 파일 |
-| `.docker/observability/alertmanager.yml` | 그룹핑·채널 (2-4, 3장) | demo `.infra/monitoring/alertmanager-grafana-cloud.yaml`, prod `.infra/monitoring/alertmanager.yaml` |
+| `.docker/observability/alertmanager.yml` | 그룹핑·누르기·채널 (2-4, 2-5, 3장) | demo `.infra/monitoring/alertmanager-grafana-cloud.yaml`, prod `.infra/monitoring/alertmanager.yaml` |
 | `.infra/monitoring/discord_forwarder.py` | AWS 전용 경보([5장](#5-aws-전용-경보))와 prod 4장 알림의 SNS → 디스코드 전달 | 로컬엔 없음 |
 
 규칙 파일은 로컬과 AWS가 따로다. 쿼리와 기준값은 같고 확인 명령어만 다르다(docker ↔ ECS, 로그·trace는 demo가 로컬과 같은 Loki·Tempo, prod가 CloudWatch·X-Ray). 규칙을 고치면 두 파일을 같이 고친다.
@@ -207,6 +209,21 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 알림 이름 단위로 묶는 이유: 서비스·큐마다 따로 보내면 여러 건이 한꺼번에 생길 때 디스코드가 "너무 자주 보낸다"(429)며 막아
 알림이 사라질 수 있다(Grafana 알림을 쓰던 때 재배포로 서비스 일곱 개가 같이 내려가 세 건이 사라졌다). 큰 장애일수록 알림이 많이 사라지는 구조가 된다.
 
+### 2-5. 같이 울리는 알림 누르기
+
+`group_by`는 이름이 같은 알림만 묶는다. 장애 하나에 원인 알림과 그 결과 알림이 이름을 달리해 같이 울리면 원인이 묻힌다.
+그래서 원인 알림이 울리는 동안엔 결과 알림을 보내지 않는다(Alertmanager의 `inhibit_rules`). 눌린 알림은 Grafana → Alerting → Alert groups에 `suppressed`로 보인다.
+
+| 원인 알림 | 누르는 알림 | 조건 |
+|---|---|---|
+| 서비스 응답 없음, 서비스 태스크 없음 | 서킷 열림, 요청 실패율 높음, 느린 요청 많음 | `target` 라벨(대상 서비스)이 같을 때 |
+| 지표 수집 끊김 | 서비스 태스크 없음 | 언제나 |
+
+- 예를 들어 member-service가 죽으면 "서비스 응답 없음" 한 통만 온다. gateway·auth·file의 서킷 열림과 member 경로의 요청 실패율은 눌린다.
+- `target`은 규칙의 `labels`가 붙인다. 서비스 응답 없음·태스크 없음은 `service`, 요청 실패율·느린 요청은 `routeId`, 서킷 열림은 서킷 이름의 대상이다(`memberServiceCircuitBreaker` → `member-service`).
+  서킷 이름을 `<대상>ServiceCircuitBreaker`로 짓지 않으면 대상을 못 뽑아 누르지 못한다.
+- 원인 알림이 풀렸는데 눌렸던 알림이 아직 울리는 중이면 그때 보낸다.
+
 ---
 
 ## 3. 사용 디스코드 채널
@@ -216,7 +233,7 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 | 채널 | 성격 | 받는 알림 | 받으면 | 웹후크 주소 환경 변수 |
 |---|---|---|---|---|
 | `#service` | 지금 사용자가 피해를 보고 있음 | 응답 없음, 태스크 없음, 서킷 열림, 요청 실패율, 느린 요청, DB 커넥션 부족, ALB 5xx, gateway 정상 태스크 없음 | 바로 본다 | `DISCORD_SERVICE_WEBHOOK_URL` |
-| `#infra` | 아직 괜찮지만 그냥 두면 문제가 됨 (자원 한도) | 힙 메모리, 서비스 CPU·메모리, DB 메모리·CPU 크레딧, Redis 메모리, NAT 상태 검사 | 그날 안에 사양·설정을 조정하거나 원인을 고친다 | `DISCORD_INFRA_WEBHOOK_URL` |
+| `#infra` | 아직 괜찮지만 그냥 두면 문제가 됨 (자원 한도, 지표 수집) | 힙 메모리, 서비스 CPU·메모리, DB 메모리·CPU 크레딧, Redis 메모리, NAT 상태 검사, 지표 수집 끊김 | 그날 안에 사양·설정을 조정하거나 원인을 고친다 | `DISCORD_INFRA_WEBHOOK_URL` |
 | `#messaging` | 비동기 이벤트가 멈춤 | 이벤트 전송 적체·실패, 이벤트 처리 실패, 큐 처리 지연 | 원인을 고친 뒤 재처리(리드라이브) | `DISCORD_MESSAGING_WEBHOOK_URL` |
 | `#account` | 계정 수준, 드묾 (AWS만) | 예산 초과, GuardDuty 위협 탐지 | 비용 확인, 보안 대응 | `DISCORD_ACCOUNT_WEBHOOK_URL` |
 
@@ -242,6 +259,7 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 | 이벤트 처리 실패 | `#messaging` | 받는 쪽 서비스가 처리를 포기한 메시지가 DLQ에 있을 때 | `max by (service, queue) (modudrive_dlq_messages) > 0` | 바로 |
 | 서비스 응답 없음 | `#service` | 서비스가 응답하지 않을 때 (프로세스가 죽음) | `min by (service, instance) (up{job="services"}) < 1` | 2분 |
 | 서비스 태스크 없음 (AWS) | `#service` | 서비스의 태스크가 하나도 수집되지 않을 때 (기동 실패 · 배포 롤백 반복) | 서비스마다 `absent(up{job="services",service="<서비스>"})` | 2분 |
+| 지표 수집 끊김 | `#infra` | 어느 서비스의 지표도 들어오지 않을 때 (collector 다운 · 저장소 전송 실패) | `absent(up{job="services"})` | 2분 (끊기고 약 7분 뒤, [4-10](#4-10-지표-수집-끊김)) |
 | 서킷 열림 | `#service` | 서비스는 떠 있지만, 그 서비스로 가는 호출이 계속 실패해 서킷이 호출을 막고 있을 때 | `sum by (service, name) (increase(resilience4j_circuitbreaker_not_permitted_calls_total[2m])) > 0` | 2분 |
 | 요청 실패율 높음 | `#service` | 게이트웨이를 지난 요청이 5xx로 많이 실패할 때 | 5xx 비율 `> 5%` 이면서 5분간 5xx `>= 10`건 (`spring_cloud_gateway_requests_seconds_count`, 경로별) | 2분 |
 | 느린 요청 많음 | `#service` | 게이트웨이를 지난 요청이 에러 없이 느려졌을 때 | 1초 초과 비율 `> 5%` 이면서 5분간 1초 초과 `>= 10`건 (`spring_cloud_gateway_requests_seconds_bucket{le="1.0"}`, 경로별, storage-service 제외) | 2분 |
@@ -277,6 +295,7 @@ collector가 60초마다 지표를 가져가는데, 2분 내내 응답이 없으
 
 AWS(ECS)에선 죽은 태스크가 0이 되지 않고 수집 대상에서 아예 사라진다. 그러면 `up` 값 자체가 없어 이 알림이 조용하므로,
 서비스의 태스크가 하나도 안 보이는 상태가 2분 이어지면 **서비스 태스크 없음**으로 따로 알린다. 받으면 ECS 서비스 이벤트로 태스크가 뜨지 못하는 이유를 본다.
+서비스 전부가 한꺼번에 안 보이면 서비스가 아니라 수집이 끊긴 것이라, 그때는 [지표 수집 끊김](#4-10-지표-수집-끊김)만 온다.
 
 **받으면:** 컨테이너가 떠 있는지, 앱 로그에 에러가 있는지 본다.
 
@@ -342,6 +361,18 @@ Explore에서 `spring_cloud_gateway_requests_seconds_bucket` 그래프를 띄우
 - **바로 보낸다**: 타임아웃이 났다면 이미 사용자가 에러를 본 것이다. 5분 창으로 세기 때문에 마지막 타임아웃 5분 뒤에 해제된다.
 
 **받으면:** 느린 trace에서 DB 구간(커넥션 대기, 쿼리)을 본다. 계속되면 풀 크기를 올린다(AWS는 `db_pool_size`).
+
+### 4-10. 지표 수집 끊김
+
+collector가 죽거나 지표 저장소(로컬 Prometheus, demo Grafana Cloud, prod AMP)로 보내지 못하면 서비스 전부의 지표가 한꺼번에 끊긴다.
+그동안 지표로 보는 알림은 전부 조용하다. 서비스 응답 없음(`up < 1`)도 `up` 자체가 없으니 울리지 않는다.
+서비스가 아파서가 아니라 볼 수 없게 된 것이라 `#infra`로 보낸다.
+
+- **끊기고 약 7분 뒤 울린다**: 수집이 끊기면 "끊겼다"는 표시(staleness marker)도 오지 않아서, Prometheus는 마지막 값을 조회 범위(5분) 동안 그대로 쓴다. 5분이 지나야 `up`이 없어지고, 거기서 2분(`for`)을 더 기다린다.
+- **AWS에선 서비스 태스크 없음을 누른다**: `up`이 전부 없어지면 서비스 태스크 없음이 서비스마다 울리는데, 원인은 collector라서 이 알림만 보낸다([2-5](#2-5-같이-울리는-알림-누르기)).
+  demo는 collector가 Spot이라 회수되면 이렇게 된다. ECS가 새 태스크를 띄우면 저절로 풀린다.
+
+**받으면:** collector 상태와 로그를 본다. collector가 멀쩡하면 로그에서 저장소로 보내기(remote write) 실패를 찾는다.
 
 ---
 
