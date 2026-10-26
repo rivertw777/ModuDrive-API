@@ -9,7 +9,7 @@ spring:
 
 # No aspect orders set: Resilience4j's default, Retry ( CircuitBreaker ( call ) ). The circuit breaker
 # records every attempt, and the fallback sits on @Retry so it only runs once retries are spent.
-# Only connect failures and 503 are retried (RetryOnConnectFailure), so an open circuit
+# Only connect failures are retried (RetryOnConnectFailure), so a 503, an open circuit
 # (CallNotPermittedException) or a read timeout is never retried.
 resilience4j:
   retry:
