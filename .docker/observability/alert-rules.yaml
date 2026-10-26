@@ -61,6 +61,18 @@ groups:
           inspect: 'awslocal sqs receive-message --queue-url $(awslocal sqs get-queue-url --queue-name {{ $labels.queue }}-dlq --query QueueUrl --output text) --message-attribute-names All'
           redrive: 'awslocal sqs start-message-move-task --source-arn <{{ $labels.queue }}-dlq의 ARN>'
 
+  # 알림 경로(규칙 평가 → Alertmanager → 바깥)가 살아 있는지 보는 heartbeat. 항상 울리고, Alertmanager가 5분마다
+  # 바깥 heartbeat 서비스(healthchecks.io)에 ping한다. ping이 끊기면 그쪽이 알린다. 규칙 평가나 Alertmanager가
+  # 멈추면 다른 알림도 전부 조용해지는데, 그걸 안쪽에서는 알 수 없어서 바깥에 맡긴다. 로컬은 ping을 버린다(alertmanager.yml).
+  - name: watchdog
+    rules:
+      - alert: Watchdog
+        expr: vector(1)
+        labels:
+          channel: heartbeat
+        annotations:
+          title: 알림 경로 heartbeat
+
   - name: services
     rules:
       # up은 Prometheus가 스크레이프 성공 여부로 직접 넣는 값이다(성공 1, 실패 0) — 앱이 내보내는 게 아니라
@@ -72,11 +84,28 @@ groups:
         for: 2m
         labels:
           channel: service
+          # 이 서비스가 죽어서 같이 울리는 CircuitOpen·RouteErrorRate·RouteSlowRate를 누르는 데 쓴다(alertmanager.yml의 inhibit_rules).
+          target: '{{ $labels.service }}'
         annotations:
           title: 서비스 응답 없음
           summary: 스크레이프가 2분째 실패중 (프로세스 다운 · 액추에이터 응답 없음)
           action: 컨테이너 상태와 앱 로그 확인
           inspect: 'docker ps -a --filter name={{ $labels.service }} / docker logs --tail 100 modudrive-service-{{ $labels.service }}-1'
+
+      # collector가 죽으면 up 시계열이 서비스 전부 한꺼번에 사라진다. 그러면 ServiceDown(up < 1)은 조용해지고
+      # (AWS에선 ServiceNoTasks가 서비스마다 울린다), 다른 규칙도 지표가 없어 전부 조용하다 — 서비스가 아니라 수집이 끊긴 것이다.
+      # collector가 죽으면 끊겼다는 표시(staleness marker)도 못 보내서, 마지막 값이 조회 범위(5분) 동안 남는다 — 죽고 약 7분 뒤 울린다.
+      # 그건 ServiceNoTasks도 같아서 둘이 같이 울리고, inhibit_rules가 ServiceNoTasks를 누른다.
+      - alert: CollectorDown
+        expr: absent(up{job="services"})
+        for: 2m
+        labels:
+          channel: infra
+        annotations:
+          title: 지표 수집 끊김
+          summary: 어느 서비스의 지표도 들어오지 않음 (collector 다운 · 저장소 전송 실패) — 그동안 지표 알림은 울리지 않는다
+          action: collector 상태와 로그 확인
+          inspect: 'docker ps -a --filter name=otel-collector / docker logs --tail 100 modudrive-observability-otel-collector-1'
 
       # 서비스는 떠 있는데 그 서비스로 가는 호출이 계속 실패하는 경우 — 5xx·타임아웃·Redis/DB 막힘. 스크레이프는
       # 성공하니 위 규칙으로는 안 보인다. 한 번 잠깐 막힌 건 알리지 않는다: 재배포 중에도
@@ -90,6 +119,8 @@ groups:
         for: 2m
         labels:
           channel: service
+          # 서킷 이름의 대상(memberServiceCircuitBreaker → member-service). 그 서비스의 ServiceDown이 이 알림을 누른다.
+          target: '{{ reReplaceAll "ServiceCircuitBreaker$" "-service" $labels.name }}'
         annotations:
           title: 서킷 열림
           summary: '최근 2분 동안 서킷이 막은 호출 **{{ printf "%.0f" $value }}건** — 대상 서비스 호출이 계속 실패 중 (502·503·504 · 타임아웃 · 연결 실패)'
@@ -110,6 +141,7 @@ groups:
         for: 2m
         labels:
           channel: service
+          target: '{{ $labels.routeId }}'
         annotations:
           title: 요청 실패율 높음
           summary: '최근 5분 요청의 **{{ humanizePercentage $value }}**가 5xx로 실패 중'
@@ -132,6 +164,7 @@ groups:
         for: 2m
         labels:
           channel: service
+          target: '{{ $labels.routeId }}'
         annotations:
           title: 느린 요청 많음
           summary: '최근 5분 요청의 **{{ humanizePercentage $value }}**가 1초를 넘김'

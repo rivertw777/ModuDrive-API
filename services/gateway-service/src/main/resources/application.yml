@@ -63,6 +63,14 @@ resilience4j:
       notificationServiceCircuitBreaker:
         baseConfig: default
 
+# /readyz on the public port (actuator itself stays on 9464): what the Route 53 health check calls from
+# outside (monitoring.tf), so it walks the user's path — DNS, certificate, WAF, ALB, gateway.
+management:
+  endpoint:
+    health:
+      probes:
+        add-additional-paths: true
+
 client:
   url: ${CLIENT_URL}
 

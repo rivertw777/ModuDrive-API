@@ -105,7 +105,8 @@ flowchart LR
 | 화면 | Grafana `localhost:3001` | Grafana Cloud의 Grafana | Managed Grafana |
 | 설정 | `.docker/observability/` | `.infra/monitoring.tf`, `.infra/monitoring/` | 같음 |
 
-CloudWatch 경보(큐 대기, ALB 5xx, gateway 헬스, NAT, CPU·메모리, DB, Redis), Budgets, GuardDuty는 demo와 prod 모두 SNS → Lambda로 Discord에 간다. 앱 지표로는 안 보이는 AWS 쪽 신호라서다.
+CloudWatch 경보(큐 대기, ALB 5xx, gateway 헬스, NAT, CPU·메모리, DB, Redis, 바깥에서 본 API 접속), Budgets, GuardDuty는 demo와 prod 모두 SNS → Lambda로 Discord에 간다. 앱 지표로는 안 보이는 AWS 쪽 신호라서다.
+알림 경로 자체는 바깥 heartbeat 서비스와 메일로 따로 본다([009 6장](009-discord-alert-spec.md#6-알림-경로-감시)).
 
 운영에서 알아 둘 것들이다.
 
@@ -122,8 +123,8 @@ CloudWatch 경보(큐 대기, ALB 5xx, gateway 헬스, NAT, CPU·메모리, DB, 
 | `.docker/docker-compose.observability.yml` | 로컬 스택 전체 (compose 프로젝트 `modudrive-observability`) |
 | `.docker/observability/*.yaml`, `*.yml` | 컴포넌트별 설정. 디렉터리째 `/etc/modudrive`로 마운트한다(8장) |
 | `.docker/observability/otel-collector-config.yaml` | tail sampling 정책 |
-| `.docker/observability/alert-rules.yaml` | 알림 규칙 9개 |
-| `.docker/observability/alertmanager.yml` | 알림 묶음, 재발송, 채널 |
+| `.docker/observability/alert-rules.yaml` | 알림 규칙 11개 (heartbeat `Watchdog` 포함) |
+| `.docker/observability/alertmanager.yml` | 알림 묶음, 재발송, 채널, 같이 울리는 알림 누르기 |
 | `.docker/observability/grafana/datasources/datasources.yaml` | Grafana 데이터소스 (Prometheus, Tempo, Loki와 그 사이 링크) |
 | `.docker/observability/grafana/dashboards/` | 대시보드 3개 (7장). demo에는 terraform apply가 같은 파일을 올린다 |
 | `common/infrastructure/observability` | 앱 쪽 공통 모듈. 의존성과 `application-observability.yml`, `UserIdObservationFilter` |
@@ -331,6 +332,7 @@ Prometheus가 1분마다 `alert-rules.yaml`을 평가해 Alertmanager로 넘기�
 | 지금 울리는 알림, 일시 중지(silence) | Grafana → Alerting → Alert groups·Silences에서 `Alertmanager` 선택. `localhost:9093`에도 있다 |
 | Discord로 보냈는지 | `docker logs modudrive-observability-alertmanager-1`에서 `Notify for alerts failed`(실패) |
 
+- 항상 울리는 `Watchdog`은 demo·prod에선 바깥 heartbeat 서비스로 ping을 보내지만 로컬은 버린다([009 6-1](009-discord-alert-spec.md#6-1-heartbeat)). Alertmanager 화면에 늘 하나 떠 있는 게 정상이다.
 - 웹후크 URL은 `.docker/.env`의 `DISCORD_*_WEBHOOK_URL`에 넣는다. Alertmanager가 뜰 때 `/alertmanager/webhooks/<채널>` 파일로 써 두므로, 바꾼 뒤엔 Alertmanager를 다시 띄운다.
 - Discord 전송이 실패하면 Alertmanager가 재시도한다.
 

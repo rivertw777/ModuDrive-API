@@ -4,6 +4,7 @@ Three kinds of message arrive (each posted as the text plus a coloured title car
   - AMP alertmanager: already Discord-formatted text (alertmanager.yaml), channel in a message attribute
   - CloudWatch alarm: JSON — AlarmDescription is "title: details", channel from the alarm name's prefix
   - Budgets: plain text; GuardDuty (EventBridge): a JSON string of text. Both the account channel
+The heartbeat channel (the Watchdog alert, every 5 minutes) is no message: it pings the heartbeat URL instead.
 Webhook URLs are read from SSM once per container — they're set by hand, never in code or env. A channel
 whose URL isn't set yet (still "set-by-hand") falls back to the service channel instead of dropping the alert.
 """
@@ -37,6 +38,10 @@ def channel_of(sns):
 
 def url(channel):
     name = os.environ.get(f"{channel.upper()}_WEBHOOK_PARAM", os.environ["SERVICE_WEBHOOK_PARAM"])
+    return parameter(name)
+
+
+def parameter(name):
     if name not in _webhooks:
         import boto3  # in the Lambda runtime; imported here so the self-check below runs without it
 
@@ -84,19 +89,24 @@ def payload(message):
     }
 
 
+def post(target, body):
+    # Discord's edge refuses the default Python-urllib agent.
+    request = urllib.request.Request(target, body, {"Content-Type": "application/json", "User-Agent": "modudrive-alerts"})
+    urllib.request.urlopen(request, timeout=10)
+
+
 def handler(event, _context):
     for record in event["Records"]:
         sns = record["Sns"]
+        if channel_of(sns) == "heartbeat":
+            target = parameter(os.environ["HEARTBEAT_URL_PARAM"])
+            if target.startswith("https://"):  # not set yet: dropped, as local
+                post(target, b"{}")
+            continue
         message = payload(sns["Message"])
         if message is None:
             continue
-        channel = channel_of(sns)
-        body = json.dumps(message).encode()
-        # Discord's edge refuses the default Python-urllib agent.
-        request = urllib.request.Request(
-            webhook(channel), body, {"Content-Type": "application/json", "User-Agent": "modudrive-alerts"}
-        )
-        urllib.request.urlopen(request, timeout=10)
+        post(webhook(channel_of(sns)), json.dumps(message).encode())
 
 
 if __name__ == "__main__":
@@ -128,6 +138,7 @@ if __name__ == "__main__":
         return {"Message": message, **({"MessageAttributes": {"channel": {"Value": attribute}}} if attribute else {})}
 
     assert channel_of(sns("🚨 text", "messaging")) == "messaging"
+    assert channel_of(sns("heartbeat", "heartbeat")) == "heartbeat"
     assert channel_of(sns(json.dumps({**alarm, "AlarmName": "queue-age-member-signed-up"}))) == "messaging"
     assert channel_of(sns(json.dumps({**alarm, "AlarmName": "service-cpu-file"}))) == "infra"
     assert channel_of(sns(json.dumps({**alarm, "AlarmName": "db-memory-file"}))) == "infra"
@@ -139,4 +150,13 @@ if __name__ == "__main__":
     assert webhook("infra") == "https://infra"
     assert webhook("account") == "https://service"  # not set yet → falls back
     assert webhook("unknown") == "https://service"
+    posted = []
+    post = lambda target, body: posted.append(target)  # noqa: E731
+    os.environ["HEARTBEAT_URL_PARAM"] = "h"
+    _webhooks["h"] = "set-by-hand"
+    handler({"Records": [{"Sns": sns("heartbeat", "heartbeat")}]}, None)
+    assert posted == []  # not set yet → dropped, not sent to Discord
+    _webhooks["h"] = "https://hc-ping.com/x"
+    handler({"Records": [{"Sns": sns("heartbeat", "heartbeat")}]}, None)
+    assert posted == ["https://hc-ping.com/x"]
     print("ok")

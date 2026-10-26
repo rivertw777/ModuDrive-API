@@ -12,15 +12,31 @@ route:
   repeat_interval: 4h
   # 규칙이 붙인 channel 라벨로 웹후크가 갈린다. 라벨이 없으면 service 채널.
   routes:
+    # Watchdog(항상 울림)의 heartbeat. demo·prod는 5분마다 바깥 heartbeat 서비스에 ping하고, 로컬은 버린다.
+    - receiver: heartbeat
+      matchers: [channel="heartbeat"]
+      group_wait: 0s
+      repeat_interval: 5m
     - receiver: messaging
       matchers: [channel="messaging"]
     - receiver: infra
       matchers: [channel="infra"]
 
+# 원인 알림 하나가 울리면 그 때문에 같이 울리는 알림은 보내지 않는다. 규칙의 target 라벨(대상 서비스)로 맞춘다.
+inhibit_rules:
+  # 서비스가 죽으면 그 서비스로 가는 서킷·요청 실패·느린 요청 알림이 같이 울린다.
+  - source_matchers: [alertname=~"ServiceDown|ServiceNoTasks"]
+    target_matchers: [alertname=~"CircuitOpen|RouteErrorRate|RouteSlowRate"]
+    equal: [target]
+  # collector가 죽으면 AWS에선 ServiceNoTasks가 서비스마다 울린다(로컬엔 이 규칙이 없다).
+  - source_matchers: [alertname="CollectorDown"]
+    target_matchers: [alertname="ServiceNoTasks"]
+
 templates:
   - /etc/alertmanager/shared/discord.tmpl
 
 receivers:
+  - name: heartbeat
   - name: messaging
     discord_configs:
       - webhook_url_file: /alertmanager/webhooks/messaging

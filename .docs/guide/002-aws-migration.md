@@ -183,6 +183,7 @@ AWS 계정에서 손으로 할 일이 하나 있다. SES 샌드박스 해제 요
 | `REDIS_PASSWORD` | `.env` | SSM, 클러스터마다 |
 | Discord 웹후크 | `.env` (Alertmanager가 읽음) | SSM (값은 손으로 넣음, 1-13) |
 | Grafana Cloud 토큰 | 없음 | SSM (demo만, 값은 손으로 넣음, 1-13) |
+| heartbeat ping 주소 | 없음 (로컬은 ping 안 함) | SSM `HEARTBEAT_URL` (값은 손으로 넣음, 1-13) |
 | `SQS_*`, `SES_ENDPOINT`, `STORAGE_S3_*`, `LOCALSTACK_AUTH_TOKEN` | `.env` | 없음 (task role, 실제 endpoint) |
 
 값은 ECS 태스크 정의의 `secrets`로 환경 변수에 들어간다. 태스크가 뜰 때 SSM에서 읽어 오므로 태스크 정의에는 남지 않고, 앱은 로컬과 똑같이 `${...}`로 읽는다.
@@ -307,6 +308,8 @@ collector는 사이드카가 아니라 한 대만 띄운다. tail sampling(에�
 - 확인 명령어. `docker` 대신 ECS 명령을 쓰고, 로그와 trace는 demo에서는 로컬과 같은 LogQL·TraceQL을, prod에서는 `aws logs tail`과 X-Ray 필터를 쓴다.
 - 규칙 하나. ECS에서는 죽은 태스크가 `up = 0`으로 남지 않고 대상 목록에서 아예 사라지기 때문에, AWS에만 `ServiceNoTasks`(`absent(up{service=...})`)가 있다.
 
+항상 울리는 `Watchdog` 규칙은 Discord가 아니라 바깥 heartbeat 서비스(healthchecks.io)로 ping을 보낸다. demo는 Grafana Cloud Alertmanager가 바로, prod는 SNS → Lambda가 보낸다. ping이 끊기면 healthchecks.io가 알린다([009 6-1](../spec/009-discord-alert-spec.md#6-1-heartbeat)).
+
 묶음(`group_by: [alertname]`), 재알림 간격(4시간), 채널(service, infra, messaging), 메시지 양식(`monitoring/discord.tmpl`)도 로컬과 같다. CloudWatch 경보·Budgets·GuardDuty까지 합친 채널 구분은 [009 3장](../spec/009-discord-alert-spec.md#3-사용-디스코드-채널)에 있다.
 
 - **demo**: apply가 규칙과 Alertmanager 설정(`monitoring/alertmanager-grafana-cloud.yaml`)을 Grafana Cloud API로 올린다(`terraform_data.grafana_cloud_alerts`). 규칙, Alertmanager 설정, 토큰 중 하나가 바뀌면 다시 올린다. 웹후크 URL은 SSM 값을 읽어 설정에 넣는다.
@@ -315,6 +318,9 @@ collector는 사이드카가 아니라 한 대만 띄운다. tail sampling(에�
 앱 지표로는 안 보이는 것들은 CloudWatch 경보로 보고, SNS 토픽 → Lambda로 Discord에 보낸다. demo와 prod가 같다. 로컬에는 볼 대상(ALB, NAT, 요금, 계정 위협)이 없어서 이 경보들도 없다. Lambda는 VPC 밖에 있어서 NAT가 멈춰도 알림은 나간다.
 
 경보 목록과 기준은 [009-discord-alert-spec.md 5](../spec/009-discord-alert-spec.md#5-aws-전용-경보)에 있다.
+
+- 바깥에서 본 API 접속은 Route 53 헬스 체크가 `https://api.<도메인>/readyz`를 30초마다 부른다. 헬스 체크 지표가 us-east-1에만 있어서 그 경보와 SNS 토픽만 us-east-1에 두고, 같은 Lambda가 구독한다. 도메인이 있는 환경에만 생긴다.
+- Lambda가 Discord로 못 보내면(웹후크 폐기 등) 그 실패 경보(`discord-forwarder-errors`)는 Lambda를 거치지 않고 `alert_email` 메일로만 간다. `alert_email`이 없으면 만들지 않는다([009 6-2](../spec/009-discord-alert-spec.md#6-2-discord-전달-실패-aws)).
 
 #### 손으로 넣는 값
 
@@ -329,6 +335,14 @@ aws ssm put-parameter --name /modudrive/DISCORD_ACCOUNT_WEBHOOK_URL   --type Sec
 ```
 
 Lambda는 읽은 URL을 컨테이너가 살아 있는 동안 기억한다. 넣기 전에 알림이 한 번 지나갔다면, Lambda가 새로 뜰 때까지 그 채널 알림은 계속 service 채널로 간다.
+
+heartbeat ping 주소도 같은 방식이다. [healthchecks.io](https://healthchecks.io)에서 환경마다 체크를 하나 만들고(Period 5분, Grace 5분, 알림은 메일), 그 체크의 ping URL을 넣는다. demo는 넣은 뒤 apply를 한 번 더 해야 Grafana Cloud에 반영된다.
+
+```bash
+aws ssm put-parameter --name /modudrive/HEARTBEAT_URL --type SecureString --overwrite --value 'https://hc-ping.com/<uuid>'
+```
+
+Discord 전달 실패 경보를 받으려면 `envs/<env>.tfvars`의 `alert_email`에 메일 주소를 넣고 apply한 뒤, AWS가 보내는 확인 메일(SNS 구독)에서 Confirm을 누른다. 예산 알림 메일도 같은 주소로 간다.
 
 Grafana Cloud 토큰(demo)은 Terraform이 만들지 않고 읽기만 하므로, **첫 apply 전에** 넣는다. grafana.com → 스택 → Access Policies에서 `metrics:write`, `logs:write`, `traces:write`, `rules:write`, `alerts:write` 범위로 만든 토큰이다.
 

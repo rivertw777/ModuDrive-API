@@ -15,6 +15,7 @@
   - [2-2. 규칙](#2-2-규칙)
   - [2-3. 알림 메시지](#2-3-알림-메시지)
   - [2-4. 그룹핑과 재발송](#2-4-그룹핑과-재발송)
+  - [2-5. 같이 울리는 알림 누르기](#2-5-같이-울리는-알림-누르기)
 - [3. 사용 디스코드 채널](#3-사용-디스코드-채널)
 - [4. 사용 알림](#4-사용-알림)
   - [4-1. 이벤트 전송 적체](#4-1-이벤트-전송-적체)
@@ -26,12 +27,16 @@
   - [4-7. 느린 요청 많음](#4-7-느린-요청-많음)
   - [4-8. 힙 메모리 부족](#4-8-힙-메모리-부족)
   - [4-9. DB 커넥션 부족](#4-9-db-커넥션-부족)
+  - [4-10. 지표 수집 끊김](#4-10-지표-수집-끊김)
 - [5. AWS 전용 경보](#5-aws-전용-경보)
   - [5-1. 발송 과정](#5-1-발송-과정)
   - [5-2. 알림이 오기까지 걸리는 시간](#5-2-알림이-오기까지-걸리는-시간)
   - [5-3. 알림 메시지](#5-3-알림-메시지)
   - [5-4. 경보 목록](#5-4-경보-목록)
-- [6. TODO](#6-todo)
+- [6. 알림 경로 감시](#6-알림-경로-감시)
+  - [6-1. heartbeat](#6-1-heartbeat)
+  - [6-2. Discord 전달 실패 (AWS)](#6-2-discord-전달-실패-aws)
+- [7. TODO](#7-todo)
 
 ---
 
@@ -105,7 +110,7 @@ flowchart LR
 |---|---|---|
 | `.docker/observability/alert-rules.yaml` | 규칙 (2-1, 2-2) | `.infra/monitoring/alert-rules.yaml` |
 | `.infra/monitoring/discord.tmpl` | 메시지 양식 (2-3) | 같은 파일 |
-| `.docker/observability/alertmanager.yml` | 그룹핑·채널 (2-4, 3장) | demo `.infra/monitoring/alertmanager-grafana-cloud.yaml`, prod `.infra/monitoring/alertmanager.yaml` |
+| `.docker/observability/alertmanager.yml` | 그룹핑·누르기·채널 (2-4, 2-5, 3장) | demo `.infra/monitoring/alertmanager-grafana-cloud.yaml`, prod `.infra/monitoring/alertmanager.yaml` |
 | `.infra/monitoring/discord_forwarder.py` | AWS 전용 경보([5장](#5-aws-전용-경보))와 prod 4장 알림의 SNS → 디스코드 전달 | 로컬엔 없음 |
 
 규칙 파일은 로컬과 AWS가 따로다. 쿼리와 기준값은 같고 확인 명령어만 다르다(docker ↔ ECS, 로그·trace는 demo가 로컬과 같은 Loki·Tempo, prod가 CloudWatch·X-Ray). 규칙을 고치면 두 파일을 같이 고친다.
@@ -205,6 +210,21 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 알림 이름 단위로 묶는 이유: 서비스·큐마다 따로 보내면 여러 건이 한꺼번에 생길 때 디스코드가 "너무 자주 보낸다"(429)며 막아
 알림이 사라질 수 있다(Grafana 알림을 쓰던 때 재배포로 서비스 일곱 개가 같이 내려가 세 건이 사라졌다). 큰 장애일수록 알림이 많이 사라지는 구조가 된다.
 
+### 2-5. 같이 울리는 알림 누르기
+
+`group_by`는 이름이 같은 알림만 묶는다. 장애 하나에 원인 알림과 그 결과 알림이 이름을 달리해 같이 울리면 원인이 묻힌다.
+그래서 원인 알림이 울리는 동안엔 결과 알림을 보내지 않는다(Alertmanager의 `inhibit_rules`). 눌린 알림은 Grafana → Alerting → Alert groups에 `suppressed`로 보인다.
+
+| 원인 알림 | 누르는 알림 | 조건 |
+|---|---|---|
+| 서비스 응답 없음, 서비스 태스크 없음 | 서킷 열림, 요청 실패율 높음, 느린 요청 많음 | `target` 라벨(대상 서비스)이 같을 때 |
+| 지표 수집 끊김 | 서비스 태스크 없음 | 언제나 |
+
+- 예를 들어 member-service가 죽으면 "서비스 응답 없음" 한 통만 온다. gateway·auth·file의 서킷 열림과 member 경로의 요청 실패율은 눌린다.
+- `target`은 규칙의 `labels`가 붙인다. 서비스 응답 없음·태스크 없음은 `service`, 요청 실패율·느린 요청은 `routeId`, 서킷 열림은 서킷 이름의 대상이다(`memberServiceCircuitBreaker` → `member-service`).
+  서킷 이름을 `<대상>ServiceCircuitBreaker`로 짓지 않으면 대상을 못 뽑아 누르지 못한다.
+- 원인 알림이 풀렸는데 눌렸던 알림이 아직 울리는 중이면 그때 보낸다.
+
 ---
 
 ## 3. 사용 디스코드 채널
@@ -213,8 +233,8 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 
 | 채널 | 성격 | 받는 알림 | 받으면 | 웹후크 주소 환경 변수 |
 |---|---|---|---|---|
-| `#service` | 지금 사용자가 피해를 보고 있음 | 응답 없음, 태스크 없음, 서킷 열림, 요청 실패율, 느린 요청, DB 커넥션 부족, ALB 5xx, gateway 정상 태스크 없음 | 바로 본다 | `DISCORD_SERVICE_WEBHOOK_URL` |
-| `#infra` | 아직 괜찮지만 그냥 두면 문제가 됨 (자원 한도) | 힙 메모리, 서비스 CPU·메모리, DB 메모리·CPU 크레딧, Redis 메모리, NAT 상태 검사 | 그날 안에 사양·설정을 조정하거나 원인을 고친다 | `DISCORD_INFRA_WEBHOOK_URL` |
+| `#service` | 지금 사용자가 피해를 보고 있음 | 응답 없음, 태스크 없음, 서킷 열림, 요청 실패율, 느린 요청, DB 커넥션 부족, ALB 5xx, gateway 정상 태스크 없음, 외부 접속 실패 | 바로 본다 | `DISCORD_SERVICE_WEBHOOK_URL` |
+| `#infra` | 아직 괜찮지만 그냥 두면 문제가 됨 (자원 한도, 지표 수집) | 힙 메모리, 서비스 CPU·메모리, DB 메모리·CPU 크레딧, Redis 메모리, NAT 상태 검사, 지표 수집 끊김 | 그날 안에 사양·설정을 조정하거나 원인을 고친다 | `DISCORD_INFRA_WEBHOOK_URL` |
 | `#messaging` | 비동기 이벤트가 멈춤 | 이벤트 전송 적체·실패, 이벤트 처리 실패, 큐 처리 지연 | 원인을 고친 뒤 재처리(리드라이브) | `DISCORD_MESSAGING_WEBHOOK_URL` |
 | `#account` | 계정 수준, 드묾 (AWS만) | 예산 초과, GuardDuty 위협 탐지 | 비용 확인, 보안 대응 | `DISCORD_ACCOUNT_WEBHOOK_URL` |
 
@@ -224,6 +244,7 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 - CloudWatch 경보(AWS): Lambda(`discord_forwarder.py`)가 SSM에서 웹후크 주소를 읽어 보낸다. 라벨이 없어서 경보 이름 앞부분으로 채널을 정한다. `queue-age-` → `#messaging`, `service-`·`db-`·`redis-`·`nat-` → `#infra`, 나머지 → `#service`. 새 경보를 만들 땐 이 규칙에 맞게 이름을 짓는다.
 - Budgets·GuardDuty: CloudWatch 경보가 아닌 글이라 `#account`로 간다.
 - 웹후크 주소를 아직 안 넣은 채널은 `#service`로 대신 보낸다. 주소를 넣기 전이라고 알림이 사라지지 않게 하려는 것이다.
+- Discord로 가지 않는 것이 둘 있다. heartbeat(`channel: heartbeat`)는 바깥 heartbeat 서비스로 가고([6-1](#6-1-heartbeat)), Discord 전달 실패는 메일로 간다([6-2](#6-2-discord-전달-실패-aws)).
 
 - 로컬: `.docker/.env`에 넣으면 Alertmanager가 뜰 때 채널별 파일로 써 두고 읽는다. 바꾼 뒤엔 Alertmanager를 다시 띄운다.
 - AWS: SSM에 손으로 한 번 넣는다([002-aws-migration.md 1-13](../guide/002-aws-migration.md#1-13-모니터링과-알림)). demo는 apply가 그 값을 Grafana Cloud의 Alertmanager 설정에 넣는다.
@@ -239,6 +260,7 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 | 이벤트 처리 실패 | `#messaging` | 받는 쪽 서비스가 처리를 포기한 메시지가 DLQ에 있을 때 | `max by (service, queue) (modudrive_dlq_messages) > 0` | 바로 |
 | 서비스 응답 없음 | `#service` | 서비스가 응답하지 않을 때 (프로세스가 죽음) | `min by (service, instance) (up{job="services"}) < 1` | 2분 |
 | 서비스 태스크 없음 (AWS) | `#service` | 서비스의 태스크가 하나도 수집되지 않을 때 (기동 실패 · 배포 롤백 반복) | 서비스마다 `absent(up{job="services",service="<서비스>"})` | 2분 |
+| 지표 수집 끊김 | `#infra` | 어느 서비스의 지표도 들어오지 않을 때 (collector 다운 · 저장소 전송 실패) | `absent(up{job="services"})` | 2분 (끊기고 약 7분 뒤, [4-10](#4-10-지표-수집-끊김)) |
 | 서킷 열림 | `#service` | 서비스는 떠 있지만, 그 서비스로 가는 호출이 계속 실패해 서킷이 호출을 막고 있을 때 | `sum by (service, name) (increase(resilience4j_circuitbreaker_not_permitted_calls_total[2m])) > 0` | 2분 |
 | 요청 실패율 높음 | `#service` | 게이트웨이를 지난 요청이 5xx로 많이 실패할 때 | 5xx 비율 `> 5%` 이면서 5분간 5xx `>= 10`건 (`spring_cloud_gateway_requests_seconds_count`, 경로별) | 2분 |
 | 느린 요청 많음 | `#service` | 게이트웨이를 지난 요청이 에러 없이 느려졌을 때 | 1초 초과 비율 `> 5%` 이면서 5분간 1초 초과 `>= 10`건 (`spring_cloud_gateway_requests_seconds_bucket{le="1.0"}`, 경로별, storage-service 제외) | 2분 |
@@ -274,6 +296,7 @@ collector가 60초마다 지표를 가져가는데, 2분 내내 응답이 없으
 
 AWS(ECS)에선 죽은 태스크가 0이 되지 않고 수집 대상에서 아예 사라진다. 그러면 `up` 값 자체가 없어 이 알림이 조용하므로,
 서비스의 태스크가 하나도 안 보이는 상태가 2분 이어지면 **서비스 태스크 없음**으로 따로 알린다. 받으면 ECS 서비스 이벤트로 태스크가 뜨지 못하는 이유를 본다.
+서비스 전부가 한꺼번에 안 보이면 서비스가 아니라 수집이 끊긴 것이라, 그때는 [지표 수집 끊김](#4-10-지표-수집-끊김)만 온다.
 
 **받으면:** 컨테이너가 떠 있는지, 앱 로그에 에러가 있는지 본다.
 
@@ -340,6 +363,18 @@ Explore에서 `spring_cloud_gateway_requests_seconds_bucket` 그래프를 띄우
 
 **받으면:** 느린 trace에서 DB 구간(커넥션 대기, 쿼리)을 본다. 계속되면 풀 크기를 올린다(AWS는 `db_pool_size`).
 
+### 4-10. 지표 수집 끊김
+
+collector가 죽거나 지표 저장소(로컬 Prometheus, demo Grafana Cloud, prod AMP)로 보내지 못하면 서비스 전부의 지표가 한꺼번에 끊긴다.
+그동안 지표로 보는 알림은 전부 조용하다. 서비스 응답 없음(`up < 1`)도 `up` 자체가 없으니 울리지 않는다.
+서비스가 아파서가 아니라 볼 수 없게 된 것이라 `#infra`로 보낸다.
+
+- **끊기고 약 7분 뒤 울린다**: 수집이 끊기면 "끊겼다"는 표시(staleness marker)도 오지 않아서, Prometheus는 마지막 값을 조회 범위(5분) 동안 그대로 쓴다. 5분이 지나야 `up`이 없어지고, 거기서 2분(`for`)을 더 기다린다.
+- **AWS에선 서비스 태스크 없음을 누른다**: `up`이 전부 없어지면 서비스 태스크 없음이 서비스마다 울리는데, 원인은 collector라서 이 알림만 보낸다([2-5](#2-5-같이-울리는-알림-누르기)).
+  demo는 collector가 Spot이라 회수되면 이렇게 된다. ECS가 새 태스크를 띄우면 저절로 풀린다.
+
+**받으면:** collector 상태와 로그를 본다. collector가 멀쩡하면 로그에서 저장소로 보내기(remote write) 실패를 찾는다.
+
 ---
 
 ## 5. AWS 전용 경보
@@ -351,7 +386,7 @@ Explore에서 `spring_cloud_gateway_requests_seconds_bucket` 그래프를 띄우
 
 ```mermaid
 flowchart LR
-    SRC["AWS 서비스<br/>ECS · RDS · ElastiCache<br/>ALB · SQS · EC2(NAT)"]
+    SRC["AWS 서비스<br/>ECS · RDS · ElastiCache<br/>ALB · SQS · EC2(NAT)<br/>Route 53 헬스 체크"]
     CW[("CloudWatch<br/>지표 저장")]
     AL["CloudWatch 경보<br/>기준 검사"]
     B["Budgets<br/>비용 검사"]
@@ -376,6 +411,8 @@ flowchart LR
 | Budgets · GuardDuty | CloudWatch 경보가 아니지만 같은 토픽에 바로 올린다. Budgets는 `alert_email`이 있으면 메일로도 보낸다 |
 | SNS → Lambda | 이 메시지들엔 `channel` 라벨이 없어서 경보 이름 앞부분으로 채널을 고른다. Budgets·GuardDuty는 `#account`다([3장](#3-사용-디스코드-채널)) |
 | Discord | `#service`, `#infra`, `#messaging`, `#account` 중 한 곳으로 도착한다 |
+
+외부 접속 실패 경보만 us-east-1에 있다. Route 53 헬스 체크 지표가 us-east-1에만 올라오고 경보는 같은 리전의 SNS 토픽으로만 보낼 수 있어서, us-east-1에 토픽을 하나 더 두고 같은 Lambda가 구독한다.
 
 4장 알림과 다른 점은 둘이다.
 
@@ -422,18 +459,51 @@ Budgets는 AWS가 만든 문장을, GuardDuty는 EventBridge 규칙에 적어 �
 | DB CPU 크레딧 부족 (demo) | `#infra` | t 계열 DB의 크레딧이 바닥나기 직전 — RDS는 무제한 모드라 느려지지 않고, 넘게 쓴 CPU만큼 추가 요금이 나간다 | `db-cpu-credit-<인스턴스>`: RDS `CPUCreditBalance` 최소 `< 30` | 10분 (5분 × 2) |
 | Redis 메모리 높음 (demo) | `#infra` | Redis가 차 갈 때 — noeviction이라 가득 차면 쓰기(로그인·업로드)가 실패한다 | `redis-memory-<클러스터>`: ElastiCache `DatabaseMemoryUsagePercentage` 최대 `> 80`% | 5분 |
 | NAT 인스턴스 상태 검사 실패 (demo) | `#infra` | NAT가 멈춰 바깥 통신(SQS·SES·이미지 받기)만 끊길 때 — 서비스는 떠 있다 | `nat-instance-status`: EC2 `StatusCheckFailed` 최대 `> 0` | 3분 (1분 × 3) |
+| 외부 접속 실패 | `#service` | 바깥에서 API에 들어오지 못할 때 — DNS·인증서·WAF·ALB·gateway 중 어디가 막혀도 (안쪽 지표로는 안 보인다) | `api-unreachable`: Route 53 헬스 체크(`https://api.<도메인>/readyz`를 30초마다, 3번 연속 실패면 비정상)의 `HealthCheckStatus` 최소 `< 1` | 2분 (1분 × 2), 헬스 체크 판정 1분 30초가 앞에 붙는다 |
 | 예산 초과 | `#account` | 이번 달 사용액이 예산의 80%를 넘었거나, 월말 예상이 100%를 넘을 때. 크레딧을 빼기 전 금액으로 본다 — 무료 플랜은 크레딧이 청구액을 0으로 만들고, 다 쓰면 계정이 닫힌다 (`alert_email`이 있으면 메일로도) | Budgets: 실제 `>= 80`%, 예상 `>= 100`% | AWS가 비용을 집계할 때 (하루 몇 번) |
 | GuardDuty 위협 탐지 (prod) | `#account` | 계정 수준의 위협이 탐지됐을 때 ([002 4-6](../guide/002-aws-migration.md)) | GuardDuty 심각도 `>= 7` | 탐지 후 몇 분 |
 
 알림 이름 옆 (demo)·(prod)는 그 환경에만 있다는 뜻이고, 없는 것은 둘 다에 있다. prod는 Aurora·MemoryDB라 DB·Redis 경보가 아직 없다.
+외부 접속 실패는 도메인(`domain_name`)이 있는 환경에만 있다.
+`/readyz`는 gateway가 공개 포트에 여는 readiness 상태다(`management.endpoint.health.probes.add-additional-paths`). 상세는 없이 `{"status":"UP"}`만 돌려주고, 로그인 없이 열리는 건 `GET /readyz` 하나다.
 기다리는 시간은 `period × evaluation_periods`이고, 여기에 지표가 CloudWatch에 올라오는 지연(보통 1~3분)이 더해진다([5-2](#5-2-알림이-오기까지-걸리는-시간)).
 
 ---
 
-## 6. TODO
+## 6. 알림 경로 감시
+
+4·5장 알림은 보내는 쪽이 살아 있어야 온다. 규칙 평가, Alertmanager, SNS, Lambda, 웹후크 중 하나만 멈춰도 알림이 조용히 끊기고,
+조용한 것과 멀쩡한 것이 구분되지 않는다. 그래서 알림 경로 자체를 따로 본다.
+
+### 6-1. heartbeat
+
+`Watchdog` 규칙은 항상 울린다(`vector(1)`). Alertmanager가 이걸 5분마다 바깥 heartbeat 서비스(healthchecks.io)의 ping 주소로 보내고, ping이 끊기면 healthchecks.io가 알린다.
+알림 경로 안에서는 자기가 멈춘 걸 알릴 수 없어서 바깥에 맡긴다.
+
+| 환경 | ping이 지나가는 길 | 살아 있는지 확인되는 것 |
+|---|---|---|
+| 로컬 | 보내지 않는다 (빈 receiver) | 없음 |
+| demo | Grafana Cloud 규칙 → Alertmanager → webhook | Grafana Cloud의 규칙 평가, Alertmanager |
+| prod | AMP 규칙 → Alertmanager → SNS → Lambda → ping | AMP의 규칙 평가, Alertmanager, SNS, Lambda |
+
+- 규칙의 `channel: heartbeat` 라벨로 따로 빠지고 Discord로는 가지 않는다. 해제가 없는 알림이라 `repeat_interval` 5분으로 계속 다시 보낸다.
+- ping 주소는 SSM `/modudrive/HEARTBEAT_URL`에 손으로 넣는다([002-aws-migration.md 1-13](../guide/002-aws-migration.md#1-13-모니터링과-알림)). 아직 `set-by-hand`면 ping을 버린다.
+- healthchecks.io의 체크는 Period 5분, Grace 5분으로 둔다. ping이 10분 넘게 안 오면 알린다.
+- Grafana의 "울리는 알림" 숫자(Overview)에서는 뺀다.
+
+### 6-2. Discord 전달 실패 (AWS)
+
+5장 경보는 SNS → Lambda가 Discord로 보낸다. Discord가 거절하면(웹후크 폐기, 429) Lambda가 실패하고, 재시도 두 번 뒤 그 알림은 버려진다.
+이걸 Discord로 알리면 같은 길로 가서 받지 못하므로, Lambda 실패만 따로 경보를 걸어 메일로 보낸다.
+
+| 알림 | 받는 곳 | 조건 | 기다리는 시간 |
+|---|---|---|---|
+| Discord 전달 실패 | `alert_email` 메일 | `discord-forwarder-errors`: Lambda `Errors` 합 `> 0` | 5분 |
+
+- `alert_email`(`envs/*.tfvars`)이 있을 때만 만든다. apply 뒤 AWS가 보내는 확인 메일에서 Confirm을 눌러야 받는다.
+- 메일 본문은 CloudWatch 경보 JSON 그대로다. `AlarmDescription`에 조치가 있다.
+
+## 7. TODO
 
 - [ ] **DLQ 지표를 CloudWatch 경보로**: AWS에선 CloudWatch가 DLQ의 `ApproximateNumberOfMessagesVisible`을 이미 안다.
   DLQ마다 경보를 걸면 앱이 30초마다 세는 코드(`QueueDepthMetrics`)를 없앨 수 있다.
-- [ ] **알림 시스템 자체가 죽었을 때**: Prometheus·Alertmanager가 멈추면 알림이 하나도 오지 않는데, 이를 알려 줄 장치가 없다.
-  지표가 아예 없으면 규칙은 조용하다(서비스가 죽은 것만 `up`으로 따로 본다). 로컬에서는 감수하고,
-  AWS에선 바깥에서 알림 시스템이 살아 있는지 확인하는 방법(CloudWatch 등)을 위 항목과 함께 정한다.

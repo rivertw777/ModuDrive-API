@@ -4,7 +4,8 @@
 #     alert rules run on its ruler and its alertmanager posts to Discord, as local.
 #   - AWS (prod): AMP for metrics, X-Ray for traces, CloudWatch Logs for logs (awslogs, ecs.tf). The
 #     alert rules run on AMP's ruler, out through the SNS topic below.
-# Either way the AWS-side alarms go to one SNS topic, which a small Lambda posts to Discord.
+# Either way the AWS-side alarms go to one SNS topic, which a small Lambda posts to Discord. The Watchdog
+# alert pings a heartbeat service (healthchecks.io), which alerts on its own when the pings stop.
 locals {
   grafana_cloud = var.grafana_cloud != null
 
@@ -40,6 +41,12 @@ data "aws_ssm_parameter" "discord_webhook" {
   for_each = local.grafana_cloud ? aws_ssm_parameter.discord_webhook : {}
 
   name = each.value.name
+}
+
+data "aws_ssm_parameter" "heartbeat_url" {
+  count = local.grafana_cloud ? 1 : 0
+
+  name = aws_ssm_parameter.heartbeat_url.name
 }
 
 # Rules and alertmanager config go up through the Mimir APIs — the AWS provider has no say there. The
@@ -137,7 +144,9 @@ locals {
   # .docker/observability/alertmanager.yml with the webhook URLs inline: a hosted alertmanager reads no files.
   # A channel whose URL isn't in yet goes to service's, as local (spec 009 3).
   discord_webhook = { for k, p in data.aws_ssm_parameter.discord_webhook : k => p.value }
+  heartbeat_url   = one(data.aws_ssm_parameter.heartbeat_url[*].value)
   grafana_cloud_alertmanager = local.grafana_cloud ? templatefile("${path.module}/monitoring/alertmanager-grafana-cloud.yaml", {
+    heartbeat_url = startswith(local.heartbeat_url, "https://") ? local.heartbeat_url : null
     webhooks = {
       for c in ["messaging", "service", "infra"] : c => (
         startswith(local.discord_webhook["DISCORD_${upper(c)}_WEBHOOK_URL"], "https://")
@@ -246,6 +255,7 @@ resource "aws_lambda_function" "discord_forwarder" {
       SERVICE_WEBHOOK_PARAM   = aws_ssm_parameter.discord_webhook["DISCORD_SERVICE_WEBHOOK_URL"].name
       INFRA_WEBHOOK_PARAM     = aws_ssm_parameter.discord_webhook["DISCORD_INFRA_WEBHOOK_URL"].name
       ACCOUNT_WEBHOOK_PARAM   = aws_ssm_parameter.discord_webhook["DISCORD_ACCOUNT_WEBHOOK_URL"].name
+      HEARTBEAT_URL_PARAM     = aws_ssm_parameter.heartbeat_url.name
     }
   }
 
@@ -277,7 +287,7 @@ data "aws_iam_policy_document" "discord_forwarder" {
   }
   statement {
     actions   = ["ssm:GetParameter"]
-    resources = [for p in aws_ssm_parameter.discord_webhook : p.arn]
+    resources = concat([for p in aws_ssm_parameter.discord_webhook : p.arn], [aws_ssm_parameter.heartbeat_url.arn])
   }
   dynamic "statement" {
     for_each = var.hardened ? [1] : []
@@ -304,6 +314,40 @@ resource "aws_sns_topic_subscription" "discord_forwarder" {
   topic_arn = aws_sns_topic.alerts.arn
   protocol  = "lambda"
   endpoint  = aws_lambda_function.discord_forwarder.arn
+}
+
+# The forwarder failing (Discord refusing a revoked webhook, say) drops the alert after the async retries,
+# and the alarm saying so can't go through it — so it goes by mail alone, and only with alert_email.
+resource "aws_sns_topic" "forwarder_failures" {
+  count = var.alert_email == null ? 0 : 1
+
+  name = "${var.project}-forwarder-failures"
+}
+
+resource "aws_sns_topic_subscription" "forwarder_failures" {
+  count = var.alert_email == null ? 0 : 1
+
+  topic_arn = aws_sns_topic.forwarder_failures[0].arn
+  protocol  = "email"
+  endpoint  = var.alert_email
+}
+
+resource "aws_cloudwatch_metric_alarm" "discord_forwarder_errors" {
+  count = var.alert_email == null ? 0 : 1
+
+  alarm_name          = "discord-forwarder-errors"
+  alarm_description   = "Discord 전달 실패: discord-forwarder Lambda가 실패해 CloudWatch 경보·예산·GuardDuty 알림이 Discord에 안 감 — 로그 확인 (aws logs tail /aws/lambda/${var.project}-discord-forwarder --since 1h), 웹후크가 폐기됐으면 SSM 값 교체"
+  namespace           = "AWS/Lambda"
+  metric_name         = "Errors"
+  dimensions          = { FunctionName = aws_lambda_function.discord_forwarder.function_name }
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 1
+  threshold           = 0
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.forwarder_failures[0].arn]
+  ok_actions          = [aws_sns_topic.forwarder_failures[0].arn]
 }
 
 # ---------------------------------------------------------------------------------------------------
@@ -475,6 +519,67 @@ resource "aws_cloudwatch_metric_alarm" "redis_memory" {
   comparison_operator = "GreaterThanThreshold"
   alarm_actions       = local.alarm_actions
   ok_actions          = local.alarm_actions
+}
+
+# From outside, the way a user comes in: DNS, certificate, WAF, ALB, gateway (/readyz, gateway's
+# application.yml). Every alarm above sees from inside, so a broken record or an expired certificate
+# fires none of them. Route 53 publishes the check's status in us-east-1 only, and an alarm acts only on a
+# topic in its own region — hence the second topic there, onto the same Lambda.
+resource "aws_route53_health_check" "api" {
+  count = local.domain_based ? 1 : 0
+
+  fqdn              = "api.${var.domain_name}"
+  type              = "HTTPS"
+  port              = 443
+  resource_path     = "/readyz"
+  request_interval  = 30
+  failure_threshold = 3
+
+  tags = { Name = "${var.project}-api" }
+}
+
+resource "aws_sns_topic" "alerts_us_east_1" {
+  count    = local.domain_based ? 1 : 0
+  provider = aws.us_east_1
+
+  name = "${var.project}-alerts"
+}
+
+resource "aws_sns_topic_subscription" "discord_forwarder_us_east_1" {
+  count    = local.domain_based ? 1 : 0
+  provider = aws.us_east_1
+
+  topic_arn = aws_sns_topic.alerts_us_east_1[0].arn
+  protocol  = "lambda"
+  endpoint  = aws_lambda_function.discord_forwarder.arn
+}
+
+resource "aws_lambda_permission" "discord_forwarder_us_east_1" {
+  count = local.domain_based ? 1 : 0
+
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.discord_forwarder.function_name
+  principal     = "sns.amazonaws.com"
+  source_arn    = aws_sns_topic.alerts_us_east_1[0].arn
+}
+
+resource "aws_cloudwatch_metric_alarm" "api_unreachable" {
+  count    = local.domain_based ? 1 : 0
+  provider = aws.us_east_1
+
+  alarm_name          = "api-unreachable"
+  alarm_description   = "외부 접속 실패: 바깥에서 https://api.${var.domain_name}/readyz 확인이 2분째 실패, 사용자가 서비스에 못 들어옴 — DNS·인증서·WAF·ALB·gateway 순서로 확인 (curl -sv https://api.${var.domain_name}/readyz)"
+  namespace           = "AWS/Route53"
+  metric_name         = "HealthCheckStatus"
+  dimensions          = { HealthCheckId = aws_route53_health_check.api[0].id }
+  statistic           = "Minimum"
+  period              = 60
+  evaluation_periods  = 2
+  threshold           = 1
+  comparison_operator = "LessThanThreshold"
+  treat_missing_data  = "breaching"
+  alarm_actions       = [aws_sns_topic.alerts_us_east_1[0].arn]
+  ok_actions          = [aws_sns_topic.alerts_us_east_1[0].arn]
 }
 
 # High-severity GuardDuty findings (hardened, audit.tf), as one line of text.

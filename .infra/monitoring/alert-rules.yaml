@@ -4,6 +4,7 @@
 #   - hints point at ECS, and at Loki and Tempo on Grafana Cloud (CloudWatch Logs and X-Ray without it)
 #     instead of docker
 #   - a task that's gone is no `up` series at all rather than up = 0, hence ServiceNoTasks
+#   - Watchdog's ping goes out through Grafana Cloud's alertmanager (demo) or SNS → Lambda (prod)
 # The threshold sits inside the ratio's parentheses (both sides): `and` binds looser than `>`, so
 # `A and B > x` would compare B (the request count), not the ratio.
 # Alert names stay ASCII (they become the SNS subject); `title` is what the message shows.
@@ -50,6 +51,16 @@ groups:
           inspect: 'aws sqs receive-message --queue-url $(aws sqs get-queue-url --queue-name {{ $labels.queue }}-dlq --query QueueUrl --output text) --message-attribute-names All'
           redrive: 'aws sqs start-message-move-task --source-arn <{{ $labels.queue }}-dlq의 ARN>'
 
+  # Always firing: the alertmanager pings the heartbeat service with it, which alerts when the pings stop.
+  - name: watchdog
+    rules:
+      - alert: Watchdog
+        expr: vector(1)
+        labels:
+          channel: heartbeat
+        annotations:
+          title: 알림 경로 heartbeat
+
   - name: services
     rules:
       - alert: ServiceDown
@@ -57,6 +68,8 @@ groups:
         for: 2m
         labels:
           channel: service
+          # What the inhibit rules match on (alertmanager-*.yaml): a dead service mutes the alerts it causes.
+          target: '{{ $labels.service }}'
         annotations:
           title: 서비스 응답 없음
           summary: 스크레이프가 2분째 실패중 (프로세스 다운 · 액추에이터 응답 없음)
@@ -69,17 +82,34 @@ groups:
         for: 2m
         labels:
           channel: service
+          target: '{{ $labels.service }}'
         annotations:
           title: 서비스 태스크 없음
           summary: 수집 대상 태스크가 2분째 하나도 없음 (기동 실패 · 배포 롤백 반복)
           action: ECS 서비스 이벤트로 태스크가 뜨지 못하는 이유 확인
           inspect: 'aws ecs describe-services --cluster ${project} --services {{ $labels.service }} --query "services[0].events[:5]"'
 
+      # The collector gone (Spot reclaims it on demo) takes every up series with it: ServiceNoTasks would fire
+      # for all seven. A dead collector sends no staleness markers, so the last values linger for the 5m lookback
+      # (fires ~7m after) — the same for ServiceNoTasks, so the two fire together and the inhibit rule mutes it.
+      - alert: CollectorDown
+        expr: absent(up{job="services"})
+        for: 2m
+        labels:
+          channel: infra
+        annotations:
+          title: 지표 수집 끊김
+          summary: 어느 서비스의 지표도 들어오지 않음 (collector 다운 · 저장소 전송 실패) — 그동안 지표 알림은 울리지 않는다
+          action: collector 상태와 로그 확인
+          inspect: 'aws ecs describe-services --cluster ${project} --services otel-collector --query "services[0].events[:5]" / aws logs tail /ecs/${project}/otel-collector --since 15m'
+
       - alert: CircuitOpen
         expr: sum by (service, name) (increase(resilience4j_circuitbreaker_not_permitted_calls_total[2m])) > 0
         for: 2m
         labels:
           channel: service
+          # The circuit's callee (memberServiceCircuitBreaker → member-service).
+          target: '{{ reReplaceAll "ServiceCircuitBreaker$" "-service" $labels.name }}'
         annotations:
           title: 서킷 열림
           summary: '최근 2분 동안 서킷이 막은 호출 **{{ printf "%.0f" $value }}건** — 대상 서비스 호출이 계속 실패 중 (502·503·504 · 타임아웃 · 연결 실패)'
@@ -99,6 +129,7 @@ groups:
         for: 2m
         labels:
           channel: service
+          target: '{{ $labels.routeId }}'
         annotations:
           title: 요청 실패율 높음
           summary: '최근 5분 요청의 **{{ humanizePercentage $value }}**가 5xx로 실패 중'
@@ -119,6 +150,7 @@ groups:
         for: 2m
         labels:
           channel: service
+          target: '{{ $labels.routeId }}'
         annotations:
           title: 느린 요청 많음
           summary: '최근 5분 요청의 **{{ humanizePercentage $value }}**가 1초를 넘김'
