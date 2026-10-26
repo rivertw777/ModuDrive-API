@@ -142,11 +142,11 @@ groups:
 
       - alert: RouteSlowRate
         expr: >-
-          (1 - sum by (routeId) (rate(spring_cloud_gateway_requests_seconds_bucket{le="1.0", routeId!="storage-service"}[5m]))
+          (1 - sum by (routeId) (rate(spring_cloud_gateway_requests_seconds_bucket{le="1", routeId!="storage-service"}[5m]))
           / sum by (routeId) (rate(spring_cloud_gateway_requests_seconds_count{routeId!="storage-service"}[5m])) > 0.05)
           and on (routeId)
           ((sum by (routeId) (increase(spring_cloud_gateway_requests_seconds_count{routeId!="storage-service"}[5m]))
-          - sum by (routeId) (increase(spring_cloud_gateway_requests_seconds_bucket{le="1.0", routeId!="storage-service"}[5m]))) >= 10)
+          - sum by (routeId) (increase(spring_cloud_gateway_requests_seconds_bucket{le="1", routeId!="storage-service"}[5m]))) >= 10)
         for: 2m
         labels:
           channel: service
