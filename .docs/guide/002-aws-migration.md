@@ -184,7 +184,7 @@ AWS 계정에서 손으로 할 일이 하나 있다. SES 샌드박스 해제 요
 | Discord 웹후크 | `.env` (Alertmanager가 읽음) | SSM (값은 손으로 넣음, 1-13) |
 | Grafana Cloud 토큰 | 없음 | SSM (demo만, 값은 손으로 넣음, 1-13) |
 | heartbeat ping 주소 | 없음 (로컬은 ping 안 함) | SSM `HEARTBEAT_URL` (값은 손으로 넣음, 1-13) |
-| 알림 메일 주소 (`alert_email`) | 없음 | GitHub Secret `ALERT_EMAIL` (environment `demo-terraform`), 손으로 apply할 땐 `TF_VAR_alert_email` (1-13) |
+| 알림 메일 주소 | 없음 | SSM `ALERT_EMAIL` (첫 apply 전에 손으로 넣음, 1-13) |
 | `SQS_*`, `SES_ENDPOINT`, `STORAGE_S3_*`, `LOCALSTACK_AUTH_TOKEN` | `.env` | 없음 (task role, 실제 endpoint) |
 
 값은 ECS 태스크 정의의 `secrets`로 환경 변수에 들어간다. 태스크가 뜰 때 SSM에서 읽어 오므로 태스크 정의에는 남지 않고, 앱은 로컬과 똑같이 `${...}`로 읽는다.
@@ -321,7 +321,7 @@ collector는 사이드카가 아니라 한 대만 띄운다. tail sampling(에�
 경보 목록과 기준은 [009-discord-alert-spec.md 5](../spec/009-discord-alert-spec.md#5-aws-전용-경보)에 있다.
 
 - 바깥에서 본 API 접속은 Route 53 헬스 체크가 `https://api.<도메인>/readyz`를 30초마다 부른다. 헬스 체크 지표가 us-east-1에만 있어서 그 경보와 SNS 토픽만 us-east-1에 두고, 같은 Lambda가 구독한다. 도메인이 있는 환경에만 생긴다.
-- Lambda가 Discord로 못 보내면(웹후크 폐기 등) 그 실패 경보(`discord-forwarder-errors`)는 Lambda를 거치지 않고 `alert_email` 메일로만 간다. `alert_email`이 없으면 만들지 않는다([009 6-2](../spec/009-discord-alert-spec.md#6-2-discord-전달-실패-aws)).
+- Lambda가 Discord로 못 보내면(웹후크 폐기 등) 그 실패 경보(`discord-forwarder-errors`)는 Lambda를 거치지 않고 알림 메일(SSM `ALERT_EMAIL`)로만 간다. 메일 주소가 없으면 만들지 않는다([009 6-2](../spec/009-discord-alert-spec.md#6-2-discord-전달-실패-aws)).
 
 #### 손으로 넣는 값
 
@@ -343,14 +343,13 @@ heartbeat ping 주소도 같은 방식이다. [healthchecks.io](https://healthch
 aws ssm put-parameter --name /modudrive/HEARTBEAT_URL --type SecureString --overwrite --value 'https://hc-ping.com/<uuid>'
 ```
 
-Discord 전달 실패 경보와 예산 알림 메일은 `alert_email`로 간다. 레포와 Actions 로그가 공개라서 tfvars에 적지 않고 Secret으로 넘긴다. plan이 구독 대상 주소를 찍는데, Secret은 로그에서 `***`로 가려진다.
+Discord 전달 실패 경보와 예산 알림 메일이 가는 주소도 SSM에 둔다. 레포와 Actions 로그가 공개라 tfvars에는 적지 않는다. SecureString이라 plan에는 `(sensitive value)`로만 나온다. Terraform이 읽기만 하므로 Grafana Cloud 토큰처럼 **첫 apply 전에** 넣는다. 메일을 받지 않으려면 `none`처럼 `@`가 없는 값을 넣는다.
 
 ```bash
-gh secret set ALERT_EMAIL --env demo-terraform --body '<메일 주소>'   # demo: terraform job이 TF_VAR_alert_email로 넘긴다
-export TF_VAR_alert_email='<메일 주소>'                               # 손으로 plan·apply할 때 (prod 포함)
+aws ssm put-parameter --name /modudrive/ALERT_EMAIL --type SecureString --value '<메일 주소>'
 ```
 
-apply 뒤 AWS가 보내는 확인 메일(SNS 구독)에서 Confirm을 눌러야 받는다. 손으로 돌릴 때 이 값을 빠뜨리면 plan이 메일 구독과 Discord 전달 실패 경보를 지운다.
+apply 뒤 AWS가 보내는 확인 메일(SNS 구독)에서 Confirm을 눌러야 받는다. 주소를 바꾸면(`--overwrite`) 다음 apply가 구독을 새 주소로 바꾼다.
 
 Grafana Cloud 토큰(demo)은 Terraform이 만들지 않고 읽기만 하므로, **첫 apply 전에** 넣는다. grafana.com → 스택 → Access Policies에서 `metrics:write`, `logs:write`, `traces:write`, `rules:write`, `alerts:write` 범위로 만든 토큰이다.
 
@@ -396,7 +395,6 @@ demo와 prod는 AWS 계정도, Terraform 상태도 따로다. 같은 코드를 `
 - tfvars의 `account_id`를 채워 두면 provider가 다른 계정의 자격 증명을 거부한다. prod.tfvars로 demo 계정에 plan하는 실수가 여기서 걸린다.
 - 상태 파일에는 `random_password` 값이 평문으로 들어간다(1-10). 상태 버킷은 암호화하고 배포하는 사람의 역할만 접근하게 한다.
 - 크기 변수(`variables.tf`)에는 기본값이 없어서 `-var-file` 없이는 plan이 안 된다. 두 파일을 섞어 쓰지 않는다.
-- `alert_email`은 tfvars에 없다. 손으로 plan하기 전에 `export TF_VAR_alert_email=<메일 주소>`를 먼저 한다(1-13).
 
 ```bash
 cp .infra/envs/backend.hcl.example .infra/envs/demo.backend.hcl   # 그 계정의 버킷 이름을 적는다
@@ -447,7 +445,6 @@ demo는 `dev`를 `demo` 브랜치로 병합(PR)하면 인프라와 코드가 같
 #### terraform job
 
 - `terraform plan -var-file=envs/demo.tfvars -var image_tag=template`을 돌리고, 계획 요약을 실행 요약(Summary)에 남긴 뒤 apply한다.
-- `alert_email`은 environment의 Secret `ALERT_EMAIL`을 `TF_VAR_alert_email`로 넘긴다. Secret이 없으면 메일 알림 없이 돈다(1-13).
 - 데이터가 들어 있는 리소스(DB, Redis, S3 버킷, 큐, KMS 키, 비밀값)를 지우거나 교체하는 계획이면 apply하지 않고 실패한다. 이런 변경은 스냅샷을 뜬 뒤 사람이 직접 한다(2-4).
 - 역할은 `github-terraform`(`github.tf`)이다. Terraform이 IAM, KMS, 네트워크까지 만지므로 계정 관리자 권한이 필요하다. 그래서 `terraform_in_ci = true`인 demo에만 만들고, GitHub environment `demo-terraform`에서 도는 job만 이 역할을 받는다.
 - `image_tag`를 `template`로 고정한 이유가 있다. 첫 배포 이후 Terraform의 태스크 정의 리비전은 deploy job이 복사해 가는 틀일 뿐이다. 여기에 커밋 SHA를 넣으면 push할 때마다 태스크 정의 7개가 바뀌는 계획이 나와서 진짜 변경이 묻힌다.

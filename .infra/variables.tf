@@ -203,19 +203,9 @@ variable "alb_deregistration_delay" {
 }
 
 # Monthly AWS budget in USD for this account. Forecast past it or actual past 80% → the alerts topic
-# (monitoring.tf), and alert_email if set.
+# (monitoring.tf), and the alert mail if set (ALERT_EMAIL in SSM).
 variable "monthly_budget_usd" {
   type = number
-}
-
-# Gets the budget alerts by mail too — they still reach Discord without it, but a budget alert is the
-# one that must not depend on the stack it's warning about. The Discord forwarder's failures go here alone.
-# Never in tfvars: the repo and its Actions logs are public. CI passes the demo-terraform environment's
-# ALERT_EMAIL secret (masked in the logs); by hand, export TF_VAR_alert_email first — a plan without it
-# removes the mail subscriptions.
-variable "alert_email" {
-  type    = string
-  default = null
 }
 
 # Central collector (monitoring.tf): one task, never more — tail sampling needs every span of a

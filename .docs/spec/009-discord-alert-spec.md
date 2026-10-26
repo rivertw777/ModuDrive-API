@@ -408,7 +408,7 @@ flowchart LR
 |---|---|
 | AWS 서비스 | 앱이 아니라 AWS가 지표를 낸다. 코드나 수집기 설정이 필요 없고, 1분 단위로 CloudWatch에 쌓인다 |
 | CloudWatch 경보 | 정해 둔 구간(`period`, 5분 등)마다 값을 하나로 줄여(평균·최대·최소) 기준과 비교한다. 연속으로 정한 횟수(`evaluation_periods`)만큼 넘으면 경보(ALARM), 다시 괜찮아지면 정상(OK)이 된다 |
-| Budgets · GuardDuty | CloudWatch 경보가 아니지만 같은 토픽에 바로 올린다. Budgets는 `alert_email`이 있으면 메일로도 보낸다 |
+| Budgets · GuardDuty | CloudWatch 경보가 아니지만 같은 토픽에 바로 올린다. Budgets는 알림 메일 주소(SSM `ALERT_EMAIL`)가 있으면 메일로도 보낸다 |
 | SNS → Lambda | 이 메시지들엔 `channel` 라벨이 없어서 경보 이름 앞부분으로 채널을 고른다. Budgets·GuardDuty는 `#account`다([3장](#3-사용-디스코드-채널)) |
 | Discord | `#service`, `#infra`, `#messaging`, `#account` 중 한 곳으로 도착한다 |
 
@@ -460,7 +460,7 @@ Budgets는 AWS가 만든 문장을, GuardDuty는 EventBridge 규칙에 적어 �
 | Redis 메모리 높음 (demo) | `#infra` | Redis가 차 갈 때 — noeviction이라 가득 차면 쓰기(로그인·업로드)가 실패한다 | `redis-memory-<클러스터>`: ElastiCache `DatabaseMemoryUsagePercentage` 최대 `> 80`% | 5분 |
 | NAT 인스턴스 상태 검사 실패 (demo) | `#infra` | NAT가 멈춰 바깥 통신(SQS·SES·이미지 받기)만 끊길 때 — 서비스는 떠 있다 | `nat-instance-status`: EC2 `StatusCheckFailed` 최대 `> 0` | 3분 (1분 × 3) |
 | 외부 접속 실패 | `#service` | 바깥에서 API에 들어오지 못할 때 — DNS·인증서·WAF·ALB·gateway 중 어디가 막혀도 (안쪽 지표로는 안 보인다) | `api-unreachable`: Route 53 헬스 체크(`https://api.<도메인>/readyz`를 30초마다, 3번 연속 실패면 비정상)의 `HealthCheckStatus` 최소 `< 1` | 2분 (1분 × 2), 헬스 체크 판정 1분 30초가 앞에 붙는다 |
-| 예산 초과 | `#account` | 이번 달 사용액이 예산의 80%를 넘었거나, 월말 예상이 100%를 넘을 때. 크레딧을 빼기 전 금액으로 본다 — 무료 플랜은 크레딧이 청구액을 0으로 만들고, 다 쓰면 계정이 닫힌다 (`alert_email`이 있으면 메일로도) | Budgets: 실제 `>= 80`%, 예상 `>= 100`% | AWS가 비용을 집계할 때 (하루 몇 번) |
+| 예산 초과 | `#account` | 이번 달 사용액이 예산의 80%를 넘었거나, 월말 예상이 100%를 넘을 때. 크레딧을 빼기 전 금액으로 본다 — 무료 플랜은 크레딧이 청구액을 0으로 만들고, 다 쓰면 계정이 닫힌다 (알림 메일 주소가 있으면 메일로도) | Budgets: 실제 `>= 80`%, 예상 `>= 100`% | AWS가 비용을 집계할 때 (하루 몇 번) |
 | GuardDuty 위협 탐지 (prod) | `#account` | 계정 수준의 위협이 탐지됐을 때 ([002 4-6](../guide/002-aws-migration.md)) | GuardDuty 심각도 `>= 7` | 탐지 후 몇 분 |
 
 알림 이름 옆 (demo)·(prod)는 그 환경에만 있다는 뜻이고, 없는 것은 둘 다에 있다. prod는 Aurora·MemoryDB라 DB·Redis 경보가 아직 없다.
@@ -498,9 +498,9 @@ Budgets는 AWS가 만든 문장을, GuardDuty는 EventBridge 규칙에 적어 �
 
 | 알림 | 받는 곳 | 조건 | 기다리는 시간 |
 |---|---|---|---|
-| Discord 전달 실패 | `alert_email` 메일 | `discord-forwarder-errors`: Lambda `Errors` 합 `> 0` | 5분 |
+| Discord 전달 실패 | 알림 메일 | `discord-forwarder-errors`: Lambda `Errors` 합 `> 0` | 5분 |
 
-- `alert_email`이 있을 때만 만든다. 레포와 Actions 로그가 공개라 tfvars에 두지 않고, demo는 GitHub environment `demo-terraform`의 Secret `ALERT_EMAIL`로 넘긴다([002-aws-migration.md 1-13](../guide/002-aws-migration.md#1-13-모니터링과-알림)). apply 뒤 AWS가 보내는 확인 메일에서 Confirm을 눌러야 받는다.
+- 주소는 SSM `/modudrive/ALERT_EMAIL`에 손으로 넣고, `@`가 없으면(`none`) 만들지 않는다([002-aws-migration.md 1-13](../guide/002-aws-migration.md#1-13-모니터링과-알림)). apply 뒤 AWS가 보내는 확인 메일에서 Confirm을 눌러야 받는다.
 - 메일 본문은 CloudWatch 경보 JSON 그대로다. `AlarmDescription`에 조치가 있다.
 
 ## 7. TODO
