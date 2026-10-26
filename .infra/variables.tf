@@ -209,7 +209,10 @@ variable "monthly_budget_usd" {
 }
 
 # Gets the budget alerts by mail too — they still reach Discord without it, but a budget alert is the
-# one that must not depend on the stack it's warning about.
+# one that must not depend on the stack it's warning about. The Discord forwarder's failures go here alone.
+# Never in tfvars: the repo and its Actions logs are public. CI passes the demo-terraform environment's
+# ALERT_EMAIL secret (masked in the logs); by hand, export TF_VAR_alert_email first — a plan without it
+# removes the mail subscriptions.
 variable "alert_email" {
   type    = string
   default = null

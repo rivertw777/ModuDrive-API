@@ -53,7 +53,6 @@ alb_deregistration_delay = 15
 
 # A trial account's first alarm. ~$130 of infrastructure + logs, with headroom.
 monthly_budget_usd = 150
-alert_email        = null
 
 # The smallest collector, scraping once a minute.
 otel_collector = { cpu = 256, memory = 1024, scrape_interval = "60s" }

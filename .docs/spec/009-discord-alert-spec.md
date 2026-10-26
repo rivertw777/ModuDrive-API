@@ -500,7 +500,7 @@ Budgets는 AWS가 만든 문장을, GuardDuty는 EventBridge 규칙에 적어 �
 |---|---|---|---|
 | Discord 전달 실패 | `alert_email` 메일 | `discord-forwarder-errors`: Lambda `Errors` 합 `> 0` | 5분 |
 
-- `alert_email`(`envs/*.tfvars`)이 있을 때만 만든다. apply 뒤 AWS가 보내는 확인 메일에서 Confirm을 눌러야 받는다.
+- `alert_email`이 있을 때만 만든다. 레포와 Actions 로그가 공개라 tfvars에 두지 않고, demo는 GitHub environment `demo-terraform`의 Secret `ALERT_EMAIL`로 넘긴다([002-aws-migration.md 1-13](../guide/002-aws-migration.md#1-13-모니터링과-알림)). apply 뒤 AWS가 보내는 확인 메일에서 Confirm을 눌러야 받는다.
 - 메일 본문은 CloudWatch 경보 JSON 그대로다. `AlarmDescription`에 조치가 있다.
 
 ## 7. TODO
