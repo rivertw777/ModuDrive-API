@@ -76,6 +76,18 @@ processors:
   tail_sampling:
     decision_wait: 30s
     policies:
+      # Health checks and scrapes (ECS health check, Route 53 /readyz, the collector's /actuator/prometheus)
+      # are dropped, whole trace. A drop wins over every other policy.
+      - name: health-checks
+        type: drop
+        drop:
+          drop_sub_policy:
+            - name: health-check-uri
+              type: string_attribute
+              string_attribute:
+                key: uri
+                values: ['/actuator/.*', '/readyz']
+                enabled_regex_matching: true
       - name: errors
         type: status_code
         status_code:
