@@ -314,7 +314,7 @@ gateway는 모든 응답에 `X-Trace-Id` 헤더를 붙인다(`TraceIdResponseFil
 | 방향 | 로컬 (Grafana 데이터소스 링크) | demo (Grafana Cloud) | prod |
 |---|---|---|---|
 | 로그 → trace | Loki가 로그의 `trace_id`(structured metadata)로 TraceID 링크를 만든다 | 로컬과 같다. Grafana Cloud 기본 Loki 데이터소스에 들어 있다 | 없음. Logs Insights 결과의 `traceId`로 X-Ray에서 찾는다 |
-| trace → 로그 | Tempo의 `tracesToLogsV2`가 그 `trace_id`의 로그를 모든 서비스에서 찾는다 | Grafana Cloud 기본 Tempo 데이터소스가 span 시간 앞뒤 2초의 로그를 연다. `trace_id`로 거르지는 않는다 | 없음 |
+| trace → 로그 | Tempo의 `tracesToLogsV2`가 그 `trace_id`의 로그를 모든 서비스에서 찾는다 | 로컬과 같다. `ModuDrive Tempo` 데이터소스에 같은 쿼리를 넣었다([002-aws-migration.md 3-4](../guide/002-aws-migration.md#3-4-지표로그트레이스-보기)) | 없음 |
 | 지표 → trace | exemplar (5-2) | 로컬과 같다. collector가 exemplar를 함께 remote write하고, `ModuDrive Prometheus` 데이터소스가 `trace_id`로 Tempo를 연다([002-aws-migration.md 3-4](../guide/002-aws-migration.md#3-4-지표로그트레이스-보기)) | 없음. AMP는 exemplar를 저장하지 않는다 |
 
 ---

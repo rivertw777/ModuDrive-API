@@ -519,22 +519,30 @@ grafana.com에서 스택의 Grafana(`https://<스택>.grafana.net`)를 연다. E
 
 - 지표: `ModuDrive Prometheus` 데이터소스(아래). 이름과 라벨이 로컬과 같다.
 - 로그: `grafanacloud-<스택>-logs`. `{service_name="file-service"} | trace_id="<trace id>"`, `| userId="<uuid>"`.
-- 트레이스: `grafanacloud-<스택>-traces`. `{ span.user.id = "<uuid>" }`.
+- 트레이스: `ModuDrive Tempo`(아래). `{ span.user.id = "<uuid>" }`.
 - 알림: Alerting → Alert rules에서 데이터소스 관리 규칙(`alerts` 네임스페이스)을 본다.
 - 대시보드: `ModuDrive` 폴더. 로컬과 같은 파일(`.docker/observability/grafana/dashboards/`)을 apply가 올린다(`terraform_data.grafana_cloud_dashboards`, Admin 서비스 계정 토큰 SSM `/<project>/GRAFANA_SETUP_TOKEN`). 파일을 지우면 거기서도 지운다. 홈은 Overview다.
 
-로그와 trace 사이 링크는 Grafana Cloud 기본 데이터소스에 들어 있다. 두 데이터소스는 읽기 전용이라 설정을 바꿀 수 없다.
+Grafana Cloud 기본 데이터소스(`grafanacloud-<스택>-*`)는 읽기 전용이라 설정을 바꿀 수 없다. 링크를 로컬과 맞춰야 하는 Prometheus와 Tempo는 같은 곳을 보는 데이터소스를 하나씩 더 뒀다.
 
 - 로그 → trace: Loki의 derived field `traceID (field)`가 `trace_id`(structured metadata)로 Tempo를 연다. 로컬과 같다.
-- trace → 로그: Tempo의 Trace to logs가 span 시간 앞뒤 2초의 로그를 연다. 로컬처럼 `trace_id`로 거르지는 않으므로, 정확히 보려면 Loki에서 `| trace_id="<trace id>"`로 찾는다.
-- 지표 → trace: 기본 `grafanacloud-<스택>-prom`은 exemplar의 `traceID` 라벨을 찾아서 우리 exemplar(`trace_id`)에는 링크가 안 생긴다. 그래서 같은 Mimir를 보는 Prometheus 데이터소스를 하나 더 두고 exemplar 라벨을 `trace_id`로 잡았다.
+- trace → 로그: 기본 Tempo는 span 시간 앞뒤 2초의 로그를 열어 `trace_id`로 거르지 않는다. 그래서 `ModuDrive Tempo`의 Trace to logs를 로컬과 같은 쿼리로 잡았다.
+- 지표 → trace: 기본 `grafanacloud-<스택>-prom`은 exemplar의 `traceID` 라벨을 찾아서 우리 exemplar(`trace_id`)에는 링크가 안 생긴다. 그래서 `ModuDrive Prometheus`의 exemplar 라벨을 `trace_id`로 잡았다.
 
 | 항목 | 값 |
 |---|---|
 | 이름, uid | `ModuDrive Prometheus`, `modudrive-prom` |
 | URL | Prometheus Details의 URL + `/api/prom` |
-| Basic auth | User는 Prometheus user ID, Password는 metrics read만 있는 access policy(`modudrive-grafana-read`) 토큰 |
-| Exemplars | Internal link, `grafanacloud-<스택>-traces`, Label name `trace_id` |
+| Basic auth | User는 Prometheus user ID, Password는 `modudrive-grafana-read`(metrics·traces read) access policy 토큰 |
+| Exemplars | Internal link, `ModuDrive Tempo`, Label name `trace_id` |
+
+| 항목 | 값 |
+|---|---|
+| 이름, uid | `ModuDrive Tempo`, `modudrive-tempo` |
+| URL | 기본 `grafanacloud-<스택>-traces`와 같다 (Tempo Details의 URL + `/tempo`) |
+| Basic auth | User는 Tempo user ID, Password는 `modudrive-grafana-read`(metrics·traces read) 토큰 |
+| Trace to logs | `grafanacloud-<스택>-logs`, custom query `{service_name=~".+"} \| trace_id="${__trace.traceId}"` |
+| 나머지 | Service graph·Trace to metrics·profiles는 기본과 같다 |
 
 ---
 
