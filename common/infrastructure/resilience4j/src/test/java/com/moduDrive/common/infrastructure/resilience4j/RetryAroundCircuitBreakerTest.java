@@ -49,15 +49,15 @@ class RetryAroundCircuitBreakerTest {
     }
 
     @Test
-    @DisplayName("일시적인 실패는 3번 시도하고, 서킷 브레이커는 시도마다 기록한 뒤 fallback이 한 번 답한다")
-    void retriesAndRecordsEveryAttempt() {
+    @DisplayName("503은 재시도하지 않지만, 서킷 브레이커는 실패로 기록한다")
+    void doesNotRetryA503() {
         assertThatThrownBy(client::call)
                 .isInstanceOfSatisfying(BusinessException.class, e ->
                         assertThat(e.getExceptionCase()).isEqualTo(CircuitBreakerExceptionCase.SERVICE_UNAVAILABLE));
 
-        assertThat(client.calls()).isEqualTo(3);
+        assertThat(client.calls()).isEqualTo(1);
         assertThat(circuitBreakerRegistry.circuitBreaker("testCircuitBreaker").getMetrics().getNumberOfFailedCalls())
-                .isEqualTo(3);
+                .isEqualTo(1);
     }
 
     @Test
@@ -73,13 +73,15 @@ class RetryAroundCircuitBreakerTest {
     }
 
     @Test
-    @DisplayName("연결 실패는 3번 시도한다")
-    void retriesAConnectFailure() {
+    @DisplayName("연결 실패는 3번 시도하고, 서킷 브레이커는 시도마다 기록한 뒤 fallback이 한 번 답한다")
+    void retriesAConnectFailureAndRecordsEveryAttempt() {
         assertThatThrownBy(client::callRefused)
                 .isInstanceOfSatisfying(BusinessException.class, e ->
                         assertThat(e.getExceptionCase()).isEqualTo(CircuitBreakerExceptionCase.SERVICE_UNAVAILABLE));
 
         assertThat(client.calls()).isEqualTo(3);
+        assertThat(circuitBreakerRegistry.circuitBreaker("testCircuitBreaker").getMetrics().getNumberOfFailedCalls())
+                .isEqualTo(3);
     }
 
     @Test
