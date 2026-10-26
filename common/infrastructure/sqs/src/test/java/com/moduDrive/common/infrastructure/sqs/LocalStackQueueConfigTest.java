@@ -81,7 +81,7 @@ class LocalStackQueueConfigTest {
     @Autowired private RecordingListener listener;
     @Autowired private MeterRegistry meterRegistry;
     // Refreshed by hand instead of waiting out the 30s poll.
-    @Autowired private DeadLetterQueueMetrics deadLetterQueueMetrics;
+    @Autowired private QueueDepthMetrics queueDepthMetrics;
 
     @BeforeEach
     void reset() {
@@ -171,10 +171,21 @@ class LocalStackQueueConfigTest {
             send(event, "outbox-4");
 
             await().atMost(Duration.ofSeconds(15)).pollInterval(500, TimeUnit.MILLISECONDS).untilAsserted(() -> {
-                deadLetterQueueMetrics.refresh();
-                assertThat(meterRegistry.get(DeadLetterQueueMetrics.METER_NAME).tag("queue", QUEUE).gauge().value())
+                queueDepthMetrics.refresh();
+                assertThat(meterRegistry.get(QueueDepthMetrics.METER_NAME).tag("queue", QUEUE).gauge().value())
                         .isGreaterThanOrEqualTo(1);
             });
+        }
+
+        @Test
+        @DisplayName("소비하는 큐 자체의 대기 건수도 게이지로 나온다")
+        void publishesTheQueueDepthTaggedWithTheConsumedQueue() {
+            // when
+            queueDepthMetrics.refresh();
+
+            // then: the listener drains it, so only that the series is there
+            assertThat(meterRegistry.get(QueueDepthMetrics.QUEUE_METER_NAME).tag("queue", QUEUE).gauge().value())
+                    .isGreaterThanOrEqualTo(0);
         }
     }
 

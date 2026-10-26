@@ -31,10 +31,10 @@ public class SqsAutoConfiguration {
 
     /** Without a {@link MeterRegistry}, or with no listeners, this polls nothing. */
     @Bean(initMethod = "start", destroyMethod = "stop")
-    DeadLetterQueueMetrics deadLetterQueueMetrics(SqsAsyncClient sqsAsyncClient,
-                                                  MessageListenerContainerRegistry containers,
-                                                  ObjectProvider<MeterRegistry> meterRegistry) {
-        return new DeadLetterQueueMetrics(sqsAsyncClient, containers, meterRegistry.getIfAvailable());
+    QueueDepthMetrics queueDepthMetrics(SqsAsyncClient sqsAsyncClient,
+                                        MessageListenerContainerRegistry containers,
+                                        ObjectProvider<MeterRegistry> meterRegistry) {
+        return new QueueDepthMetrics(sqsAsyncClient, containers, meterRegistry.getIfAvailable());
     }
 
     @Bean
