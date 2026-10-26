@@ -94,7 +94,7 @@ data "aws_iam_policy_document" "task" {
     }
   }
 
-  # The error handler moves a permanent failure to the DLQ itself; DeadLetterQueueMetrics counts it.
+  # The error handler moves a permanent failure to the DLQ itself; QueueDepthMetrics counts it.
   dynamic "statement" {
     for_each = contains(keys(local.queue_consumers), each.key) ? [1] : []
     content {
