@@ -329,7 +329,7 @@
             "type": "prometheus",
             "uid": "${prom}"
           },
-          "expr": "(1 - sum(rate(spring_cloud_gateway_requests_seconds_bucket{le=\"1.0\", routeId!=\"storage-service\"}[5m])) / sum(rate(spring_cloud_gateway_requests_seconds_count{routeId!=\"storage-service\"}[5m]))) or vector(0)",
+          "expr": "(1 - sum(rate(spring_cloud_gateway_requests_seconds_bucket{le=\"1\", routeId!=\"storage-service\"}[5m])) / sum(rate(spring_cloud_gateway_requests_seconds_count{routeId!=\"storage-service\"}[5m]))) or vector(0)",
           "legendFormat": "__auto",
           "exemplar": false,
           "range": false,
@@ -736,7 +736,7 @@
             "type": "prometheus",
             "uid": "${prom}"
           },
-          "expr": "1 - sum by (routeId) (rate(spring_cloud_gateway_requests_seconds_bucket{le=\"1.0\"}[5m])) / sum by (routeId) (rate(spring_cloud_gateway_requests_seconds_count[5m]))",
+          "expr": "1 - sum by (routeId) (rate(spring_cloud_gateway_requests_seconds_bucket{le=\"1\"}[5m])) / sum by (routeId) (rate(spring_cloud_gateway_requests_seconds_count[5m]))",
           "legendFormat": "{{routeId}}",
           "exemplar": false,
           "range": true,
@@ -799,7 +799,7 @@
     {
       "type": "timeseries",
       "title": "응답 시간 p95 (점 = exemplar, 누르면 trace)",
-      "description": "버킷이 0.1·0.3·0.5·1·3·5초라 대략값이다. 튀는 시점의 점을 누르면 그 요청의 trace가 열린다",
+      "description": "버킷이 0.1·0.3·1·3·10초라 대략값이다. 튀는 시점의 점을 누르면 그 요청의 trace가 열린다",
       "datasource": {
         "type": "prometheus",
         "uid": "${prom}"
