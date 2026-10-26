@@ -1160,7 +1160,7 @@
     },
     {
       "type": "row",
-      "title": "에러 로그",
+      "title": "에러·경고 로그",
       "id": 20,
       "collapsed": false,
       "gridPos": {
@@ -1212,13 +1212,13 @@
       "gridPos": {
         "x": 0,
         "y": 39,
-        "w": 24,
+        "w": 12,
         "h": 6
       }
     },
     {
-      "type": "logs",
-      "title": "에러 로그 (trace_id를 누르면 trace)",
+      "type": "timeseries",
+      "title": "경고 로그 수",
       "datasource": {
         "type": "loki",
         "uid": "${logs}"
@@ -1230,7 +1230,53 @@
             "type": "loki",
             "uid": "${logs}"
           },
-          "expr": "{service_name=~\"$service\"} | detected_level=\"error\"",
+          "expr": "sum by (service_name) (count_over_time({service_name=~\"$service\"} | detected_level=\"warn\" [$__auto]))",
+          "legendFormat": "{{service_name}}",
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 60,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "id": 23,
+      "gridPos": {
+        "x": 12,
+        "y": 39,
+        "w": 12,
+        "h": 6
+      },
+      "description": "재시도·서킷 열림·OTLP 전송 실패처럼 장애 전에 먼저 쌓이는 것"
+    },
+    {
+      "type": "logs",
+      "title": "에러·경고 로그 (trace_id를 누르면 trace)",
+      "datasource": {
+        "type": "loki",
+        "uid": "${logs}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${logs}"
+          },
+          "expr": "{service_name=~\"$service\"} | detected_level=~\"error|warn\"",
           "queryType": "range"
         }
       ],
