@@ -350,7 +350,7 @@ Prometheus가 1분마다 `alert-rules.yaml`을 평가해 Alertmanager로 넘기�
 |---|---|
 | Overview | 맨 위 숫자 8개(다운된 서비스·울리는 알림·요청·5xx·1초 넘는 비율·메시징 이상·서킷이 막은 호출·JVM·DB 이상, 뒤의 셋은 누르면 해당 대시보드), gateway 라우트별 요청·5xx·1초 넘는 비율·p95(exemplar), 서비스별 요청·에러·느린 URI, 에러 로그 |
 | JVM & DB | 힙, GC 뒤 old 영역 비율, GC, CPU, 스레드, 컨테이너 메모리(RSS / 한도), Hikari 커넥션(사용·대기·실패·획득 시간·점유 시간), Redis 명령(수·평균 시간·실패) |
-| Messaging & Resilience | outbox 적체·FAILED, DLQ, 큐 대기 메시지, 서킷 상태 |
+| Messaging & Resilience | outbox 적체·FAILED, DLQ, 큐 대기 메시지, 서킷 상태, 서비스 간 호출(Feign·WebClient) 수·실패 비율·응답 시간, 재시도·시간 초과 |
 
 - 알림이 보는 패널은 알림 규칙과 같은 식에 기준선을 그어 두었다.
 - 데이터소스는 대시보드 변수(`prom`, `logs`)로 고른다. 로컬은 `Prometheus`·`Loki`, demo는 `ModuDrive Prometheus`·`grafanacloud-<스택>-logs`가 자동으로 잡힌다.
