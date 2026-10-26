@@ -245,6 +245,7 @@ trace를 전부 남기면 저장량이 감당이 안 되고, 앞단에서 고정
 | 정책 | 조건 | 이유 |
 |---|---|---|
 | `errors` | 에러 상태 span이 하나라도 있음 | 장애 분석에 쓰는 trace는 빠짐없이 있어야 한다 |
+| `server-errors` | HTTP 상태(span의 `status` 태그)가 5xx인 span이 있음 | 예외 처리기나 gateway가 답한 5xx는 span이 에러 상태가 아니라서 `errors`에 안 걸린다 |
 | `slow-requests` | 1초 넘게 걸림 | 느린 요청 알림(1초 기준)에 걸린 요청은 trace가 반드시 남는다 |
 | `baseline-sample` | 나머지 중 5% | 정상 요청이 어떻게 생겼는지 비교할 표본 |
 

@@ -526,7 +526,7 @@
     {
       "type": "timeseries",
       "title": "호출 수",
-      "description": "service가 부른 쪽, uri가 불린 API",
+      "description": "service가 부른 쪽, uri가 불린 API. gateway가 라우트로 넘긴 요청은 뺀다 (위 Overview 라우트 행)",
       "datasource": {
         "type": "prometheus",
         "uid": "${prom}"
@@ -538,7 +538,7 @@
             "type": "prometheus",
             "uid": "${prom}"
           },
-          "expr": "sum by (service, uri) (rate(http_client_requests_seconds_count{service=~\"$service\"}[5m]))",
+          "expr": "sum by (service, uri) (rate(http_client_requests_seconds_count{service=~\"$service\", spring_cloud_gateway_route_id=\"\"}[5m]))",
           "legendFormat": "{{service}} → {{uri}}",
           "exemplar": false,
           "range": true,
@@ -594,7 +594,7 @@
             "type": "prometheus",
             "uid": "${prom}"
           },
-          "expr": "sum by (service, uri) (rate(http_client_requests_seconds_count{service=~\"$service\", status!~\"[1-4]..\"}[5m])) / sum by (service, uri) (rate(http_client_requests_seconds_count{service=~\"$service\"}[5m]))",
+          "expr": "sum by (service, uri) (rate(http_client_requests_seconds_count{service=~\"$service\", spring_cloud_gateway_route_id=\"\", status!~\"[1-4]..\"}[5m])) / sum by (service, uri) (rate(http_client_requests_seconds_count{service=~\"$service\", spring_cloud_gateway_route_id=\"\"}[5m]))",
           "legendFormat": "{{service}} → {{uri}}",
           "exemplar": false,
           "range": true,
@@ -666,7 +666,7 @@
             "type": "prometheus",
             "uid": "${prom}"
           },
-          "expr": "sum by (service, uri) (rate(http_client_requests_seconds_sum{service=~\"$service\"}[5m])) / sum by (service, uri) (rate(http_client_requests_seconds_count{service=~\"$service\"}[5m]))",
+          "expr": "sum by (service, uri) (rate(http_client_requests_seconds_sum{service=~\"$service\", spring_cloud_gateway_route_id=\"\"}[5m])) / sum by (service, uri) (rate(http_client_requests_seconds_count{service=~\"$service\", spring_cloud_gateway_route_id=\"\"}[5m]))",
           "legendFormat": "{{service}} → {{uri}}",
           "exemplar": false,
           "range": true,

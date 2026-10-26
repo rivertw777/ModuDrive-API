@@ -66,6 +66,14 @@ processors:
         type: status_code
         status_code:
           status_codes: [ERROR]
+      # Spring은 예외 처리기나 gateway가 답한 5xx의 span을 ERROR가 아니라 unset으로 둔다 — span의 status
+      # 태그(HTTP 상태)로 따로 남긴다.
+      - name: server-errors
+        type: string_attribute
+        string_attribute:
+          key: status
+          values: ['5..']
+          enabled_regex_matching: true
       - name: slow-requests
         type: latency
         latency:
