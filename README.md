@@ -1,4 +1,17 @@
-## 1. 서비스 개요
+<div align="center">
+
+<img src=".docs/images/logo.png" width="320" alt="ModuDrive">
+
+ModuDrive에서 언제 어디서나 간편하게,<br>
+소중한 파일을 안전하게 관리하고 자유롭게 공유하세요.
+
+🔗 <a href="https://app.modudrive.help"><b>app.modudrive.help</b></a>
+
+</div>
+
+<br>
+
+## 1. 개요
 
 <br>
 
@@ -10,32 +23,66 @@
 
 <br>
 
-<div align="center">
-<table align="center">
-  <tr><th>서비스 링크</th></tr>
-  <tr><td align="center"><a href="https://app.modudrive.help">https://app.modudrive.help</a></td></tr>
+<details>
+<summary><b>서비스 화면</b></summary>
+
+<br>
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src=".docs/images/screens/home.jpg" vspace="7" alt="홈"><br>
+      <b>홈</b>
+    </td>
+    <td width="50%" align="center">
+      <img src=".docs/images/screens/upload.png" vspace="7" alt="업로드"><br>
+      <b>업로드</b>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src=".docs/images/screens/share.png" vspace="7" alt="공유"><br>
+      <b>공유</b>
+    </td>
+    <td width="50%" align="center">
+      <img src=".docs/images/screens/storage.png" vspace="7" alt="저장용량"><br>
+      <b>저장용량</b>
+    </td>
+  </tr>
 </table>
-</div>
+
+</details>
 
 <br>
 
 ---
 
-## 2. 프로젝트 목표
+## 2. 핵심 구현
 
 <br>
 
-- **효율적인 업로드**: 블록 해시 기반 업로드로 중복 전송을 없애고, 끊긴 업로드를 이어 올리기
+**블록 기반 업로드**
+- 파일을 4MB 블록 해시 목록으로 관리
+- 서버에 없는 블록만 Presigned URL로 S3에 직접 업로드
+- 업로드가 끊기면 남은 블록부터 재개
 
-- **정합성**: Transactional Outbox로 서비스 간 비동기 통신의 정합성 보장
+**메시징 정합성**
+- Transactional Outbox로 DB 변경과 이벤트를 같은 트랜잭션에 기록 후 SQS 발행
+- 소비 측 중복 처리 방지 (멱등성)
+- 처리 실패 메시지는 DLQ로 이동 후 알림
 
-- **장애 격리**: 서킷 브레이커·재시도·시간 제한으로 외부 API 장애가 서비스 전체로 번지지 않게 하기
+**장애 격리**
+- 서비스 간 호출·메일 발송에 서킷 브레이커, 재시도, 시간 제한 적용
+- 한 서비스 장애가 전체로 번지지 않도록 차단
 
-- **관측성**: 게이트웨이부터 메시지 소비까지 이어지는 분산 트레이싱 구축
+**관측성**
+- 게이트웨이부터 메시지 소비까지 하나의 trace로 연결
+- 지표·로그·trace 상호 이동
+- 장애 알림을 Discord 채널별로 분리
 
-- **모니터링**: 서버 장애 시 Discord로 알림을 보내는 모니터링 시스템 구축
-
-- **IaC**: Terraform으로 AWS 인프라를 코드로 구성하고, GitHub Actions로 배포 자동화
+**인프라 자동화**
+- Terraform으로 AWS 인프라 구성
+- GitHub Actions로 변경된 서비스만 테스트·빌드 후 ECS 배포
 
 <br>
 
@@ -46,7 +93,7 @@
 <br>
 
 <p align="center">
-  <img src=".docs/images/architecture.jpeg" width="75%" alt="시스템 아키텍처">
+  <img src=".docs/images/architecture.jpeg" width="90%" alt="시스템 아키텍처">
 </p>
 
 <div align="center">
@@ -99,7 +146,8 @@
 - [비동기 메시징 스펙](./.docs/spec/005-messaging-spec.md)
 - [장애 대응 (Resilience) 스펙](./.docs/spec/006-resilience-spec.md)
 - [로깅 스펙](./.docs/spec/007-logging-spec.md)
-- [디스코드 알림 스펙](./.docs/spec/008-discord-alert-spec.md)
+- [모니터링 스펙](./.docs/spec/008-observability-spec.md)
+- [디스코드 알림 스펙](./.docs/spec/009-discord-alert-spec.md)
 
 <br>
 
@@ -110,8 +158,7 @@
 <br>
 
 - [DB 마이그레이션 (Flyway)](./.docs/guide/001-db-migration.md)
-- [모니터링](./.docs/guide/002-observability.md)
-- [AWS 마이그레이션](./.docs/guide/003-aws-migration.md)
+- [AWS 마이그레이션](./.docs/guide/002-aws-migration.md)
 
 <br>
 
@@ -161,7 +208,7 @@
     </tr>
     <tr>
         <td align="center"><strong>Monitoring</strong></td>
-        <td align="center"> <img src="https://img.shields.io/badge/OpenTelemetry-425CC7?logo=opentelemetry&logoColor=white"/> <img src="https://img.shields.io/badge/Prometheus-E6522C?logo=prometheus&logoColor=white"/> <img src="https://img.shields.io/badge/Grafana-F46800?logo=grafana&logoColor=white"/> </td>
+        <td align="center"> <img src="https://img.shields.io/badge/OpenTelemetry-425CC7?logo=opentelemetry&logoColor=white"/> <img src="https://img.shields.io/badge/Grafana%20Cloud-F46800?logo=grafana&logoColor=white"/> </td>
     </tr>
     <tr>
         <td align="center"><strong>Alert</strong></td>

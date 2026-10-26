@@ -4,7 +4,7 @@
 
 ⚠️ 이 문서가 기준입니다. 코드가 이 문서와 다르면 코드를 고치고, 동작을 바꾸려면 이 문서를 먼저 고칩니다.
 
-로그 형식(ECS JSON)과 수집·보관(로컬 Loki, AWS CloudWatch Logs)은 [002-observability.md 3](../guide/002-observability.md#3-로그)에 있다.
+로그 형식(ECS JSON)과 수집·보관(로컬 Loki, AWS CloudWatch Logs)은 [008-observability-spec.md 3](008-observability-spec.md#3-로그)에 있다.
 
 ---
 

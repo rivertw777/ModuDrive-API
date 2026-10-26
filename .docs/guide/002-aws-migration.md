@@ -250,7 +250,7 @@ aws cloudfront create-invalidation --distribution-id $(terraform output -raw web
 
 ### 1-13. 모니터링과 알림
 
-로컬 스택과 운영 구성 요약은 [002-observability.md](002-observability.md)에 정리돼 있다. AWS에서 직접 띄우는 건 중앙 collector ECS 서비스 하나뿐이고(`monitoring.tf`), 저장과 조회는 관리형에 맡긴다. 로컬에서 쓰던 PromQL 알림, tail sampling, OTLP를 그대로 가져가는 걸 기준으로 삼았다.
+로컬 스택과 운영 구성 요약은 [008-observability-spec.md](../spec/008-observability-spec.md)에 정리돼 있다. AWS에서 직접 띄우는 건 중앙 collector ECS 서비스 하나뿐이고(`monitoring.tf`), 저장과 조회는 관리형에 맡긴다. 로컬에서 쓰던 PromQL 알림, tail sampling, OTLP를 그대로 가져가는 걸 기준으로 삼았다.
 
 보내는 곳은 `grafana_cloud` 변수로 고른다.
 
@@ -307,14 +307,14 @@ collector는 사이드카가 아니라 한 대만 띄운다. tail sampling(에�
 - 확인 명령어. `docker` 대신 ECS 명령을 쓰고, 로그와 trace는 demo에서는 로컬과 같은 LogQL·TraceQL을, prod에서는 `aws logs tail`과 X-Ray 필터를 쓴다.
 - 규칙 하나. ECS에서는 죽은 태스크가 `up = 0`으로 남지 않고 대상 목록에서 아예 사라지기 때문에, AWS에만 `ServiceNoTasks`(`absent(up{service=...})`)가 있다.
 
-묶음(`group_by: [alertname]`), 재알림 간격(4시간), 채널(service, infra, messaging), 메시지 양식(`monitoring/discord.tmpl`)도 로컬과 같다. CloudWatch 경보·Budgets·GuardDuty까지 합친 채널 구분은 [008 3장](../spec/008-discord-alert-spec.md#3-사용-디스코드-채널)에 있다.
+묶음(`group_by: [alertname]`), 재알림 간격(4시간), 채널(service, infra, messaging), 메시지 양식(`monitoring/discord.tmpl`)도 로컬과 같다. CloudWatch 경보·Budgets·GuardDuty까지 합친 채널 구분은 [009 3장](../spec/009-discord-alert-spec.md#3-사용-디스코드-채널)에 있다.
 
 - **demo**: apply가 규칙과 Alertmanager 설정(`monitoring/alertmanager-grafana-cloud.yaml`)을 Grafana Cloud API로 올린다(`terraform_data.grafana_cloud_alerts`). 규칙, Alertmanager 설정, 토큰 중 하나가 바뀌면 다시 올린다. 웹후크 URL은 SSM 값을 읽어 설정에 넣는다.
 - **prod**: AMP 규칙과 AMP Alertmanager(`monitoring/alertmanager.yaml`)다. AMP Alertmanager는 Discord로 바로 못 보내고 SNS로만 내보내서, Lambda(`monitoring/discord_forwarder.py`)가 Discord로 넘긴다. Lambda는 메시지 본문에 색깔 있는 제목 카드를 붙인다.
 
 앱 지표로는 안 보이는 것들은 CloudWatch 경보로 보고, SNS 토픽 → Lambda로 Discord에 보낸다. demo와 prod가 같다. 로컬에는 볼 대상(ALB, NAT, 요금, 계정 위협)이 없어서 이 경보들도 없다. Lambda는 VPC 밖에 있어서 NAT가 멈춰도 알림은 나간다.
 
-경보 목록과 기준은 [008-discord-alert-spec.md 5](../spec/008-discord-alert-spec.md#5-aws-전용-경보)에 있다.
+경보 목록과 기준은 [009-discord-alert-spec.md 5](../spec/009-discord-alert-spec.md#5-aws-전용-경보)에 있다.
 
 #### 손으로 넣는 값
 
@@ -521,7 +521,7 @@ grafana.com에서 스택의 Grafana(`https://<스택>.grafana.net`)를 연다. E
 - 로그: `grafanacloud-<스택>-logs`. `{service_name="file-service"} | trace_id="<trace id>"`, `| userId="<uuid>"`.
 - 트레이스: `grafanacloud-<스택>-traces`. `{ span.user.id = "<uuid>" }`.
 - 알림: Alerting → Alert rules에서 데이터소스 관리 규칙(`alerts` 네임스페이스)을 본다.
-- 대시보드: `ModuDrive` 폴더. 로컬과 같은 파일(`.docker/observability/grafana/dashboards/`)을 apply가 올린다(`terraform_data.grafana_cloud_dashboards`, Editor 서비스 계정 토큰 SSM `/<project>/GRAFANA_SETUP_TOKEN`). 파일을 지우면 거기서도 지운다.
+- 대시보드: `ModuDrive` 폴더. 로컬과 같은 파일(`.docker/observability/grafana/dashboards/`)을 apply가 올린다(`terraform_data.grafana_cloud_dashboards`, Admin 서비스 계정 토큰 SSM `/<project>/GRAFANA_SETUP_TOKEN`). 파일을 지우면 거기서도 지운다. 홈은 Overview다.
 
 로그와 trace 사이 링크는 Grafana Cloud 기본 데이터소스에 들어 있다. 두 데이터소스는 읽기 전용이라 설정을 바꿀 수 없다.
 

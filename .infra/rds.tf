@@ -1,7 +1,7 @@
 # PostgreSQL — var.db_instances says how many and which services' databases each holds, var.db_engine
 # whether as RDS instances (demo, one for all four) or Aurora clusters (prod, one per service).
 #
-# Either way every service has its own database and login that can reach only that database (003-aws-migration.md 1-5).
+# Either way every service has its own database and login that can reach only that database (002-aws-migration.md 1-5).
 # Terraform makes the instances; the databases and logins are made inside Postgres by
 # .docker/postgres/postgres_init.sh, run once per instance as an ECS task (db_init_run_tasks output).
 # Tables come from each service's Flyway migrations on startup.
