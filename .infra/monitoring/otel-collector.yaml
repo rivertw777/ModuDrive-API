@@ -123,12 +123,12 @@ processors:
 exporters:
 %{ if grafana_cloud != null ~}
   # Traces to Tempo and logs to Loki, through the stack's OTLP gateway (/v1/traces, /v1/logs).
-  otlphttp/grafana-cloud:
+  otlp_http/grafana-cloud:
     endpoint: ${grafana_cloud.otlp_url}
     auth:
       authenticator: basicauth/otlp
   # Metrics by remote write rather than OTLP, so they land with the same names and labels as local.
-  prometheusremotewrite:
+  prometheus_remote_write:
     endpoint: ${grafana_cloud.prometheus_url}/api/prom/push
     auth:
       authenticator: basicauth/prometheus
@@ -138,7 +138,7 @@ exporters:
     # Attributes become unsearchable metadata unless listed here. "user.id" lands as annotation user_id:
     # X-Ray filter `annotation.user_id = "<uuid>"` (Tempo's `{ span.user.id = "<uuid>" }` locally).
     indexed_attributes: [user.id]
-  prometheusremotewrite:
+  prometheus_remote_write:
     endpoint: ${amp_endpoint}api/v1/remote_write
     auth:
       authenticator: sigv4auth
@@ -154,11 +154,11 @@ service:
     traces:
       receivers: [otlp]
       processors: [tail_sampling, batch]
-      exporters: [${grafana_cloud != null ? "otlphttp/grafana-cloud" : "awsxray"}]
+      exporters: [${grafana_cloud != null ? "otlp_http/grafana-cloud" : "awsxray"}]
     metrics:
       receivers: [prometheus]
       processors: [batch]
-      exporters: [prometheusremotewrite]
+      exporters: [prometheus_remote_write]
 %{ if grafana_cloud != null ~}
     # Not sampled, like local: a request whose trace was dropped still has its logs, with the trace id.
     # Without Grafana Cloud the logs reach CloudWatch from stdout only (awslogs), and the services
@@ -166,5 +166,5 @@ service:
     logs:
       receivers: [otlp]
       processors: [batch]
-      exporters: [otlphttp/grafana-cloud]
+      exporters: [otlp_http/grafana-cloud]
 %{ endif ~}

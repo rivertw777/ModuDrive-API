@@ -195,7 +195,7 @@ Loki에 들어간 로그는 이렇게 생겼다.
 
 `grafana/loki`.
 
-- collector의 `otlphttp/loki`가 Loki의 OTLP 입구(`/otlp`)로 보낸다. 라벨은 `service_name` 하나고, 나머지는 structured metadata라 라벨 수가 늘지 않는다.
+- collector의 `otlp_http/loki`가 Loki의 OTLP 입구(`/otlp`)로 보낸다. 라벨은 `service_name` 하나고, 나머지는 structured metadata라 라벨 수가 늘지 않는다.
 - 서비스 컨테이너의 로그만 모인다. infra·observability 컨테이너(postgres, localstack 등)는 `docker logs`로 본다.
 - Loki는 단일 노드에 파일시스템 저장이다. `retention_period: 336h`(14일, demo와 같다)는 compactor의 `retention_enabled`가 켜져 있어야 실제로 지워진다. 없으면 끝없이 쌓인다.
 
@@ -272,7 +272,7 @@ trace를 찾아도 "file-service 3초"에서 끝나면 원인을 알 수 없다.
 |---|---|---|
 | HTTP 요청 | Spring 기본 계측 | 서버 span, 클라이언트 span |
 | DB 커넥션과 쿼리 | `datasource-micrometer-spring-boot`(`common:infrastructure:jpa`), `jdbc.includes: connection, query` | 커넥션 span에 풀 대기 시간이 들어간다. SQL은 파라미터가 `?`로 남는다(값은 개인정보일 수 있어 남기지 않는다) |
-| S3 호출 | storage-service `S3Config`의 `opentelemetry-aws-sdk-2.2` | 업로드 trace 안에 `S3.PutObject` 같은 span이 생긴다. 버전은 Boot BOM의 OpenTelemetry API(1.62)에 맞춘 2.28.1이다 |
+| S3 호출 | storage-service `S3Config`의 `opentelemetry-aws-sdk-2.2` | 업로드 trace 안에 `S3.PutObject` 같은 span이 생긴다. 버전은 OpenTelemetry BOM(1.67)에 맞춘 2.33.1이다 |
 | 사용자 | `UserIdObservationFilter`(`common:infrastructure:observability`) | 서버 span 태그 `user.id`, 로그 필드 `userId`. gateway가 넘겨 준 `X_USER_ID` 헤더에서 읽는다 |
 
 - 부모 없는 쿼리는 span을 만들지 않는다(`JdbcObservationConfig`). outbox relay가 1초마다 테이블을 보고 Flyway가 기동 때 쿼리를 돌리는데, 이게 전부 span 하나짜리 trace가 되면 진짜 trace가 묻힌다.
@@ -372,7 +372,3 @@ make reset           # 볼륨을 전부 지우고 다시 띄운다 (지표, 로�
 `./observability` 디렉터리를 통째로 `/etc/modudrive`에 마운트하고, 컴포넌트마다 `--config` 플래그로 그 안의 파일을 가리킨다. 설정을 고친 뒤엔 `docker compose ... restart <서비스>`만 하면 된다.
 
 파일 하나만 bind mount하면 안 된다. 그런 마운트는 컨테이너를 만들 때의 inode에 묶이는데, 에디터 저장이나 `git checkout`, `sed -i`는 파일을 새 inode로 바꿔 끼운다. 그러면 컨테이너가 옛 내용을 보거나 재시작할 때 파일을 못 찾아 기동에 실패한다. 새 설정 파일을 추가할 때도 같은 디렉터리에 넣는다.
-
-### 알려진 갭
-
-- collector 설정의 exporter 이름 `otlphttp`, `prometheusremotewrite`가 deprecated 경고를 낸다(`"otlphttp" alias is deprecated; use "otlp_http"`). demo 설정과 같은 이름을 쓰려고 그대로 둔다. 동작에는 문제가 없다.
