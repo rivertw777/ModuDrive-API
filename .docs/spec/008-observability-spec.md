@@ -274,6 +274,7 @@ trace를 찾아도 "file-service 3초"에서 끝나면 원인을 알 수 없다.
 | DB 커넥션과 쿼리 | `datasource-micrometer-spring-boot`(`common:infrastructure:jpa`), `jdbc.includes: connection, query` | 커넥션 span에 풀 대기 시간이 들어간다. SQL은 파라미터가 `?`로 남는다(값은 개인정보일 수 있어 남기지 않는다) |
 | S3 호출 | storage-service `S3Config`의 `opentelemetry-aws-sdk-2.2` | 업로드 trace 안에 `S3.PutObject` 같은 span이 생긴다. 버전은 `common:infrastructure:observability`의 OpenTelemetry instrumentation BOM(2.33.1)이 정한다 |
 | 그 밖의 AWS 호출 (SES 등) | `AwsSdkTracingAutoConfiguration`(`common:infrastructure:observability`) | `opentelemetry-aws-sdk-2.2`를 의존성에 넣은 서비스(mail-service)에서 Spring Cloud AWS가 만드는 동기 클라이언트 전부에 같은 계측을 붙인다. 메일 trace 안에 `Ses.SendRawEmail` span이 생긴다. SQS는 비동기 클라이언트라 빠지고, Spring Cloud AWS가 따로 span을 만든다. 서비스가 클라이언트 설정을 바꿀 때는 `overrideConfiguration(o -> …)` 대신 `builder.overrideConfiguration().toBuilder()`에 덧붙인다(앞의 것은 설정을 새로 시작해 계측을 지운다) |
+| AWS 호출의 대상 표시 | collector `transform/aws-peer-service` | AWS SDK span에는 `peer.service`가 없어 collector가 `rpc.service`(`S3`, `Ses`)를 넣는다. Grafana trace 화면에서 Redis·DB처럼 `→ S3`, `→ Ses`로 보인다 |
 | 사용자 | `UserIdObservationFilter`(`common:infrastructure:observability`) | 서버 span 태그 `user.id`, 로그 필드 `userId`. gateway가 넘겨 준 `X_USER_ID` 헤더에서 읽는다 |
 
 - 부모 없는 쿼리는 span을 만들지 않는다(`JdbcObservationConfig`). outbox relay가 1초마다 테이블을 보고 Flyway가 기동 때 쿼리를 돌리는데, 이게 전부 span 하나짜리 trace가 되면 진짜 trace가 묻힌다.
