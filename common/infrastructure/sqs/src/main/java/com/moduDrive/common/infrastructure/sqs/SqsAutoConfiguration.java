@@ -6,6 +6,7 @@ import io.awspring.cloud.sqs.listener.errorhandler.AsyncErrorHandler;
 import io.awspring.cloud.sqs.listener.errorhandler.ExponentialBackoffErrorHandler;
 import io.awspring.cloud.sqs.operations.SqsTemplate;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.observation.ObservationRegistry;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -19,14 +20,16 @@ public class SqsAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean(AsyncErrorHandler.class)
-    AsyncErrorHandler<Object> deadLetteringErrorHandler(SqsAsyncClient sqsAsyncClient) {
+    AsyncErrorHandler<Object> deadLetteringErrorHandler(SqsAsyncClient sqsAsyncClient,
+                                                        ObjectProvider<ObservationRegistry> observationRegistry) {
         // Retry delays 1s, 2s, 4s; on the last receive maxReceiveCount (4) allows, the handler moves it to the DLQ.
         AsyncErrorHandler<Object> retry = ExponentialBackoffErrorHandler.builder()
                 .initialVisibilityTimeoutSeconds(1)
                 .multiplier(2)
                 .maxVisibilityTimeoutSeconds(10)
                 .build();
-        return new DeadLetteringErrorHandler(sqsAsyncClient, retry);
+        return new DeadLetteringErrorHandler(sqsAsyncClient, retry,
+                observationRegistry.getIfAvailable(() -> ObservationRegistry.NOOP));
     }
 
     /** Without a {@link MeterRegistry}, or with no listeners, this polls nothing. */

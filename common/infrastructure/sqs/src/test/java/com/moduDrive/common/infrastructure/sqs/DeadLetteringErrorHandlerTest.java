@@ -5,6 +5,10 @@ import io.awspring.cloud.sqs.listener.SqsHeaders;
 import io.awspring.cloud.sqs.listener.SqsHeaders.MessageSystemAttributes;
 import io.awspring.cloud.sqs.listener.Visibility;
 import io.awspring.cloud.sqs.listener.errorhandler.AsyncErrorHandler;
+import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationHandler;
+import io.micrometer.observation.ObservationRegistry;
+import io.micrometer.observation.transport.ReceiverContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -19,11 +23,14 @@ import software.amazon.awssdk.services.sqs.SqsAsyncClient;
 import software.amazon.awssdk.services.sqs.model.GetQueueAttributesResponse;
 import software.amazon.awssdk.services.sqs.model.GetQueueUrlRequest;
 import software.amazon.awssdk.services.sqs.model.GetQueueUrlResponse;
+import software.amazon.awssdk.services.sqs.model.MessageAttributeValue;
 import software.amazon.awssdk.services.sqs.model.QueueAttributeName;
 import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 import software.amazon.awssdk.services.sqs.model.SendMessageResponse;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -42,12 +49,15 @@ import static org.mockito.Mockito.never;
 class DeadLetteringErrorHandlerTest {
 
     private static final int MAX_RECEIVE_COUNT = 4;
+    private static final String TRACEPARENT = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
 
     @Mock private SqsAsyncClient sqsAsyncClient;
     @Mock private AsyncErrorHandler<Object> retry;
     @Mock private Visibility visibility;
 
     private DeadLetteringErrorHandler handler;
+    /** The traceparent each started observation read from its carrier. */
+    private final List<String> resumedTraces = new ArrayList<>();
 
     @BeforeEach
     void setUp() {
@@ -55,7 +65,19 @@ class DeadLetteringErrorHandlerTest {
                 GetQueueAttributesResponse.builder().attributes(Map.of(QueueAttributeName.REDRIVE_POLICY,
                         "{\"maxReceiveCount\":\"" + MAX_RECEIVE_COUNT + "\",\"deadLetterTargetArn\":\"arn:aws:sqs:ap-northeast-2:0:q-dlq\"}"))
                         .build()));
-        handler = new DeadLetteringErrorHandler(sqsAsyncClient, retry);
+        ObservationRegistry observationRegistry = ObservationRegistry.create();
+        observationRegistry.observationConfig().observationHandler(new ObservationHandler<ReceiverContext<Object>>() {
+            @Override
+            public void onStart(ReceiverContext<Object> context) {
+                resumedTraces.add(context.getGetter().get(context.getCarrier(), "traceparent"));
+            }
+
+            @Override
+            public boolean supportsContext(Observation.Context context) {
+                return context instanceof ReceiverContext;
+            }
+        });
+        handler = new DeadLetteringErrorHandler(sqsAsyncClient, retry, observationRegistry);
     }
 
     private Message<Object> message(int receiveCount) {
@@ -63,7 +85,10 @@ class DeadLetteringErrorHandlerTest {
                 .setHeader(SqsHeaders.SQS_QUEUE_URL_HEADER, "http://sqs/q")
                 .setHeader(SqsHeaders.SQS_QUEUE_NAME_HEADER, "q")
                 .setHeader(SqsHeaders.SQS_SOURCE_DATA_HEADER,
-                        software.amazon.awssdk.services.sqs.model.Message.builder().messageId("m-1").body("{}").build())
+                        software.amazon.awssdk.services.sqs.model.Message.builder().messageId("m-1").body("{}")
+                                .messageAttributes(Map.of("traceparent", MessageAttributeValue.builder()
+                                        .dataType("String").stringValue(TRACEPARENT).build()))
+                                .build())
                 .setHeader(MessageSystemAttributes.SQS_APPROXIMATE_RECEIVE_COUNT, String.valueOf(receiveCount))
                 .setHeader(SqsHeaders.SQS_VISIBILITY_TIMEOUT_HEADER, visibility)
                 .build();
@@ -156,6 +181,16 @@ class DeadLetteringErrorHandlerTest {
             assertThat(result).isCompleted();
             assertThat(reason(sentToDeadLetterQueue())).isEqualTo("java.lang.IllegalArgumentException: bad value");
             then(retry).shouldHaveNoInteractions();
+        }
+
+        @Test
+        @DisplayName("옮긴 뒤 남기는 로그는 메시지의 traceparent로 원래 trace를 이어 받는다")
+        void logsTheMoveInTheMessagesTrace() {
+            givenDeadLetterQueueAcceptsIt();
+
+            handler.handle(message(1), new IllegalArgumentException("bad value"));
+
+            assertThat(resumedTraces).containsExactly(TRACEPARENT);
         }
     }
 }
