@@ -1,3 +1,4 @@
 com.moduDrive.common.infrastructure.observability.ObservabilityAutoConfiguration
 com.moduDrive.common.infrastructure.observability.LogExportAutoConfiguration
 com.moduDrive.common.infrastructure.observability.MetricsAutoConfiguration
+com.moduDrive.common.infrastructure.observability.AwsSdkTracingAutoConfiguration
