@@ -272,7 +272,7 @@ trace를 찾아도 "file-service 3초"에서 끝나면 원인을 알 수 없다.
 |---|---|---|
 | HTTP 요청 | Spring 기본 계측 | 서버 span, 클라이언트 span |
 | DB 커넥션과 쿼리 | `datasource-micrometer-spring-boot`(`common:infrastructure:jpa`), `jdbc.includes: connection, query` | 커넥션 span에 풀 대기 시간이 들어간다. SQL은 파라미터가 `?`로 남는다(값은 개인정보일 수 있어 남기지 않는다) |
-| S3 호출 | storage-service `S3Config`의 `opentelemetry-aws-sdk-2.2` | 업로드 trace 안에 `S3.PutObject` 같은 span이 생긴다. 버전은 Boot BOM의 OpenTelemetry API(1.62)에 맞춘 2.28.1이다 |
+| S3 호출 | storage-service `S3Config`의 `opentelemetry-aws-sdk-2.2` | 업로드 trace 안에 `S3.PutObject` 같은 span이 생긴다. 버전은 OpenTelemetry BOM(1.67)에 맞춘 2.33.1이다 |
 | 사용자 | `UserIdObservationFilter`(`common:infrastructure:observability`) | 서버 span 태그 `user.id`, 로그 필드 `userId`. gateway가 넘겨 준 `X_USER_ID` 헤더에서 읽는다 |
 
 - 부모 없는 쿼리는 span을 만들지 않는다(`JdbcObservationConfig`). outbox relay가 1초마다 테이블을 보고 Flyway가 기동 때 쿼리를 돌리는데, 이게 전부 span 하나짜리 trace가 되면 진짜 trace가 묻힌다.
