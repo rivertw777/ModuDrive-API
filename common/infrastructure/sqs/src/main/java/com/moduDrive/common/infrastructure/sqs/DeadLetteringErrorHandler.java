@@ -6,6 +6,9 @@ import io.awspring.cloud.sqs.listener.SqsHeaders;
 import io.awspring.cloud.sqs.listener.SqsHeaders.MessageSystemAttributes;
 import io.awspring.cloud.sqs.listener.errorhandler.AsyncErrorHandler;
 import io.awspring.cloud.sqs.listener.errorhandler.ErrorHandlerVisibilityHelper;
+import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationRegistry;
+import io.micrometer.observation.transport.ReceiverContext;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.Message;
 import software.amazon.awssdk.services.sqs.SqsAsyncClient;
@@ -35,10 +38,13 @@ class DeadLetteringErrorHandler implements AsyncErrorHandler<Object> {
     private final SqsAsyncClient sqsAsyncClient;
     private final AsyncErrorHandler<Object> retry;
     private final RedrivePolicy.Cache redrivePolicies;
+    private final ObservationRegistry observationRegistry;
 
-    DeadLetteringErrorHandler(SqsAsyncClient sqsAsyncClient, AsyncErrorHandler<Object> retry) {
+    DeadLetteringErrorHandler(SqsAsyncClient sqsAsyncClient, AsyncErrorHandler<Object> retry,
+                              ObservationRegistry observationRegistry) {
         this.sqsAsyncClient = sqsAsyncClient;
         this.retry = retry;
+        this.observationRegistry = observationRegistry;
         this.redrivePolicies = new RedrivePolicy.Cache(sqsAsyncClient);
     }
 
@@ -87,8 +93,20 @@ class DeadLetteringErrorHandler implements AsyncErrorHandler<Object> {
                 .thenCompose(url -> sqsAsyncClient.sendMessage(r -> r.queueUrl(url.queueUrl())
                         .messageBody(raw.body())
                         .messageAttributes(attributes)))
-                .thenAccept(sent -> log.warn("Moved message {} from {} to {}: {}",
-                        raw.messageId(), queue, deadLetterQueue, reason));
+                .thenAccept(sent -> resumeTrace(raw, queue).observe(() -> log.warn("Moved message {} from {} to {}: {}",
+                        raw.messageId(), queue, deadLetterQueue, reason)));
+    }
+
+    /** The message's own trace, from its traceparent attribute, so the log line carries its trace id: this
+     * runs on an SDK thread, after the listener's span has ended. */
+    private Observation resumeTrace(software.amazon.awssdk.services.sqs.model.Message raw, String queue) {
+        ReceiverContext<Map<String, MessageAttributeValue>> context = new ReceiverContext<>((attributes, key) -> {
+            MessageAttributeValue value = attributes.get(key);
+            return value == null ? null : value.stringValue();
+        });
+        context.setCarrier(raw.messageAttributes());
+        return Observation.createNotStarted("sqs.dead-letter", () -> context, observationRegistry)
+                .contextualName(queue + " dead-letter");
     }
 
     private static long receiveCount(Message<Object> message) {
