@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ModuDrive is a cloud-drive microservices backend built with **Spring Boot 4.1.1**, **Java 25**, and **Spring Cloud 2025.1.3**, organized as a Gradle 9.7.1 multi-module project. There is no service registry: services call each other at fixed URLs (`clients.<service>.url` in each `application.yml` — compose DNS locally, ECS Service Connect on AWS). Inter-service calls use OpenFeign (`auth-service` → `member-service`, `file-service` → `member-service`/`storage-service`, `storage-service` → `file-service`) or `WebClient` (`gateway-service` → `auth-service`), with Resilience4j providing circuit breaking and retry.
+ModuDrive is a cloud-drive microservices backend built with **Spring Boot 4.1.2**, **Java 25**, and **Spring Cloud 2025.1.3**, organized as a Gradle 9.7.1 multi-module project. There is no service registry: services call each other at fixed URLs (`clients.<service>.url` in each `application.yml` — compose DNS locally, ECS Service Connect on AWS). Inter-service calls use OpenFeign (`auth-service` → `member-service`, `file-service` → `member-service`/`storage-service`, `storage-service` → `file-service`) or `WebClient` (`gateway-service` → `auth-service`), with Resilience4j providing circuit breaking and retry.
 
 ## Build & Run Commands
 
