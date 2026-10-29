@@ -55,6 +55,11 @@ receivers:
 
 processors:
   batch: {}
+  # AWS SDK span(S3, SES)에는 peer.service가 없어 Grafana가 Redis·DB처럼 "→ 대상"을 그리지 못한다.
+  # rpc.service(S3, Ses)를 그 자리에 넣는다.
+  transform/aws-peer-service:
+    trace_statements:
+      - set(span.attributes["peer.service"], span.attributes["rpc.service"]) where span.attributes["rpc.system"] == "aws-api" and span.attributes["peer.service"] == nil
   # tail-based sampling: 헤드에서는 전량 export 시키고 여기서 "무엇을 남길지" 결정한다.
   # 대규모 트래픽에서 고정 비율 head-sampling만 쓰면 에러 trace가 거의 다 누락되기 때문.
   # decision_wait는 트레이스의 첫 span 기준으로 흐른다 — gateway의 timelimiter(15s)보다는 길게 잡아야
@@ -121,7 +126,7 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [tail_sampling, batch]
+      processors: [transform/aws-peer-service, tail_sampling, batch]
       exporters: [otlp_http/tempo]
     # 로그는 샘플링하지 않는다 — trace가 버려진 요청도 로그는 trace_id와 함께 남는다.
     logs:

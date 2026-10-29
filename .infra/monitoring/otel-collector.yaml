@@ -71,6 +71,11 @@ receivers:
 
 processors:
   batch: {}
+  # AWS SDK spans (S3, SES) carry no peer.service, so Grafana can't draw "→ target" for them as it does for
+  # Redis and the DB. Same as local.
+  transform/aws-peer-service:
+    trace_statements:
+      - set(span.attributes["peer.service"], span.attributes["rpc.service"]) where span.attributes["rpc.system"] == "aws-api" and span.attributes["peer.service"] == nil
   # Same policies as local: errors, over 1s, and 5% of the rest. decision_wait outlasts the gateway's
   # 15s time limiter so a slow request's late spans arrive before the decision.
   tail_sampling:
@@ -153,7 +158,7 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [tail_sampling, batch]
+      processors: [transform/aws-peer-service, tail_sampling, batch]
       exporters: [${grafana_cloud != null ? "otlp_http/grafana-cloud" : "awsxray"}]
     metrics:
       receivers: [prometheus]
