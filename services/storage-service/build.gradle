@@ -45,8 +45,8 @@ dependencies {
     implementation 'software.amazon.awssdk:apache5-client:2.54.13'
     // S3 calls take a bulkhead seat (spec 006 2-4); version from the Resilience4j BOM.
     implementation 'io.github.resilience4j:resilience4j-bulkhead'
-    // S3 calls as spans. Pinned to the release built on the opentelemetry-bom in common:infrastructure:observability (1.67).
-    implementation 'io.opentelemetry.instrumentation:opentelemetry-aws-sdk-2.2:2.33.1-alpha'
+    // S3 calls as spans (S3Config); version from the OTel instrumentation BOM in common:infrastructure:observability.
+    implementation 'io.opentelemetry.instrumentation:opentelemetry-aws-sdk-2.2'
     testImplementation 'com.tngtech.archunit:archunit-junit5:1.4.2'
     testImplementation 'org.testcontainers:testcontainers'
     testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
