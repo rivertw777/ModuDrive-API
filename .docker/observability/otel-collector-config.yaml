@@ -69,7 +69,8 @@ processors:
     policies:
       # 헬스체크·지표 수집 요청(ECS 헬스체크, Route 53 /readyz, collector의 /actuator/prometheus)은 trace째
       # 버린다. drop은 다른 정책보다 앞선다.
-      - name: health-checks
+      - &health-checks
+        name: health-checks
         type: drop
         drop:
           drop_sub_policy:
@@ -80,7 +81,8 @@ processors:
                 values: ['/actuator/.*', '/readyz']
                 enabled_regex_matching: true
       # 헬스체크가 Redis 상태를 보는 INFO는 서버 span 밖에서 혼자 trace가 된다. 앱은 INFO를 쓰지 않는다.
-      - name: redis-health-checks
+      - &redis-health-checks
+        name: redis-health-checks
         type: drop
         drop:
           drop_sub_policy:
@@ -109,6 +111,27 @@ processors:
         type: probabilistic
         probabilistic:
           sampling_percentage: 5
+  # Service Graph용: 헬스체크 trace만 위와 같이 빼고 나머지는 전부 넘긴다. 샘플링한 trace로 그래프를
+  # 그리면 요청 수는 5%로 줄고 오류율은 부풀어서, 샘플링 앞에서 지표를 만든다.
+  tail_sampling/no-health-checks:
+    decision_wait: 30s
+    policies:
+      - *health-checks
+      - *redis-health-checks
+      - name: everything-else
+        type: always_sample
+  # 대상 속성이 없는 client span(JDBC connection)은 connector가 "unknown" 노드로 만든다 — Tempo처럼 뺀다.
+  filter/unknown-server:
+    error_mode: ignore
+    metrics:
+      datapoint:
+        - datapoint.attributes["server"] == "unknown"
+
+connectors:
+  # 전체 span으로 서비스 간 호출 지표(traces_service_graph_*)를 만든다 — Grafana Tempo의 Service Graph가
+  # 읽는 이름이다. 짝 없는 client span은 peer.service·db.name 등으로 가상 노드(Redis, Ses, S3)가 된다.
+  service_graph:
+    latency_histogram_buckets: [10ms, 50ms, 100ms, 250ms, 500ms, 1s, 2s, 5s, 15s]
 
 exporters:
   otlp_http/tempo:
@@ -128,6 +151,14 @@ service:
       receivers: [otlp]
       processors: [transform/aws-peer-service, tail_sampling, batch]
       exporters: [otlp_http/tempo]
+    traces/service-graph:
+      receivers: [otlp]
+      processors: [transform/aws-peer-service, tail_sampling/no-health-checks]
+      exporters: [service_graph]
+    metrics/service-graph:
+      receivers: [service_graph]
+      processors: [filter/unknown-server, batch]
+      exporters: [prometheus_remote_write]
     # 로그는 샘플링하지 않는다 — trace가 버려진 요청도 로그는 trace_id와 함께 남는다.
     logs:
       receivers: [otlp]
