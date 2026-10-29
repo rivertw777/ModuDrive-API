@@ -134,7 +134,7 @@ jobs:
           fetch-depth: 0 # the diff below needs the previous head
 
       # Which services' code changed since the last push to this branch: only those are tested, built and
-      # pushed. common/, the build files and the Dockerfile reach every service. A manual run, or a
+      # pushed. The build files and the Dockerfile reach every service. A manual run, or a
       # previous head that isn't in the history (force push), builds everything.
       - id: changes
         if: steps.ready.outputs.ok == 'true'
@@ -145,14 +145,33 @@ jobs:
             echo "build=$SERVICES" >> "$GITHUB_OUTPUT"; echo "all=true" >> "$GITHUB_OUTPUT"
             echo "Building every service (no previous head to compare)"; exit 0
           fi
-          files=$(git diff --name-only "$BEFORE" HEAD)
-          if grep -qE '^(common/|build\.gradle$|settings\.gradle$|gradle/|gradle\.properties$|gradlew|\.docker/Dockerfile$)' <<< "$files"; then
+          files=$(git diff --name-only --no-renames "$BEFORE" HEAD) # a move counts for both modules
+          if grep -qE '^(build\.gradle$|settings\.gradle$|gradle/|gradle\.properties$|gradlew|\.docker/Dockerfile$)' <<< "$files"; then
             echo "build=$SERVICES" >> "$GITHUB_OUTPUT"; echo "all=true" >> "$GITHUB_OUTPUT"
             echo "Shared code changed: building every service"; exit 0
           fi
-          build=$(for svc in $SERVICES; do if grep -q "^services/$svc-service/" <<< "$files"; then printf '%s ' "$svc"; fi; done)
-          echo "build=$build" >> "$GITHUB_OUTPUT"; echo "all=false" >> "$GITHUB_OUTPUT"
-          echo "Changed services: ${build:-none}"
+          # A changed common module reaches the services whose project(':…') dependencies lead to it, directly
+          # or through another common module. A file under common/ outside any module builds everything.
+          # The tests of every common module it reaches run too (modules): only the chosen services are built
+          # below, and a service's build compiles the common modules but doesn't test them.
+          FILES="$files" python3 - <<'EOF'
+          import os, pathlib, re
+          files, services = os.environ["FILES"].splitlines(), os.environ["SERVICES"].split()
+          deps = {"/".join(p.parent.parts): {d.strip(":").replace(":", "/") for d in re.findall(r"project\(\s*['\"](:[^'\"]+)['\"]", p.read_text())}
+                  for p in [*pathlib.Path("common").glob("**/build.gradle"), *pathlib.Path("services").glob("*/build.gradle")]}
+          def owner(f):
+              return max((m for m in deps if f.startswith(m + "/")), key=len, default=None)
+          changed = {owner(f) for f in files if f.startswith(("common/", "services/"))}
+          def reaches(m, seen=()):
+              return m in changed or any(reaches(d, (*seen, m)) for d in deps.get(m, ()) if d not in seen)
+          everything = None in changed
+          build = services if everything else [s for s in services if reaches(f"services/{s}-service")]
+          modules = sorted(":" + m.replace("/", ":") for m in deps if m.startswith("common/") and reaches(m))
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write(f"build={' '.join(build)}\nmodules={' '.join(modules)}\nall={str(everything).lower()}\n")
+          print("File outside any module: building every service" if everything
+                else f"Changed services: {' '.join(build) or 'none'}; common modules: {' '.join(modules) or 'none'}")
+          EOF
 
       - uses: actions/setup-java@v4
         if: steps.ready.outputs.ok == 'true' && steps.changes.outputs.build != ''
@@ -171,7 +190,9 @@ jobs:
           if [ "${{ steps.changes.outputs.all }}" = true ]; then
             ./gradlew build
           else
-            ./gradlew $(printf ':services:%s-service:build ' ${{ steps.changes.outputs.build }})
+            modules="${{ steps.changes.outputs.modules }}"
+            ./gradlew $(printf ':services:%s-service:build ' ${{ steps.changes.outputs.build }}) \
+              ${modules:+$(printf '%s:build ' $modules)}
           fi
         env:
           LOCALSTACK_AUTH_TOKEN: ${{ secrets.LOCALSTACK_AUTH_TOKEN }}
