@@ -28,6 +28,9 @@ datasources:
     access: proxy
     url: http://tempo:3200
     jsonData:
+      # Service Graph: collector의 service_graph connector가 Prometheus에 넣는 traces_service_graph_*.
+      serviceMap:
+        datasourceUid: prometheus
       # trace → 그 trace의 로그 전부(서비스 무관). trace_id는 OTLP로 들어온 로그의 structured metadata다.
       tracesToLogsV2:
         datasourceUid: loki

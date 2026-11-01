@@ -230,7 +230,7 @@ flowchart LR
 
 보낼 곳은 `management.opentelemetry.tracing.export.otlp.endpoint`다(Boot 3의 `management.otlp.tracing.endpoint`는 Boot 4에서 조용히 무시된다). 기본값은 `http://otel-collector:4318/v1/traces`이고, IDE에서 서비스를 직접 띄울 땐 `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318`로 바꾼다. 앱은 비동기로 보내고 실패하면 버리기 때문에 collector가 죽어도 서비스에는 영향이 없다.
 
-collector는 `otel/opentelemetry-collector-contrib`이고 호스트에는 `127.0.0.1:4318`(OTLP HTTP)로만 연다(IDE에서 띄운 서비스가 붙을 때 쓴다). 파이프라인은 셋이다. traces는 `otlp`로 받아 `tail_sampling`과 `batch`를 거쳐 Tempo로, logs는 샘플링 없이 `batch`만 거쳐 Loki로, metrics는 `prometheus` receiver로 긁어 Prometheus로 remote write한다(2-2).
+collector는 `otel/opentelemetry-collector-contrib`이고 호스트에는 `127.0.0.1:4318`(OTLP HTTP)로만 연다(IDE에서 띄운 서비스가 붙을 때 쓴다). 파이프라인은 셋이다. traces는 `otlp`로 받아 `tail_sampling`과 `batch`를 거쳐 Tempo로, logs는 샘플링 없이 `batch`만 거쳐 Loki로, metrics는 `prometheus` receiver로 긁어 Prometheus로 remote write한다(2-2). 로컬은 Service Graph용 파이프라인이 하나 더 있다(4-2).
 
 Tempo는 `grafana/tempo` monolithic 모드에 로컬 파일시스템(`/var/tempo`)을 쓴다. 보존은 기본값 14일이다. 호스트 포트는 없고 Grafana로만 본다.
 
@@ -251,6 +251,8 @@ Spring Security의 span은 만들지 않는다(`management.observations.enable.s
 
 `decision_wait`는 30초다. trace의 첫 span이 도착한 뒤 이만큼 기다렸다가 판단한다. gateway 타임아웃(15초)보다 길게 잡아야 느린 요청의 늦게 오는 span까지 모인 뒤에 판단할 수 있다.
 
+Service Graph(Explore → Tempo → Service Graph)는 샘플링 전 span으로 그린다. 남은 trace로 그리면 요청 수는 5%로 줄고 오류율은 부풀기 때문이다. 로컬은 collector의 `service_graph` connector가 헬스체크 trace만 뺀 전체 span으로 `traces_service_graph_*`를 만들어 Prometheus에 넣고, Tempo 데이터소스가 그걸 읽는다. 대상 속성이 없는 client span(JDBC `connection`)이 만드는 `unknown` 노드는 뺀다. 보낸 쪽 span이 없는 메시지 수신(SES Send 이벤트, 손으로 넣은 SQS 메시지)은 `user → 서비스`로 보인다. demo는 Grafana Cloud Tempo가 샘플링된 trace로 그린다(지표 생성기 설정을 바꿀 수 없다).
+
 정상 요청은 5%만 남으므로, trace가 이어지는지 확인하는 테스트를 할 때는 collector 설정에서 `sampling_percentage: 100`, `decision_wait: 5s`로 잠깐 바꾸고 `restart otel-collector` 한 뒤 끝나면 되돌린다.
 
 ### 4-3. 서비스 사이 전파
@@ -263,6 +265,7 @@ trace가 서비스를 넘어가려면 호출할 때 `traceparent` 헤더(W3C)가
 | 서비스 → 서비스 (Feign) | `feign-micrometer`가 있어야 계측되고 헤더가 실린다(`common:infrastructure:spring-cloud`). 없으면 받는 쪽에서 trace가 새로 시작된다 |
 | 서비스 → SQS → 서비스 | outbox에 헤더를 같이 저장하고, relay가 보낼 때 Observation을 열고, 컨슈머가 이어받는다. `application-sqs.yml`의 SQS observation이 켜져 있어야 한다([005 메시징](005-messaging-spec.md) 6장) |
 | gateway 안 (WebFlux) | `spring.reactor.context-propagation: auto`. 없으면 스레드가 바뀌면서 로그의 `traceId`가 빈다 |
+| 서비스 안 비동기 작업 (`applicationTaskExecutor`) | `spring.task.execution.propagate-context: true`(`application-observability.yml`). Spring MVC는 `StreamingResponseBody`(storage-service 다운로드)를 이 실행기에서 돌린다. 없으면 그 안의 file-service·Redis·S3 호출이 요청 trace에서 떨어져 각자 새 trace가 된다 |
 
 ### 4-4. span에 담기는 것
 

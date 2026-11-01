@@ -118,7 +118,7 @@ ModuDrive에서 언제 어디서나 간편하게,<br>
 <br>
 
 - [파일 업로드 설계하기 (블록 기반)](https://nicky777.tistory.com/27)
-- [분산 트레이싱 도입](https://github.com/rivertw777/ModuDrive-API/wiki/%EB%B6%84%EC%82%B0-%ED%8A%B8%EB%A0%88%EC%9D%B4%EC%8B%B1-%EB%8F%84%EC%9E%85)
+- [분산 트레이싱 도입하기](https://nicky777.tistory.com/29)
 
 <br>
 
