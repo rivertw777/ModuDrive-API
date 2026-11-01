@@ -37,6 +37,14 @@ management:
         http.server.requests: 100ms, 300ms, 1s, 3s, 10s
         spring.cloud.gateway.requests: 100ms, 300ms, 1s, 3s, 10s
 
+spring:
+  task:
+    execution:
+      # Work handed to applicationTaskExecutor keeps the caller's trace. Spring MVC runs async handlers
+      # there — storage-service's StreamingResponseBody download, which calls file-service, Redis and S3:
+      # without this each of those calls started a trace of its own, detached from the request.
+      propagate-context: true
+
 logging:
   structured:
     format:
