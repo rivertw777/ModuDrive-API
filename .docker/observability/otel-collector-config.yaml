@@ -60,6 +60,12 @@ processors:
   transform/aws-peer-service:
     trace_statements:
       - set(span.attributes["peer.service"], span.attributes["rpc.service"]) where span.attributes["rpc.system"] == "aws-api" and span.attributes["peer.service"] == nil
+  # S3 HeadObject의 404(NoSuchKey)는 "아직 없는 블록"이라는 정상 답이다(업로드 전 확인, 삭제 전 확인). SDK 계측이
+  # 에러로 찍어 errors 정책이 이 trace를 전부 남기고 Service Graph의 S3가 실패로 보이므로 에러 표시를 지운다.
+  # GetObject의 404(진짜 블록 유실)와 다른 예외는 그대로 에러다.
+  transform/s3-head-not-found:
+    trace_statements:
+      - set(span.status.code, STATUS_CODE_UNSET) where span.attributes["rpc.method"] == "HeadObject" and spanevent.name == "exception" and spanevent.attributes["exception.type"] == "software.amazon.awssdk.services.s3.model.NoSuchKeyException"
   # tail-based sampling: 헤드에서는 전량 export 시키고 여기서 "무엇을 남길지" 결정한다.
   # 대규모 트래픽에서 고정 비율 head-sampling만 쓰면 에러 trace가 거의 다 누락되기 때문.
   # decision_wait는 트레이스의 첫 span 기준으로 흐른다 — gateway의 timelimiter(15s)보다는 길게 잡아야
@@ -149,11 +155,11 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [transform/aws-peer-service, tail_sampling, batch]
+      processors: [transform/aws-peer-service, transform/s3-head-not-found, tail_sampling, batch]
       exporters: [otlp_http/tempo]
     traces/service-graph:
       receivers: [otlp]
-      processors: [transform/aws-peer-service, tail_sampling/no-health-checks]
+      processors: [transform/aws-peer-service, transform/s3-head-not-found, tail_sampling/no-health-checks]
       exporters: [service_graph]
     metrics/service-graph:
       receivers: [service_graph]

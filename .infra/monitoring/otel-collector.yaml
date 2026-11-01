@@ -76,6 +76,12 @@ processors:
   transform/aws-peer-service:
     trace_statements:
       - set(span.attributes["peer.service"], span.attributes["rpc.service"]) where span.attributes["rpc.system"] == "aws-api" and span.attributes["peer.service"] == nil
+  # An S3 HeadObject 404 (NoSuchKey) is the normal "block not there yet" answer (before an upload, before a
+  # delete), but the SDK instrumentation marks it ERROR: the errors policy then kept every such trace and the
+  # service graph showed S3 failing. Same as local. GetObject's 404 (a lost block) and other errors stay ERROR.
+  transform/s3-head-not-found:
+    trace_statements:
+      - set(span.status.code, STATUS_CODE_UNSET) where span.attributes["rpc.method"] == "HeadObject" and spanevent.name == "exception" and spanevent.attributes["exception.type"] == "software.amazon.awssdk.services.s3.model.NoSuchKeyException"
   # Same policies as local: errors, over 1s, and 5% of the rest. decision_wait outlasts the gateway's
   # 15s time limiter so a slow request's late spans arrive before the decision.
   tail_sampling:
@@ -158,7 +164,7 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [transform/aws-peer-service, tail_sampling, batch]
+      processors: [transform/aws-peer-service, transform/s3-head-not-found, tail_sampling, batch]
       exporters: [${grafana_cloud != null ? "otlp_http/grafana-cloud" : "awsxray"}]
     metrics:
       receivers: [prometheus]
