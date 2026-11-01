@@ -265,6 +265,7 @@ trace가 서비스를 넘어가려면 호출할 때 `traceparent` 헤더(W3C)가
 | 서비스 → 서비스 (Feign) | `feign-micrometer`가 있어야 계측되고 헤더가 실린다(`common:infrastructure:spring-cloud`). 없으면 받는 쪽에서 trace가 새로 시작된다 |
 | 서비스 → SQS → 서비스 | outbox에 헤더를 같이 저장하고, relay가 보낼 때 Observation을 열고, 컨슈머가 이어받는다. `application-sqs.yml`의 SQS observation이 켜져 있어야 한다([005 메시징](005-messaging-spec.md) 6장) |
 | gateway 안 (WebFlux) | `spring.reactor.context-propagation: auto`. 없으면 스레드가 바뀌면서 로그의 `traceId`가 빈다 |
+| 서비스 안 비동기 작업 (`applicationTaskExecutor`) | `spring.task.execution.propagate-context: true`(`application-observability.yml`). Spring MVC는 `StreamingResponseBody`(storage-service 다운로드)를 이 실행기에서 돌린다. 없으면 그 안의 file-service·Redis·S3 호출이 요청 trace에서 떨어져 각자 새 trace가 된다 |
 
 ### 4-4. span에 담기는 것
 
