@@ -13,8 +13,25 @@ alertmanager_config: |
         repeat_interval: 5m
       - receiver: messaging
         matchers: [channel="messaging"]
+%{ if night_stop ~}
+        mute_time_intervals: [night]
+%{ endif ~}
       - receiver: infra
         matchers: [channel="infra"]
+%{ if night_stop ~}
+        mute_time_intervals: [night]
+      # The root route can't take a mute interval, so the rest goes through this one.
+      - receiver: service
+        mute_time_intervals: [night]
+%{ endif ~}
+%{ if night_stop ~}
+  # night_stop.tf: the stack sleeps 00:00–08:00 and has until 08:20 to come back.
+  time_intervals:
+    - name: night
+      time_intervals:
+        - times: [{ start_time: "00:00", end_time: "08:20" }]
+          location: Asia/Seoul
+%{ endif ~}
   inhibit_rules:
     - source_matchers: [alertname=~"ServiceDown|ServiceNoTasks"]
       target_matchers: [alertname=~"CircuitOpen|RouteErrorRate|RouteSlowRate"]

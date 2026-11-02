@@ -56,6 +56,8 @@ services = {
 
 monthly_budget_usd = 8000
 
+night_stop = false
+
 # Streaming uploads and downloads finish before a stopping task is cut off.
 alb_deregistration_delay = 60
 
