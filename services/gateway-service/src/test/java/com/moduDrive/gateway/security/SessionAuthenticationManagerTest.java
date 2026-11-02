@@ -28,6 +28,8 @@ import java.util.concurrent.TimeoutException;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.times;
 
 @ExtendWith(MockitoExtension.class)
 class SessionAuthenticationManagerTest {
@@ -41,7 +43,7 @@ class SessionAuthenticationManagerTest {
 
     @BeforeEach
     void setUp() {
-        manager = new SessionAuthenticationManager(authClient, new ObjectMapper());
+        manager = new SessionAuthenticationManager(authClient, new ObjectMapper(), new SessionCheckCache());
     }
 
     private static void assertSessionFailure(Throwable e, String status, String message) {
@@ -189,6 +191,81 @@ class SessionAuthenticationManagerTest {
             StepVerifier.create(manager.authenticate(token))
                     .verifyErrorSatisfies(e -> assertSessionFailure(e,
                             "SERVICE_UNAVAILABLE", CircuitBreakerExceptionCase.SERVICE_UNAVAILABLE.getMessage()));
+        }
+    }
+
+    @Nested
+    @DisplayName("같은 세션을 몇 초 안에 다시 확인할 때")
+    class WhenSameSessionIsCheckedAgain {
+
+        private void givenValidSession(boolean touch) {
+            given(authClient.validateSession(new ValidateSessionRequest("session-id", touch)))
+                    .willReturn(Mono.just(ApiResponse.success(
+                            new ValidateSessionResponse("member-id", List.of("MEMBER")))));
+        }
+
+        @Test
+        @DisplayName("성공한 확인은 재사용해 auth-service를 다시 부르지 않는다")
+        void reusesSuccessfulCheck() {
+            givenValidSession(true);
+
+            StepVerifier.create(manager.authenticate(token)).expectNextCount(1).verifyComplete();
+            StepVerifier.create(manager.authenticate(token))
+                    .assertNext(auth -> assertThat(auth.getPrincipal()).isEqualTo("member-id"))
+                    .verifyComplete();
+
+            then(authClient).should(times(1)).validateSession(any(ValidateSessionRequest.class));
+        }
+
+        @Test
+        @DisplayName("백그라운드 요청의 확인은 저장하지 않는다 — 다음 사용자 요청이 세션을 연장하도록")
+        void doesNotKeepBackgroundCheck() {
+            givenValidSession(false);
+            givenValidSession(true);
+
+            StepVerifier.create(manager.authenticate(new SessionAuthenticationToken("session-id", false)))
+                    .expectNextCount(1).verifyComplete();
+            StepVerifier.create(manager.authenticate(token)).expectNextCount(1).verifyComplete();
+
+            then(authClient).should().validateSession(new ValidateSessionRequest("session-id", true));
+        }
+
+        @Test
+        @DisplayName("백그라운드 요청도 저장된 확인은 재사용한다")
+        void backgroundRequestReusesKeptCheck() {
+            givenValidSession(true);
+
+            StepVerifier.create(manager.authenticate(token)).expectNextCount(1).verifyComplete();
+            StepVerifier.create(manager.authenticate(new SessionAuthenticationToken("session-id", false)))
+                    .expectNextCount(1).verifyComplete();
+
+            then(authClient).should(times(1)).validateSession(any(ValidateSessionRequest.class));
+        }
+
+        @Test
+        @DisplayName("실패한 확인은 저장하지 않는다")
+        void doesNotKeepFailure() {
+            given(authClient.validateSession(any(ValidateSessionRequest.class)))
+                    .willReturn(Mono.error(new RuntimeException("connection refused")));
+
+            StepVerifier.create(manager.authenticate(token)).expectError().verify();
+            StepVerifier.create(manager.authenticate(token)).expectError().verify();
+
+            then(authClient).should(times(2)).validateSession(any(ValidateSessionRequest.class));
+        }
+
+        @Test
+        @DisplayName("동시에 들어온 확인은 auth-service 호출 1번을 함께 쓴다")
+        void sharesOneCallBetweenConcurrentChecks() {
+            given(authClient.validateSession(any(ValidateSessionRequest.class)))
+                    .willReturn(Mono.just(ApiResponse.success(
+                                    new ValidateSessionResponse("member-id", List.of("MEMBER"))))
+                            .delayElement(java.time.Duration.ofMillis(100)));
+
+            StepVerifier.create(Mono.zip(manager.authenticate(token), manager.authenticate(token)))
+                    .expectNextCount(1).verifyComplete();
+
+            then(authClient).should(times(1)).validateSession(any(ValidateSessionRequest.class));
         }
     }
 }

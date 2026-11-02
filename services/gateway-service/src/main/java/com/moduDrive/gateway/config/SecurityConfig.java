@@ -55,8 +55,8 @@ class SecurityConfig {
                         .pathMatchers(HttpMethod.GET, "/readyz").permitAll()
                         .anyExchange().authenticated()
                 )
-                // Nothing to store between requests: the session lives in auth-service, checked once per
-                // request by the filter below.
+                // Nothing to store between requests: the session lives in auth-service, checked by the
+                // filter below (SessionCheckCache keeps an answer a few seconds).
                 .securityContextRepository(NoOpServerSecurityContextRepository.getInstance())
                 .addFilterAt(sessionAuthenticationFilter(), SecurityWebFiltersOrder.AUTHENTICATION)
                 .exceptionHandling(exceptionHandling ->
