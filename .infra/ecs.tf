@@ -283,6 +283,67 @@ resource "aws_appautoscaling_policy" "cpu" {
   }
 }
 
+# notification-service's work per message is a few DB writes, so a backlog builds without its CPU
+# climbing: this adds tasks on messages waiting per task, beside the CPU policy (the larger wins).
+# Mail stays on CPU alone — its ceiling is the SES send rate, and more tasks only turn throttling
+# into retries and DLQ. RunningTaskCount comes from Container Insights; demo's max of 2 needs neither.
+resource "aws_appautoscaling_policy" "notification_backlog" {
+  count = var.container_insights ? 1 : 0
+
+  name               = "notification-backlog"
+  policy_type        = "TargetTrackingScaling"
+  service_namespace  = aws_appautoscaling_target.service["notification"].service_namespace
+  resource_id        = aws_appautoscaling_target.service["notification"].resource_id
+  scalable_dimension = aws_appautoscaling_target.service["notification"].scalable_dimension
+
+  target_tracking_scaling_policy_configuration {
+    # A task takes 10 messages at a time (Spring Cloud AWS default), so 100 is about ten rounds behind.
+    target_value = 100
+
+    customized_metric_specification {
+      metrics {
+        id          = "backlog"
+        expression  = "visible / tasks"
+        return_data = true
+      }
+      metrics {
+        id          = "visible"
+        return_data = false
+        metric_stat {
+          stat = "Average"
+          metric {
+            namespace   = "AWS/SQS"
+            metric_name = "ApproximateNumberOfMessagesVisible"
+            dimensions {
+              name  = "QueueName"
+              value = aws_sqs_queue.queue["notification-file-shared"].name
+            }
+          }
+        }
+      }
+      metrics {
+        id          = "tasks"
+        return_data = false
+        metric_stat {
+          stat = "Average"
+          metric {
+            namespace   = "ECS/ContainerInsights"
+            metric_name = "RunningTaskCount"
+            dimensions {
+              name  = "ClusterName"
+              value = aws_ecs_cluster.main.name
+            }
+            dimensions {
+              name  = "ServiceName"
+              value = aws_ecs_service.service["notification"].name
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
 # Creates each instance's databases and their logins, once, after RDS exists and before the services
 # first start — RDS is private, so it runs inside the VPC as a one-off task per instance (002-aws-migration.md 1-5), reusing
 # the local script with DB_SERVICES naming that instance's. The commands are the db_init_run_tasks
