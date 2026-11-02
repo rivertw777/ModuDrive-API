@@ -15,10 +15,11 @@ WORKDIR /app
 # the dialect instead of asking the DB, and the URLs are placeholders nothing opens. The variables are the
 # services' settings without a default (application*.yml) — a new one fails this build until it's added.
 # jvm.args carries -XX:AOTCache only when there is one: the JVM logs errors at startup for a missing cache.
-# G1 explicitly: under 2 CPUs (every 0.5 and 1 vCPU task) the JVM otherwise picks SerialGC, whose
-# collections stop the whole app. Compact object headers (8 bytes instead of 12) shrink the heap. The
-# training run reads the same file: a cache recorded with other GC or header settings is refused at startup.
-RUN echo "-XX:+UseG1GC -XX:+UseCompactObjectHeaders" > jvm.args && [ "$AOT" != true ] || { \
+# No GC flag: the JVM picks SerialGC under 2 CPUs and G1 above. On demo's half vCPU, forcing G1 made
+# young pauses ~2ms → 6–37ms with no full GC to avoid. Compact object headers (8 bytes instead of 12)
+# shrink the heap. The training run reads the same file: a cache recorded with other header settings is
+# refused at startup (a different GC is fine — the runner records with G1, demo runs Serial).
+RUN echo "-XX:+UseCompactObjectHeaders" > jvm.args && [ "$AOT" != true ] || { \
     CLIENT_URL=http://localhost MAIL_FROM=training@localhost MODUDRIVE_FILE_DEFAULT_QUOTA_BYTES=1 \
     REDIS_HOST=localhost REDIS_PORT=6379 REDIS_PASSWORD=training \
     STORAGE_BLOCK_SIZE=4194304 STORAGE_S3_BUCKET=training STORAGE_S3_REGION=ap-northeast-2 AWS_REGION=ap-northeast-2 \
