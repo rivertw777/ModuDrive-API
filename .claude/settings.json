@@ -1,6 +1,8 @@
 {
   "permissions": {
-    "deny": ["Read(./.docker/.env)"]
+    "deny": [
+      "Read(./.docker/.env)"
+    ]
   },
   "hooks": {
     "PreToolUse": [
@@ -15,5 +17,8 @@
         ]
       }
     ]
+  },
+  "enabledPlugins": {
+    "ui-ux-pro-max@ui-ux-pro-max-skill": false
   }
 }
