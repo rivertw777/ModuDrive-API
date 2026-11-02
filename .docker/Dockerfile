@@ -15,17 +15,19 @@ WORKDIR /app
 # the dialect instead of asking the DB, and the URLs are placeholders nothing opens. The variables are the
 # services' settings without a default (application*.yml) — a new one fails this build until it's added.
 # jvm.args carries -XX:AOTCache only when there is one: the JVM logs errors at startup for a missing cache.
-RUN : > jvm.args && [ "$AOT" != true ] || { \
+# G1 explicitly: under 2 CPUs (every 0.5 and 1 vCPU task) the JVM otherwise picks SerialGC, whose
+# collections stop the whole app. The training run reads the same file, so cache and runtime share the GC.
+RUN echo "-XX:+UseG1GC" > jvm.args && [ "$AOT" != true ] || { \
     CLIENT_URL=http://localhost MAIL_FROM=training@localhost MODUDRIVE_FILE_DEFAULT_QUOTA_BYTES=1 \
     REDIS_HOST=localhost REDIS_PORT=6379 REDIS_PASSWORD=training \
     STORAGE_BLOCK_SIZE=4194304 STORAGE_S3_BUCKET=training STORAGE_S3_REGION=ap-northeast-2 AWS_REGION=ap-northeast-2 \
-    java -XX:AOTCacheOutput=app.aot -Dspring.context.exit=onRefresh -Dspring.profiles.active=prod \
+    java @jvm.args -XX:AOTCacheOutput=app.aot -Dspring.context.exit=onRefresh -Dspring.profiles.active=prod \
       -Dspring.flyway.enabled=false -Dspring.sql.init.mode=never -Dspring.jpa.hibernate.ddl-auto=none \
       -Dspring.jpa.properties.hibernate.boot.allow_jdbc_metadata_access=false \
       -Dspring.jpa.database-platform=org.hibernate.dialect.PostgreSQLDialect \
       -Dspring.datasource.url=jdbc:postgresql://localhost:5432/training \
       -jar app.jar \
-    && echo "-XX:AOTCache=app.aot" > jvm.args; }
+    && echo "-XX:AOTCache=app.aot" >> jvm.args; }
 
 FROM eclipse-temurin:25-jre-alpine
 # Not root: a compromised process can't change the image's files or bind low ports. On AWS the root
