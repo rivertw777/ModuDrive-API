@@ -17,6 +17,12 @@ spring:
         webflux:
           metrics:
             enabled: true
+          # Every backend is reached through this task's Service Connect Envoy, which closes connections
+          # idle past its timeout. Dropping ours first keeps a request off one it already closed (a 502).
+          httpclient:
+            pool:
+              max-idle-time: 30s
+              eviction-interval: 10s
 
 resilience4j:
   timelimiter:
