@@ -1,0 +1,8 @@
+# Imported by every service (spring.config.import in each application.yml).
+spring:
+  # Tomcat requests, applicationTaskExecutor, @Scheduled and the like run on virtual threads. No Tomcat
+  # 200-thread cap anymore — the Hikari pool, Feign's connection pool and the bulkheads bound concurrency now.
+  # The gateway is reactive (Netty), so only its executors are affected.
+  threads:
+    virtual:
+      enabled: true
