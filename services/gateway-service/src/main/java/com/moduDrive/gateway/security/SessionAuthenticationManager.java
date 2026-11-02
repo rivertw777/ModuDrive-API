@@ -23,7 +23,8 @@ import java.util.List;
 import java.util.concurrent.TimeoutException;
 
 /**
- * Asks auth-service whether the session is alive. Every failure becomes a
+ * Asks auth-service whether the session is alive (or reuses an answer from the last few seconds,
+ * {@link SessionCheckCache}). Every failure becomes a
  * {@link SessionAuthenticationException}, since anything else escapes AuthenticationWebFilter as a 500.
  * A rejected session is a 401. If auth-service couldn't be asked, the answer is the route's 503/504
  * (spec 006 2-1-3), never a 401, which would send every user to the login screen (#447).
@@ -35,10 +36,23 @@ class SessionAuthenticationManager implements ReactiveAuthenticationManager {
 
     private final AuthClient authClient;
     private final ObjectMapper objectMapper;
+    private final SessionCheckCache sessionCheckCache;
 
+    /**
+     * Only a check that restarts the idle timeout is cached: one kept from a background request
+     * would let the user's own requests in the next seconds skip restarting it.
+     */
     @Override
     public Mono<Authentication> authenticate(Authentication authentication) {
         SessionAuthenticationToken token = (SessionAuthenticationToken) authentication;
+        // Deferred: a cached answer must not even build the auth-service request.
+        Mono<Authentication> check = Mono.defer(() -> check(token));
+        return token.touch()
+                ? sessionCheckCache.get(token.getCredentials(), check)
+                : sessionCheckCache.getWithoutCaching(token.getCredentials(), check);
+    }
+
+    private Mono<Authentication> check(SessionAuthenticationToken token) {
         return authClient.validateSession(new ValidateSessionRequest(token.getCredentials(), token.touch()))
                 .flatMap(apiResponse -> {
                     ValidateSessionResponse authData = apiResponse.getData();
