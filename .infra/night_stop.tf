@@ -107,8 +107,8 @@ resource "aws_iam_role_policy" "night_stop" {
 locals {
   night_calls = {
     for k, v in merge(
-      { for k, i in aws_db_instance.postgres : "db-${k}-stop" => { at = local.night_stop_at, api = "rds:stopDBInstance", input = jsonencode({ DBInstanceIdentifier = i.identifier }) } },
-      { for k, i in aws_db_instance.postgres : "db-${k}-start" => { at = local.night_start_at, api = "rds:startDBInstance", input = jsonencode({ DBInstanceIdentifier = i.identifier }) } },
+      { for k, i in aws_db_instance.postgres : "db-${k}-stop" => { at = local.night_stop_at, api = "rds:stopDBInstance", input = jsonencode({ DbInstanceIdentifier = i.identifier }) } },
+      { for k, i in aws_db_instance.postgres : "db-${k}-start" => { at = local.night_start_at, api = "rds:startDBInstance", input = jsonencode({ DbInstanceIdentifier = i.identifier }) } },
       { for i in aws_instance.nat : "nat-stop" => { at = local.night_stop_at, api = "ec2:stopInstances", input = jsonencode({ InstanceIds = [i.id] }) } },
       { for i in aws_instance.nat : "nat-start" => { at = local.night_start_at, api = "ec2:startInstances", input = jsonencode({ InstanceIds = [i.id] }) } },
       {
