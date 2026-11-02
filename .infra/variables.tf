@@ -208,6 +208,11 @@ variable "monthly_budget_usd" {
   type = number
 }
 
+# Stop the stack 00:00–08:00 KST (night_stop.tf). RDS instances only — Aurora isn't stopped.
+variable "night_stop" {
+  type = bool
+}
+
 # Central collector (monitoring.tf): one task, never more — tail sampling needs every span of a
 # trace in one process. scrape_interval is how often it reads each task's /actuator/prometheus.
 variable "otel_collector" {

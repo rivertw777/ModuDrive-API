@@ -9,7 +9,7 @@ resource "aws_ecr_repository" "service" {
   }
 }
 
-# Old images go; the last 30 stay so a rollback is a deploy of an older commit (its SHA image is still here).
+# Old images go; the last 10 stay so a rollback is a deploy of an older commit (its SHA image is still here).
 resource "aws_ecr_lifecycle_policy" "service" {
   for_each = aws_ecr_repository.service
 
@@ -17,11 +17,11 @@ resource "aws_ecr_lifecycle_policy" "service" {
   policy = jsonencode({
     rules = [{
       rulePriority = 1
-      description  = "Keep the last 30 images"
+      description  = "Keep the last 10 images"
       selection = {
         tagStatus   = "any"
         countType   = "imageCountMoreThan"
-        countNumber = 30
+        countNumber = 10
       }
       action = { type = "expire" }
     }]
