@@ -41,6 +41,8 @@ resource "aws_db_instance" "postgres" {
   multi_az = each.value.nodes > 1
 
   backup_retention_period    = var.db_backup_retention_days
+  backup_window              = "14:00-14:30"         # 23:00 KST, before night_stop stops it
+  maintenance_window         = "mon:13:00-mon:13:30" # 22:00 KST
   auto_minor_version_upgrade = true
   deletion_protection        = var.deletion_protection
   skip_final_snapshot        = !var.deletion_protection

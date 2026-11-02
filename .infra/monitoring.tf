@@ -155,6 +155,7 @@ locals {
       )
     }
     discord_template = file("${path.module}/monitoring/discord.tmpl")
+    night_stop       = var.night_stop
   }) : null
 }
 
@@ -797,6 +798,11 @@ resource "aws_ecs_service" "otel_collector" {
   deployment_circuit_breaker {
     enable   = true
     rollback = true
+  }
+
+  # Scaled by night_stop.tf when set.
+  lifecycle {
+    ignore_changes = [desired_count]
   }
 
   # otel-collector:4318, the services' default OTLP endpoint (application-observability.yml) — the
