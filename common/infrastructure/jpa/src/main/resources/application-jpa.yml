@@ -5,6 +5,11 @@ spring:
       # before GlobalExceptionHandler sends its 503. Hikari's default is 30s.
       connection-timeout: 3000
   jpa:
+    # Off: otherwise each request holds a pooled connection from its first query until the response
+    # is written, across Feign/Redis calls, and its one EntityManager hands a later transaction the
+    # entity an earlier read cached (a FOR UPDATE re-read would see the old row). Adapters map rows
+    # to domain inside their transaction; nothing is lazy.
+    open-in-view: false
     hibernate:
       # Flyway owns the schema (db/migration in each service); Hibernate only checks it matches.
       ddl-auto: validate
