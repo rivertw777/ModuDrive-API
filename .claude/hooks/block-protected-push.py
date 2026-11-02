@@ -35,7 +35,7 @@ def current_branch():
 
 
 def target_branches(segment):
-    match = re.search(r"\bgit\s+push\b(.*)", segment, re.DOTALL)
+    match = re.search(r"\bgit(?:\s+-[cC]\s+\S+|\s+--?\S+)*\s+push\b(.*)", segment, re.DOTALL)
     rest = match.group(1) if match else ""
     try:
         tokens = shlex.split(rest)
@@ -79,9 +79,9 @@ def main():
     if not command:
         return allow()
 
-    for segment in re.split(r"&&|\|\||;|\|", command):
+    for segment in re.split(r"&&|\|\||;|\||\n", command):
         segment = segment.strip()
-        if not re.search(r"(^|[\s(])git\s+push(\s|$)", segment):
+        if not re.search(r"(^|[\s(])git(?:\s+-[cC]\s+\S+|\s+--?\S+)*\s+push(\s|$)", segment):
             continue
 
         targets = target_branches(segment)
