@@ -16,8 +16,9 @@ WORKDIR /app
 # services' settings without a default (application*.yml) — a new one fails this build until it's added.
 # jvm.args carries -XX:AOTCache only when there is one: the JVM logs errors at startup for a missing cache.
 # G1 explicitly: under 2 CPUs (every 0.5 and 1 vCPU task) the JVM otherwise picks SerialGC, whose
-# collections stop the whole app. The training run reads the same file, so cache and runtime share the GC.
-RUN echo "-XX:+UseG1GC" > jvm.args && [ "$AOT" != true ] || { \
+# collections stop the whole app. Compact object headers (8 bytes instead of 12) shrink the heap. The
+# training run reads the same file: a cache recorded with other GC or header settings is refused at startup.
+RUN echo "-XX:+UseG1GC -XX:+UseCompactObjectHeaders" > jvm.args && [ "$AOT" != true ] || { \
     CLIENT_URL=http://localhost MAIL_FROM=training@localhost MODUDRIVE_FILE_DEFAULT_QUOTA_BYTES=1 \
     REDIS_HOST=localhost REDIS_PORT=6379 REDIS_PASSWORD=training \
     STORAGE_BLOCK_SIZE=4194304 STORAGE_S3_BUCKET=training STORAGE_S3_REGION=ap-northeast-2 AWS_REGION=ap-northeast-2 \
