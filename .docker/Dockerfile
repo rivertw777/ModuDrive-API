@@ -17,9 +17,10 @@ WORKDIR /app
 # jvm.args carries -XX:AOTCache only when there is one: the JVM logs errors at startup for a missing cache.
 # No GC flag: the JVM picks SerialGC under 2 CPUs and G1 above. On demo's half vCPU, forcing G1 made
 # young pauses ~2ms → 6–37ms with no full GC to avoid. Compact object headers (8 bytes instead of 12)
-# shrink the heap. The training run reads the same file: a cache recorded with other header settings is
-# refused at startup (a different GC is fine — the runner records with G1, demo runs Serial).
-RUN echo "-XX:+UseCompactObjectHeaders" > jvm.args && [ "$AOT" != true ] || { \
+# are off for now, to measure their own effect against the deploy that had them on (#870). The training
+# run reads the same file: a cache recorded with other header settings is refused at startup (a
+# different GC is fine — the runner records with G1, demo runs Serial).
+RUN echo "-XX:-UseCompactObjectHeaders" > jvm.args && [ "$AOT" != true ] || { \
     CLIENT_URL=http://localhost MAIL_FROM=training@localhost MODUDRIVE_FILE_DEFAULT_QUOTA_BYTES=1 \
     REDIS_HOST=localhost REDIS_PORT=6379 REDIS_PASSWORD=training \
     STORAGE_BLOCK_SIZE=4194304 STORAGE_S3_BUCKET=training STORAGE_S3_REGION=ap-northeast-2 AWS_REGION=ap-northeast-2 \
