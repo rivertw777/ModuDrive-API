@@ -54,7 +54,7 @@ alb_deregistration_delay = 15
 # A trial account's first alarm. ~$130 of infrastructure + logs, with headroom.
 monthly_budget_usd = 150
 
-# Asleep 00:00–08:00 KST: tasks, RDS and the NAT instance stop, a third off what they cost.
+# Asleep 00:00–08:00 KST: tasks and RDS stop, about a third off what they cost.
 night_stop = true
 
 # The smallest collector, scraping once a minute.
