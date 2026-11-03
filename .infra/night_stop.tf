@@ -1,6 +1,7 @@
-# demo sleeps 00:00–08:00 KST (night_stop): tasks scale to zero, then RDS and the NAT instance stop;
-# they start 20 minutes before the tasks come back, which pull their images through the NAT and open
-# DB connections on start. ALB, ElastiCache and public IPv4 can't stop and keep billing.
+# demo sleeps 00:00–08:00 KST (night_stop): tasks scale to zero, then RDS stops; it starts 20 minutes
+# before the tasks come back, which open DB connections on start. ALB, ElastiCache and public IPv4
+# can't stop and keep billing. The NAT instance stays up: after a stop/start it came back without
+# masquerading, so the tasks couldn't reach SSM or ECR, and stopping it saved only ~$0.12 a day.
 # The alarms a sleeping stack trips are muted until the services have had time to start: the AWS ones
 # here, the Grafana Cloud ones by a mute interval (monitoring/alertmanager-grafana-cloud.yaml).
 # A terraform apply during the night puts the services' min/max back and starts their tasks (without a DB).
@@ -87,19 +88,16 @@ resource "aws_iam_role_policy" "night_stop" {
   role = aws_iam_role.night_stop[0].id
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = concat(
-      [
-        { Effect = "Allow", Action = ["rds:StopDBInstance", "rds:StartDBInstance"], Resource = [for i in aws_db_instance.postgres : i.arn] },
-        {
-          Effect = "Allow", Action = ["cloudwatch:DisableAlarmActions", "cloudwatch:EnableAlarmActions"]
-          Resource = concat(
-            [aws_cloudwatch_metric_alarm.gateway_unhealthy.arn, aws_cloudwatch_metric_alarm.alb_5xx.arn],
-            aws_cloudwatch_metric_alarm.api_unreachable[*].arn,
-          )
-        },
-      ],
-      var.nat == "instance" ? [{ Effect = "Allow", Action = ["ec2:StopInstances", "ec2:StartInstances"], Resource = aws_instance.nat[0].arn }] : [],
-    )
+    Statement = [
+      { Effect = "Allow", Action = ["rds:StopDBInstance", "rds:StartDBInstance"], Resource = [for i in aws_db_instance.postgres : i.arn] },
+      {
+        Effect = "Allow", Action = ["cloudwatch:DisableAlarmActions", "cloudwatch:EnableAlarmActions"]
+        Resource = concat(
+          [aws_cloudwatch_metric_alarm.gateway_unhealthy.arn, aws_cloudwatch_metric_alarm.alb_5xx.arn],
+          aws_cloudwatch_metric_alarm.api_unreachable[*].arn,
+        )
+      },
+    ]
   })
 }
 
@@ -109,8 +107,6 @@ locals {
     for k, v in merge(
       { for k, i in aws_db_instance.postgres : "db-${k}-stop" => { at = local.night_stop_at, api = "rds:stopDBInstance", input = jsonencode({ DbInstanceIdentifier = i.identifier }) } },
       { for k, i in aws_db_instance.postgres : "db-${k}-start" => { at = local.night_start_at, api = "rds:startDBInstance", input = jsonencode({ DbInstanceIdentifier = i.identifier }) } },
-      { for i in aws_instance.nat : "nat-stop" => { at = local.night_stop_at, api = "ec2:stopInstances", input = jsonencode({ InstanceIds = [i.id] }) } },
-      { for i in aws_instance.nat : "nat-start" => { at = local.night_start_at, api = "ec2:startInstances", input = jsonencode({ InstanceIds = [i.id] }) } },
       {
         alarms-off = { at = local.night_sleep, api = "cloudwatch:disableAlarmActions", input = jsonencode({ AlarmNames = local.night_alarms }) }
         alarms-on  = { at = local.night_alarm_on, api = "cloudwatch:enableAlarmActions", input = jsonencode({ AlarmNames = local.night_alarms }) }
