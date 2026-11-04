@@ -51,6 +51,12 @@ resilience4j:
         baseConfig: default
         # As long as the read timeout: a lookup that just took long isn't a failing service.
         slowCallDurationThreshold: 30s
+        # storage-service answers 503 itself when its S3 circuit or bulkhead refuses (spec 006
+        # 2-4-5) — already a fast refusal, and counting it would refuse the commits that don't need
+        # S3 too. Ignored, not left out of record-exceptions: an instance's list only adds to the
+        # base config's, it can't drop one.
+        ignore-exceptions:
+          - feign.FeignException.ServiceUnavailable
 
 # Fixed service URLs (compose DNS locally, ECS Service Connect on AWS).
 clients:
