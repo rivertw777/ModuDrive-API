@@ -36,8 +36,15 @@ resilience4j:
     instances:
       fileServiceCircuitBreaker:
         baseConfig: default
-      # Spec 006 2-4-3: timeouts, connect failures and S3 5xx count; a 404 or 412 doesn't.
-      s3CircuitBreaker:
+      # Spec 006 2-4-3: one circuit per S3 path, the bulkheads' names. Timeouts, connect failures
+      # and S3 5xx count; a 404 or 412 doesn't.
+      s3Lookup:
+        baseConfig: default
+        record-failure-predicate: com.moduDrive.storage.adapter.out.s3.S3Unavailable
+      s3Read:
+        baseConfig: default
+        record-failure-predicate: com.moduDrive.storage.adapter.out.s3.S3Unavailable
+      s3Delete:
         baseConfig: default
         record-failure-predicate: com.moduDrive.storage.adapter.out.s3.S3Unavailable
   # Spec 006 2-4-4: S3 never holds more request threads than these, so what doesn't touch S3

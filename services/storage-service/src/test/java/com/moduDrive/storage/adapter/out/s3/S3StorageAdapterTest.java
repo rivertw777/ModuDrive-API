@@ -33,9 +33,12 @@ import software.amazon.awssdk.services.s3.model.S3Object;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Collections;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -50,6 +53,7 @@ import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willAnswer;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 
 @ExtendWith(MockitoExtension.class)
 class S3StorageAdapterTest {
@@ -59,6 +63,8 @@ class S3StorageAdapterTest {
     private static final String HASH_A = "a".repeat(64);
     private static final String HASH_B = "b".repeat(64);
     private static final Instant DECIDED_AT = Instant.parse("2026-10-08T12:00:00.500Z");
+    private static final byte[] HELLO = "hello ".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] WORLD = "world".getBytes(StandardCharsets.UTF_8);
 
     @Mock
     private S3Client s3Client;
@@ -85,21 +91,43 @@ class S3StorageAdapterTest {
         @Test
         @DisplayName("S3에 있는 바이트를 그대로, 키 순서대로 돌려준다")
         void returnsTheStoredBytesInKeyOrder() {
-            stubGet(Map.of("blocks/o/a", "hello ".getBytes(), "blocks/o/b", "world".getBytes()));
+            stubGet(Map.of(keyOf(HELLO), HELLO, keyOf(WORLD), WORLD));
 
-            assertThat(adapter.retrieveBlocks(List.of("blocks/o/a", "blocks/o/b", "blocks/o/a")))
-                    .containsExactly("hello ".getBytes(), "world".getBytes(), "hello ".getBytes());
+            assertThat(adapter.retrieveBlocks(List.of(keyOf(HELLO), keyOf(WORLD), keyOf(HELLO))))
+                    .containsExactly(HELLO, WORLD, HELLO);
         }
 
         @Test
         @DisplayName("같은 바이트를 스트림으로도 쓴다")
         void streamsTheSameBytes() {
-            stubGet(Map.of("blocks/o/a", "hello ".getBytes(), "blocks/o/b", "world".getBytes()));
+            stubGet(Map.of(keyOf(HELLO), HELLO, keyOf(WORLD), WORLD));
             ByteArrayOutputStream out = new ByteArrayOutputStream();
 
-            adapter.streamBlocks(List.of("blocks/o/a", "blocks/o/b"), out);
+            adapter.streamBlocks(List.of(keyOf(HELLO), keyOf(WORLD)), out);
 
             assertThat(out.toByteArray()).isEqualTo("hello world".getBytes(StandardCharsets.UTF_8));
+        }
+
+        @Test
+        @DisplayName("S3가 읽기에 실패하면 STORAGE_ERROR")
+        void turnsAFailedReadIntoStorageError() {
+            given(s3Client.getObjectAsBytes(any(GetObjectRequest.class))).willThrow(SdkClientException.create("timeout"));
+
+            Throwable thrown = catchThrowable(() -> adapter.retrieveBlocks(List.of(keyOf(HELLO))));
+
+            assertThat(((BusinessException) thrown).getExceptionCase()).isEqualTo(StorageExceptionCase.STORAGE_ERROR);
+        }
+
+        @Test
+        @DisplayName("받은 바이트가 키의 해시와 다르면 내보내지 않고 STORAGE_ERROR")
+        void refusesABlockThatDoesNotMatchItsHash() {
+            stubGet(Map.of(keyOf(HELLO), HELLO, keyOf(WORLD), "w0rld".getBytes(StandardCharsets.UTF_8)));
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+            Throwable thrown = catchThrowable(() -> adapter.streamBlocks(List.of(keyOf(HELLO), keyOf(WORLD)), out));
+
+            assertThat(((BusinessException) thrown).getExceptionCase()).isEqualTo(StorageExceptionCase.STORAGE_ERROR);
+            assertThat(out.toByteArray()).isEqualTo(HELLO);
         }
     }
 
@@ -363,10 +391,22 @@ class S3StorageAdapterTest {
                         .getExceptionCase()).isEqualTo(StorageExceptionCase.STORAGE_ERROR);
             }
 
-            Throwable thrown = catchThrowable(() -> adapter.retrieveBlocks(List.of(KEY)));
+            Throwable thrown = catchThrowable(() -> adapter.findUploaded(OWNER, List.of(HASH_A)));
 
             assertThat(((BusinessException) thrown).getExceptionCase()).isEqualTo(StorageExceptionCase.STORAGE_UNAVAILABLE);
-            then(s3Client).should(never()).getObjectAsBytes(any(GetObjectRequest.class));
+            then(s3Client).should(times(2)).headObject(any(HeadObjectRequest.class));
+        }
+
+        @Test
+        @DisplayName("블록 확인의 서킷이 열려도 다운로드는 자기 서킷으로 S3를 부른다")
+        void keepsReadCircuitApartFromLookups() {
+            given(s3Client.headObject(any(HeadObjectRequest.class))).willThrow(SdkClientException.create("timeout"));
+            for (int i = 0; i < 2; i++) {
+                catchThrowable(() -> adapter.findUploaded(OWNER, List.of(HASH_A)));
+            }
+            stubGet(Map.of(keyOf(HELLO), HELLO));
+
+            assertThat(adapter.retrieveBlocks(List.of(keyOf(HELLO)))).containsExactly(HELLO);
         }
 
         @Test
@@ -378,7 +418,7 @@ class S3StorageAdapterTest {
                 adapter.deleteUnlessRewritten(KEY, DECIDED_AT);
             }
 
-            assertThat(circuitBreakers.circuitBreaker("s3CircuitBreaker").getMetrics().getNumberOfFailedCalls()).isZero();
+            assertThat(circuitBreakers.circuitBreaker("s3Delete").getMetrics().getNumberOfFailedCalls()).isZero();
         }
 
         @Test
@@ -395,16 +435,24 @@ class S3StorageAdapterTest {
         @Test
         @DisplayName("블록 확인 자리가 가득 차도 다운로드는 자기 자리로 S3를 부른다")
         void keepsReadsApartFromLookups() {
-            stubGet(Map.of(KEY, "a".getBytes()));
+            stubGet(Map.of(keyOf(HELLO), HELLO));
             fill(bulkheads.bulkhead("s3Lookup"));
 
-            assertThat(adapter.retrieveBlocks(List.of(KEY))).containsExactly("a".getBytes());
+            assertThat(adapter.retrieveBlocks(List.of(keyOf(HELLO)))).containsExactly(HELLO);
         }
 
         private void fill(io.github.resilience4j.bulkhead.Bulkhead bulkhead) {
             while (bulkhead.tryAcquirePermission()) {
                 // take every seat
             }
+        }
+    }
+
+    private static String keyOf(byte[] block) {
+        try {
+            return "blocks/o/" + HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(block));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
         }
     }
 
