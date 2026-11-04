@@ -113,29 +113,20 @@ ModuDrive에서 언제 어디서나 간편하게,<br>
 
 ---
 
-## 4. 기술적 의사결정
+## 4. 개발일지
 
 <br>
 
 - [파일 업로드 설계하기 (블록 기반)](https://nicky777.tistory.com/27)
-- [분산 트레이싱 도입하기](https://nicky777.tistory.com/29)
-
-<br>
-
----
-
-## 5. 트러블슈팅
-
-<br>
-
 - [외부 메일 API 장애 대응하기 (멱등성 보장하기)](https://nicky777.tistory.com/26)
-- [폴더 삭제 기능 성능 개선](https://github.com/rivertw777/ModuDrive-API/wiki/%ED%8F%B4%EB%8D%94-%EC%82%AD%EC%A0%9C-%EA%B8%B0%EB%8A%A5-%EC%84%B1%EB%8A%A5-%EA%B0%9C%EC%84%A0)
+- [분산 트레이싱 도입하기](https://nicky777.tistory.com/29)
+- [Java 25 런타임 기능 적용기](https://nicky777.tistory.com/30)
 
 <br>
 
 ---
 
-## 6. 설계 문서
+## 5. 설계 문서
 
 <br>
 
@@ -153,7 +144,7 @@ ModuDrive에서 언제 어디서나 간편하게,<br>
 
 ---
 
-## 7. 구성 가이드
+## 6. 구성 가이드
 
 <br>
 
@@ -164,7 +155,7 @@ ModuDrive에서 언제 어디서나 간편하게,<br>
 
 ---
 
-## 8. 기술 스택
+## 7. 기술 스택
 
 <br>
 
