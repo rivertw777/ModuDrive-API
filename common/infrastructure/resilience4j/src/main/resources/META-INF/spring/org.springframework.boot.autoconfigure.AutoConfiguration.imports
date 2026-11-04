@@ -1,2 +1,3 @@
 com.moduDrive.common.infrastructure.resilience4j.CircuitBreakerEventConfig
 com.moduDrive.common.infrastructure.resilience4j.RetryEventConfig
+com.moduDrive.common.infrastructure.resilience4j.FeignNoStatusRetryConfig
