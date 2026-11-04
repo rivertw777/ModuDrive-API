@@ -147,7 +147,7 @@ Resilience4j 기본 순서대로 재시도가 바깥, 서킷 브레이커가 안
 | 게이트웨이 라우트 | 게이트웨이 `circuitBreaker` 필터 | 서비스마다 하나 | [2-1](#2-1-게이트웨이-라우트) |
 | 게이트웨이 세션 확인 | `WebClient` + Resilience4j Reactor 연산자 | auth 라우트와 같은 것을 같이 씀 | [2-2](#2-2-게이트웨이-세션-확인) |
 | 서비스 간 호출 | OpenFeign + `@CircuitBreaker` · `@Retry` | 호출 대상마다 하나 | [2-3](#2-3-서비스-간-호출-feign) |
-| storage-service → S3 | SDK 시간 제한 + Resilience4j 서킷 브레이커·벌크헤드 (코드로 감쌈) | `s3CircuitBreaker` 하나 | [2-4](#2-4-s3-호출-storage-service) |
+| storage-service → S3 | SDK 시간 제한 + Resilience4j 서킷 브레이커·벌크헤드 (코드로 감쌈) | 경로(블록 확인·다운로드·삭제)마다 하나 | [2-4](#2-4-s3-호출-storage-service) |
 
 서비스 간 비동기 메시지(SQS — 파일 영구 삭제 시 블록 삭제 요청 등)는 서킷 브레이커 대신 재시도·DLQ로 버틴다 ([005-messaging-spec.md 4-2](005-messaging-spec.md#4-2-처리-실패)).
 
@@ -200,6 +200,8 @@ flowchart LR
 | 호스트를 못 찾음 (`UnknownHostException`) | 기록 |
 | 서비스가 돌려준 HTTP 응답 502 · 503 · 504 (`CircuitBreakerStatusCodeException`) | 기록 |
 | 서비스가 돌려준 그 밖의 HTTP 응답 (4xx · 500) | 기록 안 함 |
+
+file-service → storage-service(`storageServiceCircuitBreaker`)만 503을 기록하지 않는다. storage-service의 503은 S3 서킷·벌크헤드가 이미 빠르게 거절한 것이라([2-4-5](#2-4-5-응답)), 이것까지 세면 file-service 서킷이 열려 S3가 필요 없는 commit까지 막힌다.
 
 #### 2-1-3. 응답
 
@@ -310,7 +312,7 @@ ApiResponse<AuthenticateMemberResponse> authenticateMember(AuthenticateMemberReq
 - 읽기 시간 초과는 재시도하지 않는다. 상대가 요청을 받아 처리하는 중이라, 다시 보내면 느린 서버에 일만 더 쌓인다.
   Feign은 연결 실패와 읽기 시간 초과를 둘 다 `RetryableException`으로 감싸므로, 원인 예외(cause)를 보고 가른다.
 - 그 밖의 응답(4xx, 500 등)은 다시 보내도 같은 답일 것이므로 재시도하지 않는다.
-- 503도 재시도하지 않는다. demo에서는 서비스 간 호출이 Service Connect 프록시(Envoy)를 거치는데, 프록시가 503을 이미 다시 보낸 뒤라 앱이 또 보내면 죽은 서비스에 가는 호출이 곱으로 늘어난다. demo에서는 앱이 늘 같은 태스크의 프록시에 붙어 연결 실패도 나지 않으므로, 앱의 재시도는 사실상 로컬에서만 일어난다.
+- 503도 재시도하지 않는다. Feign 밑의 Apache HTTP 클라이언트는 기본으로 503·429를 `Retry-After`만큼 기다렸다 혼자 다시 보내는데, 이것도 끈다(`FeignNoStatusRetryConfig`). 연결이 끊긴 것 같은 IO 오류 재시도는 Apache 기본대로 둔다. demo에서는 서비스 간 호출이 Service Connect 프록시(Envoy)를 거치는데, 프록시가 503을 이미 다시 보낸 뒤라 앱이 또 보내면 죽은 서비스에 가는 호출이 곱으로 늘어난다. demo에서는 앱이 늘 같은 태스크의 프록시에 붙어 연결 실패도 나지 않으므로, 앱의 재시도는 사실상 로컬에서만 일어난다.
 
 #### 2-3-3. 서킷에 실패로 기록되는 경우
 
@@ -341,17 +343,19 @@ flowchart LR
     I["commit의 블록 확인<br/>/internal/storage/blocks/uploaded"] --> L["s3Lookup 벌크헤드 (40)"]
     D["다운로드 · zip · 미리보기"] --> R["s3Read 벌크헤드 (40)"]
     P["블록 삭제 (SQS · 정리 작업)"] --> X["s3Delete 벌크헤드 (5)"]
-    L --> C["s3CircuitBreaker"]
-    R --> C
-    X --> C
-    C --> S3[("S3")]
+    L --> CL["s3Lookup 서킷"]
+    R --> CR["s3Read 서킷"]
+    X --> CX["s3Delete 서킷"]
+    CL --> S3[("S3")]
+    CR --> S3
+    CX --> S3
     U["블록 URL 발급<br/>POST /storage/blocks/upload-urls"] --> Redis[("Redis")]
 ```
 
 - S3 호출 하나하나(`GetObject`, `HeadObject`, `ListObjectsV2`, `DeleteObject`)를 **벌크헤드 → 서킷 브레이커** 순으로 감싼다 (`S3StorageAdapter`). 다운로드 하나가 블록을 여러 개 읽어도 자리는 블록을 읽는 동안만 잡는다. 느린 클라이언트가 응답을 받는 동안에는 자리를 잡지 않는다.
 - 블록 바이트는 WEB이 S3에 직접 PUT한다 ([001 2-4](001-file-upload-spec.md#2-4-블록-전송)). storage-service는 `PutObject`를 부르지 않는다. URL 발급은 로컬 서명이라 S3를 부르지 않으므로 어느 벌크헤드도 거치지 않는다.
 - 블록 확인·다운로드·삭제의 자리를 나눠, 한쪽이 몰리거나 느려져도 다른 쪽 자리는 남는다. 세 벌크헤드 합(85)이 Tomcat 요청 스레드(200)보다 작아서, S3가 완전히 멈춰도 S3를 쓰지 않는 요청을 받을 스레드가 남는다.
-- 서킷은 하나다. 업로드든 다운로드든 S3 자체가 아프면 같이 막는다.
+- 서킷도 경로마다 하나다. 다운로드가 커넥션을 붙잡고 시간 초과로 실패해도 다운로드 서킷만 열리고, 블록 확인은 자기 서킷으로 S3를 부른다. S3 전체가 멈추면 경로마다 따로 실패가 쌓여 각자 열린다.
 - `/internal/storage/blocks/uploaded`는 24시간 안에 URL을 받은 해시를 S3에서 확인하고(64개 이상이면 `ListObjectsV2`, 그보다 적으면 해시마다 `HeadObject`, commit 하나에 동시 8개), 그 자리는 `s3Lookup`에서 잡는다. 서킷이 열리면 바로, 자리가 차면 최대 1초 기다린 뒤 조회 전체가 503으로 끝나고 남은 호출은 보내지 않는다. URL을 받은 적 없는 해시는 S3에 묻지 않아서, 새 파일의 첫 commit은 S3가 아파도 영향이 없다.
 - file-service는 S3를 직접 부르지 않는다. commit은 storage-service 조회를 **DB 트랜잭션 밖에서** 한다 ([001 2-3](001-file-upload-spec.md#2-3-commit)). 그래서 S3 장애가 file-service DB 잠금으로 번지지 않는다.
 - storage-service 자체가 죽어 그 조회가 실패해도 commit 요청 전체가 실패하지 않는다. 이미 commit된 블록만으로 된 파일은 버전을 만들고, 나머지 파일만 그 503으로 답한다.
@@ -378,7 +382,7 @@ SDK 표준 재시도에 맡기고, 최대 시도는 **2번**(처음 1 + 재시�
 | S3가 돌려준 5xx (`S3Exception`, 500 · 503 SlowDown) | 기록 |
 | S3가 돌려준 그 밖의 응답 (404 없는 객체, 412 조건 불일치 등) | 기록 안 함 |
 
-설정값은 `default`를 그대로 쓴다 ([1-1-2](#1-1-2-설정값)). 판정은 `S3Unavailable`(`record-failure-predicate`)이 한다.
+세 서킷(`s3Lookup`·`s3Read`·`s3Delete`, 벌크헤드와 같은 이름) 모두 설정값은 `default`를 그대로 쓴다 ([1-1-2](#1-1-2-설정값)). 판정은 `S3Unavailable`(`record-failure-predicate`)이 한다.
 
 #### 2-4-4. 벌크헤드
 

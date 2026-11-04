@@ -16,6 +16,7 @@ import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.opentelemetry.context.Context;
 import lombok.extern.slf4j.Slf4j;
+import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.ChecksumAlgorithm;
 import software.amazon.awssdk.services.s3.model.ChecksumMode;
@@ -30,11 +31,14 @@ import software.amazon.awssdk.services.s3.model.S3Object;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableSet;
@@ -71,26 +75,33 @@ class S3StorageAdapter implements RetrieveBlocksPort, DeleteBlocksPort, FindUplo
 
     private final S3Client s3Client;
     private final StorageProperties properties;
-    private final CircuitBreaker circuitBreaker;
-    private final Bulkhead lookupBulkhead;
-    private final Bulkhead readBulkhead;
-    private final Bulkhead deleteBulkhead;
+    private final S3Path lookup;
+    private final S3Path read;
+    private final S3Path delete;
 
     S3StorageAdapter(S3Client s3Client, StorageProperties properties,
                      CircuitBreakerRegistry circuitBreakerRegistry, BulkheadRegistry bulkheadRegistry) {
         this.s3Client = s3Client;
         this.properties = properties;
-        this.circuitBreaker = circuitBreakerRegistry.circuitBreaker("s3CircuitBreaker");
-        this.lookupBulkhead = bulkheadRegistry.bulkhead("s3Lookup");
-        this.readBulkhead = bulkheadRegistry.bulkhead("s3Read");
-        this.deleteBulkhead = bulkheadRegistry.bulkhead("s3Delete");
+        this.lookup = S3Path.of("s3Lookup", circuitBreakerRegistry, bulkheadRegistry);
+        this.read = S3Path.of("s3Read", circuitBreakerRegistry, bulkheadRegistry);
+        this.delete = S3Path.of("s3Delete", circuitBreakerRegistry, bulkheadRegistry);
     }
 
-    /** Spec 006 2-4: every S3 call takes a seat in its bulkhead, then goes through the circuit. A
+    /** Spec 006 2-4: each path — lookup, read, delete — has its own bulkhead and its own circuit, so
+     * one path failing (downloads timing out on held connections) doesn't refuse the others. */
+    private record S3Path(Bulkhead bulkhead, CircuitBreaker circuitBreaker) {
+        static S3Path of(String name, CircuitBreakerRegistry circuitBreakers, BulkheadRegistry bulkheads) {
+            return new S3Path(bulkheads.bulkhead(name), circuitBreakers.circuitBreaker(name));
+        }
+    }
+
+    /** Every S3 call takes a seat in its path's bulkhead, then goes through that path's circuit. A
      * full bulkhead or an open circuit answers at once instead of tying up a request thread. */
-    private <T> T callS3(Bulkhead bulkhead, Supplier<T> call) {
+    private <T> T callS3(S3Path path, Supplier<T> call) {
         try {
-            return Bulkhead.decorateSupplier(bulkhead, CircuitBreaker.decorateSupplier(circuitBreaker, call)).get();
+            return Bulkhead.decorateSupplier(path.bulkhead(),
+                    CircuitBreaker.decorateSupplier(path.circuitBreaker(), call)).get();
         } catch (CallNotPermittedException | BulkheadFullException e) {
             log.warn("S3 call refused: {}", e.toString());
             throw new BusinessException(StorageExceptionCase.STORAGE_UNAVAILABLE);
@@ -164,7 +175,7 @@ class S3StorageAdapter implements RetrieveBlocksPort, DeleteBlocksPort, FindUplo
             ListObjectsV2Request request = (token == null
                     ? builder.startAfter(first.substring(0, first.length() - 1))
                     : builder.continuationToken(token)).build();
-            ListObjectsV2Response page = callS3(lookupBulkhead, () -> s3Client.listObjectsV2(request));
+            ListObjectsV2Response page = callS3(lookup, () -> s3Client.listObjectsV2(request));
             for (S3Object object : page.contents()) {
                 String hash = object.key().substring(ownerPrefix.length());
                 if (range.contains(hash) && object.checksumAlgorithm().contains(ChecksumAlgorithm.SHA256)) {
@@ -219,7 +230,7 @@ class S3StorageAdapter implements RetrieveBlocksPort, DeleteBlocksPort, FindUplo
     private Optional<Integer> uploadedSize(String key, String hash) {
         HeadObjectResponse head;
         try {
-            head = callS3(lookupBulkhead, () -> s3Client.headObject(HeadObjectRequest.builder()
+            head = callS3(lookup, () -> s3Client.headObject(HeadObjectRequest.builder()
                     .bucket(properties.getS3().getBucket())
                     .key(key)
                     .checksumMode(ChecksumMode.ENABLED)
@@ -245,7 +256,7 @@ class S3StorageAdapter implements RetrieveBlocksPort, DeleteBlocksPort, FindUplo
         String bucket = properties.getS3().getBucket();
         HeadObjectResponse head;
         try {
-            head = callS3(deleteBulkhead, () -> s3Client.headObject(HeadObjectRequest.builder().bucket(bucket).key(key).build()));
+            head = callS3(delete, () -> s3Client.headObject(HeadObjectRequest.builder().bucket(bucket).key(key).build()));
         } catch (BusinessException e) {
             throw e;
         } catch (S3Exception e) {
@@ -265,7 +276,7 @@ class S3StorageAdapter implements RetrieveBlocksPort, DeleteBlocksPort, FindUplo
             return;
         }
         try {
-            callS3(deleteBulkhead, () -> s3Client.deleteObject(DeleteObjectRequest.builder()
+            callS3(delete, () -> s3Client.deleteObject(DeleteObjectRequest.builder()
                     .bucket(bucket)
                     .key(key)
                     .ifMatch(head.eTag())
@@ -310,13 +321,34 @@ class S3StorageAdapter implements RetrieveBlocksPort, DeleteBlocksPort, FindUplo
     }
 
     /** The read seat is held only while this one block comes back from S3 — not while a slow
-     * client takes the bytes. */
+     * client takes the bytes. A block's key ends in its SHA-256, so bytes that don't hash to it
+     * (corrupted on the way) are never sent on as the file. */
     private byte[] fetchBlock(String key) {
-        return callS3(readBulkhead, () -> s3Client.getObjectAsBytes(
-                GetObjectRequest.builder()
-                        .bucket(properties.getS3().getBucket())
-                        .key(key)
-                        .build()
-        ).asByteArray());
+        byte[] block;
+        try {
+            block = callS3(read, () -> s3Client.getObjectAsBytes(
+                    GetObjectRequest.builder()
+                            .bucket(properties.getS3().getBucket())
+                            .key(key)
+                            .build()
+            ).asByteArray());
+        } catch (SdkException e) {
+            log.warn("Failed to read block {}: {}", key, e.toString());
+            throw new BusinessException(StorageExceptionCase.STORAGE_ERROR);
+        }
+        String hash = key.substring(key.lastIndexOf('/') + 1);
+        if (!hash.equals(sha256Hex(block))) {
+            log.error("Block {} doesn't match its hash", key);
+            throw new BusinessException(StorageExceptionCase.STORAGE_ERROR);
+        }
+        return block;
+    }
+
+    private static String sha256Hex(byte[] bytes) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

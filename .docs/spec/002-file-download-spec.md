@@ -95,7 +95,7 @@ sequenceDiagram
    - 로그인 사용자: `GET /internal/files/{fileId}/revisions?userId=&limit=1&markAccessed=`
    - 공개 링크: `GET /internal/files/public/{fileId}/revisions?key=&limit=1`
 3. **쿼터 확인** — 이 파일 버전을 이미 한도만큼 받았으면 거절한다 ([8](#8-다운로드-쿼터)).
-4. **조립** — 블록을 목록 순서대로 S3에서 읽는다.
+4. **조립** — 블록을 목록 순서대로 S3에서 읽는다. 읽은 블록의 SHA-256이 키의 해시와 다르면 내보내지 않고 500 `STORAGE_ERROR`로 끝낸다.
 5. **쿼터 기록** — 실제로 내려간 바이트만큼 기록한다.
 
 ---
