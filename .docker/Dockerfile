@@ -1,8 +1,8 @@
 # JRE, not JDK: nothing in a running service needs a compiler or jcmd, so they aren't shipped.
 # Two stages: the first can start the app once to record a Java AOT cache — the classes it loads and
-# links on startup — and the image then starts from that cache: on demo's half vCPU auth-service went from
-# ~139s to ~72s, so a new task (scale-out, crash, Spot replacement) serves twice as soon. Recording costs
-# 1–2 minutes per image, so only the deploy builds it (AOT=true, deploy.yml); local images skip it.
+# links on startup — and the image then starts from that cache, so a new task (scale-out, crash, Spot
+# replacement) serves sooner. Recording costs 1–2 minutes per image, so only the deploy builds it
+# (AOT=true, deploy.yml); local images skip it.
 FROM eclipse-temurin:25-jre-alpine AS aot
 ARG JAR_FILE
 ARG AOT=false
