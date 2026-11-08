@@ -46,7 +46,9 @@ resilience4j:
     configs:
       default:
         registerHealthIndicator: true
-        slidingWindowType: COUNT_BASED
+        # The failure rate over the last 10 seconds, not the last 10 calls: under heavy traffic 10 calls
+        # are a few milliseconds, and a blip that short would open the circuit (spec 006 1-1-2).
+        slidingWindowType: TIME_BASED
         slidingWindowSize: 10
         minimumNumberOfCalls: 10
         failureRateThreshold: 50
