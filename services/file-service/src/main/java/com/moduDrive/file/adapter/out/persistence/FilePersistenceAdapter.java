@@ -57,6 +57,18 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
     }
 
     @Override
+    public void markUploaded(List<File> files) {
+        if (files.isEmpty()) {
+            return;
+        }
+        fileRepository.markUploaded(
+                files.stream().map(File::getId).toArray(UUID[]::new),
+                files.stream().map(File::getCurrentVersionId).toArray(UUID[]::new),
+                files.stream().map(File::getFileSize).toArray(Long[]::new),
+                LocalDateTime.now(), currentAuditor());
+    }
+
+    @Override
     public Optional<File> saveDirectoryIfAbsent(File directory) {
         return fileRepository.insertDirectoryIfAbsent(directory.getNamespaceId(), directory.getPath(),
                         directory.getName(), directory.getOwnerId(), LocalDateTime.now())
