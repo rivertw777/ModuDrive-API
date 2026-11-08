@@ -82,6 +82,17 @@ interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID>, J
     List<UUID> lockSubtreeIds(@Param("namespaceId") UUID namespaceId, @Param("prefix") String prefix,
                               @Param("escapedPrefix") String escapedPrefix);
 
+    // A group commit's version switch, one statement for all its files: FileJpaEntity is @DynamicUpdate,
+    // and Hibernate never JDBC-batches a dynamic UPDATE, so saving the rows would send one per file.
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query(value = "update file f set current_version_id = t.version_id, file_size = t.size, "
+            + "updated_at = :now, updated_by = :by "
+            + "from unnest(cast(:ids as uuid[]), cast(:versionIds as uuid[]), cast(:sizes as bigint[])) "
+            + "as t(id, version_id, size) where f.id = t.id",
+            nativeQuery = true)
+    int markUploaded(@Param("ids") UUID[] ids, @Param("versionIds") UUID[] versionIds,
+                     @Param("sizes") Long[] sizes, @Param("now") LocalDateTime now, @Param("by") UUID by);
+
     // Subtree rewrites, one statement each instead of one UPDATE per row. Each mirrors the File
     // domain method it replaces (move / softDelete / restore) plus what FileJpaEntity derives from it
     // (active_slot_name) and the auditing a save would have stamped (updated_at/updated_by).

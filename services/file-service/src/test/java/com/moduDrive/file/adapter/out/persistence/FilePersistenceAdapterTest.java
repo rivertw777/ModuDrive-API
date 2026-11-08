@@ -249,6 +249,30 @@ class FilePersistenceAdapterTest {
         }
 
         @Test
+        @DisplayName("여러 파일의 현재 버전과 크기를 한 문장으로 바꾼다")
+        void marksManyFilesUploaded() {
+            File a = filePersistenceAdapter.saveFile(File.create(
+                    new FileNamespaceId(namespaceIdValue), new FileName("a.pdf"),
+                    new FilePath("/1/docs"), new FileOwnerId(UUID.randomUUID()), new FileIsDirectory(false)));
+            File b = filePersistenceAdapter.saveFile(File.create(
+                    new FileNamespaceId(namespaceIdValue), new FileName("b.pdf"),
+                    new FilePath("/1/docs"), new FileOwnerId(UUID.randomUUID()), new FileIsDirectory(false)));
+            UUID versionA = UUID.randomUUID();
+            UUID versionB = UUID.randomUUID();
+            a.markUploaded(versionA, 7L);
+            b.markUploaded(versionB, 5_000_000_000L);
+
+            filePersistenceAdapter.markUploaded(List.of(a, b));
+
+            assertThat(springDataFileRepository.findById(a.getId()).orElseThrow())
+                    .extracting(FileJpaEntity::getCurrentVersionId, FileJpaEntity::getFileSize)
+                    .containsExactly(versionA, 7L);
+            assertThat(springDataFileRepository.findById(b.getId()).orElseThrow())
+                    .extracting(FileJpaEntity::getCurrentVersionId, FileJpaEntity::getFileSize)
+                    .containsExactly(versionB, 5_000_000_000L);
+        }
+
+        @Test
         @DisplayName("여러 파일을 한 번에 저장하다 자리가 겹쳐도 비즈니스 예외로 변환된다")
         void translatesASlotConflictInABatch() {
             save("/1/docs", "a.pdf");
