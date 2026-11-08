@@ -62,8 +62,10 @@ resilience4j:
           - java.net.UnknownHostException
           # The session check's connect failure (AuthClient); routes never throw it.
           - org.springframework.web.reactive.function.client.WebClientRequestException
-          # A route's 502/503/504 (RouteConfig's statusCodes turns the response into this exception).
+          # A route's 502/504 (RouteConfig's statusCodes turns the response into this exception).
           - org.springframework.cloud.gateway.filter.factory.SpringCloudCircuitBreakerFilterFactory$CircuitBreakerStatusCodeException
+          # A route's 503 not marked X-Dependency-Unavailable (UnmarkedServiceUnavailableFilter).
+          - com.moduDrive.gateway.config.UnmarkedServiceUnavailableFilter$ServiceUnavailableResponseException
           # The session check's 502/503/504 from auth-service.
           - org.springframework.web.reactive.function.client.WebClientResponseException$BadGateway
           - org.springframework.web.reactive.function.client.WebClientResponseException$ServiceUnavailable
