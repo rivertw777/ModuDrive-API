@@ -405,7 +405,8 @@ S3 클라이언트의 HTTP 커넥션은 세 벌크헤드 자리의 합(85)만큼
 |---|---|---|
 | 서킷이 열려 있음 (`CallNotPermittedException`) | 503 `STORAGE_UNAVAILABLE` | 저장소에 일시적으로 연결할 수 없습니다. 잠시 후 다시 시도해 주세요. |
 | 벌크헤드가 가득 참 (`BulkheadFullException`) | 503 `STORAGE_UNAVAILABLE` | (같음) |
-| 시간 초과·연결 실패·5xx | 500 `STORAGE_ERROR` | 스토리지 오류가 발생했습니다. |
+| 블록 읽기(다운로드·zip·미리보기)의 시간 초과·연결 실패·5xx | 503 `STORAGE_UNAVAILABLE` | (같음) |
+| 블록 확인·삭제의 실패, 블록 읽기의 4xx | 500 `STORAGE_ERROR` | 스토리지 오류가 발생했습니다. |
 
 - 모든 서비스의 503에는 `Retry-After: 10`이 붙는다 (`GlobalExceptionHandler`, 서킷이 열려 있는 시간 `waitDurationInOpenState`). gateway 자신이 만드는 503(라우트 서킷 폴백 `FallbackController`, 세션 확인 실패 `CustomAuthenticationEntryPoint`)에도 같은 값이 붙고, gateway CORS가 이 헤더를 노출한다.
 - 503은 WEB 업로드가 자동으로 다시 보내는 응답이다 (1·2·4초에 0~50% 지터 — S3가 돌아오는 순간 모든 클라이언트가 같은 박자로 몰리지 않게 — 단 `Retry-After`보다 일찍은 아니다). 그래도 실패하면 30초 간격으로 최대 10분 **일시 중지 후 자동 재개**하고, 그때도 안 되면 그 파일만 실패한다. 나중에 다시 올리면 commit이 이어 올리기로 받은 블록을 건너뛴다 ([001 2-4-3](001-file-upload-spec.md#2-4-3-재시도와-취소)).
