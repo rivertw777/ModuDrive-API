@@ -104,7 +104,7 @@ groups:
           inspect: 'aws ecs describe-services --cluster ${project} --services otel-collector --query "services[0].events[:5]" / aws logs tail /ecs/${project}/otel-collector --since 15m'
 
       - alert: CircuitOpen
-        expr: sum by (service, name) (increase(resilience4j_circuitbreaker_not_permitted_calls_total[2m])) > 0
+        expr: sum by (service, name) (increase(resilience4j_circuitbreaker_not_permitted_calls_total{name!~"s3.+"}[2m])) > 0
         for: 2m
         labels:
           channel: service
@@ -118,6 +118,27 @@ groups:
           inspect: '{service_name="{{ $labels.service }}"} |= "{{ $labels.name }}"'
 %{ else ~}
           inspect: 'aws logs tail /ecs/${project}/{{ $labels.service }} --since 15m --filter-pattern "{{ $labels.name }}"'
+%{ endif ~}
+
+      # The cause when it's S3: CircuitOpen and RouteErrorRate name storage-service, and once the gateway's circuit
+      # opens first, storage-service's S3 circuits have nothing to refuse. Calls an S3 circuit counted as failed
+      # plus calls it refused — both mean S3 didn't answer properly. 403/404/412 and a full bulkhead don't count.
+      - alert: S3Failing
+        expr: >-
+          sum by (service, name) (increase(resilience4j_circuitbreaker_calls_seconds_count{name=~"s3.+", kind="failed"}[2m]))
+          + sum by (service, name) (increase(resilience4j_circuitbreaker_not_permitted_calls_total{name=~"s3.+"}[2m])) >= 5
+        for: 1m
+        labels:
+          channel: service
+          target: s3
+        annotations:
+          title: S3 호출 실패
+          summary: '최근 2분 동안 `{{ $labels.name }}` 경로의 S3 호출 **{{ printf "%.0f" $value }}건**이 실패하거나 서킷에 막힘 (S3 5xx · 시간 초과 · 연결 실패)'
+          action: AWS Health Dashboard에서 S3 장애를 확인하고, storage-service 로그의 S3 오류(상태 코드·예외)로 원인 확인
+%{ if loki ~}
+          inspect: '{service_name="storage-service"} |= "S3"'
+%{ else ~}
+          inspect: 'aws logs tail /ecs/${project}/storage-service --since 15m --filter-pattern "S3"'
 %{ endif ~}
 
       - alert: RouteErrorRate

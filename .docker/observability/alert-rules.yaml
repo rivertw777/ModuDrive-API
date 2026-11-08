@@ -114,8 +114,9 @@ groups:
       # 아프면 auth·file·gateway에서 각각 오지만, 어느 경로가 막혔는지 바로 보이는 쪽을 택했다.
       # 상태(open·half_open)가 아니라 서킷이 막은 호출을 본다. 서킷은 요청이 와야 half_open으로 넘어가고 시험 호출
       # 3건이 차야 닫혀서, 요청이 없으면 대상이 복구돼도 상태가 그대로 남는다 — 상태로 알리면 알림이 안 풀린다.
+      # storage-service의 S3 서킷(s3Lookup·s3Read·s3Delete)은 아래 S3Failing이 맡는다.
       - alert: CircuitOpen
-        expr: sum by (service, name) (increase(resilience4j_circuitbreaker_not_permitted_calls_total[2m])) > 0
+        expr: sum by (service, name) (increase(resilience4j_circuitbreaker_not_permitted_calls_total{name!~"s3.+"}[2m])) > 0
         for: 2m
         labels:
           channel: service
@@ -126,6 +127,26 @@ groups:
           summary: '최근 2분 동안 서킷이 막은 호출 **{{ printf "%.0f" $value }}건** — 대상 서비스 호출이 계속 실패 중 (502·503·504 · 타임아웃 · 연결 실패)'
           action: 서킷이 부르는 서비스의 상태와 로그로 실패 원인 확인
           inspect: '{service_name="{{ $labels.service }}"} |= "{{ $labels.name }}"'
+
+      # S3가 원인일 때 원인을 바로 말해 주는 알림. 위 서킷 열림·아래 요청 실패율은 증상(사용자가 실패를 겪음)을 알리지만
+      # 대상이 "storage-service"로 찍혀, S3가 원인이라는 것은 로그를 열어야 보인다. gateway 서킷이 먼저 열리면
+      # storage-service의 S3 서킷은 막을 호출이 없어 서킷 열림으로도 잡히지 않는다(fault-test 002 "알림").
+      # 그래서 S3 경로 서킷이 실패로 센 호출과 막은 호출을 더해 본다 — 둘 다 S3가 제대로 답하지 않았다는 뜻이다.
+      # 403·404·412는 서킷이 실패로 세지 않아(S3Unavailable) 여기 들어오지 않는다. 벌크헤드가 찬 것(자리 없음)도
+      # 서킷 바깥이라 안 센다 — S3는 멀쩡한데 요청이 몰린 것이다.
+      - alert: S3Failing
+        expr: >-
+          sum by (service, name) (increase(resilience4j_circuitbreaker_calls_seconds_count{name=~"s3.+", kind="failed"}[2m]))
+          + sum by (service, name) (increase(resilience4j_circuitbreaker_not_permitted_calls_total{name=~"s3.+"}[2m])) >= 5
+        for: 1m
+        labels:
+          channel: service
+          target: s3
+        annotations:
+          title: S3 호출 실패
+          summary: '최근 2분 동안 `{{ $labels.name }}` 경로의 S3 호출 **{{ printf "%.0f" $value }}건**이 실패하거나 서킷에 막힘 (S3 5xx · 시간 초과 · 연결 실패)'
+          action: AWS Health Dashboard에서 S3 장애를 확인하고, storage-service 로그의 S3 오류(상태 코드·예외)로 원인 확인
+          inspect: '{service_name="storage-service"} |= "S3"'
 
       # 사용자가 실제로 에러를 보고 있는지를 본다. 위 두 규칙은 원인 쪽만 본다 — 프로세스가 죽었나(up),
       # 502/503/504나 연결 실패가 이어지나(서킷). DB·Redis 연결 실패는 GlobalExceptionHandler가 503으로 바꿔 서킷이
