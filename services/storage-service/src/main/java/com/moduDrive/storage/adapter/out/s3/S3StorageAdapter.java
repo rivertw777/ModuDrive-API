@@ -334,7 +334,9 @@ class S3StorageAdapter implements RetrieveBlocksPort, DeleteBlocksPort, FindUplo
             ).asByteArray());
         } catch (SdkException e) {
             log.warn("Failed to read block {}: {}", key, e.toString());
-            throw new BusinessException(StorageExceptionCase.STORAGE_ERROR);
+            // S3's 5xx, a timeout or a lost connection may pass — the client can try again. A 4xx won't.
+            boolean mayPass = !(e instanceof S3Exception s3) || s3.statusCode() >= 500;
+            throw new BusinessException(mayPass ? StorageExceptionCase.STORAGE_UNAVAILABLE : StorageExceptionCase.STORAGE_ERROR);
         }
         String hash = key.substring(key.lastIndexOf('/') + 1);
         if (!hash.equals(sha256Hex(block))) {
