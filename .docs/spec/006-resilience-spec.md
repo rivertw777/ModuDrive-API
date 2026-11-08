@@ -458,7 +458,8 @@ S3 클라이언트의 HTTP 커넥션은 세 벌크헤드 자리의 합(85)만큼
 
 | 지표 | 알림 조건 | 무슨 뜻인가 |
 |---|---|---|
-| `resilience4j_circuitbreaker_not_permitted_calls_total` — 서킷이 막은 호출 수 (서비스·서킷별) | 최근 2분에 1건 이상인 상태가 2분 지속 | 대상 서비스 호출이 계속 실패해 사용자 요청이 막히고 있다 (502·503·504 · 타임아웃 · 연결 실패) |
+| `resilience4j_circuitbreaker_not_permitted_calls_total` — 서킷이 막은 호출 수 (서비스·서킷별, S3 서킷 제외) | 최근 2분에 1건 이상인 상태가 2분 지속 | 대상 서비스 호출이 계속 실패해 사용자 요청이 막히고 있다 (502·503·504 · 타임아웃 · 연결 실패) |
+| S3 서킷(`s3Lookup`·`s3Read`·`s3Delete`)이 실패로 센 호출 + 막은 호출 (`resilience4j_circuitbreaker_calls_seconds_count{kind="failed"}` + `not_permitted_calls_total`) | 최근 2분에 5건 이상인 상태가 1분 지속 | S3가 계속 제대로 답하지 않는다 (5xx · 시간 초과 · 연결 실패) |
 
 (상세 내용은 [009-discord-alert-spec.md 4](009-discord-alert-spec.md#4-사용-알림) 참고)
 
