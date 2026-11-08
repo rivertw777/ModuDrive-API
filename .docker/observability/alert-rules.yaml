@@ -119,8 +119,8 @@ groups:
         for: 2m
         labels:
           channel: service
-          # 서킷 이름의 대상(memberServiceCircuitBreaker → member-service). 그 서비스의 ServiceDown이 이 알림을 누른다.
-          target: '{{ reReplaceAll "ServiceCircuitBreaker$" "-service" $labels.name }}'
+          # 서킷 이름의 대상(memberServiceCircuitBreaker → member-service, storageServiceUploadUrlsCircuitBreaker → storage-service). 그 서비스의 ServiceDown이 이 알림을 누른다.
+          target: '{{ reReplaceAll "Service.*CircuitBreaker$" "-service" $labels.name }}'
         annotations:
           title: 서킷 열림
           summary: '최근 2분 동안 서킷이 막은 호출 **{{ printf "%.0f" $value }}건** — 대상 서비스 호출이 계속 실패 중 (502·503·504 · 타임아웃 · 연결 실패)'
@@ -131,46 +131,48 @@ groups:
       # 502/503/504나 연결 실패가 이어지나(서킷). DB·Redis 연결 실패는 GlobalExceptionHandler가 503으로 바꿔 서킷이
       # 잡지만, 버그나 처리 못 한 예외는 500이라 서킷이 세지 않고 up도 1이다. 그래서 게이트웨이를 지난 요청의 5xx 비율을 본다.
       # 5분 동안 5%를 넘고 5xx가 10건 이상일 때만 — 요청이 거의 없을 때 한두 건으로 울리지 않게 건수도 본다.
-      # routeId는 게이트웨이 경로 이름이자 대상 서비스 이름이라, 메시지의 대상에 그대로 찍힌다.
+      # 경로(routeId)는 대상 서비스 이름으로 시작한다. 한 서비스에 경로가 여럿이라(storage-service,
+      # storage-service-upload-urls) 앞부분을 upstream 라벨로 떼어 서비스별로 묶고, 메시지의 대상에 그대로 찍는다.
       - alert: RouteErrorRate
         expr: >-
-          (sum by (routeId) (rate(spring_cloud_gateway_requests_seconds_count{outcome="SERVER_ERROR"}[5m]))
-          / sum by (routeId) (rate(spring_cloud_gateway_requests_seconds_count[5m])) > 0.05)
-          and on (routeId)
-          (sum by (routeId) (increase(spring_cloud_gateway_requests_seconds_count{outcome="SERVER_ERROR"}[5m])) >= 10)
+          (sum by (upstream) (label_replace(rate(spring_cloud_gateway_requests_seconds_count{outcome="SERVER_ERROR"}[5m]), "upstream", "$1", "routeId", "(.+-service).*"))
+          / sum by (upstream) (label_replace(rate(spring_cloud_gateway_requests_seconds_count[5m]), "upstream", "$1", "routeId", "(.+-service).*")) > 0.05)
+          and on (upstream)
+          (sum by (upstream) (label_replace(increase(spring_cloud_gateway_requests_seconds_count{outcome="SERVER_ERROR"}[5m]), "upstream", "$1", "routeId", "(.+-service).*")) >= 10)
         for: 2m
         labels:
           channel: service
-          target: '{{ $labels.routeId }}'
+          target: '{{ $labels.upstream }}'
         annotations:
           title: 요청 실패율 높음
           summary: '최근 5분 요청의 **{{ humanizePercentage $value }}**가 5xx로 실패 중'
           action: 그 서비스의 에러 로그로 원인 확인
-          inspect: '{service_name="{{ $labels.routeId }}"} | detected_level = "error"'
+          inspect: '{service_name="{{ $labels.upstream }}"} | detected_level = "error"'
 
       # 에러 없이 느려지는 경우 — DB 쿼리·커넥션 풀 고갈·하위 서비스 지연. 위 규칙들은 실패만 센다.
       # 게이트웨이를 지난 요청 중 1초를 넘긴 비율을 경로별로 본다. 1초는 otel-collector의 slow-requests 정책과
       # 같은 기준이라, 여기 걸린 요청의 trace는 샘플링에 버려지지 않고 전부 Tempo에 있다.
       # le="1" 버킷은 application-observability.yml의 slo 버킷 — 거기서 1s를 빼면 이 규칙은 조용히 죽는다.
       # "1.0"이 아니다: collector의 remote write는 le를 "1"로 보낸다 (Prometheus 직접 스크레이프만 "1.0").
-      # storage-service는 뺀다: 업로드·다운로드는 파일 크기만큼 오래 걸리는 게 정상이라 1초 기준이 의미가 없다.
+      # storage-service 경로는 뺀다: 다운로드·zip은 파일 크기만큼 오래 걸리는 게 정상이라 1초 기준이 의미가 없다.
+      # 업로드 URL 발급(storage-service-upload-urls)은 S3를 부르지 않아 빠르므로 본다.
       # 5xx 규칙과 같은 이유로 건수(10건)도 본다.
       - alert: RouteSlowRate
         expr: >-
-          (1 - sum by (routeId) (rate(spring_cloud_gateway_requests_seconds_bucket{le="1", routeId!="storage-service"}[5m]))
-          / sum by (routeId) (rate(spring_cloud_gateway_requests_seconds_count{routeId!="storage-service"}[5m])) > 0.05)
-          and on (routeId)
-          ((sum by (routeId) (increase(spring_cloud_gateway_requests_seconds_count{routeId!="storage-service"}[5m]))
-          - sum by (routeId) (increase(spring_cloud_gateway_requests_seconds_bucket{le="1", routeId!="storage-service"}[5m]))) >= 10)
+          (1 - sum by (upstream) (label_replace(rate(spring_cloud_gateway_requests_seconds_bucket{le="1", routeId!="storage-service"}[5m]), "upstream", "$1", "routeId", "(.+-service).*"))
+          / sum by (upstream) (label_replace(rate(spring_cloud_gateway_requests_seconds_count{routeId!="storage-service"}[5m]), "upstream", "$1", "routeId", "(.+-service).*")) > 0.05)
+          and on (upstream)
+          ((sum by (upstream) (label_replace(increase(spring_cloud_gateway_requests_seconds_count{routeId!="storage-service"}[5m]), "upstream", "$1", "routeId", "(.+-service).*"))
+          - sum by (upstream) (label_replace(increase(spring_cloud_gateway_requests_seconds_bucket{le="1", routeId!="storage-service"}[5m]), "upstream", "$1", "routeId", "(.+-service).*"))) >= 10)
         for: 2m
         labels:
           channel: service
-          target: '{{ $labels.routeId }}'
+          target: '{{ $labels.upstream }}'
         annotations:
           title: 느린 요청 많음
           summary: '최근 5분 요청의 **{{ humanizePercentage $value }}**가 1초를 넘김'
           action: Grafana → Explore → Tempo에 아래 쿼리로 느린 trace를 열어 가장 긴 span(DB 쿼리·하위 호출)을 확인
-          inspect: '{ resource.service.name = "{{ $labels.routeId }}" && kind = server && duration > 1s }'
+          inspect: '{ resource.service.name = "{{ $labels.upstream }}" && kind = server && duration > 1s }'
 
       # 힙이 차서 GC가 따라가지 못하는 경우 — 요청이 느려지다 OutOfMemoryError로 죽는다. 힙 사용량 그대로는 안 본다:
       # 아직 안 치운 쓰레기도 들어가고, 요청이 없으면 GC가 안 돌아 쓰레기로 찬 채 몇 시간이고 머문다.

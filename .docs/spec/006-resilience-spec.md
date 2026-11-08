@@ -167,7 +167,7 @@ flowchart LR
     G -- "memberServiceCircuitBreaker" --> M
     G -- "authServiceCircuitBreaker" --> A
     G -- "fileServiceCircuitBreaker" --> F
-    G -- "storageServiceCircuitBreaker" --> S
+    G -- "storageServiceCircuitBreaker<br/>storageServiceUploadUrlsCircuitBreaker" --> S
     G -- "notificationServiceCircuitBreaker" --> N
 ```
 
@@ -176,11 +176,13 @@ flowchart LR
 | member-service | `/api/v1/member/**` | `memberServiceCircuitBreaker` |
 | auth-service | `/api/v1/auth/**` | `authServiceCircuitBreaker` |
 | file-service | `/api/v1/files/**`, `/api/v1/directories/**` | `fileServiceCircuitBreaker` |
-| storage-service | `/api/v1/storage/**` | `storageServiceCircuitBreaker` |
+| storage-service-upload-urls | `/api/v1/storage/blocks/**` (업로드 URL 발급) | `storageServiceUploadUrlsCircuitBreaker` |
+| storage-service | 그 밖의 `/api/v1/storage/**` (다운로드·미리보기·zip) | `storageServiceCircuitBreaker` |
 | notification-service | `/api/v1/notifications/**` | `notificationServiceCircuitBreaker` |
 
 - `RouteConfig`가 라우트마다 `circuitBreaker` 필터를 건다.
 - 필터는 시간 제한(TimeLimiter)과 서킷 브레이커를 함께 적용한다.
+- Spring Cloud CircuitBreaker는 라우트 서킷마다 같은 이름의 세마포어 벌크헤드도 건다. 크기를 정하지 않으면 Resilience4j 기본값(동시 25개, 기다림 0)이라 26번째 요청(오래 걸리는 다운로드 등)이 503을 받는다. 그래서 `resilience4j.bulkhead.configs.default`에 동시 1024개, 기다림 0을 둔다. Envoy가 업스트림마다 기본으로 두는 동시 요청 상한과 같은 값으로, 정상 트래픽은 닿지 않고 서비스가 멈췄을 때 요청이 끝없이 쌓이는 것만 막는다. 얼마나 받을지는 각 서비스가 자기 자원 기준으로 정한다([2-4-4](#2-4-4-벌크헤드)).
 - 게이트웨이는 재시도하지 않는다(demo는 Service Connect 프록시가 503을 다시 보낸다, [2-3-2](#2-3-2-재시도)). 게이트웨이는 업로드·삭제 같은 모든 요청을 넘기므로, 시간 초과 뒤 다시 보내면 이미 처리된 요청이
   두 번 처리될 수 있다. 일시적인 실패는 클라이언트가 다시 요청한다.
 
@@ -201,7 +203,7 @@ flowchart LR
 | 서비스가 돌려준 HTTP 응답 502 · 503 · 504 (`CircuitBreakerStatusCodeException`) | 기록 |
 | 서비스가 돌려준 그 밖의 HTTP 응답 (4xx · 500) | 기록 안 함 |
 
-file-service → storage-service(`storageServiceCircuitBreaker`)만 503을 기록하지 않는다. storage-service의 503은 S3 서킷·벌크헤드가 이미 빠르게 거절한 것이라([2-4-5](#2-4-5-응답)), 이것까지 세면 file-service 서킷이 열려 S3가 필요 없는 commit까지 막힌다.
+storage-service는 라우트가 둘이다. 미리보기가 몰려 `s3Read` 벌크헤드가 차면 storage-service가 503으로 거절하는데([2-4-5](#2-4-5-응답)), 라우트가 하나면 이 503으로 열린 서킷이 S3를 쓰지 않는 업로드 URL 발급까지 막는다. 라우트를 나눠 그 서킷과 벌크헤드는 블록 읽기만 막는다. storage-service가 죽으면 두 라우트 모두 실패를 세어 각자 열린다.
 
 #### 2-1-3. 응답
 
