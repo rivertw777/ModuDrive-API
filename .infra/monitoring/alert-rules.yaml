@@ -109,7 +109,7 @@ groups:
         labels:
           channel: service
           # The circuit's callee (memberServiceCircuitBreaker → member-service).
-          target: '{{ reReplaceAll "ServiceCircuitBreaker$" "-service" $labels.name }}'
+          target: '{{ reReplaceAll "Service.*CircuitBreaker$" "-service" $labels.name }}'
         annotations:
           title: 서킷 열림
           summary: '최근 2분 동안 서킷이 막은 호출 **{{ printf "%.0f" $value }}건** — 대상 서비스 호출이 계속 실패 중 (502·503·504 · 타임아웃 · 연결 실패)'
@@ -122,44 +122,44 @@ groups:
 
       - alert: RouteErrorRate
         expr: >-
-          (sum by (routeId) (rate(spring_cloud_gateway_requests_seconds_count{outcome="SERVER_ERROR"}[5m]))
-          / sum by (routeId) (rate(spring_cloud_gateway_requests_seconds_count[5m])) > 0.05)
-          and on (routeId)
-          (sum by (routeId) (increase(spring_cloud_gateway_requests_seconds_count{outcome="SERVER_ERROR"}[5m])) >= 10)
+          (sum by (upstream) (label_replace(rate(spring_cloud_gateway_requests_seconds_count{outcome="SERVER_ERROR"}[5m]), "upstream", "$1", "routeId", "(.+-service).*"))
+          / sum by (upstream) (label_replace(rate(spring_cloud_gateway_requests_seconds_count[5m]), "upstream", "$1", "routeId", "(.+-service).*")) > 0.05)
+          and on (upstream)
+          (sum by (upstream) (label_replace(increase(spring_cloud_gateway_requests_seconds_count{outcome="SERVER_ERROR"}[5m]), "upstream", "$1", "routeId", "(.+-service).*")) >= 10)
         for: 2m
         labels:
           channel: service
-          target: '{{ $labels.routeId }}'
+          target: '{{ $labels.upstream }}'
         annotations:
           title: 요청 실패율 높음
           summary: '최근 5분 요청의 **{{ humanizePercentage $value }}**가 5xx로 실패 중'
           action: 그 서비스의 에러 로그로 원인 확인
 %{ if loki ~}
-          inspect: '{service_name="{{ $labels.routeId }}"} | detected_level = "error"'
+          inspect: '{service_name="{{ $labels.upstream }}"} | detected_level = "error"'
 %{ else ~}
-          inspect: 'aws logs tail /ecs/${project}/{{ $labels.routeId }} --since 15m --filter-pattern ERROR'
+          inspect: 'aws logs tail /ecs/${project}/{{ $labels.upstream }} --since 15m --filter-pattern ERROR'
 %{ endif ~}
 
       - alert: RouteSlowRate
         expr: >-
-          (1 - sum by (routeId) (rate(spring_cloud_gateway_requests_seconds_bucket{le="1", routeId!="storage-service"}[5m]))
-          / sum by (routeId) (rate(spring_cloud_gateway_requests_seconds_count{routeId!="storage-service"}[5m])) > 0.05)
-          and on (routeId)
-          ((sum by (routeId) (increase(spring_cloud_gateway_requests_seconds_count{routeId!="storage-service"}[5m]))
-          - sum by (routeId) (increase(spring_cloud_gateway_requests_seconds_bucket{le="1", routeId!="storage-service"}[5m]))) >= 10)
+          (1 - sum by (upstream) (label_replace(rate(spring_cloud_gateway_requests_seconds_bucket{le="1", routeId!="storage-service"}[5m]), "upstream", "$1", "routeId", "(.+-service).*"))
+          / sum by (upstream) (label_replace(rate(spring_cloud_gateway_requests_seconds_count{routeId!="storage-service"}[5m]), "upstream", "$1", "routeId", "(.+-service).*")) > 0.05)
+          and on (upstream)
+          ((sum by (upstream) (label_replace(increase(spring_cloud_gateway_requests_seconds_count{routeId!="storage-service"}[5m]), "upstream", "$1", "routeId", "(.+-service).*"))
+          - sum by (upstream) (label_replace(increase(spring_cloud_gateway_requests_seconds_bucket{le="1", routeId!="storage-service"}[5m]), "upstream", "$1", "routeId", "(.+-service).*"))) >= 10)
         for: 2m
         labels:
           channel: service
-          target: '{{ $labels.routeId }}'
+          target: '{{ $labels.upstream }}'
         annotations:
           title: 느린 요청 많음
           summary: '최근 5분 요청의 **{{ humanizePercentage $value }}**가 1초를 넘김'
 %{ if loki ~}
           action: Grafana → Explore → Tempo에 아래 쿼리로 느린 trace를 열어 가장 긴 span(DB 쿼리·하위 호출)을 확인
-          inspect: '{ resource.service.name = "{{ $labels.routeId }}" && kind = server && duration > 1s }'
+          inspect: '{ resource.service.name = "{{ $labels.upstream }}" && kind = server && duration > 1s }'
 %{ else ~}
           action: X-Ray 콘솔 → 트레이스에서 아래 필터로 느린 trace를 열어 가장 긴 구간(DB 쿼리·하위 호출)을 확인
-          inspect: 'service("{{ $labels.routeId }}") { responsetime > 1 }'
+          inspect: 'service("{{ $labels.upstream }}") { responsetime > 1 }'
 %{ endif ~}
 
       - alert: HeapHigh

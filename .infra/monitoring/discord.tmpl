@@ -1,6 +1,6 @@
 {{/* Discord 메시지 — 로컬(.docker/observability/alertmanager.yml)·demo·prod(AMP)가 같이 쓴다.
      본문(discord.content) 아래에 제목만 있는 카드(discord.title)가 붙는다. */}}
-{{ define "discord.target" }}{{ or .Labels.routeId .Labels.service }}{{ if .Labels.queue }} · `{{ .Labels.queue }}`{{ end }}{{ if .Labels.name }} · `{{ .Labels.name }}`{{ end }}{{ end }}
+{{ define "discord.target" }}{{ or .Labels.upstream .Labels.service }}{{ if .Labels.queue }} · `{{ .Labels.queue }}`{{ end }}{{ if .Labels.name }} · `{{ .Labels.name }}`{{ end }}{{ end }}
 {{ define "discord.message" }}
 {{- if eq (len .Alerts) 1 }}{{ range .Alerts }}
 {{- if eq .Status "resolved" }}✅  **{{ .Annotations.title }} (해제)**

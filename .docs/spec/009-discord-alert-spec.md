@@ -139,7 +139,7 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 - **`by (...)` 안에 적은 라벨만 알림 메시지에 쓸 수 있다.** 여기서 빠진 라벨은 조회 결과에 남지 않는다.
 - **라벨 값은 짧고 가짓수가 적어야 한다.** 라벨 값이 하나 달라질 때마다 Prometheus는 따로 저장하고, 알림도 따로 만든다.
   그래서 요청 ID나 바이트 수처럼 매번 바뀌는 값은 라벨에 넣지 않는다.
-- `service` 라벨은 서비스가 내놓는 게 아니라 collector가 붙인다(로컬은 스크레이프 주소, AWS는 컨테이너 이름). 메시지의 "대상"은 이 라벨이나 게이트웨이 경로(`routeId`)다.
+- `service` 라벨은 서비스가 내놓는 게 아니라 collector가 붙인다(로컬은 스크레이프 주소, AWS는 컨테이너 이름). 메시지의 "대상"은 이 라벨이나 게이트웨이 경로(`routeId`)의 대상 서비스(`upstream`)다.
 - 라벨 조합이 사라지면 그 알림은 해제된다. 예를 들어 FAILED 행을 고쳐서 그 큐의 실패가 0건이 되면 해당 지표가 없어지고, 알림이 풀린다.
 
 ### 2-2. 규칙
@@ -221,8 +221,8 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 | 지표 수집 끊김 | 서비스 태스크 없음 | 언제나 |
 
 - 예를 들어 member-service가 죽으면 "서비스 응답 없음" 한 통만 온다. gateway·auth·file의 서킷 열림과 member 경로의 요청 실패율은 눌린다.
-- `target`은 규칙의 `labels`가 붙인다. 서비스 응답 없음·태스크 없음은 `service`, 요청 실패율·느린 요청은 `routeId`, 서킷 열림은 서킷 이름의 대상이다(`memberServiceCircuitBreaker` → `member-service`).
-  서킷 이름을 `<대상>ServiceCircuitBreaker`로 짓지 않으면 대상을 못 뽑아 누르지 못한다.
+- `target`은 규칙의 `labels`가 붙인다. 서비스 응답 없음·태스크 없음은 `service`, 요청 실패율·느린 요청은 `upstream`(경로 이름에서 서비스 부분, `storage-service-upload-urls` → `storage-service`), 서킷 열림은 서킷 이름의 대상이다(`memberServiceCircuitBreaker` → `member-service`, `storageServiceUploadUrlsCircuitBreaker` → `storage-service`).
+  서킷 이름을 `<대상>Service…CircuitBreaker`로, 경로 이름을 `<대상>-service…`로 짓지 않으면 대상을 못 뽑아 누르지 못한다.
 - 원인 알림이 풀렸는데 눌렸던 알림이 아직 울리는 중이면 그때 보낸다.
 
 ---
@@ -263,7 +263,7 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 | 지표 수집 끊김 | `#infra` | 어느 서비스의 지표도 들어오지 않을 때 (collector 다운 · 저장소 전송 실패) | `absent(up{job="services"})` | 2분 (끊기고 약 7분 뒤, [4-10](#4-10-지표-수집-끊김)) |
 | 서킷 열림 | `#service` | 서비스는 떠 있지만, 그 서비스로 가는 호출이 계속 실패해 서킷이 호출을 막고 있을 때 | `sum by (service, name) (increase(resilience4j_circuitbreaker_not_permitted_calls_total[2m])) > 0` | 2분 |
 | 요청 실패율 높음 | `#service` | 게이트웨이를 지난 요청이 5xx로 많이 실패할 때 | 5xx 비율 `> 5%` 이면서 5분간 5xx `>= 10`건 (`spring_cloud_gateway_requests_seconds_count`, 경로별) | 2분 |
-| 느린 요청 많음 | `#service` | 게이트웨이를 지난 요청이 에러 없이 느려졌을 때 | 1초 초과 비율 `> 5%` 이면서 5분간 1초 초과 `>= 10`건 (`spring_cloud_gateway_requests_seconds_bucket{le="1"}`, 경로별, storage-service 제외) | 2분 |
+| 느린 요청 많음 | `#service` | 게이트웨이를 지난 요청이 에러 없이 느려졌을 때 | 1초 초과 비율 `> 5%` 이면서 5분간 1초 초과 `>= 10`건 (`spring_cloud_gateway_requests_seconds_bucket{le="1"}`, 경로별, `storage-service` 경로 제외) | 2분 |
 | 힙 메모리 부족 | `#infra` | 힙이 차서 GC가 따라가지 못할 때 | GC 직후 old 영역 사용률 `> 90%` (`jvm_gc_live_data_size_bytes` / `jvm_gc_max_data_size_bytes`) | 5분 |
 | DB 커넥션 부족 | `#service` | 커넥션 풀이 다 쓰여 요청이 커넥션을 못 받고 실패할 때 | `max by (service) (increase(hikaricp_connections_timeout_total[5m])) > 0` | 바로 |
 
@@ -334,7 +334,7 @@ DB나 Redis에 연결할 수 없을 때는 서비스가 503을 돌려주므로 �
 건수 조건은 [4-6](#4-6-요청-실패율-높음)과 같은 이유다.
 
 - **1초 기준**: 트레이스 샘플링(otel-collector)의 "느린 요청은 전부 보관" 기준과 같다. 그래서 이 알림에 걸린 요청은 trace가 반드시 남아 있다.
-- **storage-service 제외**: 업로드·다운로드는 파일 크기만큼 오래 걸리는 게 정상이라 1초 기준이 맞지 않는다.
+- **`storage-service` 경로 제외**: 다운로드·zip은 파일 크기만큼 오래 걸리는 게 정상이라 1초 기준이 맞지 않는다. 업로드 URL 발급 경로(`storage-service-upload-urls`)는 S3를 부르지 않아 빠르므로 본다.
 - 요청 시간은 히스토그램 버킷(100ms, 300ms, 1s, 3s, 10s)으로 낸다(`application-observability.yml`의 `slo`). 1s 버킷을 빼면 이 알림이 조용히 동작하지 않는다.
 
 **받으면:** 알림의 TraceQL을 Grafana → Explore → Tempo에 붙여 느린 trace를 열고, 가장 긴 span(DB 쿼리, 하위 서비스 호출, S3)을 본다.

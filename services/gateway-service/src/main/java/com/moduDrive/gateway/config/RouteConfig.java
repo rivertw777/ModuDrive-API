@@ -28,6 +28,12 @@ class RouteConfig {
                 .route("file-service", r -> r.path("/api/v1/files/**", "/api/v1/directories/**")
                         .filters(f -> addCircuitBreaker(f, "fileServiceCircuitBreaker"))
                         .uri(url("file-service")))
+                // Upload URLs need no S3 call: a route and circuit of their own, so the 503s of a read path
+                // (a preview flood filling the s3Read bulkhead, spec 006 2-4-4) can't open the circuit they go
+                // through. Before the catch-all: routes are matched in order.
+                .route("storage-service-upload-urls", r -> r.path("/api/v1/storage/blocks/**")
+                        .filters(f -> addCircuitBreaker(f, "storageServiceUploadUrlsCircuitBreaker"))
+                        .uri(url("storage-service")))
                 .route("storage-service", r -> r.path("/api/v1/storage/**")
                         .filters(f -> addCircuitBreaker(f, "storageServiceCircuitBreaker"))
                         .uri(url("storage-service")))
