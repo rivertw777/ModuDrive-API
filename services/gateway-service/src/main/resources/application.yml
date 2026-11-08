@@ -46,7 +46,9 @@ resilience4j:
     configs:
       default:
         registerHealthIndicator: true
-        slidingWindowType: COUNT_BASED
+        # The failure rate over the last 10 seconds, not the last 10 calls: under heavy traffic 10 calls
+        # are a few milliseconds, and a blip that short would open the circuit (spec 006 1-1-2).
+        slidingWindowType: TIME_BASED
         slidingWindowSize: 10
         minimumNumberOfCalls: 10
         failureRateThreshold: 50
@@ -62,8 +64,10 @@ resilience4j:
           - java.net.UnknownHostException
           # The session check's connect failure (AuthClient); routes never throw it.
           - org.springframework.web.reactive.function.client.WebClientRequestException
-          # A route's 502/503/504 (RouteConfig's statusCodes turns the response into this exception).
+          # A route's 502/504 (RouteConfig's statusCodes turns the response into this exception).
           - org.springframework.cloud.gateway.filter.factory.SpringCloudCircuitBreakerFilterFactory$CircuitBreakerStatusCodeException
+          # A route's 503 not marked X-Dependency-Unavailable (UnmarkedServiceUnavailableFilter).
+          - com.moduDrive.gateway.config.UnmarkedServiceUnavailableFilter$ServiceUnavailableResponseException
           # The session check's 502/503/504 from auth-service.
           - org.springframework.web.reactive.function.client.WebClientResponseException$BadGateway
           - org.springframework.web.reactive.function.client.WebClientResponseException$ServiceUnavailable

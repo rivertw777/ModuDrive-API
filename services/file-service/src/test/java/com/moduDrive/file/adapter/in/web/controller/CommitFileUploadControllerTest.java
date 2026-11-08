@@ -2,6 +2,7 @@ package com.moduDrive.file.adapter.in.web.controller;
 
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.common.core.web.GlobalExceptionHandler;
+import com.moduDrive.common.infrastructure.resilience4j.CircuitBreakerExceptionCase;
 import com.moduDrive.file.application.port.in.command.CommitDirectoryCommand;
 import com.moduDrive.file.application.port.in.command.CommitFileUploadCommand;
 import com.moduDrive.file.application.port.in.usecase.CommitFileUploadUseCase;
@@ -31,6 +32,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -64,7 +66,24 @@ class CommitFileUploadControllerTest {
                             .content(body("[\"" + HASH_A + "\"]")))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.results[0].needBlocks[0]").value(HASH_A))
+                    .andExpect(jsonPath("$.data.results[0].error.retryAfter").doesNotExist())
                     .andExpect(jsonPath("$.data.results[0].versionId").doesNotExist());
+        }
+
+        @Test
+        @DisplayName("503이면 Retry-After 대신 그 파일의 error에 retryAfter(초)를 담는다")
+        void tellsHowLongToWaitOnAFiles503() throws Exception {
+            given(commitFileUploadUseCase.commit(any()))
+                    .willReturn(List.of(CommitResult.failed(CircuitBreakerExceptionCase.SERVICE_UNAVAILABLE)));
+
+            mockMvc.perform(post("/api/v1/files/commit")
+                            .header("X_USER_ID", USER_ID)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body("[\"" + HASH_A + "\"]")))
+                    .andExpect(status().isOk())
+                    .andExpect(header().doesNotExist("Retry-After"))
+                    .andExpect(jsonPath("$.data.results[0].error.status").value(503))
+                    .andExpect(jsonPath("$.data.results[0].error.retryAfter").value(10));
         }
     }
 
