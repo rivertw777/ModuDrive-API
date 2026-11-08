@@ -69,6 +69,9 @@ class Proxy(http.server.BaseHTTPRequestHandler):
         status, headers, payload = self.forward(body)
         if mode == "lost":  # S3 did the work; the caller never hears back
             return self.hold()
+        if mode == "drop":  # S3 did the work; the connection drops before the answer
+            self.close_connection = True
+            return
         if mode == "corrupt" and payload:
             payload = payload[:len(payload) // 2] + bytes([payload[len(payload) // 2] ^ 0xFF]) + payload[len(payload) // 2 + 1:]
         if mode == "cut" and payload:
