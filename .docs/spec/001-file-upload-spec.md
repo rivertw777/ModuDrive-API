@@ -254,7 +254,7 @@ commit은 파일의 blocklist를 보내 "이 블록들로 버전을 만들어 �
 | 마지막을 뺀 블록은 모두 정확히 4MB, 마지막은 1바이트~4MB, 합 = `size` (크기는 `block` 행·S3 객체의 실제 값) | 400 `INVALID_BLOCKLIST` |
 | 그 자리에 폴더가 없고, 상위 경로 중간에 파일이 없음 (버전을 만들 때만) | 400 `FILE_ALREADY_EXISTS` |
 | `block` 행에 없는 블록이 있는데 storage-service 조회가 실패함 (서킷 열림·시간 초과·5xx) | 503 |
-| Postgres가 잠금 순환(교착)을 끊음 | 503 (WEB은 그 파일을 실패로 표시, 다시 올리면 된다) |
+| Postgres가 잠금 순환(교착)을 끊음 | 503 |
 
 ---
 
@@ -335,6 +335,7 @@ sequenceDiagram
 | 403 | URL 만료(서명한 task role 자격 증명이 먼저 끝나면 1시간보다 일찍), 또는 서명과 다른 요청 | 그 블록의 URL을 새로 받아 한 번 더 올린다. 그래도 403이면 그 블록이 필요한 파일만 실패 |
 | 412 | 그 키에 블록이 이미 있다 | 올라간 것으로 친다. commit이 체크섬으로 다시 확인한다 |
 | 5xx, 네트워크 오류 | S3 일시 장애 | 다시 보낸다 ([2-4-3](#2-4-3-재시도와-취소)) |
+| 30초 동안 오간 바이트가 없음 | S3가 받기를 멈췄거나, 다 받고도 답하지 않는다 | 끊고 다시 보낸다 ([2-4-3](#2-4-3-재시도와-취소)). 마지막 진행부터 세므로 느려도 보내고 있는 PUT은 끊지 않는다 |
 
 - 24시간 한도는 URL 발급 수로 센다. 없으면 commit하지 않을 블록으로 S3를 무한히 채울 수 있다. 드라이브 용량 한도는 이와 별개로 commit이 검사한다.
 - 다시 받은 URL도 한도에 센다. 25,600개는 하루 업로드로 넉넉한 값이라, 재시도가 섞여도 정상 사용은 닿지 않는다.
@@ -342,7 +343,7 @@ sequenceDiagram
 
 #### 2-4-3. 재시도와 취소
 
-URL 요청·블록 PUT·commit 모두 같은 규칙으로 다시 보낸다.
+URL 요청·블록 PUT·commit 모두 같은 규칙으로 다시 보낸다. commit이 파일별로 답한 5xx(블록 조회 실패·교착의 503 등)도 그 파일만 같은 `uploadId`로 다시 commit한다. 응답은 200이라 `Retry-After`가 없으므로 10초(서킷이 열려 있는 시간)보다 일찍 보내지 않는다.
 
 | 실패 | WEB의 동작 |
 |---|---|
@@ -620,6 +621,7 @@ commit 안 된 블록은 DB에 기록이 없다. 서버가 아는 것은 **언�
 | 미커밋 블록 유효 기간 | URL 발급 뒤 24시간 (정리는 25시간 뒤) | `Blocks.UPLOAD_TTL`, `PurgeUncommittedUploadsService.MARGIN` |
 | 해시 Worker | 코어 수, 최대 8개 | WEB `hash-in-worker.ts` |
 | 재시도 | 1·2·4초 3번 → 30초마다, 최대 10분 | WEB `upload-file.ts` |
+| 블록 PUT 유휴 제한 | 30초 | WEB `PUT_IDLE_TIMEOUT_MS` |
 | 버전 보존 | 30일, 최신 5개 | `PruneFileVersionsService.RETENTION`, `KEEP` |
 | 휴지통 보관 | 30일 (매일 03시에 지난 항목 영구 삭제) | `PurgeExpiredTrashService.TRASH_RETENTION_DAYS`, `TrashRetentionScheduler` |
 | 참조 없는 블록 유예 | 24시간 | `PurgeUnreferencedBlocksService.GRACE` |

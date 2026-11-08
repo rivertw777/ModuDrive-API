@@ -331,9 +331,7 @@ class CommitFileUploadService implements CommitFileUploadUseCase {
                 results[k] = CommitResult.committed(version);
             }
         }
-        if (!uploadedFiles.isEmpty()) {
-            saveFilePort.saveFiles(uploadedFiles);
-        }
+        saveFilePort.markUploaded(uploadedFiles);
         // An uploaded file counts as "opened" for 최근 문서함 (spec 001 2-3-1).
         saveFileAccessPort.recordAccesses(ownerId, files.stream().map(File::getId).toList(), LocalDateTime.now());
         if (growth != 0 && !updateNamespaceUsagePort.addUsedBytes(namespaceId, growth)) {

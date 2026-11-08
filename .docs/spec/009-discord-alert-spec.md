@@ -28,6 +28,7 @@
   - [4-8. 힙 메모리 부족](#4-8-힙-메모리-부족)
   - [4-9. DB 커넥션 부족](#4-9-db-커넥션-부족)
   - [4-10. 지표 수집 끊김](#4-10-지표-수집-끊김)
+  - [4-11. S3 호출 실패](#4-11-s3-호출-실패)
 - [5. AWS 전용 경보](#5-aws-전용-경보)
   - [5-1. 발송 과정](#5-1-발송-과정)
   - [5-2. 알림이 오기까지 걸리는 시간](#5-2-알림이-오기까지-걸리는-시간)
@@ -139,7 +140,7 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 - **`by (...)` 안에 적은 라벨만 알림 메시지에 쓸 수 있다.** 여기서 빠진 라벨은 조회 결과에 남지 않는다.
 - **라벨 값은 짧고 가짓수가 적어야 한다.** 라벨 값이 하나 달라질 때마다 Prometheus는 따로 저장하고, 알림도 따로 만든다.
   그래서 요청 ID나 바이트 수처럼 매번 바뀌는 값은 라벨에 넣지 않는다.
-- `service` 라벨은 서비스가 내놓는 게 아니라 collector가 붙인다(로컬은 스크레이프 주소, AWS는 컨테이너 이름). 메시지의 "대상"은 이 라벨이나 게이트웨이 경로(`routeId`)다.
+- `service` 라벨은 서비스가 내놓는 게 아니라 collector가 붙인다(로컬은 스크레이프 주소, AWS는 컨테이너 이름). 메시지의 "대상"은 이 라벨이나 게이트웨이 경로(`routeId`)의 대상 서비스(`upstream`)다.
 - 라벨 조합이 사라지면 그 알림은 해제된다. 예를 들어 FAILED 행을 고쳐서 그 큐의 실패가 0건이 되면 해당 지표가 없어지고, 알림이 풀린다.
 
 ### 2-2. 규칙
@@ -221,8 +222,8 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 | 지표 수집 끊김 | 서비스 태스크 없음 | 언제나 |
 
 - 예를 들어 member-service가 죽으면 "서비스 응답 없음" 한 통만 온다. gateway·auth·file의 서킷 열림과 member 경로의 요청 실패율은 눌린다.
-- `target`은 규칙의 `labels`가 붙인다. 서비스 응답 없음·태스크 없음은 `service`, 요청 실패율·느린 요청은 `routeId`, 서킷 열림은 서킷 이름의 대상이다(`memberServiceCircuitBreaker` → `member-service`).
-  서킷 이름을 `<대상>ServiceCircuitBreaker`로 짓지 않으면 대상을 못 뽑아 누르지 못한다.
+- `target`은 규칙의 `labels`가 붙인다. 서비스 응답 없음·태스크 없음은 `service`, 요청 실패율·느린 요청은 `upstream`(경로 이름에서 서비스 부분, `storage-service-upload-urls` → `storage-service`), 서킷 열림은 서킷 이름의 대상이다(`memberServiceCircuitBreaker` → `member-service`, `storageServiceUploadUrlsCircuitBreaker` → `storage-service`).
+  서킷 이름을 `<대상>Service…CircuitBreaker`로, 경로 이름을 `<대상>-service…`로 짓지 않으면 대상을 못 뽑아 누르지 못한다.
 - 원인 알림이 풀렸는데 눌렸던 알림이 아직 울리는 중이면 그때 보낸다.
 
 ---
@@ -233,7 +234,7 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 
 | 채널 | 성격 | 받는 알림 | 받으면 | 웹후크 주소 환경 변수 |
 |---|---|---|---|---|
-| `#service` | 지금 사용자가 피해를 보고 있음 | 응답 없음, 태스크 없음, 서킷 열림, 요청 실패율, 느린 요청, DB 커넥션 부족, ALB 5xx, gateway 정상 태스크 없음, 외부 접속 실패 | 바로 본다 | `DISCORD_SERVICE_WEBHOOK_URL` |
+| `#service` | 지금 사용자가 피해를 보고 있음 | 응답 없음, 태스크 없음, 서킷 열림, S3 호출 실패, 요청 실패율, 느린 요청, DB 커넥션 부족, ALB 5xx, gateway 정상 태스크 없음, 외부 접속 실패 | 바로 본다 | `DISCORD_SERVICE_WEBHOOK_URL` |
 | `#infra` | 아직 괜찮지만 그냥 두면 문제가 됨 (자원 한도, 지표 수집) | 힙 메모리, 서비스 CPU·메모리, DB 메모리·CPU 크레딧, Redis 메모리, NAT 상태 검사, 지표 수집 끊김 | 그날 안에 사양·설정을 조정하거나 원인을 고친다 | `DISCORD_INFRA_WEBHOOK_URL` |
 | `#messaging` | 비동기 이벤트가 멈춤 | 이벤트 전송 적체·실패, 이벤트 처리 실패, 큐 처리 지연 | 원인을 고친 뒤 재처리(리드라이브) | `DISCORD_MESSAGING_WEBHOOK_URL` |
 | `#account` | 계정 수준, 드묾 (AWS만) | 예산 초과 | 비용 확인 | `DISCORD_ACCOUNT_WEBHOOK_URL` |
@@ -261,9 +262,10 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 | 서비스 응답 없음 | `#service` | 서비스가 응답하지 않을 때 (프로세스가 죽음) | `min by (service, instance) (up{job="services"}) < 1` | 2분 |
 | 서비스 태스크 없음 (AWS) | `#service` | 서비스의 태스크가 하나도 수집되지 않을 때 (기동 실패 · 배포 롤백 반복) | 서비스마다 `absent(up{job="services",service="<서비스>"})` | 2분 |
 | 지표 수집 끊김 | `#infra` | 어느 서비스의 지표도 들어오지 않을 때 (collector 다운 · 저장소 전송 실패) | `absent(up{job="services"})` | 2분 (끊기고 약 7분 뒤, [4-10](#4-10-지표-수집-끊김)) |
-| 서킷 열림 | `#service` | 서비스는 떠 있지만, 그 서비스로 가는 호출이 계속 실패해 서킷이 호출을 막고 있을 때 | `sum by (service, name) (increase(resilience4j_circuitbreaker_not_permitted_calls_total[2m])) > 0` | 2분 |
+| 서킷 열림 | `#service` | 서비스는 떠 있지만, 그 서비스로 가는 호출이 계속 실패해 서킷이 호출을 막고 있을 때 | `sum by (service, name) (increase(resilience4j_circuitbreaker_not_permitted_calls_total{name!~"s3.+"}[2m])) > 0` | 2분 |
+| S3 호출 실패 | `#service` | storage-service의 S3 호출이 계속 실패하거나 S3 서킷에 막힐 때 | S3 경로(`s3Lookup`·`s3Read`·`s3Delete`)별로 2분간 실패한 호출 + 막은 호출 `>= 5` (`resilience4j_circuitbreaker_calls_seconds_count{kind="failed"}`, `resilience4j_circuitbreaker_not_permitted_calls_total`) | 1분 |
 | 요청 실패율 높음 | `#service` | 게이트웨이를 지난 요청이 5xx로 많이 실패할 때 | 5xx 비율 `> 5%` 이면서 5분간 5xx `>= 10`건 (`spring_cloud_gateway_requests_seconds_count`, 경로별) | 2분 |
-| 느린 요청 많음 | `#service` | 게이트웨이를 지난 요청이 에러 없이 느려졌을 때 | 1초 초과 비율 `> 5%` 이면서 5분간 1초 초과 `>= 10`건 (`spring_cloud_gateway_requests_seconds_bucket{le="1"}`, 경로별, storage-service 제외) | 2분 |
+| 느린 요청 많음 | `#service` | 게이트웨이를 지난 요청이 에러 없이 느려졌을 때 | 1초 초과 비율 `> 5%` 이면서 5분간 1초 초과 `>= 10`건 (`spring_cloud_gateway_requests_seconds_bucket{le="1"}`, 경로별, `storage-service` 경로 제외) | 2분 |
 | 힙 메모리 부족 | `#infra` | 힙이 차서 GC가 따라가지 못할 때 | GC 직후 old 영역 사용률 `> 90%` (`jvm_gc_live_data_size_bytes` / `jvm_gc_max_data_size_bytes`) | 5분 |
 | DB 커넥션 부족 | `#service` | 커넥션 풀이 다 쓰여 요청이 커넥션을 못 받고 실패할 때 | `max by (service) (increase(hikaricp_connections_timeout_total[5m])) > 0` | 바로 |
 
@@ -310,6 +312,8 @@ AWS(ECS)에선 죽은 태스크가 0이 되지 않고 수집 대상에서 아예
 열린 서킷은 10초 뒤 다음 요청이 오면 반열림(`half_open`)으로 넘어가 시험 호출 3건을 보내 보고, 그 결과로 닫히거나 다시 열린다. 요청이 없으면 상태가 바뀌지 않아서, 상태로 알리면 대상이 복구된 뒤에도 알림이 풀리지 않는다. 막힌 호출로 보면 사용자가 실제로 영향을 받을 때만 울린다.
 메시지의 대상은 "호출하는 서비스 · 서킷 이름(호출받는 쪽)"이다. 예를 들어 member-service가 아프면 gateway, auth, file의 서킷이 모두 열려, 한 메시지에 세 줄로 온다.
 
+storage-service의 S3 서킷(`s3Lookup`·`s3Read`·`s3Delete`)은 이 알림에서 빼고 [4-11](#4-11-s3-호출-실패)이 맡는다. 같은 S3 장애로 알림이 두 번 오지 않게 하려는 것이다.
+
 **받으면:** 서킷 이름에 적힌 서비스(호출받는 쪽)의 상태와 로그를 본다.
 요청이 끊기면 막힌 호출도 없어 알림이 풀린다. 서킷이 아직 열려 있는지는 Messaging & Resilience 대시보드의 서킷 상태에서 본다.
 
@@ -334,7 +338,7 @@ DB나 Redis에 연결할 수 없을 때는 서비스가 503을 돌려주므로 �
 건수 조건은 [4-6](#4-6-요청-실패율-높음)과 같은 이유다.
 
 - **1초 기준**: 트레이스 샘플링(otel-collector)의 "느린 요청은 전부 보관" 기준과 같다. 그래서 이 알림에 걸린 요청은 trace가 반드시 남아 있다.
-- **storage-service 제외**: 업로드·다운로드는 파일 크기만큼 오래 걸리는 게 정상이라 1초 기준이 맞지 않는다.
+- **`storage-service` 경로 제외**: 다운로드·zip은 파일 크기만큼 오래 걸리는 게 정상이라 1초 기준이 맞지 않는다. 업로드 URL 발급 경로(`storage-service-upload-urls`)는 S3를 부르지 않아 빠르므로 본다.
 - 요청 시간은 히스토그램 버킷(100ms, 300ms, 1s, 3s, 10s)으로 낸다(`application-observability.yml`의 `slo`). 1s 버킷을 빼면 이 알림이 조용히 동작하지 않는다.
 
 **받으면:** 알림의 TraceQL을 Grafana → Explore → Tempo에 붙여 느린 trace를 열고, 가장 긴 span(DB 쿼리, 하위 서비스 호출, S3)을 본다.
@@ -374,6 +378,19 @@ collector가 죽거나 지표 저장소(로컬 Prometheus, demo Grafana Cloud)�
   demo는 collector가 Spot이라 회수되면 이렇게 된다. ECS가 새 태스크를 띄우면 저절로 풀린다.
 
 **받으면:** collector 상태와 로그를 본다. collector가 멀쩡하면 로그에서 저장소로 보내기(remote write) 실패를 찾는다.
+
+### 4-11. S3 호출 실패
+
+S3가 원인일 때 원인을 바로 알려 주는 알림이다. S3가 실패하면 서킷 열림([4-5](#4-5-서킷-열림))과 요청 실패율([4-6](#4-6-요청-실패율-높음))도 울리지만, 둘 다 대상이 `storage-service`로 찍혀 S3가 원인이라는 것은 로그를 열어야 보인다.
+게다가 gateway의 서킷이 먼저 열리면 요청이 storage-service까지 가지 않아, storage-service의 S3 서킷은 막을 호출이 없다. 서킷이 막은 호출만 보면 이 경우를 놓친다([fault-test 002 알림](../fault-test/002-s3-failure.md#알림)).
+
+그래서 S3 경로 서킷이 실패로 센 호출과 막은 호출을 더해 본다. 둘 다 S3가 제대로 답하지 않았다는 뜻이다. 2분 동안 5건 이상인 상태가 1분 이어지면 알린다.
+
+- **세는 것**: S3 5xx, 시간 초과, 연결 실패 — S3 서킷이 실패로 세는 것과 같다([006-resilience-spec.md 2-4-3](006-resilience-spec.md#2-4-3-서킷에-실패로-기록되는-경우)).
+- **세지 않는 것**: 403·404·412(요청의 문제라 서킷이 세지 않는다), 벌크헤드가 찬 것(S3는 멀쩡한데 요청이 몰린 것, 서킷 바깥에서 거절된다).
+- 메시지의 대상은 `storage-service · <S3 경로>`다. 지표 `resilience4j_circuitbreaker_calls_seconds_count`는 collector가 남기는 목록에 넣어 두었다([2-1](#2-1-지표)).
+
+**받으면:** AWS Health Dashboard에서 S3 장애를 확인하고, storage-service 로그에서 S3 오류(상태 코드·예외)를 본다. S3 쪽 장애면 기다리는 것 말고 할 일이 없다. 서킷과 시간 제한이 사용자 요청을 빨리 실패시키고 있는지만 확인한다.
 
 ---
 

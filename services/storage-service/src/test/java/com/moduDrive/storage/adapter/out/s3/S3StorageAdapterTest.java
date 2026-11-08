@@ -109,9 +109,31 @@ class S3StorageAdapterTest {
         }
 
         @Test
-        @DisplayName("S3가 읽기에 실패하면 STORAGE_ERROR")
-        void turnsAFailedReadIntoStorageError() {
+        @DisplayName("S3가 시간 초과로 읽기에 실패하면 STORAGE_UNAVAILABLE")
+        void turnsATimedOutReadIntoStorageUnavailable() {
             given(s3Client.getObjectAsBytes(any(GetObjectRequest.class))).willThrow(SdkClientException.create("timeout"));
+
+            Throwable thrown = catchThrowable(() -> adapter.retrieveBlocks(List.of(keyOf(HELLO))));
+
+            assertThat(((BusinessException) thrown).getExceptionCase()).isEqualTo(StorageExceptionCase.STORAGE_UNAVAILABLE);
+        }
+
+        @Test
+        @DisplayName("S3가 5xx로 답하면 STORAGE_UNAVAILABLE")
+        void turnsAServerErrorIntoStorageUnavailable() {
+            given(s3Client.getObjectAsBytes(any(GetObjectRequest.class)))
+                    .willThrow(S3Exception.builder().statusCode(503).message("SlowDown").build());
+
+            Throwable thrown = catchThrowable(() -> adapter.retrieveBlocks(List.of(keyOf(HELLO))));
+
+            assertThat(((BusinessException) thrown).getExceptionCase()).isEqualTo(StorageExceptionCase.STORAGE_UNAVAILABLE);
+        }
+
+        @Test
+        @DisplayName("S3가 4xx로 답하면 다시 시도해도 소용없으니 STORAGE_ERROR")
+        void turnsAClientErrorIntoStorageError() {
+            given(s3Client.getObjectAsBytes(any(GetObjectRequest.class)))
+                    .willThrow(S3Exception.builder().statusCode(403).message("AccessDenied").build());
 
             Throwable thrown = catchThrowable(() -> adapter.retrieveBlocks(List.of(keyOf(HELLO))));
 

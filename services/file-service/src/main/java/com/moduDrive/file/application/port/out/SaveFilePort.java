@@ -15,6 +15,9 @@ public interface SaveFilePort {
     File saveFile(File file);
     /** {@link #saveFile} for many files in one flush (JDBC batches), in the given order. */
     List<File> saveFiles(List<File> files);
+    /** The commit's switch of each file to its new version ({@link File#markUploaded} already
+     * applied): every file's current version and size in one statement. The rows must be locked. */
+    void markUploaded(List<File> files);
     /** Inserts a new folder unless its active slot is taken — then nothing, and empty: no unique
      * violation, so two commits making the same folder at once don't fail one of them. A commit still
      * making it is waited for first, so the caller can lock whatever is there now. */

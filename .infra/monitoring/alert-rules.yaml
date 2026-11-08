@@ -104,12 +104,12 @@ groups:
           inspect: 'aws ecs describe-services --cluster ${project} --services otel-collector --query "services[0].events[:5]" / aws logs tail /ecs/${project}/otel-collector --since 15m'
 
       - alert: CircuitOpen
-        expr: sum by (service, name) (increase(resilience4j_circuitbreaker_not_permitted_calls_total[2m])) > 0
+        expr: sum by (service, name) (increase(resilience4j_circuitbreaker_not_permitted_calls_total{name!~"s3.+"}[2m])) > 0
         for: 2m
         labels:
           channel: service
           # The circuit's callee (memberServiceCircuitBreaker → member-service).
-          target: '{{ reReplaceAll "ServiceCircuitBreaker$" "-service" $labels.name }}'
+          target: '{{ reReplaceAll "Service.*CircuitBreaker$" "-service" $labels.name }}'
         annotations:
           title: 서킷 열림
           summary: '최근 2분 동안 서킷이 막은 호출 **{{ printf "%.0f" $value }}건** — 대상 서비스 호출이 계속 실패 중 (502·503·504 · 타임아웃 · 연결 실패)'
@@ -120,46 +120,67 @@ groups:
           inspect: 'aws logs tail /ecs/${project}/{{ $labels.service }} --since 15m --filter-pattern "{{ $labels.name }}"'
 %{ endif ~}
 
+      # The cause when it's S3: CircuitOpen and RouteErrorRate name storage-service, and once the gateway's circuit
+      # opens first, storage-service's S3 circuits have nothing to refuse. Calls an S3 circuit counted as failed
+      # plus calls it refused — both mean S3 didn't answer properly. 403/404/412 and a full bulkhead don't count.
+      - alert: S3Failing
+        expr: >-
+          sum by (service, name) (increase(resilience4j_circuitbreaker_calls_seconds_count{name=~"s3.+", kind="failed"}[2m]))
+          + sum by (service, name) (increase(resilience4j_circuitbreaker_not_permitted_calls_total{name=~"s3.+"}[2m])) >= 5
+        for: 1m
+        labels:
+          channel: service
+          target: s3
+        annotations:
+          title: S3 호출 실패
+          summary: '최근 2분 동안 `{{ $labels.name }}` 경로의 S3 호출 **{{ printf "%.0f" $value }}건**이 실패하거나 서킷에 막힘 (S3 5xx · 시간 초과 · 연결 실패)'
+          action: AWS Health Dashboard에서 S3 장애를 확인하고, storage-service 로그의 S3 오류(상태 코드·예외)로 원인 확인
+%{ if loki ~}
+          inspect: '{service_name="storage-service"} |= "S3"'
+%{ else ~}
+          inspect: 'aws logs tail /ecs/${project}/storage-service --since 15m --filter-pattern "S3"'
+%{ endif ~}
+
       - alert: RouteErrorRate
         expr: >-
-          (sum by (routeId) (rate(spring_cloud_gateway_requests_seconds_count{outcome="SERVER_ERROR"}[5m]))
-          / sum by (routeId) (rate(spring_cloud_gateway_requests_seconds_count[5m])) > 0.05)
-          and on (routeId)
-          (sum by (routeId) (increase(spring_cloud_gateway_requests_seconds_count{outcome="SERVER_ERROR"}[5m])) >= 10)
+          (sum by (upstream) (label_replace(rate(spring_cloud_gateway_requests_seconds_count{outcome="SERVER_ERROR"}[5m]), "upstream", "$1", "routeId", "(.+-service).*"))
+          / sum by (upstream) (label_replace(rate(spring_cloud_gateway_requests_seconds_count[5m]), "upstream", "$1", "routeId", "(.+-service).*")) > 0.05)
+          and on (upstream)
+          (sum by (upstream) (label_replace(increase(spring_cloud_gateway_requests_seconds_count{outcome="SERVER_ERROR"}[5m]), "upstream", "$1", "routeId", "(.+-service).*")) >= 10)
         for: 2m
         labels:
           channel: service
-          target: '{{ $labels.routeId }}'
+          target: '{{ $labels.upstream }}'
         annotations:
           title: 요청 실패율 높음
           summary: '최근 5분 요청의 **{{ humanizePercentage $value }}**가 5xx로 실패 중'
           action: 그 서비스의 에러 로그로 원인 확인
 %{ if loki ~}
-          inspect: '{service_name="{{ $labels.routeId }}"} | detected_level = "error"'
+          inspect: '{service_name="{{ $labels.upstream }}"} | detected_level = "error"'
 %{ else ~}
-          inspect: 'aws logs tail /ecs/${project}/{{ $labels.routeId }} --since 15m --filter-pattern ERROR'
+          inspect: 'aws logs tail /ecs/${project}/{{ $labels.upstream }} --since 15m --filter-pattern ERROR'
 %{ endif ~}
 
       - alert: RouteSlowRate
         expr: >-
-          (1 - sum by (routeId) (rate(spring_cloud_gateway_requests_seconds_bucket{le="1", routeId!="storage-service"}[5m]))
-          / sum by (routeId) (rate(spring_cloud_gateway_requests_seconds_count{routeId!="storage-service"}[5m])) > 0.05)
-          and on (routeId)
-          ((sum by (routeId) (increase(spring_cloud_gateway_requests_seconds_count{routeId!="storage-service"}[5m]))
-          - sum by (routeId) (increase(spring_cloud_gateway_requests_seconds_bucket{le="1", routeId!="storage-service"}[5m]))) >= 10)
+          (1 - sum by (upstream) (label_replace(rate(spring_cloud_gateway_requests_seconds_bucket{le="1", routeId!="storage-service"}[5m]), "upstream", "$1", "routeId", "(.+-service).*"))
+          / sum by (upstream) (label_replace(rate(spring_cloud_gateway_requests_seconds_count{routeId!="storage-service"}[5m]), "upstream", "$1", "routeId", "(.+-service).*")) > 0.05)
+          and on (upstream)
+          ((sum by (upstream) (label_replace(increase(spring_cloud_gateway_requests_seconds_count{routeId!="storage-service"}[5m]), "upstream", "$1", "routeId", "(.+-service).*"))
+          - sum by (upstream) (label_replace(increase(spring_cloud_gateway_requests_seconds_bucket{le="1", routeId!="storage-service"}[5m]), "upstream", "$1", "routeId", "(.+-service).*"))) >= 10)
         for: 2m
         labels:
           channel: service
-          target: '{{ $labels.routeId }}'
+          target: '{{ $labels.upstream }}'
         annotations:
           title: 느린 요청 많음
           summary: '최근 5분 요청의 **{{ humanizePercentage $value }}**가 1초를 넘김'
 %{ if loki ~}
           action: Grafana → Explore → Tempo에 아래 쿼리로 느린 trace를 열어 가장 긴 span(DB 쿼리·하위 호출)을 확인
-          inspect: '{ resource.service.name = "{{ $labels.routeId }}" && kind = server && duration > 1s }'
+          inspect: '{ resource.service.name = "{{ $labels.upstream }}" && kind = server && duration > 1s }'
 %{ else ~}
           action: X-Ray 콘솔 → 트레이스에서 아래 필터로 느린 trace를 열어 가장 긴 구간(DB 쿼리·하위 호출)을 확인
-          inspect: 'service("{{ $labels.routeId }}") { responsetime > 1 }'
+          inspect: 'service("{{ $labels.upstream }}") { responsetime > 1 }'
 %{ endif ~}
 
       - alert: HeapHigh

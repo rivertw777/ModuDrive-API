@@ -131,7 +131,7 @@ Resilience4j 기본 순서대로 재시도가 바깥, 서킷 브레이커가 안
 ### 1-4. 벌크헤드
 
 한 종류의 호출이 동시에 쓸 수 있는 자리 수를 정한다. 자리가 다 차면 기다리지 않고 바로 `BulkheadFullException`으로 거절한다.
-느린 의존 대상 하나가 요청 스레드를 전부 붙잡아, 그 대상과 무관한 요청까지 멈추는 일을 막는다.
+요청은 가상 스레드에서 돌아 스레드는 모자라지 않는다. 대신 느린 의존 대상 하나가 커넥션 같은 공유 자원을 전부 붙잡아, 그 자원을 같이 쓰는 무관한 호출까지 멈추는 일을 막는다.
 
 | 항목 | 뜻 |
 |---|---|
@@ -167,7 +167,7 @@ flowchart LR
     G -- "memberServiceCircuitBreaker" --> M
     G -- "authServiceCircuitBreaker" --> A
     G -- "fileServiceCircuitBreaker" --> F
-    G -- "storageServiceCircuitBreaker" --> S
+    G -- "storageServiceCircuitBreaker<br/>storageServiceUploadUrlsCircuitBreaker" --> S
     G -- "notificationServiceCircuitBreaker" --> N
 ```
 
@@ -176,11 +176,13 @@ flowchart LR
 | member-service | `/api/v1/member/**` | `memberServiceCircuitBreaker` |
 | auth-service | `/api/v1/auth/**` | `authServiceCircuitBreaker` |
 | file-service | `/api/v1/files/**`, `/api/v1/directories/**` | `fileServiceCircuitBreaker` |
-| storage-service | `/api/v1/storage/**` | `storageServiceCircuitBreaker` |
+| storage-service-upload-urls | `/api/v1/storage/blocks/**` (업로드 URL 발급) | `storageServiceUploadUrlsCircuitBreaker` |
+| storage-service | 그 밖의 `/api/v1/storage/**` (다운로드·미리보기·zip) | `storageServiceCircuitBreaker` |
 | notification-service | `/api/v1/notifications/**` | `notificationServiceCircuitBreaker` |
 
 - `RouteConfig`가 라우트마다 `circuitBreaker` 필터를 건다.
 - 필터는 시간 제한(TimeLimiter)과 서킷 브레이커를 함께 적용한다.
+- Spring Cloud CircuitBreaker는 라우트 서킷마다 같은 이름의 세마포어 벌크헤드도 건다. 크기를 정하지 않으면 Resilience4j 기본값(동시 25개, 기다림 0)이라 26번째 요청(오래 걸리는 다운로드 등)이 503을 받는다. 그래서 `resilience4j.bulkhead.configs.default`에 동시 1024개, 기다림 0을 둔다. Envoy가 업스트림마다 기본으로 두는 동시 요청 상한과 같은 값으로, 정상 트래픽은 닿지 않고 서비스가 멈췄을 때 요청이 끝없이 쌓이는 것만 막는다. 얼마나 받을지는 각 서비스가 자기 자원 기준으로 정한다([2-4-4](#2-4-4-벌크헤드)).
 - 게이트웨이는 재시도하지 않는다(demo는 Service Connect 프록시가 503을 다시 보낸다, [2-3-2](#2-3-2-재시도)). 게이트웨이는 업로드·삭제 같은 모든 요청을 넘기므로, 시간 초과 뒤 다시 보내면 이미 처리된 요청이
   두 번 처리될 수 있다. 일시적인 실패는 클라이언트가 다시 요청한다.
 
@@ -201,7 +203,7 @@ flowchart LR
 | 서비스가 돌려준 HTTP 응답 502 · 503 · 504 (`CircuitBreakerStatusCodeException`) | 기록 |
 | 서비스가 돌려준 그 밖의 HTTP 응답 (4xx · 500) | 기록 안 함 |
 
-file-service → storage-service(`storageServiceCircuitBreaker`)만 503을 기록하지 않는다. storage-service의 503은 S3 서킷·벌크헤드가 이미 빠르게 거절한 것이라([2-4-5](#2-4-5-응답)), 이것까지 세면 file-service 서킷이 열려 S3가 필요 없는 commit까지 막힌다.
+storage-service는 라우트가 둘이다. 미리보기가 몰려 `s3Read` 벌크헤드가 차면 storage-service가 503으로 거절하는데([2-4-5](#2-4-5-응답)), 라우트가 하나면 이 503으로 열린 서킷이 S3를 쓰지 않는 업로드 URL 발급까지 막는다. 라우트를 나눠 그 서킷과 벌크헤드는 블록 읽기만 막는다. storage-service가 죽으면 두 라우트 모두 실패를 세어 각자 열린다.
 
 #### 2-1-3. 응답
 
@@ -322,6 +324,9 @@ ApiResponse<AuthenticateMemberResponse> authenticateMember(AuthenticateMemberReq
 | 서비스가 돌려준 HTTP 응답 502 · 503 · 504 (`FeignException.BadGateway` · `ServiceUnavailable` · `GatewayTimeout`) | 기록 |
 | 서비스가 돌려준 그 밖의 HTTP 응답 (4xx · 500) | 기록 안 함 |
 
+- 우리 서비스의 503에는 `Retry-After`가 붙어, Feign은 이를 `ServiceUnavailable`이 아니라 `RetryableException`(status 503)으로 던진다. `ServiceUnavailable`로 오는 것은 `Retry-After` 없는 503(Service Connect 프록시가 건강한 대상을 못 찾음 등)이다.
+- file-service → storage-service(`storageServiceCircuitBreaker`)만 storage-service가 답한 503을 기록하지 않는다(`ServiceUnavailableResponse`). 이 503은 S3 서킷·벌크헤드가 이미 빠르게 거절한 것이라([2-4-5](#2-4-5-응답)), 이것까지 세면 file-service 서킷이 열려 S3가 필요 없는 commit까지 막힌다.
+
 #### 2-3-4. 응답
 
 재시도까지 실패하면 `FeignFallbackUtils.handleFallback`이 답한다.
@@ -332,7 +337,7 @@ ApiResponse<AuthenticateMemberResponse> authenticateMember(AuthenticateMemberReq
 | 3초 안에 연결 안 됨·10초 안에 응답 없음 (`RetryableException`) | 504 `CONNECTION_TIMEOUT` | 서비스 요청 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요. |
 | 연결 거부·호스트를 못 찾음 (`RetryableException`) | 503 `SERVICE_UNAVAILABLE` | 서비스가 연결 불가능합니다. 잠시 후 다시 시도해 주세요. |
 | 서비스가 돌려준 HTTP 응답 504 (`FeignException.GatewayTimeout`) | 504 `CONNECTION_TIMEOUT` | 서비스 요청 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요. |
-| 서비스가 돌려준 HTTP 응답 502 · 503 (`FeignException.BadGateway` · `ServiceUnavailable`) | 503 `SERVICE_UNAVAILABLE` | 서비스가 연결 불가능합니다. 잠시 후 다시 시도해 주세요. |
+| 서비스가 돌려준 HTTP 응답 502 · 503 (`FeignException.BadGateway` · `ServiceUnavailable` · status 503인 `RetryableException`) | 503 `SERVICE_UNAVAILABLE` | 서비스가 연결 불가능합니다. 잠시 후 다시 시도해 주세요. |
 
 ### 2-4. S3 호출 (storage-service)
 
@@ -354,7 +359,7 @@ flowchart LR
 
 - S3 호출 하나하나(`GetObject`, `HeadObject`, `ListObjectsV2`, `DeleteObject`)를 **벌크헤드 → 서킷 브레이커** 순으로 감싼다 (`S3StorageAdapter`). 다운로드 하나가 블록을 여러 개 읽어도 자리는 블록을 읽는 동안만 잡는다. 느린 클라이언트가 응답을 받는 동안에는 자리를 잡지 않는다.
 - 블록 바이트는 WEB이 S3에 직접 PUT한다 ([001 2-4](001-file-upload-spec.md#2-4-블록-전송)). storage-service는 `PutObject`를 부르지 않는다. URL 발급은 로컬 서명이라 S3를 부르지 않으므로 어느 벌크헤드도 거치지 않는다.
-- 블록 확인·다운로드·삭제의 자리를 나눠, 한쪽이 몰리거나 느려져도 다른 쪽 자리는 남는다. 세 벌크헤드 합(85)이 Tomcat 요청 스레드(200)보다 작아서, S3가 완전히 멈춰도 S3를 쓰지 않는 요청을 받을 스레드가 남는다.
+- 블록 확인·다운로드·삭제의 자리를 나눠, 한쪽이 몰리거나 느려져도 다른 쪽 자리는 남는다. 요청은 가상 스레드에서 돌아 Tomcat 스레드 상한이 없으므로, 벌크헤드가 지키는 것은 스레드가 아니라 S3 커넥션이다([2-4-4](#2-4-4-벌크헤드)). 자리가 차면 정해진 시간만 기다리고 거절해, S3가 멈춰도 매달린 요청이 끝없이 쌓이지 않는다.
 - 서킷도 경로마다 하나다. 다운로드가 커넥션을 붙잡고 시간 초과로 실패해도 다운로드 서킷만 열리고, 블록 확인은 자기 서킷으로 S3를 부른다. S3 전체가 멈추면 경로마다 따로 실패가 쌓여 각자 열린다.
 - `/internal/storage/blocks/uploaded`는 24시간 안에 URL을 받은 해시를 S3에서 확인하고(64개 이상이면 `ListObjectsV2`, 그보다 적으면 해시마다 `HeadObject`, commit 하나에 동시 8개), 그 자리는 `s3Lookup`에서 잡는다. 서킷이 열리면 바로, 자리가 차면 최대 1초 기다린 뒤 조회 전체가 503으로 끝나고 남은 호출은 보내지 않는다. URL을 받은 적 없는 해시는 S3에 묻지 않아서, 새 파일의 첫 commit은 S3가 아파도 영향이 없다.
 - file-service는 S3를 직접 부르지 않는다. commit은 storage-service 조회를 **DB 트랜잭션 밖에서** 한다 ([001 2-3](001-file-upload-spec.md#2-3-commit)). 그래서 S3 장애가 file-service DB 잠금으로 번지지 않는다.
@@ -367,7 +372,7 @@ flowchart LR
 | 시도 한 번 | 5초 | `storage.s3.api-call-attempt-timeout` (`S3Config`의 `apiCallAttemptTimeout`) |
 | 재시도 포함 전체 | 15초 | `storage.s3.api-call-timeout` (`apiCallTimeout`) |
 
-SDK 기본값에는 시간 제한이 없어서, 멈춘 S3에 요청 스레드가 무한정 묶일 수 있다.
+SDK 기본값에는 시간 제한이 없어서, 멈춘 S3에 요청이 무한정 묶일 수 있다.
 
 #### 2-4-2. 재시도
 
@@ -402,7 +407,8 @@ S3 클라이언트의 HTTP 커넥션은 세 벌크헤드 자리의 합(85)만큼
 |---|---|---|
 | 서킷이 열려 있음 (`CallNotPermittedException`) | 503 `STORAGE_UNAVAILABLE` | 저장소에 일시적으로 연결할 수 없습니다. 잠시 후 다시 시도해 주세요. |
 | 벌크헤드가 가득 참 (`BulkheadFullException`) | 503 `STORAGE_UNAVAILABLE` | (같음) |
-| 시간 초과·연결 실패·5xx | 500 `STORAGE_ERROR` | 스토리지 오류가 발생했습니다. |
+| 블록 읽기(다운로드·zip·미리보기)의 시간 초과·연결 실패·5xx | 503 `STORAGE_UNAVAILABLE` | (같음) |
+| 블록 확인·삭제의 실패, 블록 읽기의 4xx | 500 `STORAGE_ERROR` | 스토리지 오류가 발생했습니다. |
 
 - 모든 서비스의 503에는 `Retry-After: 10`이 붙는다 (`GlobalExceptionHandler`, 서킷이 열려 있는 시간 `waitDurationInOpenState`). gateway 자신이 만드는 503(라우트 서킷 폴백 `FallbackController`, 세션 확인 실패 `CustomAuthenticationEntryPoint`)에도 같은 값이 붙고, gateway CORS가 이 헤더를 노출한다.
 - 503은 WEB 업로드가 자동으로 다시 보내는 응답이다 (1·2·4초에 0~50% 지터 — S3가 돌아오는 순간 모든 클라이언트가 같은 박자로 몰리지 않게 — 단 `Retry-After`보다 일찍은 아니다). 그래도 실패하면 30초 간격으로 최대 10분 **일시 중지 후 자동 재개**하고, 그때도 안 되면 그 파일만 실패한다. 나중에 다시 올리면 commit이 이어 올리기로 받은 블록을 건너뛴다 ([001 2-4-3](001-file-upload-spec.md#2-4-3-재시도와-취소)).
@@ -452,7 +458,8 @@ S3 클라이언트의 HTTP 커넥션은 세 벌크헤드 자리의 합(85)만큼
 
 | 지표 | 알림 조건 | 무슨 뜻인가 |
 |---|---|---|
-| `resilience4j_circuitbreaker_not_permitted_calls_total` — 서킷이 막은 호출 수 (서비스·서킷별) | 최근 2분에 1건 이상인 상태가 2분 지속 | 대상 서비스 호출이 계속 실패해 사용자 요청이 막히고 있다 (502·503·504 · 타임아웃 · 연결 실패) |
+| `resilience4j_circuitbreaker_not_permitted_calls_total` — 서킷이 막은 호출 수 (서비스·서킷별, S3 서킷 제외) | 최근 2분에 1건 이상인 상태가 2분 지속 | 대상 서비스 호출이 계속 실패해 사용자 요청이 막히고 있다 (502·503·504 · 타임아웃 · 연결 실패) |
+| S3 서킷(`s3Lookup`·`s3Read`·`s3Delete`)이 실패로 센 호출 + 막은 호출 (`resilience4j_circuitbreaker_calls_seconds_count{kind="failed"}` + `not_permitted_calls_total`) | 최근 2분에 5건 이상인 상태가 1분 지속 | S3가 계속 제대로 답하지 않는다 (5xx · 시간 초과 · 연결 실패) |
 
 (상세 내용은 [009-discord-alert-spec.md 4](009-discord-alert-spec.md#4-사용-알림) 참고)
 

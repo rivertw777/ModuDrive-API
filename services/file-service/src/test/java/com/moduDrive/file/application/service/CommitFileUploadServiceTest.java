@@ -57,6 +57,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.eq;
@@ -838,6 +839,8 @@ class CommitFileUploadServiceTest {
             then(lockCommittedBlocksPort).should(times(1)).lockCommittedBlocks(ownerId, Set.of(HASH_A, HASH_B));
             then(referenceBlocksPort).should(times(1)).referenceBlocks(eq(ownerId), any(), eq(Map.of(HASH_A, 2, HASH_B, 1)));
             then(saveFileVersionPort).should(times(1)).saveFileVersions(any());
+            // Every file's new version in one write, not a save per file.
+            then(saveFilePort).should(times(1)).markUploaded(argThat(files -> files.size() == 3));
             then(saveFileAccessPort).should(times(1)).recordAccesses(eq(ownerId), any(), any());
             // 1,000 + (1,000 - 800) + 3,000: the replaced file counts only its growth.
             then(updateNamespaceUsagePort).should(times(1)).addUsedBytes(new NamespaceId(namespace.getId()), 4_200L);

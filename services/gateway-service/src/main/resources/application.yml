@@ -25,6 +25,16 @@ spring:
               eviction-interval: 10s
 
 resilience4j:
+  # Spring Cloud CircuitBreaker puts a semaphore bulkhead on every route circuit, sized by this default —
+  # Resilience4j's own is 25 at once with no wait, so a route's 26th concurrent request (a long download, say)
+  # got a 503. A last guard against requests piling up when a service hangs, set like Envoy's per-cluster
+  # max_requests (1024): normal traffic never reaches it. What each service can take, it caps itself
+  # (storage-service's S3 bulkheads, spec 006 2-4-4).
+  bulkhead:
+    configs:
+      default:
+        max-concurrent-calls: 1024
+        max-wait-duration: 0
   timelimiter:
     configs:
       default:
@@ -66,6 +76,8 @@ resilience4j:
       fileServiceCircuitBreaker:
         baseConfig: default
       storageServiceCircuitBreaker:
+        baseConfig: default
+      storageServiceUploadUrlsCircuitBreaker:
         baseConfig: default
       notificationServiceCircuitBreaker:
         baseConfig: default
