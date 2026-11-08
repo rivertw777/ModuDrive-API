@@ -37,16 +37,23 @@ resilience4j:
       fileServiceCircuitBreaker:
         baseConfig: default
       # Spec 006 2-4-3: one circuit per S3 path, the bulkheads' names. Timeouts, connect failures
-      # and S3 5xx count; a 404 or 412 doesn't.
+      # and S3 5xx count; a 404 or 412 doesn't. A call is slow past 3s — far past a HEAD's tens of ms,
+      # short of the 5s attempt timeout — and half the calls slow opens the circuit before they time out.
       s3Lookup:
         baseConfig: default
         record-failure-predicate: com.moduDrive.storage.adapter.out.s3.S3Unavailable
+        slowCallDurationThreshold: 3s
+        slowCallRateThreshold: 50
       s3Read:
         baseConfig: default
         record-failure-predicate: com.moduDrive.storage.adapter.out.s3.S3Unavailable
+        slowCallDurationThreshold: 3s
+        slowCallRateThreshold: 50
       s3Delete:
         baseConfig: default
         record-failure-predicate: com.moduDrive.storage.adapter.out.s3.S3Unavailable
+        slowCallDurationThreshold: 3s
+        slowCallRateThreshold: 50
   # Spec 006 2-4-4: S3 never holds more request threads than these, so what doesn't touch S3
   # (signing upload URLs) keeps answering while S3 is slow.
   bulkhead:

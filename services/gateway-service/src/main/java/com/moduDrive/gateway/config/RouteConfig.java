@@ -47,12 +47,15 @@ class RouteConfig {
         return env.getRequiredProperty("clients." + service + ".url");
     }
 
-    // 502/503/504 from the service count as failures too (the service is down or says it can't serve,
-    // e.g. its DB is unreachable) — same rule as the Feign calls between services.
+    // 502/504 from the service count as failures too (the service is down or timed out behind it), and so
+    // does a 503 (e.g. its DB is unreachable) unless the service marked it as its dependency's (S3) —
+    // the same rule as the Feign calls between services (spec 006 2-1-2). Order 1, inside the circuit
+    // filter's 0, so the circuit sees the error.
     private GatewayFilterSpec addCircuitBreaker(GatewayFilterSpec filterSpec, String circuitBreakerName) {
         return filterSpec.circuitBreaker(c -> c.setName(circuitBreakerName)
-                .setStatusCodes(Set.of("502", "503", "504"))
-                .setFallbackUri("forward:/fallback/default"));
+                        .setStatusCodes(Set.of("502", "504"))
+                        .setFallbackUri("forward:/fallback/default"))
+                .filter(new UnmarkedServiceUnavailableFilter(), 1);
     }
 
 }

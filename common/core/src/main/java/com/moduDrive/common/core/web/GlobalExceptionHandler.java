@@ -36,6 +36,12 @@ public class GlobalExceptionHandler {
      * waitDurationInOpenState, so a client that waits this long retries as the circuit lets a probe through. */
     public static final String RETRY_AFTER_SECONDS = "10";
 
+    /** On a 503 the service gave because a dependency of its (S3) failed or refused — the service
+     * itself is fine and already failing fast, so a caller's circuit doesn't count it (spec 006 2-3-3).
+     * Like Envoy's {@code x-envoy-overloaded}: a 503 without it (the service's DB down, a proxy finding
+     * no healthy instance) still counts. */
+    public static final String DEPENDENCY_UNAVAILABLE_HEADER = "X-Dependency-Unavailable";
+
     private final ObjectMapper objectMapper;
 
     @ExceptionHandler(BusinessException.class)
@@ -43,7 +49,11 @@ public class GlobalExceptionHandler {
         ApiResponse<Object> response = e.getData() != null
                 ? ApiResponse.error(e.getExceptionCase(), e.getData())
                 : ApiResponse.error(e.getExceptionCase());
-        return withRetryAfter(response);
+        ResponseEntity.BodyBuilder builder = retryAfter(response);
+        if (e.getExceptionCase().isDependencyUnavailable()) {
+            builder.header(DEPENDENCY_UNAVAILABLE_HEADER, "true");
+        }
+        return builder.body(response);
     }
 
     @ExceptionHandler(value = MethodArgumentNotValidException.class)
@@ -110,7 +120,7 @@ public class GlobalExceptionHandler {
                 HttpStatus.SERVICE_UNAVAILABLE,
                 "일시적으로 서비스를 이용할 수 없습니다. 잠시 후 다시 시도해 주세요."
         );
-        return withRetryAfter(response);
+        return retryAfter(response).body(response);
     }
 
     @ExceptionHandler(Exception.class)
@@ -151,11 +161,11 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
     }
 
-    private static ResponseEntity<ApiResponse<Object>> withRetryAfter(ApiResponse<Object> response) {
+    private static ResponseEntity.BodyBuilder retryAfter(ApiResponse<Object> response) {
         ResponseEntity.BodyBuilder builder = ResponseEntity.status(response.getStatus());
         if (response.getStatus() == HttpStatus.SERVICE_UNAVAILABLE) {
             builder.header(HttpHeaders.RETRY_AFTER, RETRY_AFTER_SECONDS);
         }
-        return builder.body(response);
+        return builder;
     }
 }

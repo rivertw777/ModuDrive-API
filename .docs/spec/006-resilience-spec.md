@@ -51,7 +51,7 @@ sequenceDiagram
     CB->>S: 호출
     S-->>CB: 응답 / 실패
     CB-->>C: 응답 / 실패
-    Note over CB: 최근 10번 중 실패 50% 이상 → OPEN
+    Note over CB: 최근 10초 호출 중 실패 50% 이상 → OPEN
     end
 
     rect rgba(239, 68, 68, 0.15)
@@ -79,10 +79,10 @@ sequenceDiagram
 
 | 항목 | 값 | 뜻 |
 |---|---|---|
-| `slidingWindowType` / `slidingWindowSize` | `COUNT_BASED` / 10 | 실패율을 **최근 호출 10번** 기준으로 계산한다 (시간 기준이 아니라 횟수 기준) |
-| `minimumNumberOfCalls` | 10 | 호출이 10번 쌓이기 전에는 실패율을 계산하지 않는다 — 처음 몇 번 실패로 바로 열리지 않게 |
-| `failureRateThreshold` | 50% | 최근 10번 중 절반 이상 실패하면 `OPEN` |
-| `slowCallDurationThreshold` / `slowCallRateThreshold` | 10초 / 100% | 10초 넘긴 호출은 "느린 호출"로 센다. 최근 10번이 **전부** 느리면 실패가 없어도 `OPEN` |
+| `slidingWindowType` / `slidingWindowSize` | `TIME_BASED` / 10 | 실패율을 **최근 10초** 동안의 호출로 계산한다. 횟수 기준(최근 10번)이면 트래픽이 많을 때 10번이 몇 ms 사이에 차서, 그만큼 짧은 흔들림에도 열린다 |
+| `minimumNumberOfCalls` | 10 | 최근 10초에 호출이 10번 안 되면 실패율을 계산하지 않는다 — 몇 번의 실패로 바로 열리지 않게 |
+| `failureRateThreshold` | 50% | 최근 10초의 호출 중 절반 이상 실패하면 `OPEN` |
+| `slowCallDurationThreshold` / `slowCallRateThreshold` | 10초 / 100% | 10초 넘긴 호출은 "느린 호출"로 센다. 최근 10초의 호출이 **전부** 느리면 실패가 없어도 `OPEN` |
 | `waitDurationInOpenState` | 10초 | `OPEN`으로 10초 쉰 뒤 `HALF_OPEN`으로 바뀐다 |
 | `permittedNumberOfCallsInHalfOpenState` | 3 | `HALF_OPEN`에서 시험 삼아 보내는 호출 수. 이 3번의 실패율로 `CLOSED`/`OPEN`을 정한다 |
 | `registerHealthIndicator` | `true` | 서킷 상태가 `/actuator/health`에 나온다 |
@@ -200,8 +200,13 @@ flowchart LR
 | 연결 거부 (`AnnotatedConnectException`) | 기록 |
 | 호스트에 도달 못 함 — 대상 IP가 사라짐 (`NoRouteToHostException`) | 기록 |
 | 호스트를 못 찾음 (`UnknownHostException`) | 기록 |
-| 서비스가 돌려준 HTTP 응답 502 · 503 · 504 (`CircuitBreakerStatusCodeException`) | 기록 |
+| 서비스가 돌려준 HTTP 응답 502 · 504 (`CircuitBreakerStatusCodeException`) | 기록 |
+| 서비스가 돌려준 HTTP 응답 503 (`ServiceUnavailableResponseException`) | 기록 |
+| 서비스가 돌려준 503 중 `X-Dependency-Unavailable`이 붙은 것 | 기록 안 함 |
 | 서비스가 돌려준 그 밖의 HTTP 응답 (4xx · 500) | 기록 안 함 |
+
+- `X-Dependency-Unavailable`은 서비스가 자기가 아니라 의존 대상(S3) 때문에 503으로 답할 때 붙인다([2-4-5](#2-4-5-응답)). 서비스는 멀쩡하고 이미 빠르게 거절하고 있으므로 라우트 서킷이 세지 않고, 서비스의 응답을 그대로 클라이언트에 돌려준다. 이 헤더가 없는 503(서비스의 DB·Redis가 끊김, Service Connect 프록시가 건강한 대상을 못 찾음)은 센다.
+- Spring Cloud Gateway의 `statusCodes`는 상태 코드만 보므로 503은 넣지 않고, 서킷 필터 안쪽의 `UnmarkedServiceUnavailableFilter`가 헤더 없는 503을 예외로 바꿔 서킷에 기록되게 한다.
 
 storage-service는 라우트가 둘이다. 미리보기가 몰려 `s3Read` 벌크헤드가 차면 storage-service가 503으로 거절하는데([2-4-5](#2-4-5-응답)), 라우트가 하나면 이 503으로 열린 서킷이 S3를 쓰지 않는 업로드 URL 발급까지 막는다. 라우트를 나눠 그 서킷과 벌크헤드는 블록 읽기만 막는다. storage-service가 죽으면 두 라우트 모두 실패를 세어 각자 열린다.
 
@@ -217,7 +222,7 @@ storage-service는 라우트가 둘이다. 미리보기가 몰려 `s3Read` 벌�
 | 호스트에 도달 못 함 (`NoRouteToHostException`) | 503 `SERVICE_UNAVAILABLE` | 서비스가 연결 불가능합니다. 잠시 후 다시 시도해 주세요. |
 | 호스트를 못 찾음 (`UnknownHostException`) | 503 `SERVICE_UNAVAILABLE` | 서비스가 연결 불가능합니다. 잠시 후 다시 시도해 주세요. |
 | 서비스가 돌려준 HTTP 응답 504 (`CircuitBreakerStatusCodeException`) | 504 `CONNECTION_TIMEOUT` | 서비스 요청 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요. |
-| 서비스가 돌려준 HTTP 응답 502 · 503 (`CircuitBreakerStatusCodeException`) | 503 `SERVICE_UNAVAILABLE` | 서비스가 연결 불가능합니다. 잠시 후 다시 시도해 주세요. |
+| 서비스가 돌려준 HTTP 응답 502 (`CircuitBreakerStatusCodeException`) · 503 (`ServiceUnavailableResponseException`) | 503 `SERVICE_UNAVAILABLE` | 서비스가 연결 불가능합니다. 잠시 후 다시 시도해 주세요. |
 
 ### 2-2. 게이트웨이 세션 확인
 
@@ -324,8 +329,9 @@ ApiResponse<AuthenticateMemberResponse> authenticateMember(AuthenticateMemberReq
 | 서비스가 돌려준 HTTP 응답 502 · 503 · 504 (`FeignException.BadGateway` · `ServiceUnavailable` · `GatewayTimeout`) | 기록 |
 | 서비스가 돌려준 그 밖의 HTTP 응답 (4xx · 500) | 기록 안 함 |
 
-- 우리 서비스의 503에는 `Retry-After`가 붙어, Feign은 이를 `ServiceUnavailable`이 아니라 `RetryableException`(status 503)으로 던진다. `ServiceUnavailable`로 오는 것은 `Retry-After` 없는 503(Service Connect 프록시가 건강한 대상을 못 찾음 등)이다.
-- file-service → storage-service(`storageServiceCircuitBreaker`)만 storage-service가 답한 503을 기록하지 않는다(`ServiceUnavailableResponse`). 이 503은 S3 서킷·벌크헤드가 이미 빠르게 거절한 것이라([2-4-5](#2-4-5-응답)), 이것까지 세면 file-service 서킷이 열려 S3가 필요 없는 commit까지 막힌다.
+- 우리 서비스의 503에는 `Retry-After`가 붙어, Feign 기본 오류 변환기는 이를 `ServiceUnavailable`이 아니라 `RetryableException`(status 503)으로 던진다. `ServiceUnavailable`로 오는 것은 `Retry-After` 없는 503(Service Connect 프록시가 건강한 대상을 못 찾음 등)이다.
+- 서비스가 의존 대상(S3) 때문에 답한 503에는 `X-Dependency-Unavailable`이 붙는다([2-4-5](#2-4-5-응답)). 모든 Feign 클라이언트의 오류 변환기(`DependencyUnavailableErrorDecoder`)가 이 503을 `DependencyUnavailableException`(`ServiceUnavailable`의 하위 타입)으로 바꾼다.
+- file-service → storage-service(`storageServiceCircuitBreaker`)는 `DependencyUnavailableException`을 기록하지 않는다(`ignore-exceptions`). 이 503은 S3가 실패했거나 S3 서킷·벌크헤드가 이미 빠르게 거절한 것이라, 이것까지 세면 file-service 서킷이 열려 S3가 필요 없는 commit까지 막힌다. 표시 없는 storage-service의 503(Redis 끊김 등)은 센다.
 
 #### 2-3-4. 응답
 
@@ -337,7 +343,7 @@ ApiResponse<AuthenticateMemberResponse> authenticateMember(AuthenticateMemberReq
 | 3초 안에 연결 안 됨·10초 안에 응답 없음 (`RetryableException`) | 504 `CONNECTION_TIMEOUT` | 서비스 요청 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요. |
 | 연결 거부·호스트를 못 찾음 (`RetryableException`) | 503 `SERVICE_UNAVAILABLE` | 서비스가 연결 불가능합니다. 잠시 후 다시 시도해 주세요. |
 | 서비스가 돌려준 HTTP 응답 504 (`FeignException.GatewayTimeout`) | 504 `CONNECTION_TIMEOUT` | 서비스 요청 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요. |
-| 서비스가 돌려준 HTTP 응답 502 · 503 (`FeignException.BadGateway` · `ServiceUnavailable` · status 503인 `RetryableException`) | 503 `SERVICE_UNAVAILABLE` | 서비스가 연결 불가능합니다. 잠시 후 다시 시도해 주세요. |
+| 서비스가 돌려준 HTTP 응답 502 · 503 (`FeignException.BadGateway` · `ServiceUnavailable`(`DependencyUnavailableException` 포함) · status 503인 `RetryableException`) | 503 `SERVICE_UNAVAILABLE` | 서비스가 연결 불가능합니다. 잠시 후 다시 시도해 주세요. |
 
 ### 2-4. S3 호출 (storage-service)
 
@@ -387,7 +393,7 @@ SDK 표준 재시도에 맡기고, 최대 시도는 **2번**(처음 1 + 재시�
 | S3가 돌려준 5xx (`S3Exception`, 500 · 503 SlowDown) | 기록 |
 | S3가 돌려준 그 밖의 응답 (404 없는 객체, 412 조건 불일치 등) | 기록 안 함 |
 
-세 서킷(`s3Lookup`·`s3Read`·`s3Delete`, 벌크헤드와 같은 이름) 모두 설정값은 `default`를 그대로 쓴다 ([1-1-2](#1-1-2-설정값)). 판정은 `S3Unavailable`(`record-failure-predicate`)이 한다.
+세 서킷(`s3Lookup`·`s3Read`·`s3Delete`, 벌크헤드와 같은 이름)은 `default`([1-1-2](#1-1-2-설정값))에서 느린 호출 기준만 바꾼다. 3초 넘긴 호출을 느린 호출로 세고, 최근 10초의 호출 중 절반이 느리면 `OPEN`이다. 3초는 평소 HEAD(수십 ms)보다 훨씬 길고 시간 제한(5초)보다는 짧아서, S3가 느려지면 호출이 시간 제한에 걸려 실패하기 전에 열린다. 판정은 `S3Unavailable`(`record-failure-predicate`)이 한다.
 
 #### 2-4-4. 벌크헤드
 
@@ -410,8 +416,9 @@ S3 클라이언트의 HTTP 커넥션은 세 벌크헤드 자리의 합(85)만큼
 | 블록 읽기(다운로드·zip·미리보기)의 시간 초과·연결 실패·5xx | 503 `STORAGE_UNAVAILABLE` | (같음) |
 | 블록 확인·삭제의 실패, 블록 읽기의 4xx | 500 `STORAGE_ERROR` | 스토리지 오류가 발생했습니다. |
 
+- 위 503(`STORAGE_UNAVAILABLE`)에는 `X-Dependency-Unavailable: true`가 붙는다. storage-service가 아니라 S3 때문이라, 부르는 쪽 서킷(gateway 라우트, file-service)이 세지 않는다([2-1-2](#2-1-2-서킷에-실패로-기록되는-경우), [2-3-3](#2-3-3-서킷에-실패로-기록되는-경우)).
 - 모든 서비스의 503에는 `Retry-After: 10`이 붙는다 (`GlobalExceptionHandler`, 서킷이 열려 있는 시간 `waitDurationInOpenState`). gateway 자신이 만드는 503(라우트 서킷 폴백 `FallbackController`, 세션 확인 실패 `CustomAuthenticationEntryPoint`)에도 같은 값이 붙고, gateway CORS가 이 헤더를 노출한다.
-- 503은 WEB 업로드가 자동으로 다시 보내는 응답이다 (1·2·4초에 0~50% 지터 — S3가 돌아오는 순간 모든 클라이언트가 같은 박자로 몰리지 않게 — 단 `Retry-After`보다 일찍은 아니다). 그래도 실패하면 30초 간격으로 최대 10분 **일시 중지 후 자동 재개**하고, 그때도 안 되면 그 파일만 실패한다. 나중에 다시 올리면 commit이 이어 올리기로 받은 블록을 건너뛴다 ([001 2-4-3](001-file-upload-spec.md#2-4-3-재시도와-취소)).
+- 503은 WEB 업로드가 자동으로 다시 보내는 응답이다 (1·2·4초, `Retry-After`가 더 길면 그만큼에 0~50% 지터 — S3가 돌아오는 순간 모든 클라이언트가 같은 박자로 몰리지 않게). 그래도 실패하면 30초 간격으로 최대 10분 **일시 중지 후 자동 재개**하고, 그때도 안 되면 그 파일만 실패한다. 나중에 다시 올리면 commit이 이어 올리기로 받은 블록을 건너뛴다 ([001 2-4-3](001-file-upload-spec.md#2-4-3-재시도와-취소)).
 - 미확정 블록 정리 작업은 실패하면 꺼낸 블록을 다시 정리 대상에 넣고 그 회차를 멈춘다. 다음 회차(1시간 뒤)에 다시 한다.
 
 #### 2-4-6. Redis 분리

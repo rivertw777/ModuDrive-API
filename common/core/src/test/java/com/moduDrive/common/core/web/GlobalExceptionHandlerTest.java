@@ -111,6 +111,33 @@ class GlobalExceptionHandlerTest {
 
             assertThat(response.getHeaders().containsHeader(HttpHeaders.RETRY_AFTER)).isFalse();
         }
+
+        @Test
+        @DisplayName("의존 대상(S3) 때문인 503이면 X-Dependency-Unavailable을 붙인다")
+        void marksA503CausedByADependency() {
+            // given
+            BusinessException e = new BusinessException(new ExceptionCase() {
+                public HttpStatus getHttpStatus() { return HttpStatus.SERVICE_UNAVAILABLE; }
+                public String getMessage() { return "x"; }
+                public boolean isDependencyUnavailable() { return true; }
+            });
+
+            // when
+            ResponseEntity<ApiResponse<Object>> response = handler.handleBusinessException(e);
+
+            // then
+            assertThat(response.getHeaders().getFirst(GlobalExceptionHandler.DEPENDENCY_UNAVAILABLE_HEADER)).isEqualTo("true");
+            assertThat(response.getHeaders().getFirst(HttpHeaders.RETRY_AFTER)).isEqualTo("10");
+        }
+
+        @Test
+        @DisplayName("서비스 자신의 503에는 X-Dependency-Unavailable을 붙이지 않는다")
+        void leavesTheServicesOwn503Unmarked() {
+            ResponseEntity<ApiResponse<Object>> response =
+                    handler.handleBusinessException(exception(HttpStatus.SERVICE_UNAVAILABLE));
+
+            assertThat(response.getHeaders().containsHeader(GlobalExceptionHandler.DEPENDENCY_UNAVAILABLE_HEADER)).isFalse();
+        }
     }
 
     @Nested
