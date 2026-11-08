@@ -2,8 +2,10 @@ package com.moduDrive.file.adapter.in.web.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.moduDrive.common.core.exception.ExceptionCase;
+import com.moduDrive.common.core.web.GlobalExceptionHandler;
 import com.moduDrive.file.application.port.in.usecase.CommitFileUploadUseCase;
 import com.moduDrive.file.application.port.in.usecase.CommitFileUploadUseCase.CommitResult;
+import org.springframework.http.HttpStatus;
 
 import java.util.List;
 import java.util.UUID;
@@ -20,8 +22,11 @@ public record CommitFileUploadResponse(List<Result> results, List<DirectoryResul
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Result(List<String> needBlocks, UUID fileId, UUID versionId, Error error) {}
 
-    /** Same shape as a failed {@code ApiResponse}: the HTTP status this file would have got alone. */
-    public record Error(int status, String message) {}
+    /** Same shape as a failed {@code ApiResponse}: the HTTP status this file would have got alone. On a
+     * 503, {@code retryAfter} is the seconds the response's own {@code Retry-After} would have said —
+     * this response is a 200 and carries none (spec 001 2-4-3). */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record Error(int status, String message, Integer retryAfter) {}
 
     public static CommitFileUploadResponse from(List<CommitResult> results,
                                                 List<CommitFileUploadUseCase.DirectoryResult> directories) {
@@ -36,6 +41,11 @@ public record CommitFileUploadResponse(List<Result> results, List<DirectoryResul
     }
 
     private static Error error(ExceptionCase error) {
-        return error == null ? null : new Error(error.getHttpStatus().value(), error.getMessage());
+        if (error == null) {
+            return null;
+        }
+        Integer retryAfter = error.getHttpStatus() == HttpStatus.SERVICE_UNAVAILABLE
+                ? Integer.valueOf(GlobalExceptionHandler.RETRY_AFTER_SECONDS) : null;
+        return new Error(error.getHttpStatus().value(), error.getMessage(), retryAfter);
     }
 }
