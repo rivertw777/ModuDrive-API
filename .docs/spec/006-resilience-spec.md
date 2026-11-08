@@ -322,6 +322,9 @@ ApiResponse<AuthenticateMemberResponse> authenticateMember(AuthenticateMemberReq
 | 서비스가 돌려준 HTTP 응답 502 · 503 · 504 (`FeignException.BadGateway` · `ServiceUnavailable` · `GatewayTimeout`) | 기록 |
 | 서비스가 돌려준 그 밖의 HTTP 응답 (4xx · 500) | 기록 안 함 |
 
+- 우리 서비스의 503에는 `Retry-After`가 붙어, Feign은 이를 `ServiceUnavailable`이 아니라 `RetryableException`(status 503)으로 던진다. `ServiceUnavailable`로 오는 것은 `Retry-After` 없는 503(Service Connect 프록시가 건강한 대상을 못 찾음 등)이다.
+- file-service → storage-service(`storageServiceCircuitBreaker`)만 storage-service가 답한 503을 기록하지 않는다(`ServiceUnavailableResponse`). 이 503은 S3 서킷·벌크헤드가 이미 빠르게 거절한 것이라([2-4-5](#2-4-5-응답)), 이것까지 세면 file-service 서킷이 열려 S3가 필요 없는 commit까지 막힌다.
+
 #### 2-3-4. 응답
 
 재시도까지 실패하면 `FeignFallbackUtils.handleFallback`이 답한다.
@@ -332,7 +335,7 @@ ApiResponse<AuthenticateMemberResponse> authenticateMember(AuthenticateMemberReq
 | 3초 안에 연결 안 됨·10초 안에 응답 없음 (`RetryableException`) | 504 `CONNECTION_TIMEOUT` | 서비스 요청 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요. |
 | 연결 거부·호스트를 못 찾음 (`RetryableException`) | 503 `SERVICE_UNAVAILABLE` | 서비스가 연결 불가능합니다. 잠시 후 다시 시도해 주세요. |
 | 서비스가 돌려준 HTTP 응답 504 (`FeignException.GatewayTimeout`) | 504 `CONNECTION_TIMEOUT` | 서비스 요청 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요. |
-| 서비스가 돌려준 HTTP 응답 502 · 503 (`FeignException.BadGateway` · `ServiceUnavailable`) | 503 `SERVICE_UNAVAILABLE` | 서비스가 연결 불가능합니다. 잠시 후 다시 시도해 주세요. |
+| 서비스가 돌려준 HTTP 응답 502 · 503 (`FeignException.BadGateway` · `ServiceUnavailable` · status 503인 `RetryableException`) | 503 `SERVICE_UNAVAILABLE` | 서비스가 연결 불가능합니다. 잠시 후 다시 시도해 주세요. |
 
 ### 2-4. S3 호출 (storage-service)
 

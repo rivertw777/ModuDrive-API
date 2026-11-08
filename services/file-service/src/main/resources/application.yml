@@ -54,9 +54,10 @@ resilience4j:
         # storage-service answers 503 itself when its S3 circuit or bulkhead refuses (spec 006
         # 2-4-5) — already a fast refusal, and counting it would refuse the commits that don't need
         # S3 too. Ignored, not left out of record-exceptions: an instance's list only adds to the
-        # base config's, it can't drop one.
-        ignore-exceptions:
-          - feign.FeignException.ServiceUnavailable
+        # base config's, it can't drop one. A predicate, not the exception class: with its
+        # Retry-After header Feign throws that 503 as a RetryableException. A 503 without one (Service
+        # Connect finding no healthy storage-service) still counts.
+        ignore-exception-predicate: com.moduDrive.common.infrastructure.resilience4j.ServiceUnavailableResponse
 
 # Fixed service URLs (compose DNS locally, ECS Service Connect on AWS).
 clients:
