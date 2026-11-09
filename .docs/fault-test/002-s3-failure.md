@@ -15,17 +15,18 @@ LocalStack 무료 플랜에는 장애 주입 기능이 없어서, storage-servic
 
 | 장애 시나리오 | 프록시의 응답 | 대상 | 확인할 것 |
 |---|---|---|---|
-| S3 서버 장애 | `503 SlowDown` | 블록 확인·다운로드 (5번 연속) | 얼마 만에 어떤 응답으로 실패하는지, 서킷이 열리는지 |
+| S3 일시 장애 | `503 SlowDown` | 블록 확인·다운로드 (5번 연속) | 얼마 만에 어떤 응답으로 실패하는지, 서킷이 열리는지 |
 | 응답 없음 | 연결만 받고 응답하지 않음 | 블록 확인·다운로드 | 언제 어떤 응답으로 실패하는지, S3에 동시에 매달린 호출 수 |
 | 경로 간 간섭 | 미리보기 `GetObject`만 응답하지 않음 | 미리보기 → 블록 확인 · 블록 URL 발급 | 미리보기가 몰려 S3 커넥션을 다 쓰면 정상인 블록 확인도 막히는지, S3를 쓰지 않는 URL 발급은 그대로인지 |
 | 경로 간 간섭 (gateway 경유) | 미리보기 `GetObject`만 응답하지 않음 | gateway를 거친 미리보기 → 업로드 URL 발급 | gateway의 storage-service 라우트 서킷·벌크헤드가 미리보기 때문에 URL 발급까지 막는지 |
-| commit 중 S3 일시 장애 | `HeadObject`·`ListObjectsV2`에 30초 동안 503, 이후 정상 | 브라우저 업로드 (파일 10개 한 묶음) | `s3Lookup` 서킷이 열린 동안 commit한 파일이 실패로 끝나는지, 다시 commit해 성공하는지 |
+| 짧은 장애 후 복구 | `HeadObject`·`ListObjectsV2`에 8초 동안 503, 이후 정상 | 블록 확인 (1초 간격 20번) | 복구 뒤의 commit이 바로 성공하는지 |
+| commit 중 S3 일시 장애 | `HeadObject`·`ListObjectsV2`에 30초 동안 503, 이후 정상 | 브라우저 업로드 (파일 10개 한 묶음) | 파일별 503을 받은 파일을 다시 commit해 성공하는지 |
 | 다운로드 도중 끊김 | N번째 블록 `GetObject`에서 연결 끊음 | 다운로드 | 잘린 파일이 성공처럼 받아지는지 |
 | 깨진 데이터 | `GetObject` 본문 1바이트 변조 | 다운로드 | 깨진 파일을 그대로 내려주는지 |
 | 권한 오류 | `403 AccessDenied` | 블록 삭제 | 메시지를 몇 번 받은 뒤 DLQ로 가는지, DLQ 사유 |
 | 삭제 후 응답 유실 | `DeleteObject`를 처리한 뒤 응답하지 않음 | 블록 삭제 | 재배달 때 정상 종료하는지 |
 | 업로드 후 응답 없음 | `PutObject`를 저장한 뒤 응답하지 않음 (20초 뒤 정상) | 블록 업로드 | 응답 없는 PUT을 끊고 다시 보내는지, 다시 보낸 PUT이 `412`를 받는지 |
-| 업로드 PUT 장애 | `PutObject`에 `503` (20초 뒤 정상) | 블록 업로드 | 언제 다시 보내고, 복구 뒤 성공하는지 |
+| 업로드 PUT 일시 장애 | `PutObject`에 `503` (20초 뒤 정상) | 블록 업로드 | 언제 다시 보내고, 복구 뒤 성공하는지 |
 | 업로드 후 연결 끊김 | `PutObject`를 저장한 뒤 응답 없이 연결을 끊음 (5초 동안) | 블록 업로드 | 다시 보낸 PUT이 `412`를 받는지, 그 뒤 commit이 성공하는지 |
 
 테스트 순서:
@@ -43,12 +44,13 @@ LocalStack 무료 플랜에는 장애 주입 기능이 없어서, storage-servic
 
 ```bash
 .scripts/fault-test/002-s3-failure/scenario.sh up                         # 프록시를 띄우고 storage-service를 프록시 경유로 재시작
-REPEAT=5 .scripts/fault-test/002-s3-failure/scenario.sh upload unavailable    # S3 서버 장애 (블록 확인)
-REPEAT=5 .scripts/fault-test/002-s3-failure/scenario.sh download unavailable  # S3 서버 장애 (다운로드)
+REPEAT=5 .scripts/fault-test/002-s3-failure/scenario.sh upload unavailable    # S3 일시 장애 (블록 확인)
+REPEAT=5 .scripts/fault-test/002-s3-failure/scenario.sh download unavailable  # S3 일시 장애 (다운로드)
 CLIENT_TIMEOUT=300 .scripts/fault-test/002-s3-failure/scenario.sh upload hang    # 응답 없음 (블록 확인)
 CLIENT_TIMEOUT=300 .scripts/fault-test/002-s3-failure/scenario.sh download hang  # 응답 없음 (다운로드)
 .scripts/fault-test/002-s3-failure/scenario.sh flood 250 60               # 경로 간 간섭 (미리보기 250개, 60초)
 VIA_GATEWAY=1 .scripts/fault-test/002-s3-failure/scenario.sh flood 250 60  # 경로 간 간섭 (gateway 경유)
+REPEAT=20 GAP=1 .scripts/fault-test/002-s3-failure/scenario.sh upload unavailable 0 head,list 0 8  # 짧은 장애 후 복구 (8초 뒤 정상, 1초 간격 commit 20번)
 VIA_GATEWAY=1 REPEAT=190 GAP=1 CLIENT_TIMEOUT=30 .scripts/fault-test/002-s3-failure/scenario.sh download unavailable 0 get 0 240  # 알림 (240초 장애, gateway 경유 다운로드 약 1초마다)
 .scripts/fault-test/002-s3-failure/scenario.sh download cut 0 get 1       # 다운로드 도중 끊김 (2번째 블록)
 .scripts/fault-test/002-s3-failure/scenario.sh download corrupt           # 깨진 데이터
@@ -56,7 +58,7 @@ WAIT=120 .scripts/fault-test/002-s3-failure/scenario.sh purge denied      # 권�
 WAIT=300 .scripts/fault-test/002-s3-failure/scenario.sh purge lost 0 delete  # 삭제 후 응답 유실
 FILES=10 .scripts/fault-test/002-s3-failure/scenario.sh put unavailable 0 head,list 0 30  # commit 중 S3 일시 장애 (30초 뒤 정상)
 PUT_CAP=300 .scripts/fault-test/002-s3-failure/scenario.sh put lost 0 put 0 20  # 업로드 후 응답 없음 (20초 뒤 정상)
-.scripts/fault-test/002-s3-failure/scenario.sh put unavailable 0 put 0 20  # 업로드 PUT 장애 (20초 뒤 정상)
+.scripts/fault-test/002-s3-failure/scenario.sh put unavailable 0 put 0 20  # 업로드 PUT 일시 장애 (20초 뒤 정상)
 .scripts/fault-test/002-s3-failure/scenario.sh put drop 0 put 0 5         # 업로드 후 연결 끊김 (5초 뒤 정상)
 .scripts/fault-test/002-s3-failure/scenario.sh down                       # 프록시를 지우고 storage-service를 LocalStack 직결로 되돌림
 ```
@@ -66,17 +68,18 @@ PUT_CAP=300 .scripts/fault-test/002-s3-failure/scenario.sh put lost 0 put 0 20  
 | 장애 시나리오 | 결과 | 걸린 시간 |
 |---|---|---|
 | 정상 | 업로드·다운로드 성공 | 즉시 |
-| S3 서버 장애 | 블록 확인은 503, 다운로드는 503(`STORAGE_UNAVAILABLE`). 호출마다 SDK가 2번 시도. 블록 확인은 `s3Lookup` 서킷이 열림. 다운로드는 10초 안에 호출 10번이 차지 않아 서킷이 열리지 않음. file-service 서킷은 닫힘 | 블록 확인 0.03~0.13초, 다운로드 0.09~0.97초 |
+| S3 일시 장애 | 블록 확인은 503, 다운로드는 503(`STORAGE_UNAVAILABLE`). 호출마다 SDK가 2번 시도. 블록 확인은 `s3Lookup` 서킷이 열림. 다운로드는 10초 안에 호출 10번이 차지 않아 서킷이 열리지 않음. file-service 서킷은 닫힘 | 블록 확인 0.03~0.13초, 다운로드 0.09~0.97초 |
 | 응답 없음 | 블록 확인은 503, 다운로드는 503(`STORAGE_UNAVAILABLE`). 시도마다 5초에서 끊고 1번 더 시도. S3에 동시에 매달린 호출은 2를 넘지 않음 | 10.0~10.2초 |
 | 경로 간 간섭 | 미리보기 250개 모두 503(`STORAGE_UNAVAILABLE`) — 210개는 `s3Read` 자리가 없어 바로, 40개는 시간 초과로. 끝나지 않은 것 없음. S3 동시 호출 43. `s3Read` 서킷만 열림. 블록 확인 60번, URL 발급 60번 모두 성공 | 블록 확인 최대 48~71ms, URL 발급 최대 29~35ms |
 | 경로 간 간섭 (gateway 경유) | 미리보기 250개 모두 storage-service까지 가서 503 — 210개는 `s3Read` 자리가 없어 바로, 40개는 시간 초과로. `X-Dependency-Unavailable`이 붙은 503이라 gateway 서킷은 닫힌 채 그대로 전달. 업로드 URL 발급·블록 확인 60번씩 모두 성공, gateway 벌크헤드 거절 없음 | URL 발급 최대 50~151ms |
+| 짧은 장애 후 복구 | 장애 중 commit 5번이 503 → `s3Lookup` 서킷이 열림. 복구 뒤에도 서킷이 열린 약 9초 동안 commit이 S3를 부르지 않고 바로 503(대기 없음), 반열림 시험 호출 뒤 닫혀 성공. file-service 서킷은 닫힘 | 503 0.02~0.14초, 성공 0.04~0.19초 |
 | 다운로드 도중 끊김 | 200으로 시작해 1번째 블록 뒤에 끊김 (클라이언트가 잘린 것을 알아챔) | 즉시 |
 | 깨진 데이터 | 블록이 해시와 맞지 않아 500(`STORAGE_ERROR`), 내려간 바이트 없음 | 즉시 |
 | 권한 오류 | 4번 받은 뒤 DLQ (`Retries exhausted after 4 attempts`). 403은 서킷에 실패로 세지 않음 | 약 10초 |
 | 삭제 후 응답 유실 | 블록 삭제됨. 재배달 뒤 정상 종료, DLQ 없음 | 약 26~39초 |
 | commit 중 S3 일시 장애 | 파일 10개 모두 commit이 503(`retryAfter: 10`) → 10.2~14.7초 간격(10초 + 0~50% 지터)으로 다시 commit해 모두 성공. 일시 중지 없음 | 29.2~40.4초 |
 | 업로드 후 응답 없음 | 첫 PUT을 30초 유휴 제한에서 끊고, 다시 보낸 PUT이 `412`, commit 성공 | 32.5~32.8초 |
-| 업로드 PUT 장애 (20초 뒤 정상) | 빠른 재시도 3번 뒤 일시 중지, 30초 간격으로 다시 보내 복구 뒤 성공, commit 성공 | 44.9~55.4초 |
+| 업로드 PUT 일시 장애 (20초 뒤 정상) | 빠른 재시도 3번 뒤 일시 중지, 30초 간격으로 다시 보내 복구 뒤 성공, commit 성공 | 44.9~55.4초 |
 | 업로드 후 연결 끊김 | 다시 보낸 PUT이 `412`, commit 성공 | 5.3~5.6초 |
 
 ### 알림
