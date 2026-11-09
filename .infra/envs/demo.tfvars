@@ -38,12 +38,14 @@ redis_clusters = {
 # 0.5 vCPU, 1 GB, one task each and at most two — a burst gets one extra task (CPU above 60%), past
 # that it slows the demo down instead of raising the bill further. 0.25 vCPU ran out on every request
 # (CPU peaking at 120%), memory stays ~45%. DB connections: db_pool_size above.
+# The upload path (gateway, auth, file, storage) runs at 1 vCPU, 2 GB while perf-test 001 compares
+# uploads with other drives (.docs/perf-test/001-upload.md 4); back to 512/1024 once it's measured.
 services = {
-  gateway      = { cpu = 512, memory = 1024, min = 1, max = 2 }
+  gateway      = { cpu = 1024, memory = 2048, min = 1, max = 2 }
   member       = { cpu = 512, memory = 1024, min = 1, max = 2 }
-  auth         = { cpu = 512, memory = 1024, min = 1, max = 2 }
-  file         = { cpu = 512, memory = 1024, min = 1, max = 2 }
-  storage      = { cpu = 512, memory = 1024, min = 1, max = 2 }
+  auth         = { cpu = 1024, memory = 2048, min = 1, max = 2 }
+  file         = { cpu = 1024, memory = 2048, min = 1, max = 2 }
+  storage      = { cpu = 1024, memory = 2048, min = 1, max = 2 }
   mail         = { cpu = 512, memory = 1024, min = 1, max = 2 }
   notification = { cpu = 512, memory = 1024, min = 1, max = 2 }
 }
