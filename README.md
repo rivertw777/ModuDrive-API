@@ -118,6 +118,7 @@ ModuDrive에서 언제 어디서나 간편하게,<br>
 <br>
 
 - [파일 업로드 설계하기 (블록 기반)](https://nicky777.tistory.com/27)
+- [외부 스토리지 서비스 장애 대응하기](https://nicky777.tistory.com/31)
 - [외부 메일 API 장애 대응하기 (멱등성 보장하기)](https://nicky777.tistory.com/26)
 - [분산 트레이싱 도입하기](https://nicky777.tistory.com/29)
 - [Java 25 런타임 기능 적용기](https://nicky777.tistory.com/30)
