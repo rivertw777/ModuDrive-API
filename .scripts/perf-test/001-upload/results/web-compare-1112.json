@@ -1,0 +1,167 @@
+{
+  "date": "2026-11-12",
+  "network": "wired LAN",
+  "how": "Chrome on one PC, screen recording at 30fps (constant frame rate). start = first frame after Chrome's upload confirmation dialog closed; end = first frame showing completion in the service's upload panel. Values are frame numbers; seconds = (end - start) / 30. Rounds 1-2 uploaded ModuDrive, Google Drive, MYBOX in that order; round 3 in reverse.",
+  "moduDrive": "demo (ap-northeast-2), gateway/auth/file/storage at 1 vCPU / 2GB, WEB through #325",
+  "rounds": {
+    "1 (10:05~10:28, videos 테스트결과4회차/)": {
+      "small": {
+        "moduDrive": {
+          "startFrame": 142,
+          "endFrame": 516,
+          "seconds": 12.467
+        },
+        "googleDrive": {
+          "startFrame": 103,
+          "endFrame": 3453,
+          "seconds": 111.667
+        },
+        "mybox": {
+          "startFrame": 121,
+          "endFrame": 1666,
+          "seconds": 51.5
+        }
+      },
+      "big": {
+        "moduDrive": {
+          "startFrame": 160,
+          "endFrame": 3021,
+          "seconds": 95.367
+        },
+        "googleDrive": {
+          "startFrame": 137,
+          "endFrame": 4579,
+          "seconds": 148.067
+        },
+        "mybox": {
+          "startFrame": 146,
+          "endFrame": 5659,
+          "seconds": 183.767
+        }
+      },
+      "mixed": {
+        "moduDrive": {
+          "startFrame": 125,
+          "endFrame": 992,
+          "seconds": 28.9
+        },
+        "googleDrive": {
+          "startFrame": 110,
+          "endFrame": 12774,
+          "seconds": 422.133
+        },
+        "mybox": {
+          "startFrame": 105,
+          "endFrame": 1407,
+          "seconds": 43.4
+        }
+      }
+    },
+    "2 (10:37~10:59, videos 테스트결과5회차/)": {
+      "small": {
+        "moduDrive": {
+          "startFrame": 215,
+          "endFrame": 624,
+          "seconds": 13.633
+        },
+        "googleDrive": {
+          "startFrame": 138,
+          "endFrame": 3403,
+          "seconds": 108.833
+        },
+        "mybox": {
+          "startFrame": 151,
+          "endFrame": 1681,
+          "seconds": 51.0
+        }
+      },
+      "big": {
+        "moduDrive": {
+          "startFrame": 149,
+          "endFrame": 3000,
+          "seconds": 95.033
+        },
+        "googleDrive": {
+          "startFrame": 90,
+          "endFrame": 4300,
+          "seconds": 140.333
+        },
+        "mybox": {
+          "startFrame": 103,
+          "endFrame": 4938,
+          "seconds": 161.167
+        }
+      },
+      "mixed": {
+        "moduDrive": {
+          "startFrame": 105,
+          "endFrame": 958,
+          "seconds": 28.433
+        },
+        "googleDrive": {
+          "startFrame": 112,
+          "endFrame": 12469,
+          "seconds": 411.9
+        },
+        "mybox": {
+          "startFrame": 122,
+          "endFrame": 1580,
+          "seconds": 48.6
+        }
+      }
+    },
+    "3 (11:29~11:55, videos 테스트결과6회차/)": {
+      "small": {
+        "moduDrive": {
+          "startFrame": 141,
+          "endFrame": 538,
+          "seconds": 13.233
+        },
+        "googleDrive": {
+          "startFrame": 134,
+          "endFrame": 5384,
+          "seconds": 175.0
+        },
+        "mybox": {
+          "startFrame": 146,
+          "endFrame": 1716,
+          "seconds": 52.333
+        }
+      },
+      "big": {
+        "moduDrive": {
+          "startFrame": 124,
+          "endFrame": 2969,
+          "seconds": 94.833
+        },
+        "googleDrive": {
+          "startFrame": 167,
+          "endFrame": 4889,
+          "seconds": 157.4
+        },
+        "mybox": {
+          "startFrame": 107,
+          "endFrame": 4656,
+          "seconds": 151.633
+        }
+      },
+      "mixed": {
+        "moduDrive": {
+          "startFrame": 117,
+          "endFrame": 983,
+          "seconds": 28.867
+        },
+        "googleDrive": {
+          "startFrame": 144,
+          "endFrame": 12939,
+          "seconds": 426.5
+        },
+        "mybox": {
+          "startFrame": 105,
+          "endFrame": 1644,
+          "seconds": 51.3
+        }
+      }
+    }
+  }
+}
