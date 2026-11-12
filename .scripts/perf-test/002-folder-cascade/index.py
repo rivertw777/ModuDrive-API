@@ -35,6 +35,15 @@ def seed_folder(cur, ns, owner, n, name):
     return root
 
 
+def check_trashed(cur, ns, n, name):
+    """After a trash: the folder and all its 10 + n descendants are TRASHED, sharing one trashed_at."""
+    cur.execute("select count(*), count(*) filter (where status = 'TRASHED'), count(distinct trashed_at) from file "
+                "where namespace_id = %s and (path = %s or path like %s or (path = '/' and name = %s))",
+                (ns, "/" + name, "/" + name + "/%", name))
+    total, trashed, stamps = cur.fetchone()
+    assert total == n + 11 and trashed == total and stamps == 1, (name, total, trashed, stamps)
+
+
 def main():
     label = sys.argv[1]
     sizes = [int(x) for x in sys.argv[2:]] or [100, 1000, 10000]
@@ -43,14 +52,20 @@ def main():
     with psycopg.connect(DB, autocommit=True) as conn, conn.cursor() as cur:
         with conn.transaction():
             ns, owner = seed_drive(cur)
-        cur.execute("analyze file")
+            warm = seed_folder(cur, ns, owner, 100, "warmup")
+        cur.execute("vacuum analyze file")
+        for k in OPS:  # not recorded: a fresh deploy's first requests run cold
+            op(cur, k, owner, warm)
         for n in sizes:
             res = {k: [] for k in OPS}
             for r in range(rounds):
                 with conn.transaction():
                     root = seed_folder(cur, ns, owner, n, f"bench{n}-{r}")
+                cur.execute("analyze file")
                 for k in res:
                     res[k].append(op(cur, k, owner, root))
+                    if k == "trash":
+                        check_trashed(cur, ns, n, f"bench{n}-{r}")
             out[n] = {k: {"ms_median": statistics.median(x["ms"] for x in v), "ms_all": [round(x["ms"]) for x in v],
                           "sql": [x["sql"] for x in v]} for k, v in res.items()}
             print(n, json.dumps(out[n]), flush=True)
