@@ -1,0 +1,50 @@
+{
+  "date": "2026-11-14",
+  "where": "one-off ECS task in the demo VPC (ap-northeast-2), storage-service task role, real S3",
+  "script": ".scripts/perf-test/001-upload/s3-list-vs-head.py",
+  "how": "A commit of N uploaded hashes in an owner prefix that also holds M other blocks. HEAD: every hash, 8 at a time. LIST: as S3StorageAdapter.uploaded (16 first-hex ranges, ranges 8 at a time, page budget ranges + N/4, HEAD fallback). Median of 3 rounds.",
+  "results": [
+    {
+      "other_blocks": 0,
+      "hashes": 100,
+      "head_ms": 255,
+      "list_ms": 181,
+      "list_pages": 16
+    },
+    {
+      "other_blocks": 0,
+      "hashes": 1280,
+      "head_ms": 3406,
+      "list_ms": 209,
+      "list_pages": 16
+    },
+    {
+      "other_blocks": 2000,
+      "hashes": 100,
+      "head_ms": 237,
+      "list_ms": 404,
+      "list_pages": 16
+    },
+    {
+      "other_blocks": 2000,
+      "hashes": 1280,
+      "head_ms": 3365,
+      "list_ms": 451,
+      "list_pages": 16
+    },
+    {
+      "other_blocks": 20000,
+      "hashes": 100,
+      "head_ms": 328,
+      "list_ms": 2341,
+      "list_pages": 23
+    },
+    {
+      "other_blocks": 20000,
+      "hashes": 1280,
+      "head_ms": 3615,
+      "list_ms": 2907,
+      "list_pages": 32
+    }
+  ]
+}

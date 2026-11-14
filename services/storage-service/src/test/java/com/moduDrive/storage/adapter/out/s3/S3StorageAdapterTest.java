@@ -222,8 +222,8 @@ class S3StorageAdapterTest {
         private final TreeMap<String, S3Object> bucket = new TreeMap<>();
         private int pageSize = 1000;
 
-        /** 64 hashes, four per first hex digit. */
-        private final List<String> asked = java.util.stream.IntStream.range(0, 64)
+        /** Just enough hashes to list, LIST_MIN_HASHES / 16 per first hex digit. */
+        private final List<String> asked = java.util.stream.IntStream.range(0, S3StorageAdapter.LIST_MIN_HASHES)
                 .mapToObj(i -> Character.forDigit(i % 16, 16) + String.format("%063d", i)).toList();
 
         private void stored(String hash, long size, boolean sha256) {
@@ -265,21 +265,22 @@ class S3StorageAdapterTest {
         @DisplayName("한 범위가 여러 페이지면 이어서 읽고, 가장 큰 해시를 지나면 멈춘다")
         void pagesThroughARangeAndStopsPastItsLast() {
             pageSize = 2;
-            String last = asked.stream().filter(h -> h.charAt(0) == '0').max(String::compareTo).orElseThrow();
             asked.stream().filter(h -> h.charAt(0) == '0').forEach(h -> stored(h, 4, true));
             for (int i = 0; i < 10; i++) {
-                stored(last.substring(0, 62) + "9" + i, 4, true);  // past the last asked: never read
+                stored("0" + "9".repeat(62) + i, 4, true);  // past the last asked: never read
             }
 
-            assertThat(adapter.findUploaded(OWNER, asked)).hasSize(4);
-            then(s3Client).should(org.mockito.Mockito.atMost(18)).listObjectsV2(any(ListObjectsV2Request.class));
+            int inRange = S3StorageAdapter.LIST_MIN_HASHES / 16;
+            assertThat(adapter.findUploaded(OWNER, asked)).hasSize(inRange);
+            // Range 0 two keys a page, up to its last asked hash; every other range one empty page.
+            then(s3Client).should(org.mockito.Mockito.atMost(inRange / 2 + 15)).listObjectsV2(any(ListObjectsV2Request.class));
         }
 
         @Test
         @DisplayName("범위 안에 블록이 너무 많아 페이지 한도를 넘으면, 다 못 읽은 범위만 HEAD로 확인한다")
         void headsTheRangesThePagesRanOutOn() {
             pageSize = 1;
-            for (int i = 1; i < 48; i++) {
+            for (int i = 1; i < S3StorageAdapter.LIST_MIN_HASHES; i++) {
                 if (i % 16 != 0) {
                     stored("0" + String.format("%063d", i), 4, true);  // not asked, between the asked ones of range 0
                 }
@@ -290,7 +291,7 @@ class S3StorageAdapterTest {
             // Range 0 always runs out; the others only if it took their pages first.
             asked.stream().filter(h -> h.charAt(0) == '0').forEach(h -> then(s3Client).should()
                     .headObject(argThat((HeadObjectRequest r) -> r != null && r.key().equals(Blocks.key(OWNER, h)))));
-            then(s3Client).should(org.mockito.Mockito.atMost(64)).headObject(any(HeadObjectRequest.class));
+            then(s3Client).should(org.mockito.Mockito.atMost(S3StorageAdapter.LIST_MIN_HASHES)).headObject(any(HeadObjectRequest.class));
         }
 
         @Test

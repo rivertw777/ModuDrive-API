@@ -62,9 +62,12 @@ class S3StorageAdapter implements RetrieveBlocksPort, DeleteBlocksPort, FindUplo
     /** S3 calls one commit's lookup has in flight at once (spec 001 2-3) — HEADs, or listing pages —
      * so one commit doesn't take every seat. */
     static final int LOOKUP_PARALLELISM = 8;
-    /** From this many hashes the lookup lists the owner's blocks instead of a HEAD each: a listing
-     * page answers for up to 1,000 keys. Below it, the 16 key ranges cost more calls than HEADs. */
-    static final int LIST_MIN_HASHES = 64;
+    /** From this many hashes the lookup lists the owner's blocks instead of a HEAD each. A HEAD costs
+     * the same whatever the owner has; a listing reads every key of the owner's between the asked
+     * hashes, so it only pays off for many hashes. On S3: 100 hashes HEAD 0.24-0.33s vs list 0.18s
+     * (no other blocks) to 2.3s (20,000); 1,280 hashes HEAD 3.4s vs list 0.2s to 2.9s
+     * (.scripts/perf-test/001-upload/s3-list-vs-head.py, results/aws-s3-list-vs-head.json). */
+    static final int LIST_MIN_HASHES = 512;
     /** Hashes asked about per extra listing page, past one page a range, before the lookup gives up
      * on listing — an owner with many blocks in the asked ranges — and HEADs instead.
      * ponytail: fixed ratio (~4 hashes a page), tune from S3 latencies if owners get that large. */
