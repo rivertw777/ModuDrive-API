@@ -1,6 +1,6 @@
 #!/bin/bash
 # Query/latency benchmarks for .docs/perf-test/002-003 (scripts in 002-*/, 003-*/, helpers in bench.py). Run from
-# the repo root, with infra + services up. 004 (004-quota-concurrency/) and 001 (001-upload/) have their own entry scripts.
+# the repo root, with infra + services up. 004 (004-quota-concurrency/) has its own entry script.
 #   scenario.sh up                 — pg_stat_statements on (restarts postgres) + bench container on modudrive_network
 #   scenario.sh down               — bench container off, pg_stat_statements off (restarts postgres)
 #   scenario.sh deploy <label>     — build file-service from the working tree, tag it <label>, (re)start it

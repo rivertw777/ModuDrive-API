@@ -1,4 +1,4 @@
-""".docs/perf-test/001-upload.md 4 — rewrites every file under the given folder with new random bytes, same names and
+""".docs/perf-test/001-upload.md 1·4 — rewrites every file under the given folder with new random bytes, same names and
 sizes, so the next browser round isn't skipped by block dedup (a re-upload of the same content sends nothing).
 Usage: python3 refresh-files.py "/mnt/c/Users/<user>/Desktop/업로드-테스트" """
 import os, sys

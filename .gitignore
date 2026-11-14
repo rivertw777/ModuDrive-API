@@ -53,5 +53,3 @@ __pycache__/
 !.infra/envs/*.tfvars
 .infra/backend.hcl
 .infra/envs/*.backend.hcl
-
-node_modules/
