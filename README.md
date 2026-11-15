@@ -110,6 +110,10 @@ ModuDrive에서 언제 어디서나 간편하게,<br>
   <img src=".docs/images/architecture.jpeg" width="90%" alt="시스템 아키텍처">
 </p>
 
+<br>
+
+**서비스 구성**
+
 <div align="center">
 <table align="center">
   <tr><th>서비스</th><th>역할</th></tr>
