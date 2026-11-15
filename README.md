@@ -113,13 +113,13 @@ ModuDrive에서 언제 어디서나 간편하게,<br>
 <div align="center">
 <table align="center">
   <tr><th>서비스</th><th>역할</th></tr>
-  <tr><td><code>gateway-service</code></td><td>요청 진입점 · 세션 인증 · CSRF 차단</td></tr>
-  <tr><td><code>auth-service</code></td><td>로그인 · 세션 관리 · 새 기기 이메일 인증</td></tr>
-  <tr><td><code>member-service</code></td><td>회원가입 · 회원 정보 · 비밀번호 검증</td></tr>
-  <tr><td><code>file-service</code></td><td>파일·폴더 관리 · 버전 · 공유</td></tr>
-  <tr><td><code>storage-service</code></td><td>S3 블록 업로드 · 다운로드</td></tr>
-  <tr><td><code>mail-service</code></td><td>인증·공유 메일 발송</td></tr>
-  <tr><td><code>notification-service</code></td><td>인앱 알림</td></tr>
+  <tr><td><code>gateway-service</code></td><td>요청 라우팅 · 세션 인증 · CSRF 차단</td></tr>
+  <tr><td><code>auth-service</code></td><td>로그인·로그아웃 · 세션 관리 · 새 기기 이메일 인증</td></tr>
+  <tr><td><code>member-service</code></td><td>회원가입·이메일 인증 · 회원 조회 · 비밀번호 검증</td></tr>
+  <tr><td><code>file-service</code></td><td>파일·폴더 관리 · 버전 · 공유 · 휴지통 · 사용 용량</td></tr>
+  <tr><td><code>storage-service</code></td><td>블록 업로드 URL 발급 · 다운로드·미리보기 · zip 다운로드 · 블록 삭제</td></tr>
+  <tr><td><code>mail-service</code></td><td>인증·공유 초대 메일 발송 (SES)</td></tr>
+  <tr><td><code>notification-service</code></td><td>공유 알림 기록 · 알림 목록·읽음 처리</td></tr>
 </table>
 </div>
 
