@@ -1,5 +1,5 @@
 {
-  "date": "2026-11-14",
+  "date": "2026-11-14 (stage0, stage1); 2026-11-15 (stage2, stage3, re-measured after #923)",
   "network": "wired LAN",
   "how": "Chrome on one PC against demo, screen recording at 30fps. start = first frame after Chrome's upload confirmation dialog closed; end = first frame where the upload panel's status icon turned to done. Two rounds per stage and scenario, files rewritten before each round.",
   "moduDrive": "demo (ap-northeast-2), gateway/auth/file/storage at 1 vCPU / 2GB",
@@ -37,6 +37,40 @@
       ]
     },
     "stage2": {
+      "server": "test/upload-stage2 a4d7c127 with LIST_MIN_HASHES 512 (#923)",
+      "web": "same as stage0",
+      "date": "2026-11-15",
+      "big": [
+        98.47,
+        96.33
+      ],
+      "small": [
+        14.1,
+        14.1
+      ],
+      "mixed": [
+        30.43,
+        30.13
+      ]
+    },
+    "stage3": {
+      "server": "dev 746a9b05 (#923)",
+      "web": "dev (pipeline)",
+      "date": "2026-11-15",
+      "big": [
+        99.33,
+        96.43
+      ],
+      "small": [
+        10.53,
+        8.9
+      ],
+      "mixed": [
+        27.13,
+        26.67
+      ]
+    },
+    "stage2_list64_1114": {
       "server": "test/upload-stage2 a4d7c127",
       "web": "same as stage0",
       "big": [
@@ -50,9 +84,10 @@
       "mixed": [
         31.47,
         30.93
-      ]
+      ],
+      "note": "2026-11-14, block lookup listed from 64 hashes (before #923); superseded"
     },
-    "stage3": {
+    "stage3_list64_1114": {
       "server": "dev bbd6d420",
       "web": "dev (pipeline)",
       "big": [
@@ -66,7 +101,8 @@
       "mixed": [
         28.23,
         28.93
-      ]
+      ],
+      "note": "2026-11-14, block lookup listed from 64 hashes (before #923); superseded"
     }
   },
   "io": {
