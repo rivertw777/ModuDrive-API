@@ -1,0 +1,6 @@
+# run.sh deploy: the dev profile prints every SQL statement to stdout, a per-statement cost the deployed service
+# doesn't pay. JSON because a map key with an underscore (show_sql) can't be spelled as an environment variable.
+services:
+  file-service:
+    environment:
+      - 'SPRING_APPLICATION_JSON={"spring":{"jpa":{"properties":{"hibernate":{"show_sql":false,"format_sql":false,"use_sql_comments":false}}}}}'

@@ -70,26 +70,40 @@ ROUNDS=1 SKIP_WAIT=1 .scripts/perf-test/scenario.sh cascade asis10k 10000
 
 ## 5. 큰 드라이브에서 경로 접두사 인덱스
 
-2026-10-12. 위 측정은 측정용 폴더만 든 작은 드라이브에서 했다. 다른 파일이 100만 개 있는 드라이브에 같은 폴더를 두고 다시 재 보니, 벌크 SQL로 바꾼 뒤에도 하위 파일 100개짜리 폴더의 휴지통 이동에 2.2초가 걸렸다.
+2026-11-11. 위 측정은 측정용 폴더만 든 작은 드라이브에서 했다. 다른 파일이 100만 개 있는 드라이브에 같은 폴더를 두고 다시 재 보니, 벌크 SQL로 바꾼 뒤에도 하위 파일 100개짜리 폴더의 휴지통 이동에 410ms가 걸려 행 단위(248ms)보다 느렸다.
 
-- 원인: 하위를 고르는 `path LIKE '<prefix>/%'`가 인덱스를 쓰지 못해 드라이브 전체를 읽었다. DB 정렬 규칙(`en_US`)에서는 기존 `(namespace_id, path, active_slot_name)` 인덱스로 접두사 범위 검색을 할 수 없고, 패턴을 `concat()`(STABLE)으로 만들어 실행 계획 시점에 상수도 아니었다.
+- 원인: 하위를 고르는 `path LIKE '<prefix>/%'`가 인덱스를 쓰지 못해 드라이브 전체를 읽었다. DB 정렬 규칙(`en_US`)에서는 기존 `(namespace_id, path, active_slot_name)` 인덱스로 접두사 범위 검색을 할 수 없고, 패턴을 `concat()`(STABLE)으로 만들어 실행 계획 시점에 상수도 아니었다. 벌크 SQL은 잠금 조회와 UPDATE가 각각 100만 행을 읽어(1,000개 폴더에서 181ms, 219ms) 행 단위보다 전체 스캔이 한 번 많았다.
 - 고친 것: `V11__file_path_prefix_idx.sql`로 `(namespace_id, path varchar_pattern_ops)` 인덱스를 `create index concurrently`로 추가하고(트랜잭션 밖에서 실행), 하위를 고르는 쿼리 여섯 개의 패턴을 `||`로 바꿨다.
 
+세 상태 모두 같은 날 최신 `dev`(0b129da3)에서 빌드했고, 상태끼리 다른 것은 아래 패치와 인덱스 유무뿐이다. 상태마다 측정 데이터를 지우고 `vacuum full analyze file` 뒤에 쟀다.
+
+| 상태 | 코드 | 인덱스 |
+|---|---|---|
+| 행 단위 (벌크 SQL 전) | `states/original.patch` — 휴지통 연쇄만 하위를 엔티티로 잠가 읽고 파일마다 저장, 패턴 `concat()` | 없음 |
+| 벌크 SQL, 인덱스 전 | `states/bulk-noindex.patch` — 패턴만 `concat()` | 없음 |
+| 벌크 SQL, 인덱스 후 | `dev` 그대로 | 있음 |
+
 ```bash
-.scripts/perf-test/scenario.sh index tobe 100 1000 10000           # BACKGROUND=1000000 (기본), 각 3회
-OPS=trash ROUNDS=1 .scripts/perf-test/scenario.sh index original 100 1000 10000   # 행 단위 코드는 휴지통만
+.scripts/perf-test/scenario.sh cleanup
+# 상태마다: 패치 적용(git apply .scripts/perf-test/002-folder-cascade/states/<patch>), 인덱스 drop/create, 그다음
+.scripts/perf-test/scenario.sh deploy <label>
+OPS=trash .scripts/perf-test/scenario.sh index <label> 100 1000 10000   # BACKGROUND=1000000 (기본), 각 3회
 ```
 
-드라이브 파일 100만 개, 응답 시간 중앙값. 칸 값은 `SQL 수 / 시간`이다. 원본 json은 `.scripts/perf-test/002-folder-cascade/results/2026-10-12/`에 있다.
+드라이브 파일 100만 개, 휴지통 이동, 응답 시간 중앙값(3회). 칸 값은 `SQL 수 / 시간`이다. 측정 전 워밍업 1회는 기록하지 않았고, 매 회 하위 행이 모두 `TRASHED`이고 `trashed_at`이 하나인지 확인했다. 원본 json은 `.scripts/perf-test/002-folder-cascade/results/2026-11-11/`에 있다.
 
 | 하위 파일 수 | 행 단위 (벌크 SQL 전) | 벌크 SQL, 인덱스 전 | 벌크 SQL, 인덱스 후 |
 |---|---|---|---|
-| 휴지통 100 | 113 / 945ms | 4 / 2,190ms | 4 / 67ms |
-| 휴지통 1,000 | 1,013 / 3.69s | 4 / 2,222ms | 4 / 90ms |
-| 휴지통 10,000 | 10,013 / 89.2s | 4 / 2,539ms | 4 / 567ms |
-| 영구 삭제 100 | | 18 / 114ms | 18 / 149ms |
-| 영구 삭제 1,000 | | 18 / 295ms | 18 / 331ms |
-| 영구 삭제 10,000 | | 18 / 3.41s | 18 / 3.35s |
+| 100 | 113 / 248ms | 4 / 410ms | 4 / 19ms |
+| 1,000 | 1,013 / 1,020ms | 4 / 413ms | 4 / 33ms |
+| 10,000 | 10,013 / 27.3s | 4 / 514ms | 4 / 139ms |
 
-- 휴지통 이동은 이제 폴더 크기만큼만 걸린다(드라이브 크기와 무관).
-- 영구 삭제는 인덱스 전후 차이가 없었다(측정 오차 범위). 원인은 따로 확인하지 않았다.
+하위 파일 100개 폴더를 고르는 SELECT의 실행 계획(`explain analyze`, 같은 드라이브). 잠금(`FOR UPDATE`) 없이 실행해 전체 스캔이 병렬로 돌았으므로, 위의 잠금 조회 181ms와 직접 비교하는 값이 아니다:
+
+| 패턴 | 인덱스 없음 | 인덱스 있음 |
+|---|---|---|
+| `concat()` | 전체 스캔 71ms | 전체 스캔 67ms |
+| `||` | 전체 스캔 32ms | 인덱스 스캔 0.12ms |
+
+- 인덱스와 `||` 둘 다 있어야 인덱스를 탄다.
+- 인덱스 범위 검색으로 폴더 안의 행만 읽으므로, 휴지통 이동 시간은 폴더 크기를 따라간다.

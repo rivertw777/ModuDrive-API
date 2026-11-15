@@ -1,0 +1,131 @@
+diff --git a/services/file-service/src/main/java/com/moduDrive/file/adapter/out/persistence/FilePersistenceAdapter.java b/services/file-service/src/main/java/com/moduDrive/file/adapter/out/persistence/FilePersistenceAdapter.java
+index dc018e65..6db663d0 100644
+--- a/services/file-service/src/main/java/com/moduDrive/file/adapter/out/persistence/FilePersistenceAdapter.java
++++ b/services/file-service/src/main/java/com/moduDrive/file/adapter/out/persistence/FilePersistenceAdapter.java
+@@ -326,6 +326,15 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
+         return ancestors;
+     }
+ 
++    @Override
++    public List<File> lockByNamespaceIdAndPathStartingWith(NamespaceId namespaceId, String pathPrefix) {
++        return fileRepository
++                .lockSubtreeByNamespaceIdAndPathPrefix(namespaceId.value(), pathPrefix, escapeLikePattern(pathPrefix))
++                .stream()
++                .map(fileMapper::mapFileToDomain)
++                .toList();
++    }
++
+     @Override
+     public List<File> lockTrashedByNamespaceIdAndPathStartingWith(NamespaceId namespaceId, String pathPrefix) {
+         return fileRepository
+diff --git a/services/file-service/src/main/java/com/moduDrive/file/adapter/out/persistence/SpringDataFileRepository.java b/services/file-service/src/main/java/com/moduDrive/file/adapter/out/persistence/SpringDataFileRepository.java
+index 31e7f4da..fcb0e592 100644
+--- a/services/file-service/src/main/java/com/moduDrive/file/adapter/out/persistence/SpringDataFileRepository.java
++++ b/services/file-service/src/main/java/com/moduDrive/file/adapter/out/persistence/SpringDataFileRepository.java
+@@ -67,7 +67,7 @@ interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID>, J
+     // stable, so the pattern wouldn't be a plan-time constant and the prefix index (V11) would go
+     // unused in every subtree query below.
+     @Query("select f from FileJpaEntity f where f.namespaceId = :namespaceId " +
+-            "and (f.path = :prefix or f.path like (:escapedPrefix || '/%') escape '\\')")
++            "and (f.path = :prefix or f.path like concat(:escapedPrefix, '/%') escape '\\')")
+     List<FileJpaEntity> findSubtreeByNamespaceIdAndPathPrefix(
+             @Param("namespaceId") UUID namespaceId,
+             @Param("prefix") String prefix,
+@@ -77,11 +77,20 @@ interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID>, J
+     // above the file it creates, so the two never wait on each other in a cycle. Ids only: the bulk
+     // UPDATEs below rewrite the rows in place, nothing needs them loaded.
+     @Query(value = "select id from file where namespace_id = :namespaceId "
+-            + "and (path = :prefix or path like (:escapedPrefix || '/%') escape '\\') order by path, name for update",
++            + "and (path = :prefix or path like concat(:escapedPrefix, '/%') escape '\\') order by path, name for update",
+             nativeQuery = true)
+     List<UUID> lockSubtreeIds(@Param("namespaceId") UUID namespaceId, @Param("prefix") String prefix,
+                               @Param("escapedPrefix") String escapedPrefix);
+ 
++    // perf baseline (pre-#602): the subtree loaded as entities, locked top-down.
++    @Lock(LockModeType.PESSIMISTIC_WRITE)
++    @Query("select f from FileJpaEntity f where f.namespaceId = :namespaceId " +
++            "and (f.path = :prefix or f.path like concat(:escapedPrefix, '/%') escape '\\') order by f.path, f.name")
++    List<FileJpaEntity> lockSubtreeByNamespaceIdAndPathPrefix(
++            @Param("namespaceId") UUID namespaceId,
++            @Param("prefix") String prefix,
++            @Param("escapedPrefix") String escapedPrefix);
++
+     // A group commit's version switch, one statement for all its files: FileJpaEntity is @DynamicUpdate,
+     // and Hibernate never JDBC-batches a dynamic UPDATE, so saving the rows would send one per file.
+     @Modifying(flushAutomatically = true, clearAutomatically = true)
+@@ -101,7 +110,7 @@ interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID>, J
+     @Modifying(flushAutomatically = true, clearAutomatically = true)
+     @Query(value = "update file set path = concat(:newPrefix, substr(path, char_length(:prefix) + 1)), "
+             + "updated_at = :now, updated_by = :by where namespace_id = :namespaceId "
+-            + "and (path = :prefix or path like (:escapedPrefix || '/%') escape '\\')",
++            + "and (path = :prefix or path like concat(:escapedPrefix, '/%') escape '\\')",
+             nativeQuery = true)
+     int moveSubtree(@Param("namespaceId") UUID namespaceId, @Param("prefix") String prefix,
+                     @Param("escapedPrefix") String escapedPrefix, @Param("newPrefix") String newPrefix,
+@@ -112,7 +121,7 @@ interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID>, J
+     @Modifying(flushAutomatically = true, clearAutomatically = true)
+     @Query(value = "update file set status = 'TRASHED', trashed_at = :trashedAt, active_slot_name = null, "
+             + "updated_at = :now, updated_by = :by where namespace_id = :namespaceId "
+-            + "and (path = :prefix or path like (:escapedPrefix || '/%') escape '\\') "
++            + "and (path = :prefix or path like concat(:escapedPrefix, '/%') escape '\\') "
+             + "and status not in ('TRASHED', 'DELETED')",
+             nativeQuery = true)
+     int trashSubtree(@Param("namespaceId") UUID namespaceId, @Param("prefix") String prefix,
+@@ -123,7 +132,7 @@ interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID>, J
+     @Modifying(flushAutomatically = true, clearAutomatically = true)
+     @Query(value = "update file set status = 'UPLOADED', trashed_at = null, active_slot_name = name, "
+             + "updated_at = :now, updated_by = :by where namespace_id = :namespaceId "
+-            + "and (path = :prefix or path like (:escapedPrefix || '/%') escape '\\') and status = 'TRASHED'",
++            + "and (path = :prefix or path like concat(:escapedPrefix, '/%') escape '\\') and status = 'TRASHED'",
+             nativeQuery = true)
+     int restoreSubtree(@Param("namespaceId") UUID namespaceId, @Param("prefix") String prefix,
+                        @Param("escapedPrefix") String escapedPrefix, @Param("now") LocalDateTime now,
+@@ -133,7 +142,7 @@ interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID>, J
+     // locks blocks and then active rows — locking a live folder reusing the path would close a cycle.
+     @Lock(LockModeType.PESSIMISTIC_WRITE)
+     @Query("select f from FileJpaEntity f where f.namespaceId = :namespaceId and f.status = 'TRASHED' " +
+-            "and (f.path = :prefix or f.path like (:escapedPrefix || '/%') escape '\\') order by f.path, f.name")
++            "and (f.path = :prefix or f.path like concat(:escapedPrefix, '/%') escape '\\') order by f.path, f.name")
+     List<FileJpaEntity> lockTrashedSubtreeByNamespaceIdAndPathPrefix(
+             @Param("namespaceId") UUID namespaceId,
+             @Param("prefix") String prefix,
+diff --git a/services/file-service/src/main/java/com/moduDrive/file/application/port/out/FindFilePort.java b/services/file-service/src/main/java/com/moduDrive/file/application/port/out/FindFilePort.java
+index 936551d9..a7a94a6c 100644
+--- a/services/file-service/src/main/java/com/moduDrive/file/application/port/out/FindFilePort.java
++++ b/services/file-service/src/main/java/com/moduDrive/file/application/port/out/FindFilePort.java
+@@ -53,6 +53,9 @@ public interface FindFilePort {
+      * commit may be waiting on while holding the blocks the purge releases next. */
+     List<File> lockTrashedByNamespaceIdAndPathStartingWith(NamespaceId namespaceId, String pathPrefix);
+ 
++    /** perf baseline (pre-#602): every row of the subtree, locked top-down. */
++    List<File> lockByNamespaceIdAndPathStartingWith(NamespaceId namespaceId, String pathPrefix);
++
+     /** Entries whose {@code path} is {@code pathPrefix} or nested under it — i.e. every
+      * descendant of the directory whose full path is {@code pathPrefix}. */
+     List<File> findByNamespaceIdAndPathStartingWith(NamespaceId namespaceId, String pathPrefix);
+diff --git a/services/file-service/src/main/java/com/moduDrive/file/application/service/DirectoryCascader.java b/services/file-service/src/main/java/com/moduDrive/file/application/service/DirectoryCascader.java
+index 785dadbd..fd444b93 100644
+--- a/services/file-service/src/main/java/com/moduDrive/file/application/service/DirectoryCascader.java
++++ b/services/file-service/src/main/java/com/moduDrive/file/application/service/DirectoryCascader.java
+@@ -3,6 +3,7 @@ package com.moduDrive.file.application.service;
+ import com.moduDrive.file.application.port.out.FindFilePort;
+ import com.moduDrive.file.application.port.out.ReleaseBlocksPort;
+ import com.moduDrive.file.application.port.out.SaveFilePort;
++import com.moduDrive.file.domain.model.File;
+ import com.moduDrive.file.domain.model.File.FileId;
+ import com.moduDrive.file.domain.model.Namespace.NamespaceId;
+ import lombok.RequiredArgsConstructor;
+@@ -39,7 +40,12 @@ class DirectoryCascader {
+      * {@link #purge}). The subtree is locked first, so a commit under it finishes before. A
+      * descendant already trashed or purged keeps its own trashedAt. */
+     void softDelete(NamespaceId namespaceId, String directoryFullPath, LocalDateTime trashedAt) {
+-        saveFilePort.trashSubtree(namespaceId, directoryFullPath, trashedAt);
++        // perf baseline (pre-#602): load the subtree and save each descendant.
++        for (File descendant : findFilePort.lockByNamespaceIdAndPathStartingWith(namespaceId, directoryFullPath)) {
++            if (descendant.isRemoved()) continue;
++            descendant.softDelete(trashedAt);
++            saveFilePort.saveFile(descendant);
++        }
+     }
+ 
+     /** Restores every still-trashed descendant; a purged one is a tombstone whose content is
