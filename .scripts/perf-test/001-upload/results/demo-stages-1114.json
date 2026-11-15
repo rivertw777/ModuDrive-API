@@ -1,0 +1,176 @@
+{
+  "date": "2026-11-14 (stage0, stage1); 2026-11-15 (stage2, stage3, re-measured after #923)",
+  "network": "wired LAN",
+  "how": "Chrome on one PC against demo, screen recording at 30fps. start = first frame after Chrome's upload confirmation dialog closed; end = first frame where the upload panel's status icon turned to done. Two rounds per stage and scenario, files rewritten before each round.",
+  "moduDrive": "demo (ap-northeast-2), gateway/auth/file/storage at 1 vCPU / 2GB",
+  "seconds": {
+    "stage0": {
+      "server": "test/upload-stage0 84d644b9",
+      "web": "dev - #328, one group at a time",
+      "big": [
+        99.13,
+        97.63
+      ],
+      "small": [
+        43.53,
+        40.4
+      ],
+      "mixed": [
+        40.23,
+        39.03
+      ]
+    },
+    "stage1": {
+      "server": "test/upload-stage1 1d3c48c1",
+      "web": "same as stage0",
+      "big": [
+        98.63,
+        98.17
+      ],
+      "small": [
+        34.23,
+        32.37
+      ],
+      "mixed": [
+        39.33,
+        38.63
+      ]
+    },
+    "stage2": {
+      "server": "test/upload-stage2 a4d7c127 with LIST_MIN_HASHES 512 (#923)",
+      "web": "same as stage0",
+      "date": "2026-11-15",
+      "big": [
+        98.47,
+        96.33
+      ],
+      "small": [
+        14.1,
+        14.1
+      ],
+      "mixed": [
+        30.43,
+        30.13
+      ]
+    },
+    "stage3": {
+      "server": "dev 746a9b05 (#923)",
+      "web": "dev (pipeline)",
+      "date": "2026-11-15",
+      "big": [
+        99.33,
+        96.43
+      ],
+      "small": [
+        10.53,
+        8.9
+      ],
+      "mixed": [
+        27.13,
+        26.67
+      ]
+    },
+    "stage2_list64_1114": {
+      "server": "test/upload-stage2 a4d7c127",
+      "web": "same as stage0",
+      "big": [
+        95.27,
+        95.73
+      ],
+      "small": [
+        16.13,
+        15.7
+      ],
+      "mixed": [
+        31.47,
+        30.93
+      ],
+      "note": "2026-11-14, block lookup listed from 64 hashes (before #923); superseded"
+    },
+    "stage3_list64_1114": {
+      "server": "dev bbd6d420",
+      "web": "dev (pipeline)",
+      "big": [
+        96.53,
+        95.53
+      ],
+      "small": [
+        12.97,
+        14.47
+      ],
+      "mixed": [
+        28.23,
+        28.93
+      ],
+      "note": "2026-11-14, block lookup listed from 64 hashes (before #923); superseded"
+    }
+  },
+  "io": {
+    "how": "One extra upload per stage and scenario on 2026-11-14 evening (Playwright driving the same WEB build on demo). A one-off ECS task logged pg_stat_statements calls (file_db) and Redis INFO commandstats every 2s; values are the difference over [t0-1s, t1+18s]. The outbox poller (BEGIN + 3 selects per poll) and commands run inside Lua scripts (incr, incrby, pexpire) are left out, as are monitoring/connection commands (info, ping, auth, config get, client, hello).",
+    "db": {
+      "stage0": {
+        "big": 1340,
+        "small": 16051,
+        "mixed": 10275
+      },
+      "stage1": {
+        "big": 1341,
+        "small": 12124,
+        "mixed": 8107
+      },
+      "stage2": {
+        "big": 1315,
+        "small": 4201,
+        "mixed": 2608
+      },
+      "stage3": {
+        "big": 1351,
+        "small": 4205,
+        "mixed": 2653
+      }
+    },
+    "redis": {
+      "stage0": {
+        "big": 2673,
+        "small": 2365,
+        "mixed": 1818
+      },
+      "stage1": {
+        "big": 550,
+        "small": 680,
+        "mixed": 512
+      },
+      "stage2": {
+        "big": 450,
+        "small": 664,
+        "mixed": 494
+      },
+      "stage3": {
+        "big": 454,
+        "small": 653,
+        "mixed": 499
+      }
+    },
+    "browserRequests": {
+      "big": {
+        "batch": 1,
+        "commit": 2,
+        "urls": 20,
+        "put": 1280
+      },
+      "small": {
+        "batch": 1,
+        "commit": 20,
+        "urls": 20,
+        "put": 1000
+      },
+      "mixed": {
+        "batch": 1,
+        "commit": 14,
+        "urls": 15,
+        "put": 779
+      },
+      "note": "same at every stage"
+    }
+  }
+}
