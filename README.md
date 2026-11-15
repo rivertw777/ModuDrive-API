@@ -17,9 +17,22 @@ ModuDrive에서 언제 어디서나 간편하게,<br>
 
 모두드라이브는 파일을 안전하게 보관하고, 다른 사람과 공유할 수 있는 **클라우드 드라이브 서비스**입니다.
 
-파일을 4MB 블록의 해시 목록으로 표현해 변경된 블록만 전송하고, 블록은 Presigned URL로 S3에 직접 올려 서버를 거치지 않는 **블록 기반 업로드**를 구현해 대용량 파일도 빠르고 효율적으로 올릴 수 있게 하였습니다.
+파일을 4MB 블록의 해시 목록으로 표현해 변경된 블록만 전송하고, 블록은 Presigned URL로 S3에 직접 올려 서버를 거치지 않는 **블록 기반 업로드**를 구현해 파일을 빠르고 효율적으로 올릴 수 있게 하였습니다.
 
 또한 비동기 메시징과 서킷 브레이커 기반 장애 격리를 적용해, 일부 서비스나 외부 시스템에 장애가 발생해도 안정적으로 서비스할 수 있는 시스템을 구축하였습니다.
+
+<br>
+
+**업로드 속도 비교**
+
+<p align="center">
+  <img src=".docs/images/upload-compare.png" width="65%" alt="업로드 속도 비교">
+</p>
+
+<p align="center">
+<sub>서버: AWS 서울 리전 ECS Fargate (서비스당 1 vCPU · 2GB) · 클라이언트: 같은 PC의 Chrome, 유선 업로드 473Mbps<br>
+(측정 방법은 <a href="https://nicky777.tistory.com/28">파일 업로드 최적화하기</a> 참고)</sub>
+</p>
 
 <br>
 
@@ -57,27 +70,28 @@ ModuDrive에서 언제 어디서나 간편하게,<br>
 
 ---
 
-## 2. 핵심 구현
+## 2. 주요 개발 사항
 
 <br>
 
 **블록 기반 업로드**
 - 파일을 4MB 블록 해시 목록으로 관리
 - 서버에 없는 블록만 Presigned URL로 S3에 직접 업로드
-- 업로드가 끊기면 남은 블록부터 재개
+- 업로드가 끊기면 남은 블록부터 재개 가능
+- Redis·DB 호출 묶기와 commit 파이프라인으로 업로드 시간 단축
 
 **메시징 정합성**
-- Transactional Outbox로 DB 변경과 이벤트를 같은 트랜잭션에 기록 후 SQS 발행
+- Transactional Outbox로 이벤트 유실 방지
 - 소비 측 중복 처리 방지 (멱등성)
 - 처리 실패 메시지는 DLQ로 이동 후 알림
 
 **장애 격리**
 - 서비스 간 호출·S3 호출에 서킷 브레이커, 재시도, 시간 제한 적용
-- 한 서비스 장애가 전체로 번지지 않도록 차단
+- SES·S3 장애 재현 및 대응
 
 **관측성**
 - 게이트웨이부터 메시지 소비까지 하나의 trace로 연결
-- 지표·로그·trace 상호 이동
+- trace_id로 지표·trace·로그 간 바로 이동 가능
 - 장애 알림을 Discord 채널별로 분리
 
 **인프라 자동화**
@@ -117,12 +131,17 @@ ModuDrive에서 언제 어디서나 간편하게,<br>
 
 <br>
 
-- [파일 업로드 설계하기 (블록 기반)](https://nicky777.tistory.com/27)
-- [파일 업로드 최적화하기](https://nicky777.tistory.com/28)
-- [외부 스토리지 서비스 장애 대응하기](https://nicky777.tistory.com/31)
-- [외부 메일 API 장애 대응하기 (멱등성 보장하기)](https://nicky777.tistory.com/26)
-- [분산 트레이싱 도입하기](https://nicky777.tistory.com/29)
-- [Java 25 런타임 기능 적용기](https://nicky777.tistory.com/30)
+<div align="center">
+<table align="center">
+  <tr><th>#</th><th>포스팅</th></tr>
+  <tr><td align="center">1</td><td><a href="https://nicky777.tistory.com/27">파일 업로드 설계하기 (블록 기반)</a></td></tr>
+  <tr><td align="center">2</td><td><a href="https://nicky777.tistory.com/28">파일 업로드 최적화하기</a></td></tr>
+  <tr><td align="center">3</td><td><a href="https://nicky777.tistory.com/31">외부 스토리지 서비스 장애 대응하기</a></td></tr>
+  <tr><td align="center">4</td><td><a href="https://nicky777.tistory.com/26">외부 메일 API 장애 대응하기 (멱등성 보장하기)</a></td></tr>
+  <tr><td align="center">5</td><td><a href="https://nicky777.tistory.com/29">분산 트레이싱 도입하기</a></td></tr>
+  <tr><td align="center">6</td><td><a href="https://nicky777.tistory.com/30">Java 25 런타임 기능 적용기</a></td></tr>
+</table>
+</div>
 
 <br>
 
@@ -146,18 +165,7 @@ ModuDrive에서 언제 어디서나 간편하게,<br>
 
 ---
 
-## 6. 구성 가이드
-
-<br>
-
-- [DB 마이그레이션 (Flyway)](./.docs/guide/001-db-migration.md)
-- [AWS 마이그레이션](./.docs/guide/002-aws-migration.md)
-
-<br>
-
----
-
-## 7. 기술 스택
+## 6. 기술 스택
 
 <br>
 
