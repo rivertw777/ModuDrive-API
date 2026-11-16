@@ -144,6 +144,7 @@ ModuDrive에서 언제 어디서나 간편하게,<br>
   <tr><td align="center">4</td><td><a href="https://nicky777.tistory.com/26">외부 메일 API 장애 대응하기 (멱등성 보장하기)</a></td></tr>
   <tr><td align="center">5</td><td><a href="https://nicky777.tistory.com/29">분산 트레이싱 도입하기</a></td></tr>
   <tr><td align="center">6</td><td><a href="https://nicky777.tistory.com/30">Java 25 런타임 기능 적용기</a></td></tr>
+  <tr><td align="center">7</td><td><a href="https://nicky777.tistory.com/32">폴더 휴지통 이동 쿼리 튜닝하기</a></td></tr>
 </table>
 </div>
 
