@@ -72,7 +72,7 @@ ROUNDS=1 SKIP_WAIT=1 .scripts/perf-test/scenario.sh cascade asis10k 10000
 
 2026-11-11. 위 측정은 측정용 폴더만 든 작은 드라이브에서 했다. 다른 파일이 100만 개 있는 드라이브에 같은 폴더를 두고 다시 재 보니, 벌크 SQL로 바꾼 뒤에도 하위 파일 100개짜리 폴더의 휴지통 이동에 410ms가 걸려 행 단위(248ms)보다 느렸다.
 
-- 원인: 하위를 고르는 `path LIKE '<prefix>/%'`가 인덱스를 쓰지 못해 드라이브 전체를 읽었다. DB 정렬 규칙(`en_US`)에서는 기존 `(namespace_id, path, active_slot_name)` 인덱스로 접두사 범위 검색을 할 수 없고, 패턴을 `concat()`(STABLE)으로 만들어 실행 계획 시점에 상수도 아니었다. 벌크 SQL은 잠금 조회와 UPDATE가 각각 100만 행을 읽어(1,000개 폴더에서 181ms, 219ms) 행 단위보다 전체 스캔이 한 번 많았다.
+- 원인: 하위를 고르는 `path LIKE '<prefix>/%'`가 인덱스를 쓰지 못해 드라이브 전체를 읽었다. DB 정렬 규칙(`en_US`)에서는 기존 `(namespace_id, path, active_slot_name)` 인덱스로 접두사 범위 검색을 할 수 없고, 패턴을 `concat()`(STABLE)으로 만들어 실행 계획 시점에 상수도 아니었다. 벌크 SQL은 잠금 조회와 UPDATE가 각각 100만 행을 읽어(1,000개 폴더에서 175ms, 220ms — 2026-11-16 `explain analyze` 3회 중앙값, 원문 `results/2026-11-16-bulk-explain.txt`) 행 단위보다 전체 스캔이 한 번 많았다.
 - 고친 것: `V11__file_path_prefix_idx.sql`로 `(namespace_id, path varchar_pattern_ops)` 인덱스를 `create index concurrently`로 추가하고(트랜잭션 밖에서 실행), 하위를 고르는 쿼리 여섯 개의 패턴을 `||`로 바꿨다.
 
 세 상태 모두 같은 날 최신 `dev`(0b129da3)에서 빌드했고, 상태끼리 다른 것은 아래 패치와 인덱스 유무뿐이다. 상태마다 측정 데이터를 지우고 `vacuum full analyze file` 뒤에 쟀다.
@@ -98,7 +98,7 @@ OPS=trash .scripts/perf-test/scenario.sh index <label> 100 1000 10000   # BACKGR
 | 1,000 | 1,013 / 1,020ms | 4 / 413ms | 4 / 33ms |
 | 10,000 | 10,013 / 27.3s | 4 / 514ms | 4 / 139ms |
 
-하위 파일 100개 폴더를 고르는 SELECT의 실행 계획(`explain analyze`, 같은 드라이브). 잠금(`FOR UPDATE`) 없이 실행해 전체 스캔이 병렬로 돌았으므로, 위의 잠금 조회 181ms와 직접 비교하는 값이 아니다:
+하위 파일 100개 폴더를 고르는 SELECT의 실행 계획(`explain analyze`, 같은 드라이브). 잠금(`FOR UPDATE`) 없이 실행해 전체 스캔이 병렬로 돌았으므로, 위의 잠금 조회 175ms와 직접 비교하는 값이 아니다:
 
 | 패턴 | 인덱스 없음 | 인덱스 있음 |
 |---|---|---|
