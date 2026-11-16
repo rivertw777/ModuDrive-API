@@ -1,0 +1,96 @@
+=== run 0
+                                                                                                 QUERY PLAN                                                                                                  
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ LockRows (actual time=176.044..176.330 rows=1010.00 loops=1)
+   ->  Sort (actual time=176.024..176.051 rows=1010.00 loops=1)
+         Sort Key: path, name
+         Sort Method: quicksort  Memory: 88kB
+         ->  Seq Scan on file (actual time=175.117..175.336 rows=1010.00 loops=1)
+               Filter: ((namespace_id = '00000000-0000-0000-0000-00000000be01'::uuid) AND (((path)::text = '/bench1000-0'::text) OR ((path)::text ~~ like_escape(concat('/bench1000-0', '/%'), '\'::text))))
+               Rows Removed by Filter: 1000001
+ Planning Time: 0.720 ms
+ Execution Time: 176.403 ms
+(9 rows)
+
+                                                                                                                           QUERY PLAN                                                                                                                            
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Update on file (actual time=219.646..219.647 rows=0.00 loops=1)
+   ->  Seq Scan on file (actual time=207.090..207.503 rows=1010.00 loops=1)
+         Filter: (((status)::text <> ALL ('{TRASHED,DELETED}'::text[])) AND (namespace_id = '00000000-0000-0000-0000-00000000be01'::uuid) AND (((path)::text = '/bench1000-0'::text) OR ((path)::text ~~ like_escape(concat('/bench1000-0', '/%'), '\'::text))))
+         Rows Removed by Filter: 1000001
+ Planning Time: 0.346 ms
+ Execution Time: 221.157 ms
+(6 rows)
+
+=== run 1
+                                                                                                 QUERY PLAN                                                                                                  
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ LockRows (actual time=178.116..178.360 rows=1010.00 loops=1)
+   ->  Sort (actual time=178.107..178.134 rows=1010.00 loops=1)
+         Sort Key: path, name
+         Sort Method: quicksort  Memory: 88kB
+         ->  Seq Scan on file (actual time=177.089..177.396 rows=1010.00 loops=1)
+               Filter: ((namespace_id = '00000000-0000-0000-0000-00000000be01'::uuid) AND (((path)::text = '/bench1000-0'::text) OR ((path)::text ~~ like_escape(concat('/bench1000-0', '/%'), '\'::text))))
+               Rows Removed by Filter: 1000001
+ Planning Time: 0.603 ms
+ Execution Time: 178.425 ms
+(9 rows)
+
+                                                                                                                           QUERY PLAN                                                                                                                            
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Update on file (actual time=218.393..218.394 rows=0.00 loops=1)
+   ->  Seq Scan on file (actual time=211.276..211.675 rows=1010.00 loops=1)
+         Filter: (((status)::text <> ALL ('{TRASHED,DELETED}'::text[])) AND (namespace_id = '00000000-0000-0000-0000-00000000be01'::uuid) AND (((path)::text = '/bench1000-0'::text) OR ((path)::text ~~ like_escape(concat('/bench1000-0', '/%'), '\'::text))))
+         Rows Removed by Filter: 1000001
+ Planning Time: 0.381 ms
+ Execution Time: 218.462 ms
+(6 rows)
+
+=== run 2
+                                                                                                 QUERY PLAN                                                                                                  
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ LockRows (actual time=172.644..172.904 rows=1010.00 loops=1)
+   ->  Sort (actual time=172.624..172.656 rows=1010.00 loops=1)
+         Sort Key: path, name
+         Sort Method: quicksort  Memory: 88kB
+         ->  Seq Scan on file (actual time=171.603..171.891 rows=1010.00 loops=1)
+               Filter: ((namespace_id = '00000000-0000-0000-0000-00000000be01'::uuid) AND (((path)::text = '/bench1000-0'::text) OR ((path)::text ~~ like_escape(concat('/bench1000-0', '/%'), '\'::text))))
+               Rows Removed by Filter: 1000001
+ Planning Time: 0.579 ms
+ Execution Time: 172.964 ms
+(9 rows)
+
+                                                                                                                           QUERY PLAN                                                                                                                            
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Update on file (actual time=223.129..223.131 rows=0.00 loops=1)
+   ->  Seq Scan on file (actual time=216.515..216.935 rows=1010.00 loops=1)
+         Filter: (((status)::text <> ALL ('{TRASHED,DELETED}'::text[])) AND (namespace_id = '00000000-0000-0000-0000-00000000be01'::uuid) AND (((path)::text = '/bench1000-0'::text) OR ((path)::text ~~ like_escape(concat('/bench1000-0', '/%'), '\'::text))))
+         Rows Removed by Filter: 1000001
+ Planning Time: 0.323 ms
+ Execution Time: 223.196 ms
+(6 rows)
+
+=== run 3
+                                                                                                 QUERY PLAN                                                                                                  
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ LockRows (actual time=174.267..174.510 rows=1010.00 loops=1)
+   ->  Sort (actual time=174.252..174.278 rows=1010.00 loops=1)
+         Sort Key: path, name
+         Sort Method: quicksort  Memory: 88kB
+         ->  Seq Scan on file (actual time=173.229..173.527 rows=1010.00 loops=1)
+               Filter: ((namespace_id = '00000000-0000-0000-0000-00000000be01'::uuid) AND (((path)::text = '/bench1000-0'::text) OR ((path)::text ~~ like_escape(concat('/bench1000-0', '/%'), '\'::text))))
+               Rows Removed by Filter: 1000001
+ Planning Time: 0.672 ms
+ Execution Time: 174.577 ms
+(9 rows)
+
+                                                                                                                           QUERY PLAN                                                                                                                            
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Update on file (actual time=219.578..219.578 rows=0.00 loops=1)
+   ->  Seq Scan on file (actual time=211.683..212.153 rows=1010.00 loops=1)
+         Filter: (((status)::text <> ALL ('{TRASHED,DELETED}'::text[])) AND (namespace_id = '00000000-0000-0000-0000-00000000be01'::uuid) AND (((path)::text = '/bench1000-0'::text) OR ((path)::text ~~ like_escape(concat('/bench1000-0', '/%'), '\'::text))))
+         Rows Removed by Filter: 1000001
+ Planning Time: 0.344 ms
+ Execution Time: 219.638 ms
+(6 rows)
+
