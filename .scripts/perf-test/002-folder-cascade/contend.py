@@ -7,12 +7,17 @@ from cascade import DB, http, seed, commit_empty
 
 
 def run(user, op_call, commit_path):
-    lat, stop = [], threading.Event()
+    lat, statuses, stop = [], {}, threading.Event()
 
     def committer():
         while not stop.is_set():
-            s, ms, _ = commit_empty(user, commit_path)
+            s, ms, body = commit_empty(user, commit_path)
             lat.append(ms)
+            # The commit answers 200 with a per-file result; a file that failed alone carries error.status.
+            if s == 200:
+                err = json.loads(body)["data"]["results"][0].get("error")
+                s = err["status"] if err else 200
+            statuses[s] = statuses.get(s, 0) + 1
 
     th = threading.Thread(target=committer)
     th.start()
@@ -20,7 +25,8 @@ def run(user, op_call, commit_path):
     s, op_ms, body = http(op_call[0], op_call[1], user, op_call[2])
     stop.set(); th.join()
     assert s < 300, body[:300]
-    return {"op_ms": round(op_ms), "commits": len(lat), "max_commit_ms": round(max(lat)), "p50_commit_ms": round(statistics.median(lat))}
+    return {"op_ms": round(op_ms), "commits": len(lat), "max_commit_ms": round(max(lat)), "p50_commit_ms": round(statistics.median(lat)),
+            "statuses": statuses}
 
 
 def main():

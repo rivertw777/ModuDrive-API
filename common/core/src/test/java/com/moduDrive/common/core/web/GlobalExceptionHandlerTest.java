@@ -3,6 +3,8 @@ package com.moduDrive.common.core.web;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.moduDrive.common.core.exception.BusinessException;
 import com.moduDrive.common.core.exception.ExceptionCase;
+import io.micrometer.core.instrument.Metrics;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -12,6 +14,8 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.dao.CannotAcquireLockException;
+import org.springframework.dao.QueryTimeoutException;
 import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.web.ErrorResponseException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
@@ -183,6 +187,47 @@ class GlobalExceptionHandlerTest {
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.METHOD_NOT_ALLOWED);
             assertThat(response.getHeaders().getAllow()).containsExactly(HttpMethod.POST);
+        }
+    }
+
+    @Nested
+    @DisplayName("DB가 쿼리나 잠금 대기를 시간 제한으로 끊었을 때")
+    class WhenStatementIsCancelled {
+
+        @Test
+        void answers503WithRetryAfterForAStatementTimeout() {
+            ResponseEntity<ApiResponse<Object>> response = handler.handleStatementCancelled(
+                    new QueryTimeoutException("ERROR: canceling statement due to statement timeout"));
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+            assertThat(response.getHeaders().getFirst(HttpHeaders.RETRY_AFTER))
+                    .isEqualTo(GlobalExceptionHandler.RETRY_AFTER_SECONDS);
+            assertThat(response.getBody().getMessage()).doesNotContain("statement");
+        }
+
+        @Test
+        void answers503ForALockWaitTimeout() {
+            ResponseEntity<ApiResponse<Object>> response = handler.handleStatementCancelled(
+                    new CannotAcquireLockException("ERROR: canceling statement due to lock timeout"));
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+            assertThat(response.getHeaders().containsHeader(GlobalExceptionHandler.DEPENDENCY_UNAVAILABLE_HEADER)).isFalse();
+        }
+
+        @Test
+        void countsEachCancellationByReason() {
+            SimpleMeterRegistry registry = new SimpleMeterRegistry();
+            Metrics.addRegistry(registry);
+            try {
+                handler.handleStatementCancelled(new QueryTimeoutException("statement timeout"));
+                handler.handleStatementCancelled(new CannotAcquireLockException("lock timeout"));
+                handler.handleStatementCancelled(new CannotAcquireLockException("lock timeout"));
+
+                assertThat(registry.counter("modudrive.db.query.cancelled", "reason", "statement").count()).isEqualTo(1);
+                assertThat(registry.counter("modudrive.db.query.cancelled", "reason", "lock").count()).isEqualTo(2);
+            } finally {
+                Metrics.removeRegistry(registry);
+            }
         }
     }
 }

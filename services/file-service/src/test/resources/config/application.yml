@@ -1,8 +1,9 @@
 # JPA tests run on real Postgres with the schema Flyway builds from db/migration (ddl-auto=validate
-# from application-jpa.yml still applies). The jdbc:tc URL starts the container on first connection.
+# from application-jpa.yml still applies). The jdbc:tc URL starts the container on first connection;
+# TC_DAEMON keeps it up when Flyway closes its own connection (application-jpa.yml), for the pool to find.
 spring:
   datasource:
-    url: jdbc:tc:postgresql:18-alpine:///test
+    url: jdbc:tc:postgresql:18-alpine:///test?TC_DAEMON=true
   test:
     database:
       replace: none

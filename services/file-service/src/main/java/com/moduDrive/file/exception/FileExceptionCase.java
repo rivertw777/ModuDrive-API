@@ -29,7 +29,15 @@ public enum FileExceptionCase implements ExceptionCase {
     INVALID_BLOCKLIST(HttpStatus.BAD_REQUEST, "업로드한 파일 정보가 올바르지 않습니다."),
     /** One commit request's blocklists add up to more than 1,280 hashes. */
     COMMIT_TOO_LARGE(HttpStatus.BAD_REQUEST, "한 번에 확정할 수 있는 블록 수를 초과했습니다."),
-    QUOTA_EXCEEDED(HttpStatus.PAYLOAD_TOO_LARGE, "저장 공간이 부족합니다.");
+    QUOTA_EXCEEDED(HttpStatus.PAYLOAD_TOO_LARGE, "저장 공간이 부족합니다."),
+    /** The search bulkhead is full (spec 006 2-5-3). file-service sheds the search on purpose and is fine
+     * otherwise, so — like Envoy's x-envoy-overloaded — the gateway's circuit doesn't count it. */
+    SEARCH_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "검색 요청이 많아 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.") {
+        @Override
+        public boolean isDependencyUnavailable() {
+            return true;
+        }
+    };
 
     private final HttpStatus httpStatus;
     private final String message;

@@ -214,3 +214,17 @@ groups:
           action: X-Ray에서 DB 구간이 긴 trace로 느린 쿼리 확인, 계속되면 db_pool_size 상향
           inspect: 'service("{{ $labels.service }}") { responsetime > 1 }'
 %{ endif ~}
+
+      - alert: DbQueryCancelled
+        expr: sum by (service, reason) (increase(modudrive_db_query_cancelled_total[5m])) > 0
+        labels:
+          channel: service
+        annotations:
+          title: DB 쿼리 끊김
+          summary: '최근 5분 동안 시간 제한으로 끊겨 실패(503)한 요청 **{{ printf "%.0f" $value }}건** (`{{ $labels.reason }}` — statement: 쿼리 5초 초과 · lock: 잠금 대기 3초 초과)'
+          action: 로그의 끊긴 SQL로 원인 쿼리를 찾아 고친다 (인덱스 · 결과 상한 · 잠금 순서)
+%{ if loki ~}
+          inspect: '{service_name="{{ $labels.service }}"} |= "Query cancelled"'
+%{ else ~}
+          inspect: 'aws logs tail /ecs/${project}/{{ $labels.service }} --since 15m --filter-pattern "Query cancelled"'
+%{ endif ~}
