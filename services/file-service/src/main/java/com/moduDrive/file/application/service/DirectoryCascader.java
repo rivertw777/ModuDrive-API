@@ -1,5 +1,6 @@
 package com.moduDrive.file.application.service;
 
+import com.moduDrive.file.application.port.out.ExtendStatementTimeoutPort;
 import com.moduDrive.file.application.port.out.FindFilePort;
 import com.moduDrive.file.application.port.out.ReleaseBlocksPort;
 import com.moduDrive.file.application.port.out.SaveFilePort;
@@ -24,7 +25,10 @@ class DirectoryCascader {
     private final FindFilePort findFilePort;
     private final SaveFilePort saveFilePort;
     private final ReleaseBlocksPort releaseBlocksPort;
+    private final ExtendStatementTimeoutPort extendStatementTimeoutPort;
 
+    // Each cascade first lifts the 5s statement limit for its own transaction (spec 006 2-5-1): its
+    // statements grow with the subtree, unlike a request's.
     // Each cascade is a few set-based statements, not a load-and-save per descendant: the subtree is
     // locked top-down in one query (like a commit locks the folders above its file, so the two never
     // wait on each other in a cycle), then rewritten in one UPDATE.
@@ -32,6 +36,7 @@ class DirectoryCascader {
     /** Rewrites the path prefix of every descendant after the directory itself moved/was renamed. */
     void movePath(NamespaceId namespaceId, String oldPrefix, String newPrefix) {
         if (oldPrefix.equals(newPrefix)) return;
+        extendStatementTimeoutPort.extendStatementTimeout();
         saveFilePort.moveSubtree(namespaceId, oldPrefix, newPrefix);
     }
 
@@ -39,12 +44,14 @@ class DirectoryCascader {
      * {@link #purge}). The subtree is locked first, so a commit under it finishes before. A
      * descendant already trashed or purged keeps its own trashedAt. */
     void softDelete(NamespaceId namespaceId, String directoryFullPath, LocalDateTime trashedAt) {
+        extendStatementTimeoutPort.extendStatementTimeout();
         saveFilePort.trashSubtree(namespaceId, directoryFullPath, trashedAt);
     }
 
     /** Restores every still-trashed descendant; a purged one is a tombstone whose content is
      * gone. A file trashed on its own before its folder was trashed comes back too. */
     void restore(NamespaceId namespaceId, String directoryFullPath) {
+        extendStatementTimeoutPort.extendStatementTimeout();
         saveFilePort.restoreSubtree(namespaceId, directoryFullPath);
     }
 
@@ -56,6 +63,7 @@ class DirectoryCascader {
      * {@code trashedAt}; a descendant trashed later belongs to the other directory and is left
      * alone. {@code deletedBy} is null for the retention sweep. */
     void purge(NamespaceId namespaceId, String directoryFullPath, LocalDateTime rootTrashedAt, UUID deletedBy) {
+        extendStatementTimeoutPort.extendStatementTimeout();
         // Locked like softDelete/restore, so a restore running now finishes first and is seen.
         List<FileId> purged = findFilePort.lockTrashedByNamespaceIdAndPathStartingWith(namespaceId, directoryFullPath).stream()
                 .filter(descendant -> descendant.getTrashedAt() == null || rootTrashedAt == null

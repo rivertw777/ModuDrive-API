@@ -4,6 +4,19 @@ services:
 
   postgres:
     image: postgres:18-alpine
+    # Slow-query identification (spec 006 2-5-4): pg_stat_statements totals every statement, and any
+    # statement past 500ms is logged with its plan (auto_explain, plan only — no per-query timing cost).
+    # Parameter values stay out of the log: they carry file names and emails. A lock wait past 1s
+    # (deadlock_timeout) is logged with the PID holding the lock — the lock_timeout WARN names only the waiter.
+    command: >
+      postgres
+      -c shared_preload_libraries=pg_stat_statements,auto_explain
+      -c pg_stat_statements.track_utility=off
+      -c log_min_duration_statement=500
+      -c log_parameter_max_length=0
+      -c auto_explain.log_min_duration=500
+      -c auto_explain.log_parameter_max_length=0
+      -c log_lock_waits=on
     networks:
       - modudrive_network
     ports:

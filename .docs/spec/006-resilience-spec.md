@@ -1,6 +1,6 @@
 # 장애 대응 (Resilience) 스펙
 
-이 문서는 다른 서비스·S3 장애에 대비한 **서킷 브레이커·재시도·시간 제한·벌크헤드** 규칙을 정한 문서입니다.
+이 문서는 다른 서비스·S3 장애와 느린 DB 쿼리에 대비한 **서킷 브레이커·재시도·시간 제한·벌크헤드** 규칙을 정한 문서입니다.
 
 ⚠️ 이 문서가 기준입니다. 코드가 이 문서와 다르면 코드를 고치고, 동작을 바꾸려면 이 문서를 먼저 고칩니다.
 
@@ -18,6 +18,7 @@
   - [2-2. 게이트웨이 세션 확인](#2-2-게이트웨이-세션-확인)
   - [2-3. 서비스 간 호출 (Feign)](#2-3-서비스-간-호출-feign)
   - [2-4. S3 호출 (storage-service)](#2-4-s3-호출-storage-service)
+  - [2-5. DB 쿼리](#2-5-db-쿼리)
 - [3. 로그](#3-로그)
 - [4. 알림](#4-알림)
 
@@ -148,6 +149,7 @@ Resilience4j 기본 순서대로 재시도가 바깥, 서킷 브레이커가 안
 | 게이트웨이 세션 확인 | `WebClient` + Resilience4j Reactor 연산자 | auth 라우트와 같은 것을 같이 씀 | [2-2](#2-2-게이트웨이-세션-확인) |
 | 서비스 간 호출 | OpenFeign + `@CircuitBreaker` · `@Retry` | 호출 대상마다 하나 | [2-3](#2-3-서비스-간-호출-feign) |
 | storage-service → S3 | SDK 시간 제한 + Resilience4j 서킷 브레이커·벌크헤드 (코드로 감쌈) | 경로(블록 확인·다운로드·삭제)마다 하나 | [2-4](#2-4-s3-호출-storage-service) |
+| 서비스 → Postgres | Postgres 시간 제한 + 무거운 조회에 Resilience4j 벌크헤드 | 없음 | [2-5](#2-5-db-쿼리) |
 
 서비스 간 비동기 메시지(SQS — 파일 영구 삭제 시 블록 삭제 요청 등)는 서킷 브레이커 대신 재시도·DLQ로 버틴다 ([005-messaging-spec.md 4-2](005-messaging-spec.md#4-2-처리-실패)).
 
@@ -439,6 +441,62 @@ S3 클라이언트의 HTTP 커넥션은 세 벌크헤드 자리의 합(85)만큼
 
 - `maxmemory-policy noeviction`이다(로컬은 Redis 기본값, `demo`는 파라미터 그룹). 메모리가 차면 쓰기가 실패한다. 기본값(`volatile-lru`)이면 TTL이 있는 키 — 세션, 인증 코드, 다운로드 한도, zip 토큰 — 가 소리 없이 밀려난다.
 - `demo`의 비밀번호(AUTH 토큰)는 SSM `/<project>/REDIS_PASSWORD`이고, 서비스에는 `REDIS_PASSWORD`로 들어간다.
+
+### 2-5. DB 쿼리
+
+JPA 서비스(member·auth·file·notification)의 쿼리가 느려져도 커넥션 풀(서비스마다 10개)을 다 차지하지 못하게 한다. 풀이 다 차면 그 서비스의 무관한 요청까지 커넥션을 기다리다 실패한다.
+
+- 쿼리 하나가 오래 걸리는 경우: Postgres가 시간 제한으로 끊는다([2-5-1](#2-5-1-시간-제한)).
+- 조금 느린 쿼리가 한꺼번에 몰리는 경우: 시간 제한에 걸리지 않으므로 벌크헤드로 동시에 도는 수를 막는다([2-5-3](#2-5-3-벌크헤드)).
+
+#### 2-5-1. 시간 제한
+
+| 제한 | 값 | 위치 |
+|---|---|---|
+| 쿼리 하나 (`statement_timeout`) | 5초 | `application-jpa.yml` Hikari `data-source-properties.options` |
+| 잠금 대기 (`lock_timeout`) | 3초 | (같음) |
+| 트랜잭션을 연 채 쉬는 세션 (`idle_in_transaction_session_timeout`) | 60초 | (같음) |
+| 커넥션 대기 (Hikari `connection-timeout`) | 3초 | `application-jpa.yml` |
+| 소켓 읽기 (pgjdbc `socketTimeout`) | 75초 | `application-jpa.yml` Hikari `data-source-properties` |
+
+- 커넥션을 만들 때 pgjdbc가 세션 기본값으로 보낸다. 넘으면 Postgres가 쿼리를 취소하고 커넥션은 풀로 돌아간다.
+- 쿼리 5초는 부르는 쪽 시간 제한(Feign 10초 [2-3-1](#2-3-1-시간-제한), gateway 15초 [2-1-1](#2-1-1-시간-제한))보다 짧다. 부르는 쪽이 포기한 뒤에도 DB가 일을 계속하지 않게 한다.
+- 폴더 연쇄 작업(이동·이름 변경·휴지통·복원·영구 삭제, `DirectoryCascader`)은 그 트랜잭션에서만 쿼리 제한을 60초로 늘린다(`set local statement_timeout`). 문장 수는 고정이지만 문장 하나가 다루는 행이 하위 파일 수만큼 늘어, 하위 10만 개 폴더의 영구 삭제는 같은 드라이브에 commit이 함께 들어오면 블록 참조 해제 문장 하나가 5초를 넘는다.
+- 버전 정리 스케줄러의 후보 조회도 같은 이유로 60초로 늘린다. 후보가 적으면 `file_version` 전체를 집계한다.
+- 소켓 읽기 75초는 서버가 쿼리를 취소할 수 없을 때(DB 장애 전환, 네트워크 단절)를 위한 것이다. 연쇄 작업의 60초보다 길다.
+- Flyway는 풀이 아니라 자기 커넥션(`spring.flyway.url`)을 써서 이 제한을 받지 않는다. `create index concurrently` 같은 마이그레이션은 큰 테이블에서 오래 걸린다.
+
+#### 2-5-2. 응답
+
+| 원인 | HTTP | 메시지 |
+|---|---|---|
+| 쿼리가 5초를 넘음 (`QueryTimeoutException`) | 503 | 요청이 몰려 처리하지 못했습니다. 잠시 후 다시 시도해 주세요. |
+| 잠금 대기가 3초를 넘음, 교착 상태 (`PessimisticLockingFailureException`) | 503 | (같음) |
+| 3초 안에 커넥션을 못 받음 (`CannotCreateTransactionException`) | 503 | 일시적으로 서비스를 이용할 수 없습니다. 잠시 후 다시 시도해 주세요. |
+
+- `GlobalExceptionHandler`가 답하고 `Retry-After: 10`을 붙인다. `X-Dependency-Unavailable`은 붙이지 않는다 — 서비스 자신의 DB 문제라 부르는 쪽 서킷이 센다.
+- 끊긴 쿼리는 WARN `Query cancelled: statement or lock wait timed out`으로 스택 트레이스와 함께 남는다. 메시지에 SQL이 들어 있다(값은 빠진 자리표시자).
+- 업로드 commit은 잠금 실패를 그 파일만의 실패(`SERVICE_UNAVAILABLE`)로 답하고 나머지 파일은 계속 처리한다([001](001-file-upload-spec.md)).
+
+#### 2-5-3. 벌크헤드
+
+| 벌크헤드 | 자리 | 기다림 | 감싸는 호출 |
+|---|---|---|---|
+| `fileSearch` | 3 | 0 | file-service 파일 검색 `GET /api/v1/files/search` |
+
+- 검색은 드라이브 전체를 읽는다(`name LIKE '%검색어%'`). 몇 개가 동시에 돌면 풀을 다 차지한다.
+- 자리는 트랜잭션을 열기 전에 잡는다. 거절된 검색은 커넥션을 쓰지 않는다.
+- 자리가 없으면 503 `SEARCH_UNAVAILABLE`(검색 요청이 많아 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.)로 답한다. 일부러 덜어낸 것이고 서비스는 멀쩡하므로 `X-Dependency-Unavailable`을 붙여 gateway 서킷이 세지 않는다.
+
+#### 2-5-4. 느린 쿼리 찾기
+
+| 어디 | 무엇 |
+|---|---|
+| 로컬 Postgres | `pg_stat_statements`가 문장별 횟수·시간을 모으고, 500ms 넘는 문장은 실행 계획과 함께 로그에 남는다(`auto_explain`). 잠금을 1초 넘게 기다리면 잠금을 쥔 프로세스(PID)와 함께 남는다(`log_lock_waits`). `docker-compose.infra.yml`, 확장은 `postgres_init.sh`가 DB마다 만든다 |
+| trace | 요청 trace의 DB span(커넥션 대기·쿼리). 1초 넘는 요청은 전부 보관된다([008](008-observability-spec.md)) |
+| demo RDS | 500ms 넘는 문장을 파라미터 값 없이 Postgres 로그(CloudWatch Logs `/aws/rds/instance/<인스턴스>/postgresql`, 14일)에 남긴다. 잠금 대기도 로컬과 같이 남긴다. `pg_stat_statements`는 RDS가 기본으로 로드하고, 확장은 로컬과 같이 `postgres_init.sh`가 만든다. `.infra/rds.tf` |
+| 로그 | 끊긴 쿼리의 WARN ([2-5-2](#2-5-2-응답)) |
+| 지표 · 알림 | 끊긴 쿼리 수 `modudrive_db_query_cancelled_total` (`reason`: `statement` · `lock`) → DB 쿼리 끊김 알림([009 4-12](009-discord-alert-spec.md#4-12-db-쿼리-끊김)) |
 
 ---
 

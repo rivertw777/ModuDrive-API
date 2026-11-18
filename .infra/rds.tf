@@ -40,6 +40,9 @@ resource "aws_db_instance" "postgres" {
   # A standby in another AZ at two nodes.
   multi_az = each.value.nodes > 1
 
+  parameter_group_name            = aws_db_parameter_group.postgres[0].name
+  enabled_cloudwatch_logs_exports = ["postgresql"]
+
   backup_retention_period    = var.db_backup_retention_days
   backup_window              = "14:00-14:30"         # 23:00 KST, before night_stop stops it
   maintenance_window         = "mon:13:00-mon:13:30" # 22:00 KST
@@ -47,6 +50,40 @@ resource "aws_db_instance" "postgres" {
   deletion_protection        = var.deletion_protection
   skip_final_snapshot        = !var.deletion_protection
   final_snapshot_identifier  = var.deletion_protection ? "${var.project}-${each.key}-final" : null
+
+  depends_on = [aws_cloudwatch_log_group.postgres]
+}
+
+# Spec 006 2-5-4: statements past 500ms go to the log, without their parameter values (file names
+# are user data), and lock waits past 1s with the PID holding the lock. pg_stat_statements is
+# preloaded by RDS's defaults.
+resource "aws_db_parameter_group" "postgres" {
+  count = var.db_engine == "rds" ? 1 : 0
+
+  name   = "${var.project}-postgres18"
+  family = "postgres18"
+
+  parameter {
+    name  = "log_min_duration_statement"
+    value = "500"
+  }
+  parameter {
+    name  = "log_parameter_max_length"
+    value = "0"
+  }
+  parameter {
+    name  = "log_lock_waits"
+    value = "1"
+  }
+}
+
+# As for Aurora below: declared so the CMK covers it and it doesn't keep forever.
+resource "aws_cloudwatch_log_group" "postgres" {
+  for_each = var.db_engine == "rds" ? var.db_instances : {}
+
+  name              = "/aws/rds/instance/${each.key == "file" ? var.project : "${var.project}-${each.key}"}/postgresql"
+  kms_key_id        = local.kms_key_arn
+  retention_in_days = 14
 }
 
 # prod: Aurora PostgreSQL clusters. Storage keeps six copies across three AZs and acknowledges a write
@@ -121,7 +158,7 @@ resource "aws_rds_cluster_instance" "postgres" {
   performance_insights_kms_key_id = local.kms_key_arn
 }
 
-# Connections without TLS are refused.
+# Connections without TLS are refused; slow statements logged as on RDS above.
 resource "aws_rds_cluster_parameter_group" "aurora" {
   count = var.db_engine == "aurora" ? 1 : 0
 
@@ -130,6 +167,18 @@ resource "aws_rds_cluster_parameter_group" "aurora" {
 
   parameter {
     name  = "rds.force_ssl"
+    value = "1"
+  }
+  parameter {
+    name  = "log_min_duration_statement"
+    value = "500"
+  }
+  parameter {
+    name  = "log_parameter_max_length"
+    value = "0"
+  }
+  parameter {
+    name  = "log_lock_waits"
     value = "1"
   }
 }

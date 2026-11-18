@@ -174,4 +174,10 @@ interface SpringDataFileRepository extends JpaRepository<FileJpaEntity, UUID>, J
 
     List<FileJpaEntity> findByNamespaceIdAndDirectoryFalseAndStatusNotIn(
             UUID namespaceId, Collection<FileStatus> statuses);
+
+    /** Spec 006 2-5-1: for the rest of this transaction only. 60s — a 100k-file folder's longest statement
+     * (the block release) ran past 5s with commits running on the same drive. */
+    @Modifying
+    @Query(value = "set local statement_timeout = '60s'", nativeQuery = true)
+    void extendStatementTimeout();
 }

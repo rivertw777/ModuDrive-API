@@ -1,0 +1,26 @@
+{
+ "100000": {
+  "purge_vs_root_commit": [
+   {
+    "op_ms": 10134,
+    "commits": 451,
+    "max_commit_ms": 197,
+    "p50_commit_ms": 19,
+    "statuses": {
+     "200": 451
+    }
+   }
+  ],
+  "move_vs_inner_commit": [
+   {
+    "op_ms": 1258,
+    "commits": 10,
+    "max_commit_ms": 1258,
+    "p50_commit_ms": 21,
+    "statuses": {
+     "200": 10
+    }
+   }
+  ]
+ }
+}

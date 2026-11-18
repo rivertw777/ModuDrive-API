@@ -1,5 +1,6 @@
 package com.moduDrive.file.application.service;
 
+import com.moduDrive.file.application.port.out.ExtendStatementTimeoutPort;
 import com.moduDrive.file.application.port.out.FindFilePort;
 import com.moduDrive.file.application.port.out.ReleaseBlocksPort;
 import com.moduDrive.file.application.port.out.SaveFilePort;
@@ -29,6 +30,7 @@ class DirectoryCascaderTest {
     @Mock private FindFilePort findFilePort;
     @Mock private SaveFilePort saveFilePort;
     @Mock private ReleaseBlocksPort releaseBlocksPort;
+    @Mock private ExtendStatementTimeoutPort extendStatementTimeoutPort;
     @InjectMocks private DirectoryCascader directoryCascader;
 
     private final NamespaceId namespaceId = new NamespaceId(UUID.randomUUID());
@@ -60,12 +62,39 @@ class DirectoryCascaderTest {
     }
 
     @Test
+    @DisplayName("이동·휴지통·복원은 하위 연쇄 문장보다 먼저 그 트랜잭션의 쿼리 시간 제한을 늘린다")
+    void extendsTheStatementTimeoutBeforeTheSubtreeStatement() {
+        directoryCascader.movePath(namespaceId, "/A", "/C/A");
+        directoryCascader.softDelete(namespaceId, "/A", trashedAt);
+        directoryCascader.restore(namespaceId, "/A");
+
+        InOrder order = inOrder(extendStatementTimeoutPort, saveFilePort);
+        order.verify(extendStatementTimeoutPort).extendStatementTimeout();
+        order.verify(saveFilePort).moveSubtree(namespaceId, "/A", "/C/A");
+        order.verify(extendStatementTimeoutPort).extendStatementTimeout();
+        order.verify(saveFilePort).trashSubtree(namespaceId, "/A", trashedAt);
+        order.verify(extendStatementTimeoutPort).extendStatementTimeout();
+        order.verify(saveFilePort).restoreSubtree(namespaceId, "/A");
+    }
+
+    @Test
+    @DisplayName("영구 삭제는 하위 행을 잠그기 전에 쿼리 시간 제한을 늘린다")
+    void purgeExtendsTheStatementTimeoutFirst() {
+        directoryCascader.purge(namespaceId, "/A", trashedAt, deletedBy);
+
+        InOrder order = inOrder(extendStatementTimeoutPort, findFilePort);
+        order.verify(extendStatementTimeoutPort).extendStatementTimeout();
+        order.verify(findFilePort).lockTrashedByNamespaceIdAndPathStartingWith(namespaceId, "/A");
+    }
+
+    @Test
     @DisplayName("전체 경로가 바뀌지 않았다면 아무 것도 하지 않는다")
     void doesNothingWhenPrefixUnchanged() {
         directoryCascader.movePath(namespaceId, "/A", "/A");
 
         then(findFilePort).shouldHaveNoInteractions();
         then(saveFilePort).shouldHaveNoInteractions();
+        then(extendStatementTimeoutPort).shouldHaveNoInteractions();
     }
 
     @Test

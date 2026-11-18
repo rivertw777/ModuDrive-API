@@ -16,6 +16,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.domain.Window;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -33,7 +34,7 @@ import java.util.stream.Collectors;
 @PersistenceAdapter
 @RequiredArgsConstructor
 class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVersionPort, FindFileVersionsPort,
-        DeleteFileVersionsPort {
+        DeleteFileVersionsPort, ExtendStatementTimeoutPort {
 
     private final SpringDataFileRepository fileRepository;
     private final SpringDataFileVersionRepository fileVersionRepository;
@@ -431,8 +432,12 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
                 .collect(Collectors.toList());
     }
 
+    // Spec 006 2-5-1: when few files qualify, the group-by reads all of file_version — a scan that grows
+    // with the table, like a folder cascade's statements, so it gets the same 60s in its own transaction.
     @Override
+    @Transactional
     public List<UUID> findFileIdsWithVersionsToPrune(LocalDateTime cutoff, int keep, UUID afterFileId, int limit) {
+        fileRepository.extendStatementTimeout();
         return fileVersionRepository.findFileIdsWithVersionsToPrune(cutoff, keep, afterFileId, limit);
     }
 
@@ -447,5 +452,10 @@ class FilePersistenceAdapter implements SaveFilePort, FindFilePort, SaveFileVers
     public void deleteFileVersions(List<FileVersion> versions) {
         // Entity deletes, not a bulk JPQL delete: the blocklist (file_version_block) goes with each row.
         fileVersionRepository.deleteAllById(versions.stream().map(FileVersion::getId).toList());
+    }
+
+    @Override
+    public void extendStatementTimeout() {
+        fileRepository.extendStatementTimeout();
     }
 }

@@ -4,9 +4,14 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.moduDrive.common.core.exception.BusinessException;
 import feign.FeignException;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Metrics;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.PessimisticLockingFailureException;
+import org.springframework.dao.QueryTimeoutException;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -43,6 +48,12 @@ public class GlobalExceptionHandler {
     public static final String DEPENDENCY_UNAVAILABLE_HEADER = "X-Dependency-Unavailable";
 
     private final ObjectMapper objectMapper;
+
+    // Spec 009 4-12. Registered at 0 on startup: increase() can't count a counter's first sample, so one born
+    // already at 1 would hide the first cancellation. The global registry, which Boot adds its own to, keeps the
+    // handler constructible in tests.
+    private final Counter statementCancelled = Metrics.counter("modudrive.db.query.cancelled", "reason", "statement");
+    private final Counter lockCancelled = Metrics.counter("modudrive.db.query.cancelled", "reason", "lock");
 
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiResponse<Object>> handleBusinessException(BusinessException e) {
@@ -119,6 +130,20 @@ public class GlobalExceptionHandler {
         ApiResponse<Object> response = ApiResponse.error(
                 HttpStatus.SERVICE_UNAVAILABLE,
                 "일시적으로 서비스를 이용할 수 없습니다. 잠시 후 다시 시도해 주세요."
+        );
+        return retryAfter(response).body(response);
+    }
+
+    // Postgres cancelled a statement past statement_timeout or a lock wait past lock_timeout, or broke a
+    // deadlock (spec 006 2-5-2). A later try can pass, so 503 like the DB being down. WARN with the stack
+    // trace: its message carries the SQL (placeholders, no values) — the query to tune.
+    @ExceptionHandler({QueryTimeoutException.class, PessimisticLockingFailureException.class})
+    public ResponseEntity<ApiResponse<Object>> handleStatementCancelled(DataAccessException e) {
+        log.warn("Query cancelled: statement or lock wait timed out", e);
+        (e instanceof QueryTimeoutException ? statementCancelled : lockCancelled).increment();
+        ApiResponse<Object> response = ApiResponse.error(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "요청이 몰려 처리하지 못했습니다. 잠시 후 다시 시도해 주세요."
         );
         return retryAfter(response).body(response);
     }
