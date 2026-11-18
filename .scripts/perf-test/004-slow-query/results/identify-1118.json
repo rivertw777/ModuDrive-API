@@ -1,0 +1,135 @@
+{
+ "label": "1118",
+ "apis": [
+  {
+   "api": "검색 — 드문 이름",
+   "status": [
+    200
+   ],
+   "ms_median": 161,
+   "items": 94,
+   "message": null
+  },
+  {
+   "api": "검색 — 흔한 단어",
+   "status": [
+    500
+   ],
+   "ms_median": 649,
+   "items": null,
+   "message": "서버 오류가 발생했습니다."
+  },
+  {
+   "api": "전체 파일",
+   "status": [
+    500
+   ],
+   "ms_median": 8483,
+   "items": null,
+   "message": "서버 오류가 발생했습니다."
+  },
+  {
+   "api": "카테고리 (이미지)",
+   "status": [
+    500
+   ],
+   "ms_median": 4562,
+   "items": null,
+   "message": "서버 오류가 발생했습니다."
+  },
+  {
+   "api": "폴더 목록 (1,000개 든 폴더)",
+   "status": [
+    200
+   ],
+   "ms_median": 22,
+   "items": null,
+   "message": null
+  },
+  {
+   "api": "최근 문서함",
+   "status": [
+    200
+   ],
+   "ms_median": 10,
+   "items": 0,
+   "message": null
+  },
+  {
+   "api": "휴지통",
+   "status": [
+    200
+   ],
+   "ms_median": 10,
+   "items": 0,
+   "message": null
+  },
+  {
+   "api": "사용량",
+   "status": [
+    200
+   ],
+   "ms_median": 7,
+   "items": null,
+   "message": null
+  }
+ ],
+ "top_statements": [
+  {
+   "calls": "8",
+   "mean_ms": "1256.8",
+   "max_ms": "1525.9",
+   "rows_per_call": "1000000",
+   "query": "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,f"
+  },
+  {
+   "calls": "8",
+   "mean_ms": "170.1",
+   "max_ms": "214.0",
+   "rows_per_call": "41713",
+   "query": "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,f"
+  },
+  {
+   "calls": "4",
+   "mean_ms": "2.4",
+   "max_ms": "3.3",
+   "rows_per_call": "101",
+   "query": "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,f"
+  },
+  {
+   "calls": "56",
+   "mean_ms": "0.1",
+   "max_ms": "1.2",
+   "rows_per_call": "0",
+   "query": "select oeje1_0.queue,min(oeje1_0.created_at) from outbox_event oeje1_0 where oeje1_0.status=$1 group by oeje1_0.queue"
+  },
+  {
+   "calls": "56",
+   "mean_ms": "0.1",
+   "max_ms": "0.7",
+   "rows_per_call": "0",
+   "query": "select oeje1_0.id,oeje1_0.created_at,oeje1_0.failed_at,oeje1_0.failure_reason,oeje1_0.payload,oeje1_0.payload_type,oeje1_0.queue,oeje1_0.sent_at,oeje1_0.status,"
+  },
+  {
+   "calls": "56",
+   "mean_ms": "0.0",
+   "max_ms": "0.1",
+   "rows_per_call": "0",
+   "query": "select oeje1_0.queue,oeje1_0.failure_reason from outbox_event oeje1_0 where oeje1_0.status=$1 order by oeje1_0.id fetch first $2 rows only"
+  },
+  {
+   "calls": "32",
+   "mean_ms": "0.0",
+   "max_ms": "0.1",
+   "rows_per_call": "1",
+   "query": "select nje1_0.id,nje1_0.created_at,nje1_0.created_by,nje1_0.deleted_at,nje1_0.deleted_by,nje1_0.is_deleted,nje1_0.quota_bytes,nje1_0.root_path,nje1_0.updated_at"
+  },
+  {
+   "calls": "4",
+   "mean_ms": "0.1",
+   "max_ms": "0.3",
+   "rows_per_call": "0",
+   "query": "select fje1_0.id,fje1_0.access_scope,fje1_0.active_slot_name,fje1_0.created_at,fje1_0.created_by,fje1_0.current_version_id,fje1_0.deleted_at,fje1_0.deleted_by,f"
+  }
+ ]
+}

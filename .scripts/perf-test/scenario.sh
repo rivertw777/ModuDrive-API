@@ -1,12 +1,11 @@
 #!/bin/bash
-# Query/latency benchmarks for .docs/perf-test/002-003 (scripts in 002-*/, 003-*/, helpers in bench.py). Run from
-# the repo root, with infra + services up. 004 (004-quota-concurrency/) and 001 (001-upload/) have their own entry scripts.
+# Query/latency benchmarks for .docs/perf-test/002 (scripts in 002-*/, helpers in bench.py). Run from
+# the repo root, with infra + services up. 003 (003-quota-concurrency/) has its own entry script.
 #   scenario.sh up                 — pg_stat_statements on (restarts postgres) + bench container on modudrive_network
 #   scenario.sh down               — bench container off, pg_stat_statements off (restarts postgres)
 #   scenario.sh deploy <label>     — build file-service from the working tree, tag it <label>, (re)start it
 #   scenario.sh cascade <label> [sizes...]   — 001: move/trash/restore/purge (env ROUNDS, SKIP_WAIT)
 #   scenario.sh contend <label> [sizes...]   — 001: slowest same-drive commit while a cascade runs (env ROUNDS)
-#   scenario.sh perm <label>                 — 002: shared-folder permission by depth
 #   scenario.sh index <label> [sizes...]     — 001: folder purge in a drive with BACKGROUND other files (env ROUNDS, BACKGROUND)
 #   scenario.sh wait               — block until no file-service transaction is still running server-side
 #   scenario.sh cleanup            — delete the benchmark's drives and everything under them
@@ -36,10 +35,9 @@ case ${1:-} in
     until docker logs modudrive-service-file-service-1 2>&1 | grep -q 'Started .*Application'; do sleep 2; done ;;
   cascade) shift; bench 002-folder-cascade cascade.py "$@" ;;
   contend) shift; bench 002-folder-cascade contend.py "$@" ;;
-  perm)    shift; bench 003-share-permission perm.py "$@" ;;
   index)   shift; bench 002-folder-cascade index.py "$@" ;;
   wait)
     until [ "$(psql_su -d file_db -tA < "$DIR/sql/05-long-transactions.sql" | wc -l)" = 0 ]; do sleep 5; done ;;
   cleanup) psql_su -d file_db < "$DIR/sql/04-cleanup-bench-data.sql" ;;
-  *) sed -n 2,12p "$0"; exit 1 ;;
+  *) sed -n 2,11p "$0"; exit 1 ;;
 esac

@@ -4,6 +4,14 @@ spring:
       # Must stay below the callers' Feign read timeout (10s), or with the DB down the caller times out
       # before GlobalExceptionHandler sends its 503. Hikari's default is 30s.
       connection-timeout: 3000
+      # Spec 006 2-5-1: Postgres cancels a statement past 5s and a lock wait past 3s, so one slow query
+      # can't hold a pooled connection for good. Both below the callers' timeouts (Feign 10s, gateway 15s):
+      # past those nobody reads the answer. pgjdbc sends these as session defaults on connect.
+      data-source-properties:
+        options: "-c statement_timeout=5s -c lock_timeout=3s -c idle_in_transaction_session_timeout=60s"
+        # Client side, for when the server can't cancel: a dead peer or a failover leaves the socket read
+        # hanging until TCP gives up (minutes). Seconds; above the 60s a folder cascade extends to.
+        socketTimeout: 75
   jpa:
     # Off: otherwise each request holds a pooled connection from its first query until the response
     # is written, across Feign/Redis calls, and its one EntityManager hands a later transaction the
@@ -14,6 +22,11 @@ spring:
       # Flyway owns the schema (db/migration in each service); Hibernate only checks it matches.
       ddl-auto: validate
   flyway:
+    # Its own connection, not one from the pool above: a migration like create index concurrently can run
+    # long on a big table and must not hit the 5s statement timeout.
+    url: ${spring.datasource.url}
+    user: ${spring.datasource.username:}
+    password: ${spring.datasource.password:}
     postgresql:
       # Session-level advisory lock. A non-transactional migration (create index concurrently,
       # .docs/guide/001-db-migration.md section 5) waits for every open transaction, including the one holding

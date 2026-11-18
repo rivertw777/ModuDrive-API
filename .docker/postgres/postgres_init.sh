@@ -11,6 +11,10 @@ CREATE ROLE $2 LOGIN PASSWORD :'pw';
 GRANT $2 TO CURRENT_USER;
 CREATE DATABASE $1 OWNER $2;
 REVOKE ALL ON DATABASE $1 FROM PUBLIC;
+-- The pg_stat_statements view (spec 006 2-5-4). The library is preloaded (compose, RDS default), but
+-- the view exists only in a database that created the extension.
+\connect $1
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 SQL
 }
 

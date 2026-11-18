@@ -37,6 +37,13 @@ modudrive:
     default-quota-bytes: ${MODUDRIVE_FILE_DEFAULT_QUOTA_BYTES}
 
 resilience4j:
+  # Spec 006 2-5-3: a search reads the whole drive (name LIKE '%q%') and can run for seconds, so at most
+  # this many at once — the rest of the Hikari pool (10) stays for every other request.
+  bulkhead:
+    instances:
+      fileSearch:
+        max-concurrent-calls: 3
+        max-wait-duration: 0
   retry:
     instances:
       memberServiceRetry:

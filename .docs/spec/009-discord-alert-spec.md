@@ -29,6 +29,7 @@
   - [4-9. DB 커넥션 부족](#4-9-db-커넥션-부족)
   - [4-10. 지표 수집 끊김](#4-10-지표-수집-끊김)
   - [4-11. S3 호출 실패](#4-11-s3-호출-실패)
+  - [4-12. DB 쿼리 끊김](#4-12-db-쿼리-끊김)
 - [5. AWS 전용 경보](#5-aws-전용-경보)
   - [5-1. 발송 과정](#5-1-발송-과정)
   - [5-2. 알림이 오기까지 걸리는 시간](#5-2-알림이-오기까지-걸리는-시간)
@@ -234,7 +235,7 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 
 | 채널 | 성격 | 받는 알림 | 받으면 | 웹후크 주소 환경 변수 |
 |---|---|---|---|---|
-| `#service` | 지금 사용자가 피해를 보고 있음 | 응답 없음, 태스크 없음, 서킷 열림, S3 호출 실패, 요청 실패율, 느린 요청, DB 커넥션 부족, ALB 5xx, gateway 정상 태스크 없음, 외부 접속 실패 | 바로 본다 | `DISCORD_SERVICE_WEBHOOK_URL` |
+| `#service` | 지금 사용자가 피해를 보고 있음 | 응답 없음, 태스크 없음, 서킷 열림, S3 호출 실패, 요청 실패율, 느린 요청, DB 커넥션 부족, DB 쿼리 끊김, ALB 5xx, gateway 정상 태스크 없음, 외부 접속 실패 | 바로 본다 | `DISCORD_SERVICE_WEBHOOK_URL` |
 | `#infra` | 아직 괜찮지만 그냥 두면 문제가 됨 (자원 한도, 지표 수집) | 힙 메모리, 서비스 CPU·메모리, DB 메모리·CPU 크레딧, Redis 메모리, NAT 상태 검사, 지표 수집 끊김 | 그날 안에 사양·설정을 조정하거나 원인을 고친다 | `DISCORD_INFRA_WEBHOOK_URL` |
 | `#messaging` | 비동기 이벤트가 멈춤 | 이벤트 전송 적체·실패, 이벤트 처리 실패, 큐 처리 지연 | 원인을 고친 뒤 재처리(리드라이브) | `DISCORD_MESSAGING_WEBHOOK_URL` |
 | `#account` | 계정 수준, 드묾 (AWS만) | 예산 초과 | 비용 확인 | `DISCORD_ACCOUNT_WEBHOOK_URL` |
@@ -268,6 +269,7 @@ max by (service, queue, reason, detail) (modudrive_outbox_failed) > 0
 | 느린 요청 많음 | `#service` | 게이트웨이를 지난 요청이 에러 없이 느려졌을 때 | 1초 초과 비율 `> 5%` 이면서 5분간 1초 초과 `>= 10`건 (`spring_cloud_gateway_requests_seconds_bucket{le="1"}`, 경로별, `storage-service` 경로 제외) | 2분 |
 | 힙 메모리 부족 | `#infra` | 힙이 차서 GC가 따라가지 못할 때 | GC 직후 old 영역 사용률 `> 90%` (`jvm_gc_live_data_size_bytes` / `jvm_gc_max_data_size_bytes`) | 5분 |
 | DB 커넥션 부족 | `#service` | 커넥션 풀이 다 쓰여 요청이 커넥션을 못 받고 실패할 때 | `max by (service) (increase(hikaricp_connections_timeout_total[5m])) > 0` | 바로 |
+| DB 쿼리 끊김 | `#service` | 쿼리가 시간 제한(쿼리 5초 · 잠금 대기 3초)에 끊겨 요청이 실패할 때 | `sum by (service, reason) (increase(modudrive_db_query_cancelled_total[5m])) > 0` | 바로 |
 
 ### 4-1. 이벤트 전송 적체
 
@@ -391,6 +393,17 @@ S3가 원인일 때 원인을 바로 알려 주는 알림이다. S3가 실패하
 - 메시지의 대상은 `storage-service · <S3 경로>`다. 지표 `resilience4j_circuitbreaker_calls_seconds_count`는 collector가 남기는 목록에 넣어 두었다([2-1](#2-1-지표)).
 
 **받으면:** AWS Health Dashboard에서 S3 장애를 확인하고, storage-service 로그에서 S3 오류(상태 코드·예외)를 본다. S3 쪽 장애면 기다리는 것 말고 할 일이 없다. 서킷과 시간 제한이 사용자 요청을 빨리 실패시키고 있는지만 확인한다.
+
+### 4-12. DB 쿼리 끊김
+
+Postgres가 시간 제한으로 끊은 쿼리를 보는 알림이다([006 2-5-1](006-resilience-spec.md#2-5-1-시간-제한)). 끊긴 요청은 503이 된다([006 2-5-2](006-resilience-spec.md#2-5-2-응답)).
+커넥션은 받았지만 쿼리가 너무 오래 돈 것이라, 커넥션을 못 받은 DB 커넥션 부족([4-9](#4-9-db-커넥션-부족))과 원인이 다르다. 최근 5분 동안 한 건이라도 있으면 알린다.
+
+- **원인별로 센다**: `GlobalExceptionHandler`가 `reason="statement"`(쿼리 5초)와 `reason="lock"`(잠금 대기 3초)으로 나눠 `modudrive_db_query_cancelled_total`을 올린다.
+- **세지 않는 것**: commit 배치 안에서 잠금을 못 얻은 파일은 파일별 결과로 처리되어 요청은 성공하므로 세지 않는다.
+- **바로 보낸다**: 이미 사용자가 에러를 본 것이다. DB 커넥션 부족과 같다.
+
+**받으면:** 알림에 함께 온 로그 쿼리로 WARN 로그의 끊긴 SQL(파라미터 값 없음)을 찾고, 그 쿼리를 고친다(인덱스, 결과 상한, 잠금 순서). `lock`이면 같은 시각 Postgres 로그의 `still waiting for` 줄에 잠금을 쥔 프로세스(PID)가 있다.
 
 ---
 

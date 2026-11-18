@@ -225,3 +225,16 @@ groups:
           summary: '최근 5분 동안 커넥션을 못 받아 실패(503)한 요청 **{{ printf "%.0f" $value }}건** (풀이 다 쓰임)'
           action: Grafana → Explore → Tempo에 아래 쿼리로 느린 trace를 열어 DB 구간(커넥션 대기·쿼리) 확인, 계속되면 풀 크기 상향
           inspect: '{ resource.service.name = "{{ $labels.service }}" && kind = server && duration > 1s }'
+
+      # Postgres가 시간 제한(쿼리 5초 · 잠금 대기 3초, 006 2-5-1)으로 끊은 쿼리 — 그 요청은 503이 됐다. 커넥션은 받았지만
+      # 쿼리가 너무 오래 돈 것이라 위 커넥션 부족과는 원인이 다르다. GlobalExceptionHandler가 원인(statement·lock)별로 센다.
+      # commit 배치 안의 잠금 실패는 파일별 결과로 처리돼 여기 안 들어온다. 이미 사용자가 에러를 봤으므로 for 없이 보낸다.
+      - alert: DbQueryCancelled
+        expr: sum by (service, reason) (increase(modudrive_db_query_cancelled_total[5m])) > 0
+        labels:
+          channel: service
+        annotations:
+          title: DB 쿼리 끊김
+          summary: '최근 5분 동안 시간 제한으로 끊겨 실패(503)한 요청 **{{ printf "%.0f" $value }}건** (`{{ $labels.reason }}` — statement: 쿼리 5초 초과 · lock: 잠금 대기 3초 초과)'
+          action: 로그의 끊긴 SQL로 원인 쿼리를 찾아 고친다 (인덱스 · 결과 상한 · 잠금 순서)
+          inspect: '{service_name="{{ $labels.service }}"} |= "Query cancelled"'
