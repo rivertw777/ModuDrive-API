@@ -68,6 +68,15 @@ class SqsFailuresTest {
     }
 
     @Test
+    @DisplayName("일괄 전송의 개별 실패는 SQS가 보낸 쪽 잘못이라고 할 때만 재처리 불가다 (스로틀링 제외)")
+    void classifiesABatchEntryFailure() {
+        assertThat(SqsFailures.isPermanentBatchEntryFailure(true, "InvalidMessageContents")).isTrue();
+        assertThat(SqsFailures.isPermanentBatchEntryFailure(true, "ThrottlingException")).isFalse();
+        assertThat(SqsFailures.isPermanentBatchEntryFailure(false, "InternalError")).isFalse();
+        assertThat(SqsFailures.isPermanentBatchEntryFailure(null, null)).isFalse();
+    }
+
+    @Test
     @DisplayName("DLQ 사유에는 감싼 예외가 아니라 실제 원인을 적는다")
     void reasonNamesTheActualCause() {
         assertThat(DeadLetteringErrorHandler.reason(new RuntimeException("listener failed", new IllegalStateException("smtp down"))))

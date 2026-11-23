@@ -24,7 +24,6 @@
 - [5. 재처리 (replay)](#5-재처리-replay)
 - [6. 트레이싱](#6-트레이싱)
 - [7. 사용 큐 목록](#7-사용-큐-목록)
-- [8. TODO](#8-todo)
 
 ---
 
@@ -240,8 +239,11 @@ Publisher는 이벤트를 만들어 큐로 내보낸다.
 
 #### 3-2-2. 이벤트 전송
 
-- `OutboxRelay`가 1초마다(한 틱) `PENDING` 행을 id 순으로 **최대 100개 읽어**(`FOR UPDATE SKIP LOCKED`) **1건씩** 동기 전송한다.
-  SQS 일괄 전송(`SendMessageBatch`)은 쓰지 않는다 — 100개를 읽으면 SQS 호출도 100번.
+- `OutboxRelay`가 1초마다(한 틱) `PENDING` 행을 id 순으로 **최대 100개 읽어**(`FOR UPDATE SKIP LOCKED`) **큐별로 10건씩 묶어**
+  일괄 전송(`SendMessageBatch`)한다 — 100개를 읽으면 SQS 호출은 최소 10번. SQS 한도: 한 번에 10건, 합계 1 MiB.
+- 묶음 결과는 메시지마다 따로 온다. 성공한 행은 `SENT`, 실패한 행은 [3-3](#3-3-전송-실패) 분류대로 `FAILED` 또는 `PENDING`.
+  일시 장애로 남은 행이 있으면 이번 틱은 그 묶음에서 멈춘다.
+- 묶음 호출 자체가 실패하면(큐 없음 · 합계 1 MiB 초과 · 연결 실패) 그 묶음을 **1건씩** 다시 보내 행마다 분류한다.
 - `SKIP LOCKED`라 인스턴스가 여러 대여도 같은 행을 두 번 보내지 않는다.
 - **중복 제거 id = `outbox-<행 id>`**: `DeduplicationId` 메시지 속성으로 같이 나간다. SQS가 받았는데 SENT 표시 커밋
   전에 죽어 재전송되면 같은 id로 다시 가므로, Consumer가 그걸 보고 재전송인 줄 안다([4-1-1](#4-1-1-멱등성-체크)).
@@ -267,14 +269,14 @@ flowchart LR
 |---|---|---|
 | **재처리 불가** | payload 복원 실패 | 이벤트 클래스가 바뀌어 저장된 payload를 객체로 못 되살림 |
 | 〃 | 직렬화 실패 | 객체를 JSON으로 못 바꿈 — SQS에 닿기도 전 |
-| 〃 | SQS가 거절 | 큐 없음 · 크기 초과 · 잘못된 값 (400) |
+| 〃 | SQS가 거절 | 큐 없음 · 크기 초과 · 잘못된 값 (400, 묶음에선 `SenderFault`) |
 | **재처리 가능** | 일시 장애 | 연결 실패 · 5xx · 스로틀링 · 권한 거부 |
 
 **재처리에 왜 횟수 제한이 없나** — 여기서 실패하는 건 그 메시지가 아니라 인프라다. 장애가 나면 모든 행이 똑같이 실패하므로,
 N번에 `FAILED`로 보내면 멀쩡한 이벤트가 무더기로 빠지고 복구 후 사람이 일일이 되돌려야 한다.
 저절로 복구될 일을 수동 작업으로 바꾸는 셈이다. 행이 `PENDING`으로 남아 있는 것 자체가 이미 안전한 보관 상태다.
 
-**전송 시 SDK가 먼저 재시도한다** — relay가 `publish()`를 한 번 부르면 SDK가 그 안에서 최대 4번 시도한다
+**전송 시 SDK가 먼저 재시도한다** — relay가 전송을 한 번 부르면 SDK가 그 안에서 최대 4번 시도한다
 (기본 LEGACY 모드, 100ms부터 지수 백오프 + jitter). 다 합쳐도 1초가 안 된다.
 그 안에 성공하면 relay는 실패가 있었는지도 모르고 넘어간다. **위 표의 "일시 장애"는 1초를 넘게 끊겼다는 뜻이다.**
 
@@ -414,8 +416,9 @@ sequenceDiagram
 | 단계 | 누가 | 코드 |
 |---|---|---|
 | ① 저장 | `OutboxEventRecorder.record()` | 현재 trace id → `trace_headers` 컬럼 |
-| ② 꺼냄 | `OutboxRelay.send()` | `trace_headers`로 Observation 열기 |
-| ③④ 전달 | Spring Cloud AWS | `observation-enabled: true` 한 줄이면 자동 |
+| ② 꺼냄 | `OutboxRelay` | `trace_headers`로 Observation(`outbox relay` span) 열기 |
+| ③ 전달 | `OutboxRelay.startSend()` | 그 아래 전송 span(`<큐> send`)을 열고 그 context(`traceparent`)를 메시지마다 붙임 — 일괄 전송은 Spring Cloud AWS가 계측하지 않아 직접 연다. 1건씩 보낼 때(묶음 실패)는 Spring Cloud AWS가 같은 모양으로 붙인다 |
+| ④ 이어 붙임 | Spring Cloud AWS | `observation-enabled: true` 한 줄이면 자동 |
 
 ---
 
@@ -432,33 +435,4 @@ sequenceDiagram
 | `storage-blocks-purge-requested` | file-service — 참조 없는 블록 정리 작업(1시간마다)이 `block` 행을 지우는 트랜잭션 (소유자·해시 목록·결정 시각을 담는다) | storage-service — `blocks/{ownerId}/{hash}` 삭제. 결정 시각 뒤에 다시 올라온 블록은 남김 | 영구 삭제로 참조 수가 0이 된 블록이 24시간 지남 ([001 5](001-file-upload-spec.md#5-블록-정리)) |
 | `mail-ses-events` | SES — Configuration Set `mail-events`의 Send 이벤트 (SNS 경유, raw) | mail-service — 태그의 `deliveryId`를 처리 완료로 기록 | 메일을 보낼 때마다 (시간 제한에 걸린 발송이 실제로 나갔는지 확인용) |
 | `member-signed-up` | member-service — 가입 트랜잭션 안에서 기록 | file-service — 네임스페이스 생성(자기 트랜잭션으로 먼저 커밋) → 대기 공유를 새 회원에게 연결 | 새 회원의 드라이브가 생기고, 가입 전에 받은 초대가 "공유 문서함"에 나타남 |
-
----
-
-## 8. TODO
-
-- [ ] **일괄 전송(`SendMessageBatch`)** ([3-2-2](#3-2-2-이벤트-전송))
-
-  **지금 방식** — `OutboxRelay`가 1건씩 보낸다.
-
-  | 항목 | 현재 코드 |
-  |---|---|
-  | 한 번에 읽는 행 | 최대 100개 (`BATCH_SIZE`), 한 트랜잭션 |
-  | 전송 | 1건씩 동기 전송 → 100행이면 SQS 호출 100번 |
-  | 다음 틱 | 이번 틱이 **끝난 뒤** 1초 쉬고 시작 (`scheduleWithFixedDelay`) |
-  | 여러 인스턴스 | `SKIP LOCKED`로 서로 다른 행을 가져가서 나눠 보낸다 |
-
-  **일괄 전송으로 바꾸면** — 같은 큐의 행을 최대 10건씩 묶어 `SqsTemplate.sendMany`로 보낸다.
-  - SQS 한도: 한 번에 최대 10건, 합계 1 MiB.
-  - SQS 호출 수가 최대 1/10로 준다. 과금도 호출(64KB 단위) 기준이라 전송 요청 비용도 같이 준다.
-
-  **바꿀 때 다시 짜야 하는 것**
-
-  | 문제 | 왜 |
-  |---|---|
-  | 부분 실패 | `sendMany`는 성공 목록과 실패 목록을 따로 돌려준다(`SendResult.Batch`). 지금은 "재처리 가능한 실패가 나면 그 행부터 다음 틱으로"인데, 묶음에선 실패한 행 뒤의 행이 이미 나갔을 수 있다 → 성공 행만 `SENT`, 실패 행은 사유에 따라 `PENDING` 유지 / `FAILED` |
-  | 큐별 묶음 | 한 틱에 읽은 행에는 여러 큐가 섞여 있는데, 한 번의 일괄 전송은 큐 하나에만 보낼 수 있다 |
-  | 트레이싱 | 지금은 행마다 저장된 trace를 이어서 보낸다([6](#6-트레이싱)). 묶어 보낼 때도 메시지마다 자기 trace가 붙는지 확인 필요 |
-
-  **도입 신호** — 인스턴스를 늘려도 적체 알림(`modudrive_outbox_lag_seconds`, [3-3-1](#3-3-1-전송-실패-시-알림))이 계속 울릴 때.
 
