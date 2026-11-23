@@ -1,6 +1,7 @@
 package com.moduDrive.common.infrastructure.sqs;
 
 import com.moduDrive.common.event.member.MemberQueues;
+import com.moduDrive.common.infrastructure.messaging.MessagePublisher;
 import com.moduDrive.common.event.member.MemberSignedUp;
 import io.awspring.cloud.sqs.annotation.SqsListener;
 import io.awspring.cloud.sqs.operations.SqsTemplate;
@@ -38,6 +39,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 /** Runs the real {@code .docker/localstack/init-aws.sh} against the real SQS client stack and this
@@ -79,6 +81,7 @@ class LocalStackQueueConfigTest {
     @Autowired private SqsTemplate sqsTemplate;
     @Autowired private SqsAsyncClient sqsAsyncClient;
     @Autowired private RecordingListener listener;
+    @Autowired private MessagePublisher messagePublisher;
     @Autowired private MeterRegistry meterRegistry;
     // Refreshed by hand instead of waiting out the 30s poll.
     @Autowired private QueueDepthMetrics queueDepthMetrics;
@@ -87,6 +90,7 @@ class LocalStackQueueConfigTest {
     void reset() {
         listener.received.clear();
         listener.deduplicationIds.clear();
+        listener.traceIds.clear();
         listener.attempts.clear();
     }
 
@@ -117,6 +121,32 @@ class LocalStackQueueConfigTest {
 
             await().atMost(Duration.ofSeconds(10)).until(() -> listener.received.size() == 2);
             assertThat(listener.deduplicationIds).containsExactly("outbox-1", "outbox-1");
+        }
+
+        @Test
+        @DisplayName("묶어 보내도 메시지마다 자기 중복 제거 id와 trace 헤더를 달고 도착한다")
+        void deliversEachBatchedMessageWithItsOwnIdsAndTrace() {
+            MemberSignedUp first = new MemberSignedUp(UUID.randomUUID(), "batch-1@modudrive.com");
+            MemberSignedUp second = new MemberSignedUp(UUID.randomUUID(), "batch-2@modudrive.com");
+            String traceparent = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
+
+            Map<String, RuntimeException> failures = messagePublisher.publishBatch(QUEUE, List.of(
+                    new MessagePublisher.Outgoing("outbox-10", first, Map.of("traceparent", traceparent)),
+                    new MessagePublisher.Outgoing("outbox-11", second, Map.of())));
+
+            assertThat(failures).isEmpty();
+            await().atMost(Duration.ofSeconds(10)).until(() -> listener.received.size() == 2);
+            assertThat(listener.deduplicationIds).containsExactlyInAnyOrder("outbox-10", "outbox-11");
+            assertThat(listener.traceIds).containsExactlyInAnyOrder("0af7651916cd43dd8448eb211c80319c", "none");
+        }
+
+        @Test
+        @DisplayName("없는 큐로 묶어 보내면 호출 전체가 실패한다 — 릴레이가 1건씩 다시 보내 행마다 분류하게")
+        void failsTheWholeCallForAMissingQueue() {
+            assertThatThrownBy(() -> messagePublisher.publishBatch("no-such-queue", List.of(
+                    new MessagePublisher.Outgoing("outbox-12", new MemberSignedUp(UUID.randomUUID(), "x@modudrive.com"),
+                            Map.of()))))
+                    .isInstanceOf(RuntimeException.class);
         }
     }
 
@@ -240,6 +270,7 @@ class LocalStackQueueConfigTest {
 
         final List<MemberSignedUp> received = new CopyOnWriteArrayList<>();
         final List<String> deduplicationIds = new CopyOnWriteArrayList<>();
+        final List<String> traceIds = new CopyOnWriteArrayList<>();
         final Map<String, AtomicInteger> attempts = new ConcurrentHashMap<>();
 
         int attempts(String email) {
@@ -248,7 +279,8 @@ class LocalStackQueueConfigTest {
 
         @SqsListener(MemberQueues.SIGNED_UP)
         void onSignedUp(MemberSignedUp event,
-                        @Header(SqsAttributes.DEDUPLICATION_ID) String deduplicationId) {
+                        @Header(SqsAttributes.DEDUPLICATION_ID) String deduplicationId,
+                        @Header(name = "traceparent", required = false) String traceparent) {
             attempts.computeIfAbsent(event.email(), e -> new AtomicInteger()).incrementAndGet();
             if (event.email().startsWith("retry")) {
                 throw new IllegalStateException("simulated outage");
@@ -258,6 +290,7 @@ class LocalStackQueueConfigTest {
             }
             received.add(event);
             deduplicationIds.add(deduplicationId);
+            traceIds.add(traceparent == null ? "none" : traceparent.split("-")[1]);
         }
     }
 }

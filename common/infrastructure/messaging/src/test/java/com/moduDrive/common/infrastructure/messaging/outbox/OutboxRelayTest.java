@@ -3,8 +3,10 @@ package com.moduDrive.common.infrastructure.messaging.outbox;
 import com.moduDrive.common.infrastructure.messaging.MessagePublisher;
 import com.moduDrive.common.infrastructure.messaging.PermanentPublishException;
 import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationHandler;
 import io.micrometer.observation.ObservationRegistry;
 import io.micrometer.observation.transport.ReceiverContext;
+import io.micrometer.observation.transport.SenderContext;
 import io.micrometer.tracing.Span;
 import io.micrometer.tracing.TraceContext;
 import io.micrometer.tracing.Tracer;
@@ -37,16 +39,21 @@ import tools.jackson.databind.json.JsonMapper;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
@@ -126,20 +133,35 @@ class OutboxRelayTest {
     class WhenRelaying {
 
         @Test
-        @DisplayName("기록된 순서대로 원래 이벤트 객체를 전송하고 행을 SENT로 남긴다")
+        @DisplayName("기록된 순서대로 큐별로 묶어 원래 이벤트 객체를 전송하고 행을 SENT로 남긴다")
         void sendsTheOriginalEventsInOrderThenMarksTheRowsSent() {
             OutboxTestEvent first = new OutboxTestEvent(UUID.randomUUID(), "first");
             OutboxTestEvent second = new OutboxTestEvent(UUID.randomUUID(), "second");
+            OutboxTestEvent third = new OutboxTestEvent(UUID.randomUUID(), "third");
             recorder.record("queue-a", first);
             recorder.record("queue-b", second);
+            recorder.record("queue-a", third);
 
             relay.relay();
 
             InOrder inOrder = inOrder(messagePublisher);
-            inOrder.verify(messagePublisher).publish(eq("queue-a"), anyString(), eq(first));
-            inOrder.verify(messagePublisher).publish(eq("queue-b"), anyString(), eq(second));
-            assertThat(countByStatus(OutboxEventStatus.SENT)).isEqualTo(2);
+            inOrder.verify(messagePublisher).publishBatch(eq("queue-a"), payloads(first, third));
+            inOrder.verify(messagePublisher).publishBatch(eq("queue-b"), payloads(second));
+            assertThat(countByStatus(OutboxEventStatus.SENT)).isEqualTo(3);
             assertThat(countByStatus(OutboxEventStatus.PENDING)).isZero();
+        }
+
+        @Test
+        @DisplayName("한 번에 SQS 한도인 10건씩만 묶어 보낸다")
+        void sendsAtMostTenPerCall() {
+            for (int i = 0; i < 25; i++) {
+                recorder.record("queue", new OutboxTestEvent(UUID.randomUUID(), "e" + i));
+            }
+
+            relay.relay();
+
+            assertThat(batches()).extracting(List::size).containsExactly(10, 10, 5);
+            assertThat(countByStatus(OutboxEventStatus.SENT)).isEqualTo(25);
         }
 
         @Test
@@ -150,25 +172,61 @@ class OutboxRelayTest {
 
             relay.relay();
 
-            assertThat(deduplicationIds())
+            assertThat(outgoing()).extracting(MessagePublisher.Outgoing::deduplicationId)
                     .allMatch(id -> id.matches("outbox-\\d+"))
                     .doesNotHaveDuplicates();
         }
 
         @Test
-        @DisplayName("전송이 실패하면 그 행부터 남겨두고 멈춘다")
-        void stopsAtTheFirstFailedSendAndKeepsTheRest() {
-            OutboxTestEvent first = new OutboxTestEvent(UUID.randomUUID(), "first");
-            OutboxTestEvent second = new OutboxTestEvent(UUID.randomUUID(), "second");
-            recorder.record("queue", first);
-            recorder.record("queue", second);
-            willThrow(new RuntimeException("broker down")).given(messagePublisher)
-                    .publish(anyString(), anyString(), any());
+        @DisplayName("묶음 중 일부만 일시 실패하면 나머지는 SENT, 실패한 행만 남기고 다음 묶음은 다음 틱으로 미룬다")
+        void keepsOnlyTheTransientlyFailedRowsAndStopsTheTick() {
+            OutboxTestEvent ok = new OutboxTestEvent(UUID.randomUUID(), "ok");
+            OutboxTestEvent throttled = new OutboxTestEvent(UUID.randomUUID(), "throttled");
+            recorder.record("queue-a", ok);
+            recorder.record("queue-a", throttled);
+            recorder.record("queue-b", new OutboxTestEvent(UUID.randomUUID(), "later"));
+            givenBatchFailures(m -> m.payload().equals(throttled) ? new IllegalStateException("throttled") : null);
+
+            relay.relay();
+
+            then(messagePublisher).should(times(1)).publishBatch(anyString(), anyList());
+            assertThat(countByStatus(OutboxEventStatus.SENT)).isEqualTo(1);
+            assertThat(countByStatus(OutboxEventStatus.PENDING)).isEqualTo(2);
+        }
+
+        @Test
+        @DisplayName("묶음 전송 자체가 실패하면 1건씩 보내고, 그것도 실패하면 그 행부터 남겨두고 멈춘다")
+        void fallsBackToSingleSendsAndStopsAtTheFirstFailure() {
+            recorder.record("queue", new OutboxTestEvent(UUID.randomUUID(), "first"));
+            recorder.record("queue", new OutboxTestEvent(UUID.randomUUID(), "second"));
+            givenBrokerDown();
 
             relay.relay();
 
             then(messagePublisher).should(times(1)).publish(anyString(), anyString(), any());
             assertThat(countByStatus(OutboxEventStatus.PENDING)).isEqualTo(2);
+        }
+
+        @Test
+        @DisplayName("묶음이 통째로 거절되면(합계 1 MiB 초과 등) 1건씩 보내 문제 행만 격리하고 나머지는 보낸다")
+        void findsTheRejectedRowOneByOneWhenTheWholeBatchIsRefused() {
+            OutboxTestEvent tooLarge = new OutboxTestEvent(UUID.randomUUID(), "too-large");
+            OutboxTestEvent next = new OutboxTestEvent(UUID.randomUUID(), "next");
+            recorder.record("queue", tooLarge);
+            recorder.record("queue", next);
+            willThrow(new IllegalStateException("batch too long")).given(messagePublisher)
+                    .publishBatch(anyString(), anyList());
+            willAnswer(invocation -> {
+                if (invocation.getArgument(2).equals(tooLarge)) {
+                    throw new PermanentPublishException(new IllegalStateException("message too long"));
+                }
+                return null;
+            }).given(messagePublisher).publish(anyString(), anyString(), any());
+
+            relay.relay();
+
+            assertThat(failedRow().getFailureReason()).contains("message too long");
+            assertThat(countByStatus(OutboxEventStatus.SENT)).isEqualTo(1);
         }
 
         @Test
@@ -178,17 +236,13 @@ class OutboxRelayTest {
             OutboxTestEvent next = new OutboxTestEvent(UUID.randomUUID(), "next");
             recorder.record("queue", rejected);
             recorder.record("queue", next);
-            willAnswer(invocation -> {
-                if (invocation.getArgument(2).equals(rejected)) {
-                    throw new PermanentPublishException(new IllegalStateException("message rejected"));
-                }
-                return null;
-            }).given(messagePublisher).publish(anyString(), anyString(), any());
+            givenBatchFailures(m -> m.payload().equals(rejected)
+                    ? new PermanentPublishException(new IllegalStateException("message rejected")) : null);
 
             relay.relay();
             relay.relay();
 
-            assertThat(publishedPayloads()).containsExactly(rejected, next);
+            assertThat(outgoing()).extracting(MessagePublisher.Outgoing::payload).containsExactly(rejected, next);
             assertThat(failedRow().getFailedAt()).isNotNull();
             assertThat(failedRow().getFailureReason()).startsWith(IllegalStateException.class.getSimpleName());
             assertThat(countByStatus(OutboxEventStatus.SENT)).isEqualTo(1);
@@ -198,8 +252,7 @@ class OutboxRelayTest {
         @DisplayName("실패 사유는 길어도 잘라서 남긴다 — SDK 메시지는 한 문단씩 오고, 알람에 실리는 건 앞부분뿐이다")
         void cutsALongFailureReasonDownToSize() {
             recorder.record("queue", new OutboxTestEvent(UUID.randomUUID(), "rejected"));
-            willThrow(new PermanentPublishException(new IllegalStateException("x".repeat(500))))
-                    .given(messagePublisher).publish(anyString(), anyString(), any());
+            givenBatchFailures(m -> new PermanentPublishException(new IllegalStateException("x".repeat(500))));
 
             relay.relay();
 
@@ -218,36 +271,67 @@ class OutboxRelayTest {
             relay.relay();
             relay.relay();
 
-            assertThat(publishedPayloads()).containsExactly(event);
+            assertThat(outgoing()).extracting(MessagePublisher.Outgoing::payload).containsExactly(event);
             assertThat(failedRow().getPayloadType()).isEqualTo("com.example.Gone");
             assertThat(failedRow().getFailedAt()).isNotNull();
             assertThat(failedRow().getFailureReason()).contains("com.example.Gone");
         }
 
         @Test
-        @DisplayName("기록한 요청의 trace 헤더로 Observation을 열어, 전송 중 현재 Observation이 되게 한다")
+        @DisplayName("tracing이 없으면 메시지마다 기록한 요청의 trace 헤더를 그대로 붙인다")
+        void attachesEachRecordingRequestsTraceToItsMessage() {
+            recordTraced();
+
+            relay.relay();
+
+            assertThat(outgoing()).singleElement().satisfies(m ->
+                    assertThat(m.traceHeaders()).containsEntry("traceparent", "00-trace-span-01"));
+        }
+
+        @Test
+        @DisplayName("묶어 보낼 때도 기록한 요청의 trace 아래 relay span과 전송 span을 열고, 메시지엔 전송 span의 context를 싣는다")
+        void sendsEachBatchedMessageUnderItsOwnSendSpan() {
+            ObservationRegistry registry = ObservationRegistry.create();
+            registry.observationConfig().observationHandler(context -> true);
+            // Stands in for the tracing handler: injects a context derived from the parent the send span got.
+            registry.observationConfig().observationHandler(new ObservationHandler<SenderContext<Map<String, String>>>() {
+                @Override
+                public boolean supportsContext(Observation.Context context) {
+                    return context instanceof SenderContext;
+                }
+
+                @Override
+                @SuppressWarnings("unchecked")
+                public void onStart(SenderContext<Map<String, String>> context) {
+                    ReceiverContext<Map<String, String>> relay =
+                            (ReceiverContext<Map<String, String>>) context.getParentObservation().getContextView();
+                    context.getSetter().set(context.getCarrier(), "traceparent",
+                            "send-under-" + relay.getCarrier().get("traceparent"));
+                }
+            });
+
+            recordTraced();
+            new OutboxRelay(entityManager, transactionTemplate, messagePublisher, jsonMapper, registry,
+                    new OutboxMetrics(entityManager)).relay();
+
+            assertThat(outgoing()).singleElement().satisfies(m ->
+                    assertThat(m.traceHeaders()).containsEntry("traceparent", "send-under-00-trace-span-01"));
+        }
+
+        @Test
+        @DisplayName("1건씩 보낼 때는 기록한 요청의 trace 헤더로 Observation을 열어, 전송 중 현재 Observation이 되게 한다")
         void resumesTheRecordingRequestsTraceAsTheCurrentObservation() {
-            Tracer tracer = mock(Tracer.class);
-            Propagator propagator = mock(Propagator.class);
-            Span requestSpan = mock(Span.class);
-            TraceContext requestContext = mock(TraceContext.class);
-            given(tracer.currentSpan()).willReturn(requestSpan);
-            given(requestSpan.context()).willReturn(requestContext);
-            willAnswer(invocation -> {
-                Propagator.Setter<Object> setter = invocation.getArgument(2);
-                setter.set(invocation.getArgument(1), "traceparent", "00-trace-span-01");
-                return null;
-            }).given(propagator).inject(eq(requestContext), any(), any());
             ObservationRegistry registry = ObservationRegistry.create();
             registry.observationConfig().observationHandler(context -> true);
             AtomicReference<Observation> currentDuringSend = new AtomicReference<>();
+            willThrow(new IllegalStateException("batch refused")).given(messagePublisher)
+                    .publishBatch(anyString(), anyList());
             willAnswer(invocation -> {
                 currentDuringSend.set(registry.getCurrentObservation());
                 return null;
             }).given(messagePublisher).publish(anyString(), anyString(), any());
 
-            new OutboxEventRecorder(entityManager, transactionTemplate, jsonMapper, tracer, propagator)
-                    .record("queue", new OutboxTestEvent(UUID.randomUUID(), "traced"));
+            recordTraced();
             new OutboxRelay(entityManager, transactionTemplate, messagePublisher, jsonMapper, registry,
                     new OutboxMetrics(entityManager)).relay();
 
@@ -309,8 +393,7 @@ class OutboxRelayTest {
             recorder.record("pending", new OutboxTestEvent(UUID.randomUUID(), "pending"));
             transactionTemplate.executeWithoutResult(status -> entityManager.persist(
                     new OutboxEventJpaEntity("failed", "com.example.Gone", "{}", null)));
-            willThrow(new RuntimeException("broker down")).given(messagePublisher)
-                    .publish(anyString(), anyString(), any());
+            givenBrokerDown();
             relay.relay();
 
             relay.purgeSent();
@@ -322,18 +405,56 @@ class OutboxRelayTest {
         }
     }
 
-    private List<Object> publishedPayloads() {
-        ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
-        then(messagePublisher).should(atLeastOnce())
-                .publish(anyString(), anyString(), captor.capture());
+    /** Records one event under a request whose trace context is {@code 00-trace-span-01}. */
+    private void recordTraced() {
+        Tracer tracer = mock(Tracer.class);
+        Propagator propagator = mock(Propagator.class);
+        Span requestSpan = mock(Span.class);
+        TraceContext requestContext = mock(TraceContext.class);
+        given(tracer.currentSpan()).willReturn(requestSpan);
+        given(requestSpan.context()).willReturn(requestContext);
+        willAnswer(invocation -> {
+            Propagator.Setter<Object> setter = invocation.getArgument(2);
+            setter.set(invocation.getArgument(1), "traceparent", "00-trace-span-01");
+            return null;
+        }).given(propagator).inject(eq(requestContext), any(), any());
+        new OutboxEventRecorder(entityManager, transactionTemplate, jsonMapper, tracer, propagator)
+                .record("queue", new OutboxTestEvent(UUID.randomUUID(), "traced"));
+    }
+
+    /** Each batch call fails the messages {@code failure} returns an exception for; the rest are sent. */
+    private void givenBatchFailures(Function<MessagePublisher.Outgoing, RuntimeException> failure) {
+        willAnswer(invocation -> {
+            Map<String, RuntimeException> failures = new HashMap<>();
+            for (MessagePublisher.Outgoing message : invocation.<List<MessagePublisher.Outgoing>>getArgument(1)) {
+                RuntimeException e = failure.apply(message);
+                if (e != null) {
+                    failures.put(message.deduplicationId(), e);
+                }
+            }
+            return failures;
+        }).given(messagePublisher).publishBatch(anyString(), anyList());
+    }
+
+    private void givenBrokerDown() {
+        willThrow(new RuntimeException("broker down")).given(messagePublisher).publishBatch(anyString(), anyList());
+        willThrow(new RuntimeException("broker down")).given(messagePublisher).publish(anyString(), anyString(), any());
+    }
+
+    private static List<MessagePublisher.Outgoing> payloads(Object... events) {
+        return argThat(messages -> messages.stream().map(MessagePublisher.Outgoing::payload).toList()
+                .equals(List.of(events)));
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<List<MessagePublisher.Outgoing>> batches() {
+        ArgumentCaptor<List<MessagePublisher.Outgoing>> captor = ArgumentCaptor.forClass(List.class);
+        then(messagePublisher).should(atLeastOnce()).publishBatch(anyString(), captor.capture());
         return captor.getAllValues();
     }
 
-    private List<String> deduplicationIds() {
-        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
-        then(messagePublisher).should(atLeastOnce())
-                .publish(anyString(), captor.capture(), any());
-        return captor.getAllValues();
+    private List<MessagePublisher.Outgoing> outgoing() {
+        return batches().stream().flatMap(List::stream).toList();
     }
 
     @Nested
@@ -375,8 +496,7 @@ class OutboxRelayTest {
         @Test
         @DisplayName("전송이 막혀 있으면 행이 PENDING으로 남아 나이가 올라간다 — 무한 재시도라 FAILED가 안 생기므로 이게 유일한 신호다")
         void keepsClimbingWhileSendingIsStuck() {
-            willThrow(new IllegalStateException("sqs unreachable"))
-                    .given(messagePublisher).publish(anyString(), anyString(), any());
+            givenBrokerDown();
             recorder.record("queue-a", new OutboxTestEvent(UUID.randomUUID(), "stuck"));
             backdateOldestPendingBy(Duration.ofMinutes(10));
 
@@ -397,8 +517,7 @@ class OutboxRelayTest {
             recorder.record("queue-a", new OutboxTestEvent(UUID.randomUUID(), "rejected"));
             recorder.record("queue-a", new OutboxTestEvent(UUID.randomUUID(), "rejected"));
             recorder.record("queue-b", new OutboxTestEvent(UUID.randomUUID(), "rejected"));
-            willThrow(new PermanentPublishException(new IllegalStateException("message rejected")))
-                    .given(messagePublisher).publish(anyString(), anyString(), any());
+            givenBatchFailures(m -> new PermanentPublishException(new IllegalStateException("message rejected")));
 
             relay.relay();
 
@@ -412,11 +531,10 @@ class OutboxRelayTest {
         void dropsTheAwsSdkRequestDetailsFromTheReason() {
             recorder.record("queue-a", new OutboxTestEvent(UUID.randomUUID(), "rejected"));
             recorder.record("queue-a", new OutboxTestEvent(UUID.randomUUID(), "rejected"));
-            willThrow(new PermanentPublishException(new IllegalStateException(
-                    "The specified queue does not exist. (Service: Sqs, Status Code: 400, Request ID: a1)")))
-                    .willThrow(new PermanentPublishException(new IllegalStateException(
-                            "The specified queue does not exist. (Service: Sqs, Status Code: 400, Request ID: b2)")))
-                    .given(messagePublisher).publish(anyString(), anyString(), any());
+            AtomicInteger requestId = new AtomicInteger();
+            givenBatchFailures(m -> new PermanentPublishException(new IllegalStateException(
+                    "The specified queue does not exist. (Service: Sqs, Status Code: 400, Request ID: r"
+                            + requestId.incrementAndGet() + ")")));
 
             relay.relay();
 

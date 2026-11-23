@@ -19,4 +19,11 @@ final class SqsFailures {
                 || PermanentFailures.findCause(failure, cause -> cause instanceof AwsServiceException aws
                 && aws.statusCode() == 400 && !aws.isThrottlingException()) != null;
     }
+
+    /** The batch-entry twin of {@link #isPermanentSendFailure}: SQS blames the sender ({@code senderFault})
+     * and it isn't throttling. */
+    static boolean isPermanentBatchEntryFailure(Object senderFault, Object code) {
+        return Boolean.TRUE.equals(senderFault)
+                && !(code instanceof String c && c.toLowerCase().contains("throttl"));
+    }
 }
