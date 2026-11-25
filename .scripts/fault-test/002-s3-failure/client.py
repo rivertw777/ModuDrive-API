@@ -124,9 +124,15 @@ def upload(user, blocks):
 
 
 def download(user, file_id, expected):
-    req = urllib.request.Request(f"{public_api()}/api/v1/storage/download/{file_id}", headers=as_user(user))
+    """As the WEB does: prepare (one file) for a token, then follow the token link."""
     t = time.perf_counter()
     got, digest, status, error = 0, hashlib.sha256(), None, None
+    status, body, _ = call("POST", f"{public_api()}/api/v1/storage/archive", user, {"fileIds": [file_id]},
+                           headers=as_user(user))
+    if status != 200:
+        return {"status": status, "bytes": 0, "intact": False, "error": str(body)[:200],
+                "ms": round((time.perf_counter() - t) * 1000)}
+    req = urllib.request.Request(f"{public_api()}/api/v1/storage/public/archive/{body['data']['token']}")
     try:
         with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
             status = r.status

@@ -35,12 +35,12 @@
 
 | 구성 요소 | 역할 |
 |---|---|
-| **WEB** | 파일 하나는 Blob으로 받아 저장, zip은 토큰 링크로 이동, 미리보기는 Blob 또는 `<video>`/`<audio>` `src` |
+| **WEB** | 다운로드는 파일 하나든 zip이든 토큰 링크로 이동, 미리보기는 Blob 또는 `<video>`/`<audio>` `src` |
 | **gateway-service** | 세션을 확인하고 `X_USER_ID`를 붙여 요청을 넘긴다. 공개 링크·zip 받기 경로는 인증 없이 통과 |
 | **storage-service** | 바이트 조립 — S3에서 블록을 읽어 그대로 응답에 쓴다(블록은 원본 바이트, [001 1](001-file-upload-spec.md#1-구성-요소)). 쿼터·zip 토큰 관리 |
 | **file-service** | 권한 판단과 내려갈 버전의 블록 목록(`ownerId`, 해시들), zip 구성 계산 |
 | **S3** | 블록 (`blocks/{ownerId}/{hash}`, [001 1](001-file-upload-spec.md#1-구성-요소)) |
-| **Redis** | 다운로드 쿼터, zip 토큰 (storage 전용 Redis) |
+| **Redis** | 다운로드 쿼터, 다운로드 토큰 (storage 전용 Redis) |
 
 - 권한 판단은 **file-service**가, 바이트 조립은 **storage-service**가 한다. storage-service는 file-service가 돌려준 위치만 읽는다.
 
@@ -61,7 +61,7 @@
 | 키 | 타입 | 값 | TTL | 용도 |
 |---|---|---|---|---|
 | `download-quota:{scope}:{versionId}` | string | 내려간 바이트 합 | 24시간 (첫 기록부터, 연장 없음) | 다운로드 쿼터 ([8](#8-다운로드-쿼터)) |
-| `archive-token:{uuid}` | string | userId(공개면 `-`)·고른 fileId 목록·`key` | 1분, 꺼낼 때 삭제 (1회용) | zip 받기 링크 ([6](#6-zip-다운로드)) |
+| `archive-token:{uuid}` | string | userId(공개면 `-`)·고른 fileId 목록·`key` | 1분, 꺼낼 때 삭제 (1회용) | 받기 링크 — 파일 하나와 zip 공통 ([5](#5-파일-다운로드), [6](#6-zip-다운로드)) |
 
 ---
 
@@ -77,11 +77,15 @@ sequenceDiagram
     participant S3 as S3
 
     Note over U,S: WEB의 요청은 모두 gateway-service를 거친다 (세션 확인 후 X_USER_ID 붙임)
-    U->>S: GET /api/v1/storage/download/{fileId}
-    S->>F: GET /internal/files/{fileId}/revisions?userId=&limit=1&markAccessed=
+    U->>S: POST /api/v1/storage/archive {fileIds: [fileId]}
+    S->>F: POST /internal/files/archive {userId, fileIds}
     F->>F: DOWNLOAD 권한 확인
-    F-->>S: 최신 버전의 블록 목록 (ownerId, hashes)
-    S->>R: 쿼터 확인
+    F-->>S: 파일 이름·크기·최신 버전의 블록 목록 (ownerId, hashes)
+    S->>R: 쿼터 확인, 토큰 저장
+    S-->>U: {token}
+    U->>S: 링크 이동 GET /api/v1/storage/public/archive/{token}
+    S->>R: 토큰 꺼내고 삭제 (1회용)
+    S->>F: 권한·블록 목록 다시 확인
     loop 블록 목록 순서대로
         S->>S3: GET blocks/{ownerId}/{hash}
         S->>S: 응답 스트림에 씀
@@ -90,12 +94,12 @@ sequenceDiagram
     S-->>U: 파일 바이트
 ```
 
-1. **요청** — WEB이 세션 쿠키와 함께 다운로드·미리보기를 요청한다. 공개 링크면 세션 없이 `key`를 붙인다 ([9](#9-공개-링크에서의-다운로드)).
+1. **요청** — WEB이 세션 쿠키와 함께 다운로드 준비·미리보기를 요청한다. 공개 링크면 세션 없이 `key`를 붙인다 ([9](#9-공개-링크에서의-다운로드)).
 2. **권한과 버전** — storage-service가 file-service에 묻는다. file-service가 권한을 확인하고 내려갈 버전의 블록 목록을 돌려준다.
-   - 로그인 사용자: `GET /internal/files/{fileId}/revisions?userId=&limit=1&markAccessed=`
-   - 공개 링크: `GET /internal/files/public/{fileId}/revisions?key=&limit=1`
+   - 다운로드: `POST /internal/files/archive` (공개 링크는 `POST /internal/files/public/archive`)
+   - 미리보기: `GET /internal/files/{fileId}/revisions?userId=&limit=1&markAccessed=` (공개 링크는 `GET /internal/files/public/{fileId}/revisions?key=&limit=1`)
 3. **쿼터 확인** — 이 파일 버전을 이미 한도만큼 받았으면 거절한다 ([8](#8-다운로드-쿼터)).
-4. **조립** — 블록을 목록 순서대로 S3에서 읽는다. 읽은 블록의 SHA-256이 키의 해시와 다르면 내보내지 않고 500 `STORAGE_ERROR`로 끝낸다.
+4. **조립** — 블록을 목록 순서대로 응답에 쓴다. 지금 쓰는 블록 뒤로 최대 4개를 S3에서 미리 병렬로 읽어 두고, 미리 읽다 거절된 블록은 차례가 오면 한 번 더 읽는다. 읽은 블록의 SHA-256이 키의 해시와 다르면 내보내지 않고 500 `STORAGE_ERROR`로 끝낸다.
 5. **쿼터 기록** — 실제로 내려간 바이트만큼 기록한다.
 
 ---
@@ -133,29 +137,29 @@ sequenceDiagram
 
 ## 5. 파일 다운로드
 
-`GET /api/v1/storage/download/{fileId}` (세션 쿠키로 인증)
+zip과 같은 **준비 → 토큰 링크 이동** 두 단계다 ([6](#6-zip-다운로드)). 준비에 파일 하나만 보내면 받기 응답이 zip이 아니라 그 파일 자체다.
 
-1. **요청** — WEB이 axios로 `responseType: 'blob'`, `withCredentials: true`로 보낸다 ([004 인증](004-auth-spec.md)).
-2. **스트리밍** — 서버가 S3에서 블록을 하나씩 가져와 바로 응답 스트림에 쓴다(`StreamingResponseBody`). 파일 전체를 서버 메모리에 올리지 않으므로 크기 상한이 없다.
-3. **저장** — WEB이 응답 전체를 브라우저 메모리에 Blob으로 받은 뒤, `<a download="{파일명}">`을 만들어 저장한다. 파일 이름은 WEB이 목록에서 알고 있는 이름을 쓴다.
+1. **준비** — WEB이 `POST /api/v1/storage/archive` `{fileIds: [fileId]}`를 보낸다. 권한·쿼터 오류는 여기서 JSON으로 돌아온다.
+2. **받기** — WEB이 `GET /api/v1/storage/public/archive/{token}`으로 링크 이동한다. 서버가 S3에서 블록을 하나씩 가져와 바로 응답 스트림에 쓴다(`StreamingResponseBody`). 파일 전체를 서버·브라우저 메모리에 올리지 않으므로 크기 상한이 없고, 브라우저 기본 다운로드 진행 표시가 뜬다.
 
 **응답 헤더**
 
 | 헤더 | 값 |
 |---|---|
 | `Content-Type` | `application/octet-stream` |
-| `Content-Disposition` | `attachment; filename="{fileId}"` (파일 이름이 아니라 fileId) |
-| `Content-Length` | 없음 |
+| `Content-Disposition` | `attachment; filename*=UTF-8''{파일 이름}` |
+| `Content-Length` | 파일 크기 (file-service가 크기를 모르면 없음) |
+| `Cache-Control` | `private, no-store` |
 
-- 다 받을 때까지 브라우저의 다운로드 진행 표시가 뜨지 않는다 ([13](#13-todo)).
-- 다운로드는 최근 문서함에 기록하지 않는다(`markAccessed=false`).
-- 전송 도중 S3 오류나 연결 끊김이 생기면 응답이 중간에 끊기고 WEB의 Blob 요청이 실패한다. 이어받기는 없다.
+- 파일 하나는 file-service가 폴더 항목 없이 파일 항목 하나만 돌려줄 때다. 폴더 하나를 고르면 폴더 항목이 있으므로 zip이다.
+- 다운로드는 최근 문서함에 기록하지 않는다.
+- 전송 도중 S3 오류나 연결 끊김이 생기면 응답이 `Content-Length`보다 짧게 끊기고, 브라우저가 다운로드를 실패로 표시한다. 이어받기는 없다.
 
 ---
 
 ## 6. zip 다운로드
 
-파일 2개 이상, 또는 폴더가 하나라도 섞인 선택은 zip 하나로 받는다. **준비**와 **받기** 두 단계로 동작한다.
+파일 2개 이상, 또는 폴더가 하나라도 섞인 선택은 zip 하나로 받는다. **준비**와 **받기** 두 단계로 동작하고, 파일 하나 다운로드도 같은 경로를 쓴다 ([5](#5-파일-다운로드)).
 
 ```mermaid
 sequenceDiagram
@@ -188,7 +192,7 @@ sequenceDiagram
 
 **설계 메모**
 
-- 받기를 링크 이동으로 하므로 브라우저 기본 다운로드 진행 표시가 뜨고, zip 전체를 메모리에 올리지 않는다 (파일 하나 다운로드의 Blob 방식과 다르다, [13](#13-todo)).
+- 받기를 링크 이동으로 하므로 브라우저 기본 다운로드 진행 표시가 뜨고, zip 전체를 메모리에 올리지 않는다.
 - 링크 이동에는 헤더를 붙일 수 없으므로 **토큰이 곧 자격**이다. 그래서 로그인·공개 모두 받는 경로는 인증 없이 열린 `/api/v1/storage/public/archive/{token}` 하나다.
 - 받는 동안 gateway TimeLimiter(15초)에 끊기지 않는다. TimeLimiter는 응답이 시작될 때까지만 잰다.
 
@@ -208,7 +212,7 @@ sequenceDiagram
 | 빈 폴더도 항목으로 들어감 | `사진/빈폴더/` |
 | 최상위 이름이 겹치면 번호 (파일은 확장자 앞) | `보고서.pdf`, `보고서 (1).pdf`, `docs (1)/` |
 | 폴더와 **그 안의** 항목을 함께 고르면 안쪽 항목은 뺌 | 같은 바이트가 두 번 들어가거나 쿼터가 두 번 쌓이지 않음 |
-| 폴더 하나 또는 파일 하나만 고르면 zip 이름은 그 이름 | `사진.zip` |
+| 폴더 하나만 고르면 zip 이름은 그 이름 | `사진.zip` |
 | 여러 개를 고르면 시각 이름 (서버 시각, UTC) | `ModuDrive-20260923-142422.zip` |
 
 - 파일명은 UTF-8(zip의 UTF-8 플래그 설정)이고, 4GB나 65,535개를 넘으면 ZIP64로 자동 전환된다(`ZipOutputStream`).
@@ -319,9 +323,8 @@ sequenceDiagram
 
 | 메서드 · 경로 | 용도 |
 |---|---|
-| `GET /api/v1/storage/public/{fileId}/download?key=` | 다운로드 (스트리밍) |
 | `GET /api/v1/storage/public/{fileId}/view?key=&fileName=` | 미리보기 (URL 자체가 자격, [7-1](#7-1-응답)과 같은 Range 처리) |
-| `POST /api/v1/storage/public/archive?key=` | zip 준비 ([6](#6-zip-다운로드)과 같은 토큰 링크) |
+| `POST /api/v1/storage/public/archive?key=` | 다운로드·zip 준비 ([5](#5-파일-다운로드)·[6](#6-zip-다운로드)과 같은 토큰 링크) |
 
 1. **요청** — 모두 gateway에서 인증 없이 열린 경로이고, WEB은 세션 없이 보낸다.
 2. **접근 판단** — file-service `PublicFileResolver`가 한다 ([003 4](003-file-sharing-spec.md#4-링크-제공)).
@@ -344,11 +347,12 @@ sequenceDiagram
 | 미리보기 서버 상한 (`Range` 없음) | `블록 수 × 4MB` ≤ 100MB (추정치) | `BlockAssembler.MAX_INLINE_PREVIEW_BYTES` |
 | 미리보기 `Range` 응답 하나 | 4MB (블록 하나 크기), 블록 최대 2개 읽음 | `BlockAssembler.readRange` |
 | 미리보기 WEB 상한 | 텍스트·이미지 10MB | WEB `utils/file.ts` `PREVIEW_MAX_BYTES` |
+| 다운로드 하나가 미리 읽는 블록 수 | 4개 (`s3Read` 자리도 최대 4개) | `STORAGE_DOWNLOAD_READ_AHEAD` |
 | 파일 하나의 블록 수 | 100,000개 (넘으면 400 `TOO_MANY_BLOCKS`) | `S3StorageAdapter.MAX_BLOCK_COUNT` |
 | 파일별 다운로드 쿼터 | 24시간당 10GB | `STORAGE_DOWNLOAD_QUOTA_PER_FILE_BYTES`, `STORAGE_DOWNLOAD_QUOTA_WINDOW` |
 | zip 고른 항목 수 | 1,000개 | `PrepareArchiveCommand` |
 | zip 파일 수 / 합계 크기 | 10,000개 / 20GB | file-service `ArchiveEntryCollector.MAX_FILES`, `MAX_BYTES` |
-| zip 토큰 유효 기간 | 1분, 1회용 | `RedisArchiveTokenStore.TTL` |
+| 다운로드·zip 토큰 유효 기간 | 1분, 1회용 | `RedisArchiveTokenStore.TTL` |
 
 ---
 
@@ -356,17 +360,15 @@ sequenceDiagram
 
 | 메서드 · 경로 | 서비스 | 인증 | 용도 |
 |---|---|---|---|
-| `GET /api/v1/storage/download/{fileId}` | storage | 세션 | 다운로드 (스트리밍, attachment) |
 | `GET /api/v1/storage/view/{fileId}?fileName=` | storage | 세션 | 미리보기 (inline, Range) |
-| `GET /api/v1/storage/public/{fileId}/download?key=` | storage | 없음 | 공개 다운로드 |
 | `GET /api/v1/storage/public/{fileId}/view?key=&fileName=` | storage | 없음 | 공개 미리보기 |
-| `POST /api/v1/storage/archive` `{fileIds}` | storage | 세션 | zip 준비 → `{token}` |
-| `POST /api/v1/storage/public/archive?key=` `{fileIds}` | storage | 없음 | 공개 zip 준비 → `{token}` |
-| `GET /api/v1/storage/public/archive/{token}` | storage | 토큰 | zip 스트리밍 (attachment) |
+| `POST /api/v1/storage/archive` `{fileIds}` | storage | 세션 | 다운로드·zip 준비 → `{token}` |
+| `POST /api/v1/storage/public/archive?key=` `{fileIds}` | storage | 없음 | 공개 다운로드·zip 준비 → `{token}` |
+| `GET /api/v1/storage/public/archive/{token}` | storage | 토큰 | 파일 하나 또는 zip 스트리밍 (attachment) |
 | `POST /internal/files/archive` `{userId, fileIds}` | file | 서비스 간 | 고른 항목 DOWNLOAD 확인 + zip 구성 |
 | `POST /internal/files/public/archive` `{key, fileIds}` | file | 서비스 간 | 공개 판단 + zip 구성 |
-| `GET /internal/files/{fileId}/revisions?userId=&limit=&markAccessed=` | file | 서비스 간 | DOWNLOAD 권한 확인 + 최신 버전 위치 |
-| `GET /internal/files/public/{fileId}/revisions?key=&limit=` | file | 서비스 간 | 공개 접근 판단 + 최신 버전 위치 |
+| `GET /internal/files/{fileId}/revisions?userId=&limit=&markAccessed=` | file | 서비스 간 | 미리보기: DOWNLOAD 권한 확인 + 최신 버전 위치 |
+| `GET /internal/files/public/{fileId}/revisions?key=&limit=` | file | 서비스 간 | 공개 미리보기: 접근 판단 + 최신 버전 위치 |
 
 ---
 
@@ -374,7 +376,7 @@ sequenceDiagram
 
 | # | 시나리오 | 결과 |
 |---|---|---|
-| 1 | 소유자가 파일 1개 다운로드 | 서버는 스트리밍, WEB은 Blob으로 다 받은 뒤 원래 이름으로 저장. 최근 문서함 변화 없음 |
+| 1 | 소유자가 파일 1개 다운로드 | 토큰 링크로 이동, 브라우저가 진행 표시와 함께 원래 이름으로 저장. 최근 문서함 변화 없음 |
 | 2 | 파일 3개 + 폴더 1개 선택 후 다운로드 | 메뉴에 `다운로드 (4개)`. `ModuDrive-{시각}.zip` 하나에 파일 3개 + 폴더(하위 포함) |
 | 3 | VIEWER로 공유받은 파일 다운로드 | 허용 |
 | 4 | 공유받은 파일을 소유자가 휴지통으로 보냄 → 받은 사람이 다운로드 | 403. 소유자 본인은 휴지통에서도 받을 수 있음 |
@@ -396,7 +398,4 @@ sequenceDiagram
 
 ## 13. TODO
 
-- [ ] **파일 하나 다운로드를 토큰 링크 이동으로** — 지금은 WEB이 Blob으로 메모리에 다 받은 뒤 저장한다. GB 단위 파일은 브라우저 메모리를 다 쓰거나 탭이 죽을 수 있고, 다 받을 때까지 진행 표시도 없다. zip처럼 토큰 링크 이동 방식으로 바꾼다 (아래 항목과 같이).
-- [ ] **실제 파일명과 `Content-Length` 보내기** — 응답 `Content-Disposition`의 파일명이 fileId이고 `Content-Length`가 없다. 링크 이동으로 바꾸면 파일명이 UUID로 저장되고 브라우저가 남은 시간을 표시하지 못한다. 실제 파일명(RFC 5987 `filename*`)과 `Content-Length`를 보낸다.
-- [ ] **잘린 파일 알아채기** — 스트리밍 도중 오류가 나면 이미 200 헤더가 나간 뒤라 잘린 파일을 받을 수 있고, `Content-Length`가 없어 브라우저가 알아채지 못할 수 있다. 위 항목과 함께 고친다.
 - [ ] **과거 버전 받기** — 버전 이력이 목록 조회로만 쓰인다. 버전을 지정해 받는 API를 추가한다.

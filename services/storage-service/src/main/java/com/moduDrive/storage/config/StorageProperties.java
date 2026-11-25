@@ -16,6 +16,9 @@ public class StorageProperties {
      * downloads of that file are blocked. Default 10 GiB. */
     private long downloadQuotaPerFileBytes = 10L * 1024 * 1024 * 1024;
     private Duration downloadQuotaWindow = Duration.ofHours(24);
+    /** Blocks a download has on their way from S3 at once (spec 002 2). Each holds an {@code s3Read}
+     * seat and up to a block of memory. */
+    private int downloadReadAhead = 4;
 
     @Getter
     @Setter

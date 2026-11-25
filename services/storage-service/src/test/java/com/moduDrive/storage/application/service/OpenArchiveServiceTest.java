@@ -74,6 +74,8 @@ class OpenArchiveServiceTest {
             archive.writer().writeTo(out);
 
             assertThat(archive.fileName()).isEqualTo("사진.zip");
+            assertThat(archive.contentType()).isEqualTo("application/zip");
+            assertThat(archive.contentLength()).isNull();
             assertThat(unzip(out.toByteArray())).containsExactly(
                     Map.entry("사진/", ""), Map.entry("사진/빈폴더/", ""), Map.entry("사진/a.txt", "hello"));
             then(downloadQuotaPort).should().recordUsage(userId.toString(), "s3/a", 5);
@@ -90,6 +92,70 @@ class OpenArchiveServiceTest {
 
             assertThat(archive.fileName()).matches("ModuDrive-\\d{8}-\\d{6}\\.zip");
             then(retrieveBlocksPort).should(org.mockito.Mockito.never()).streamBlocks(any(), any());
+        }
+    }
+
+    @Nested
+    @DisplayName("파일 하나만 골랐을 때")
+    class WhenOneFileIsPicked {
+
+        @Test
+        void streamsTheFileItselfUnzippedWithItsNameAndLength() throws Exception {
+            given(archiveTokenPort.redeem("tok")).willReturn(Optional.of(request));
+            given(getArchiveEntriesPort.getArchiveEntries(request)).willReturn(List.of(
+                    new ArchiveEntry("보고서.pdf", fileId, "s3/a", keys(2), 5)));
+            willAnswer(invocation -> {
+                OutputStream out = invocation.getArgument(1);
+                out.write("hello".getBytes());
+                return null;
+            }).given(retrieveBlocksPort).streamBlocks(eq(keys(2)), any());
+
+            Archive archive = openArchiveService.open("tok");
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            archive.writer().writeTo(out);
+
+            assertThat(archive.fileName()).isEqualTo("보고서.pdf");
+            assertThat(archive.contentType()).isEqualTo("application/octet-stream");
+            assertThat(archive.contentLength()).isEqualTo(5L);
+            assertThat(out.toString()).isEqualTo("hello");
+            then(downloadQuotaPort).should().recordUsage(userId.toString(), "s3/a", 5);
+        }
+
+        @Test
+        void sendsNoLengthWhenTheSizeIsUnknown() {
+            given(archiveTokenPort.redeem("tok")).willReturn(Optional.of(request));
+            given(getArchiveEntriesPort.getArchiveEntries(request)).willReturn(List.of(
+                    new ArchiveEntry("a.txt", fileId, "s3/a", keys(1), 0)));
+
+            assertThat(openArchiveService.open("tok").contentLength()).isNull();
+        }
+
+        @Test
+        void stillRecordsWhatWasSentWhenStreamingAbortsPartway() {
+            given(archiveTokenPort.redeem("tok")).willReturn(Optional.of(request));
+            given(getArchiveEntriesPort.getArchiveEntries(request)).willReturn(List.of(
+                    new ArchiveEntry("a.txt", fileId, "s3/a", keys(2), 200)));
+            willAnswer(invocation -> {
+                ((OutputStream) invocation.getArgument(1)).write(new byte[100]);
+                throw new RuntimeException("client gone");
+            }).given(retrieveBlocksPort).streamBlocks(eq(keys(2)), any());
+
+            Archive archive = openArchiveService.open("tok");
+            catchThrowable(() -> archive.writer().writeTo(new ByteArrayOutputStream()));
+
+            then(downloadQuotaPort).should().recordUsage(userId.toString(), "s3/a", 100);
+        }
+
+        @Test
+        void zipsASinglePickedFolder() {
+            given(archiveTokenPort.redeem("tok")).willReturn(Optional.of(request));
+            given(getArchiveEntriesPort.getArchiveEntries(request)).willReturn(List.of(
+                    new ArchiveEntry("빈폴더/", null, null, null, 0)));
+
+            Archive archive = openArchiveService.open("tok");
+
+            assertThat(archive.fileName()).isEqualTo("빈폴더.zip");
+            assertThat(archive.contentType()).isEqualTo("application/zip");
         }
     }
 

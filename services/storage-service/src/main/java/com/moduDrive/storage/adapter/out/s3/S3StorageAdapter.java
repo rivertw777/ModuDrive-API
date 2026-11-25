@@ -35,8 +35,10 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
@@ -81,6 +83,9 @@ class S3StorageAdapter implements RetrieveBlocksPort, DeleteBlocksPort, FindUplo
     private final S3Path lookup;
     private final S3Path read;
     private final S3Path delete;
+    /** Blocks a download has on their way from S3 at once, so the next ones arrive while the client
+     * takes this one instead of a GET's wait after each ({@code storage.download-read-ahead}). */
+    private final int readAhead;
 
     S3StorageAdapter(S3Client s3Client, StorageProperties properties,
                      CircuitBreakerRegistry circuitBreakerRegistry, BulkheadRegistry bulkheadRegistry) {
@@ -89,6 +94,7 @@ class S3StorageAdapter implements RetrieveBlocksPort, DeleteBlocksPort, FindUplo
         this.lookup = S3Path.of("s3Lookup", circuitBreakerRegistry, bulkheadRegistry);
         this.read = S3Path.of("s3Read", circuitBreakerRegistry, bulkheadRegistry);
         this.delete = S3Path.of("s3Delete", circuitBreakerRegistry, bulkheadRegistry);
+        this.readAhead = Math.max(1, properties.getDownloadReadAhead());
     }
 
     /** Spec 006 2-4: each path — lookup, read, delete — has its own bulkhead and its own circuit, so
@@ -305,15 +311,48 @@ class S3StorageAdapter implements RetrieveBlocksPort, DeleteBlocksPort, FindUplo
         return blocks;
     }
 
+    /** In order, {@link #readAhead} blocks fetched ahead of the one being written. */
     @Override
     public void streamBlocks(List<String> keys, OutputStream out) {
         requireWithinBlockCountLimit(keys);
+        // Virtual threads wait on S3, not a platform thread each; the context carries the trace over.
+        ExecutorService executor = Context.taskWrapping(Executors.newVirtualThreadPerTaskExecutor());
+        Deque<Future<byte[]>> ahead = new ArrayDeque<>();
+        int submitted = 0;
         try {
             for (String key : keys) {
-                out.write(fetchBlock(key));
+                while (submitted < keys.size() && ahead.size() < readAhead) {
+                    String next = keys.get(submitted++);
+                    ahead.add(executor.submit(() -> fetchBlock(next)));
+                }
+                out.write(awaitBlock(ahead.poll(), key));
             }
         } catch (IOException e) {
             throw new RuntimeException("streaming download failed", e);
+        } finally {
+            // A failed or abandoned download stops the fetches still running for it.
+            executor.shutdownNow();
+        }
+    }
+
+    /** A block fetched ahead that S3 refused (a full {@code s3Read} bulkhead under many downloads, or a
+     * passing error) is fetched once more now, as a download without read-ahead would have. */
+    private byte[] awaitBlock(Future<byte[]> fetched, String key) {
+        try {
+            return fetched.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new BusinessException(StorageExceptionCase.STORAGE_ERROR);
+        } catch (ExecutionException e) {
+            if (e.getCause() instanceof BusinessException business
+                    && business.getExceptionCase() == StorageExceptionCase.STORAGE_UNAVAILABLE) {
+                return fetchBlock(key);
+            }
+            if (e.getCause() instanceof BusinessException business) {
+                throw business;
+            }
+            log.warn("Failed to read block {}: {}", key, e.getCause().toString());
+            throw new BusinessException(StorageExceptionCase.STORAGE_ERROR);
         }
     }
 
