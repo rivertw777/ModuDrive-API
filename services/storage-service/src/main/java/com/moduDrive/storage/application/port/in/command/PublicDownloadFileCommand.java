@@ -17,17 +17,9 @@ public class PublicDownloadFileCommand extends SelfValidating<PublicDownloadFile
     /** Optional: a LINK-scoped entry needs no key. */
     private final String key;
 
-    /** See {@link DownloadFileCommand#isInlinePreview()}. */
-    private final boolean inlinePreview;
-
     public PublicDownloadFileCommand(String fileId, String key) {
-        this(fileId, key, false);
-    }
-
-    public PublicDownloadFileCommand(String fileId, String key, boolean inlinePreview) {
         this.fileId = fileId;
         this.key = key;
-        this.inlinePreview = inlinePreview;
         this.validateSelf();
     }
 }

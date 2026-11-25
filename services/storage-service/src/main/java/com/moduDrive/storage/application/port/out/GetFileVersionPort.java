@@ -5,10 +5,9 @@ import java.util.UUID;
 
 public interface GetFileVersionPort {
 
-    /** {@code markAccessed} true records a file-access (moves the file to the top of the user's
-     * "recent") — set it only for an inline preview/open, not a plain download, to match Google
-     * Drive's behaviour. */
-    VersionLocation getLatestVersion(UUID fileId, UUID userId, boolean markAccessed);
+    /** Also records a file-access (moves the file to the top of the user's "recent"): every caller is an
+     * inline preview — an "open", as Google Drive counts it; downloads go through the archive flow. */
+    VersionLocation getLatestVersion(UUID fileId, UUID userId);
 
     /** Link lookup for anonymous visitors: {@code fileId} identifies the entry (the shared file
      * or one nested under a shared folder) and {@code key} authorizes the read, so there is no

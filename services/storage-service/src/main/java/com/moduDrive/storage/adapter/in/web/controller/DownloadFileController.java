@@ -30,7 +30,7 @@ class DownloadFileController {
             @PathVariable String fileId,
             @RequestParam String fileName,
             @RequestHeader(value = HttpHeaders.RANGE, required = false) String rangeHeader) {
-        DownloadFileCommand command = new DownloadFileCommand(fileId, userId, true);
+        DownloadFileCommand command = new DownloadFileCommand(fileId, userId);
         InlineResponses.RequestedRange range = InlineResponses.RequestedRange.parse(rangeHeader);
         return range == null
                 ? InlineResponses.whole(downloadFileUseCase.download(command), fileName)

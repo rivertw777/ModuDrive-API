@@ -28,7 +28,7 @@ class PublicDownloadFileController {
             @RequestParam(required = false) String key,
             @RequestParam String fileName,
             @RequestHeader(value = HttpHeaders.RANGE, required = false) String rangeHeader) {
-        PublicDownloadFileCommand command = new PublicDownloadFileCommand(fileId, key, true);
+        PublicDownloadFileCommand command = new PublicDownloadFileCommand(fileId, key);
         InlineResponses.RequestedRange range = InlineResponses.RequestedRange.parse(rangeHeader);
         return range == null
                 ? InlineResponses.whole(publicDownloadFileUseCase.downloadPublic(command), fileName)

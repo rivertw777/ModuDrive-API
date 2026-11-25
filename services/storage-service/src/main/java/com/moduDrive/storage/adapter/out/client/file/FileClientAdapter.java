@@ -22,9 +22,9 @@ class FileClientAdapter implements GetFileVersionPort, GetArchiveEntriesPort, Fi
     private final FileClient fileClient;
 
     @Override
-    public VersionLocation getLatestVersion(UUID fileId, UUID userId, boolean markAccessed) {
+    public VersionLocation getLatestVersion(UUID fileId, UUID userId) {
         return locate(firstOrThrow(
-                fileClient.getFileRevisions(fileId.toString(), userId.toString(), 1, markAccessed).getData()));
+                fileClient.getFileRevisions(fileId.toString(), userId.toString(), 1, true).getData()));
     }
 
     @Override
