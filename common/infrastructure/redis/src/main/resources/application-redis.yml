@@ -4,6 +4,8 @@ spring:
       host: ${REDIS_HOST}
       port: ${REDIS_PORT}
       password: ${REDIS_PASSWORD}
+      # Every call here is a short key or script; Lettuce's 60s default would hold a request thread that long.
+      timeout: 2s
       # ElastiCache with in-transit encryption only accepts TLS; its Amazon-issued certificate passes the
       # JVM's default trust store, so no bundle is needed. Local Redis has no TLS.
       ssl:

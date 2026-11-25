@@ -5,6 +5,7 @@ import com.moduDrive.common.infrastructure.redis.RedisRepository;
 import com.moduDrive.storage.application.port.out.DownloadQuotaPort;
 import com.moduDrive.storage.config.StorageProperties;
 import com.moduDrive.storage.exception.StorageExceptionCase;
+import io.opentelemetry.context.Context;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.script.RedisScript;
@@ -65,15 +66,19 @@ class RedisDownloadQuotaStore implements DownloadQuotaPort {
             return; // quota disabled
         }
         long windowSeconds = Math.max(1, storageProperties.getDownloadQuotaWindow().toSeconds());
-        try {
-            redisRepository.executeScript(
-                    RECORD_SCRIPT,
-                    List.of(key(scope, fileKey)),
-                    String.valueOf(bytes),
-                    String.valueOf(windowSeconds));
-        } catch (RuntimeException redisUnavailable) {
-            log.warn("download quota usage not recorded, Redis unavailable (scope={}, key={}): {}", scope, fileKey, redisUnavailable.toString());
-        }
+        // On a thread of its own, not waited for: a client that hangs up gets the streaming thread interrupted,
+        // and Lettuce gives up on a command awaited from an interrupted thread — a cut download wouldn't count.
+        Thread.startVirtualThread(Context.current().wrap(() -> {
+            try {
+                redisRepository.executeScript(
+                        RECORD_SCRIPT,
+                        List.of(key(scope, fileKey)),
+                        String.valueOf(bytes),
+                        String.valueOf(windowSeconds));
+            } catch (RuntimeException redisUnavailable) {
+                log.warn("download quota usage not recorded, Redis unavailable (scope={}, key={}): {}", scope, fileKey, redisUnavailable.toString());
+            }
+        }));
     }
 
     private static String key(String scope, String fileKey) {
