@@ -151,6 +151,48 @@ class S3StorageAdapterTest {
             assertThat(((BusinessException) thrown).getExceptionCase()).isEqualTo(StorageExceptionCase.STORAGE_ERROR);
             assertThat(out.toByteArray()).isEqualTo(HELLO);
         }
+
+        @Test
+        @DisplayName("다음 블록을 미리 겹쳐 가져오되, 앞 블록이 늦어도 순서대로 쓴다")
+        void fetchesAheadConcurrentlyButWritesInOrder() {
+            java.util.concurrent.atomic.AtomicInteger inFlight = new java.util.concurrent.atomic.AtomicInteger();
+            java.util.concurrent.atomic.AtomicInteger maxInFlight = new java.util.concurrent.atomic.AtomicInteger();
+            willAnswer(invocation -> {
+                maxInFlight.accumulateAndGet(inFlight.incrementAndGet(), Math::max);
+                String key = ((GetObjectRequest) invocation.getArgument(0)).key();
+                Thread.sleep(key.equals(keyOf(HELLO)) ? 200 : 50);
+                inFlight.decrementAndGet();
+                return ResponseBytes.fromByteArray(GetObjectResponse.builder().build(), key.equals(keyOf(HELLO)) ? HELLO : WORLD);
+            }).given(s3Client).getObjectAsBytes(any(GetObjectRequest.class));
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+            adapter.streamBlocks(List.of(keyOf(HELLO), keyOf(WORLD), keyOf(WORLD)), out);
+
+            assertThat(out.toString(StandardCharsets.UTF_8)).isEqualTo("hello worldworld");
+            assertThat(maxInFlight.get()).isGreaterThan(1);
+        }
+
+        @Test
+        @DisplayName("미리 가져오다 거절된 블록은 차례가 오면 한 번 더 가져온다")
+        void fetchesARefusedReadAheadAgainWhenItsTurnComes() {
+            java.util.concurrent.atomic.AtomicBoolean refused = new java.util.concurrent.atomic.AtomicBoolean();
+            willAnswer(invocation -> {
+                String key = ((GetObjectRequest) invocation.getArgument(0)).key();
+                if (key.equals(keyOf(WORLD)) && refused.compareAndSet(false, true)) {
+                    throw SdkClientException.create("timeout");
+                }
+                return ResponseBytes.fromByteArray(GetObjectResponse.builder().build(), key.equals(keyOf(HELLO)) ? HELLO : WORLD);
+            }).given(s3Client).getObjectAsBytes(any(GetObjectRequest.class));
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            // Default circuit: this class's 2-call window would open on the one failure and refuse the retry.
+            StorageProperties properties = new StorageProperties();
+            properties.getS3().setBucket("test-bucket");
+            S3StorageAdapter lenient = new S3StorageAdapter(s3Client, properties, CircuitBreakerRegistry.ofDefaults(), bulkheads);
+
+            lenient.streamBlocks(List.of(keyOf(HELLO), keyOf(WORLD)), out);
+
+            assertThat(out.toString(StandardCharsets.UTF_8)).isEqualTo("hello world");
+        }
     }
 
     @Nested

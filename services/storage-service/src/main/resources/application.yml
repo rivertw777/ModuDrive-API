@@ -26,6 +26,8 @@ storage:
   # 0 or negative disables the quota.
   download-quota-per-file-bytes: ${STORAGE_DOWNLOAD_QUOTA_PER_FILE_BYTES:10737418240}
   download-quota-window: ${STORAGE_DOWNLOAD_QUOTA_WINDOW:PT24H}
+  # Blocks one download reads ahead from S3 in parallel (spec 002 2). Each takes an s3Read seat.
+  download-read-ahead: ${STORAGE_DOWNLOAD_READ_AHEAD:4}
 
 resilience4j:
   retry:
