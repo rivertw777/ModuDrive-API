@@ -193,6 +193,41 @@ class S3StorageAdapterTest {
 
             assertThat(out.toString(StandardCharsets.UTF_8)).isEqualTo("hello world");
         }
+
+        @Test
+        @DisplayName("클라이언트가 끊어도 이미 가져오던 블록은 S3 실패로 세지 않는다")
+        void leavesTheReadsAheadOfAHungUpDownloadOffTheCircuit() throws Exception {
+            java.util.concurrent.CountDownLatch fetched = new java.util.concurrent.CountDownLatch(1);
+            willAnswer(invocation -> {
+                String key = ((GetObjectRequest) invocation.getArgument(0)).key();
+                if (key.equals(keyOf(WORLD))) {
+                    try {
+                        Thread.sleep(200);
+                    } catch (InterruptedException e) {
+                        throw SdkClientException.create("Unable to unmarshall response (null)"); // as the SDK does
+                    } finally {
+                        fetched.countDown();
+                    }
+                }
+                return ResponseBytes.fromByteArray(GetObjectResponse.builder().build(), key.equals(keyOf(HELLO)) ? HELLO : WORLD);
+            }).given(s3Client).getObjectAsBytes(any(GetObjectRequest.class));
+            java.io.OutputStream hungUp = new java.io.OutputStream() {
+                @Override
+                public void write(int b) throws java.io.IOException {
+                    throw new java.io.IOException("Broken pipe");
+                }
+            };
+
+            catchThrowable(() -> adapter.streamBlocks(List.of(keyOf(HELLO), keyOf(WORLD)), hungUp));
+
+            assertThat(fetched.await(1, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            var metrics = circuitBreakers.circuitBreaker("s3Read").getMetrics();
+            for (int i = 0; i < 100 && metrics.getNumberOfBufferedCalls() < 2; i++) {
+                Thread.sleep(10); // the circuit records the call just after it returns
+            }
+            assertThat(metrics.getNumberOfBufferedCalls()).isEqualTo(2);
+            assertThat(metrics.getNumberOfFailedCalls()).isZero();
+        }
     }
 
     @Nested

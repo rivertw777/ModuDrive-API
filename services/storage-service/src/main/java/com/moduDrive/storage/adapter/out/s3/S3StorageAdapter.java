@@ -330,8 +330,10 @@ class S3StorageAdapter implements RetrieveBlocksPort, DeleteBlocksPort, FindUplo
         } catch (IOException e) {
             throw new RuntimeException("streaming download failed", e);
         } finally {
-            // A failed or abandoned download stops the fetches still running for it.
-            executor.shutdownNow();
+            // Not shutdownNow: an interrupted GET fails as an SdkClientException, which the s3Read circuit counts
+            // as S3 failing and logs a warning — on every download a client cancels. The few already on their
+            // way finish and are dropped.
+            executor.shutdown();
         }
     }
 
