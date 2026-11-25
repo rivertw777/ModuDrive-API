@@ -18,6 +18,7 @@ import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.QueryTimeoutException;
 import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.web.ErrorResponseException;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
@@ -66,6 +67,15 @@ class GlobalExceptionHandlerTest {
             ResponseEntity<ApiResponse<Object>> response = handler.handleGlobalException(e);
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+
+        @Test
+        @DisplayName("클라이언트가 끊은 것이면 아무것도 쓰지 않는다")
+        void answersNothingToAClientThatHungUp() {
+            AsyncRequestNotUsableException hungUp = new AsyncRequestNotUsableException("disconnected client");
+
+            assertThat(handler.handleGlobalException(hungUp)).isNull();
+            assertThat(handler.handleGlobalException(new RuntimeException("streaming download failed", hungUp))).isNull();
         }
     }
 
