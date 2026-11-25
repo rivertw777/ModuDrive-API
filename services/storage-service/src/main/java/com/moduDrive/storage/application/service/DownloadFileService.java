@@ -9,7 +9,6 @@ import com.moduDrive.storage.application.port.out.GetFileVersionPort;
 import com.moduDrive.storage.application.port.out.RetrieveBlocksPort;
 import org.springframework.beans.factory.annotation.Value;
 
-import java.io.OutputStream;
 import java.util.List;
 
 @UseCase
@@ -53,19 +52,5 @@ class DownloadFileService implements DownloadFileUseCase {
                 command.getFileId(), command.getUserId(), command.isInlinePreview());
         return BlockAssembler.readRange(retrieveBlocksPort, downloadQuotaPort,
                 command.getUserId().toString(), version, blockSize, start, end);
-    }
-
-    @Override
-    public void downloadStream(DownloadFileCommand command, OutputStream out) {
-        String scope = command.getUserId().toString();
-        // A plain download never touches "recent" — markAccessed=false.
-        var version = getFileVersionPort.getLatestVersion(command.getFileId(), command.getUserId(), false);
-        downloadQuotaPort.checkWithinQuota(scope, version.versionKey());
-        CountingOutputStream counting = new CountingOutputStream(out);
-        try {
-            retrieveBlocksPort.streamBlocks(version.blockKeys(), counting);
-        } finally {
-            downloadQuotaPort.recordUsage(scope, version.versionKey(), counting.count());
-        }
     }
 }

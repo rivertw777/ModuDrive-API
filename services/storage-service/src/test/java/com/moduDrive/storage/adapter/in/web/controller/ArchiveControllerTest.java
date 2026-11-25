@@ -103,7 +103,8 @@ class ArchiveControllerTest {
 
         @Test
         void streamsTheZipAsAnAttachmentWithAUtf8Name() throws Exception {
-            given(openArchiveUseCase.open("tok")).willReturn(new Archive("사진.zip", out -> out.write("zip".getBytes())));
+            given(openArchiveUseCase.open("tok")).willReturn(
+                    new Archive("사진.zip", "application/zip", null, out -> out.write("zip".getBytes())));
 
             MvcResult async = mockMvc.perform(get("/api/v1/storage/public/archive/tok"))
                     .andExpect(request().asyncStarted())
@@ -113,7 +114,25 @@ class ArchiveControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(header().string("Content-Type", "application/zip"))
                     .andExpect(header().string("Content-Disposition", containsString("filename*=UTF-8''%EC%82%AC%EC%A7%84.zip")))
+                    .andExpect(header().doesNotExist("Content-Length"))
                     .andExpect(result -> assertThat(result.getResponse().getContentAsString()).isEqualTo("zip"));
+        }
+
+        @Test
+        void streamsASingleFileUnderItsOwnNameWithItsLength() throws Exception {
+            given(openArchiveUseCase.open("tok")).willReturn(
+                    new Archive("보고서.pdf", "application/octet-stream", 5L, out -> out.write("hello".getBytes())));
+
+            MvcResult async = mockMvc.perform(get("/api/v1/storage/public/archive/tok"))
+                    .andExpect(request().asyncStarted())
+                    .andReturn();
+
+            mockMvc.perform(asyncDispatch(async))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("Content-Type", "application/octet-stream"))
+                    .andExpect(header().string("Content-Disposition", containsString("attachment;")))
+                    .andExpect(header().string("Content-Disposition", containsString("filename*=UTF-8''%EB%B3%B4%EA%B3%A0%EC%84%9C.pdf")))
+                    .andExpect(header().string("Content-Length", "5"));
         }
 
         @Test

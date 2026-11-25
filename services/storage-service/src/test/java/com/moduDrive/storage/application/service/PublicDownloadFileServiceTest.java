@@ -14,25 +14,18 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.io.UncheckedIOException;
 import java.util.List;
 import java.util.stream.IntStream;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.never;
 import static org.mockito.BDDMockito.then;
-import static org.mockito.BDDMockito.willAnswer;
 import static org.mockito.BDDMockito.willThrow;
 
 @ExtendWith(MockitoExtension.class)
@@ -101,67 +94,6 @@ class PublicDownloadFileServiceTest {
     }
 
     @Nested
-    @DisplayName("공개 다운로드를 스트리밍으로 요청할 때")
-    class WhenDownloadingAsStream {
-
-        @Test
-        void delegatesToStreamBlocksWithoutAssemblingAByteArray() {
-            given(getFileVersionPort.getPublicVersion(fileId, key))
-                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", keys(2), 0));
-
-            publicDownloadFileService.downloadPublicStream(command(), new ByteArrayOutputStream());
-
-            then(retrieveBlocksPort).should().streamBlocks(eq(keys(2)), any(OutputStream.class));
-            then(retrieveBlocksPort).should(never()).retrieveBlocks(anyList());
-        }
-
-        @Test
-        void checksTheFileScopedQuotaBeforeStreamingAndRecordsWhatWasActuallySent() {
-            given(getFileVersionPort.getPublicVersion(fileId, key))
-                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", keys(2), 0));
-            willAnswer(inv -> { ((OutputStream) inv.getArgument(1)).write(new byte[300]); return null; })
-                    .given(retrieveBlocksPort).streamBlocks(anyList(), any());
-
-            publicDownloadFileService.downloadPublicStream(command(), new ByteArrayOutputStream());
-
-            then(downloadQuotaPort).should().checkWithinQuota("public:" + fileId, "files/abc/xyz");
-            then(downloadQuotaPort).should().recordUsage("public:" + fileId, "files/abc/xyz", 300L);
-        }
-
-        @Test
-        void stillRecordsWhatWasSentWhenStreamingAbortsPartway() {
-            given(getFileVersionPort.getPublicVersion(fileId, key))
-                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", keys(2), 0));
-            willAnswer(inv -> {
-                ((OutputStream) inv.getArgument(1)).write(new byte[128]);
-                throw new UncheckedIOException(new IOException("client gone"));
-            }).given(retrieveBlocksPort).streamBlocks(anyList(), any());
-
-            catchThrowable(() -> publicDownloadFileService.downloadPublicStream(
-                    command(), new ByteArrayOutputStream()));
-
-            then(downloadQuotaPort).should().recordUsage("public:" + fileId, "files/abc/xyz", 128L);
-        }
-
-        @Test
-        void rejectsBeforeStreamingWhenTheFileIsOverItsDownloadQuota() {
-            given(getFileVersionPort.getPublicVersion(fileId, key))
-                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", keys(2), 0));
-            willThrow(new BusinessException(StorageExceptionCase.DOWNLOAD_QUOTA_EXCEEDED))
-                    .given(downloadQuotaPort).checkWithinQuota(anyString(), anyString());
-
-            Throwable thrown = catchThrowable(() -> publicDownloadFileService.downloadPublicStream(
-                    command(), new ByteArrayOutputStream()));
-
-            assertThat(thrown).isInstanceOf(BusinessException.class)
-                    .extracting(e -> ((BusinessException) e).getExceptionCase())
-                    .isEqualTo(StorageExceptionCase.DOWNLOAD_QUOTA_EXCEEDED);
-            then(retrieveBlocksPort).shouldHaveNoInteractions();
-            then(downloadQuotaPort).should(never()).recordUsage(anyString(), anyString(), anyLong());
-        }
-    }
-
-    @Nested
     @DisplayName("공개 인라인 미리보기(view)로 요청할 때")
     class WhenRequestedAsPublicInlinePreview {
 
@@ -224,19 +156,6 @@ class PublicDownloadFileServiceTest {
             assertThat(new String(result)).isEqualTo("hello world");
             then(downloadQuotaPort).should().checkWithinQuota("public:" + fileId, "files/abc/xyz");
             then(downloadQuotaPort).should().recordUsage(eq("public:" + fileId), eq("files/abc/xyz"), anyLong());
-        }
-
-        @Test
-        void alsoWorksOnTheStreamingPath() {
-            given(getFileVersionPort.getPublicVersion(fileId, null))
-                    .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", keys(2), 0));
-            willAnswer(inv -> { ((OutputStream) inv.getArgument(1)).write(new byte[300]); return null; })
-                    .given(retrieveBlocksPort).streamBlocks(anyList(), any());
-
-            publicDownloadFileService.downloadPublicStream(keylessCommand(), new ByteArrayOutputStream());
-
-            then(downloadQuotaPort).should().checkWithinQuota("public:" + fileId, "files/abc/xyz");
-            then(downloadQuotaPort).should().recordUsage("public:" + fileId, "files/abc/xyz", 300L);
         }
 
         @Test
