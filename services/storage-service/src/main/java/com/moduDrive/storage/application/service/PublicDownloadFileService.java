@@ -9,7 +9,6 @@ import com.moduDrive.storage.application.port.out.GetFileVersionPort;
 import com.moduDrive.storage.application.port.out.RetrieveBlocksPort;
 import org.springframework.beans.factory.annotation.Value;
 
-import java.io.OutputStream;
 import java.util.List;
 import java.util.UUID;
 
@@ -51,19 +50,6 @@ class PublicDownloadFileService implements PublicDownloadFileUseCase {
     public RangeContent viewPublicRange(PublicDownloadFileCommand command, long start, Long end) {
         return BlockAssembler.readRange(retrieveBlocksPort, downloadQuotaPort,
                 quotaScope(command), locate(command), blockSize, start, end);
-    }
-
-    @Override
-    public void downloadPublicStream(PublicDownloadFileCommand command, OutputStream out) {
-        GetFileVersionPort.VersionLocation version = locate(command);
-        String scope = quotaScope(command);
-        downloadQuotaPort.checkWithinQuota(scope, version.versionKey());
-        CountingOutputStream counting = new CountingOutputStream(out);
-        try {
-            retrieveBlocksPort.streamBlocks(version.blockKeys(), counting);
-        } finally {
-            downloadQuotaPort.recordUsage(scope, version.versionKey(), counting.count());
-        }
     }
 
     private GetFileVersionPort.VersionLocation locate(PublicDownloadFileCommand command) {

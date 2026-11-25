@@ -21,8 +21,8 @@ import java.util.zip.Deflater;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
-/** Streams the zip block by block, like a single download — only one block is ever in
- * memory. {@link ZipOutputStream} writes UTF-8 names and switches to ZIP64 on its own past 4GB or
+/** Streams the download block by block — a single picked file as itself, anything else as a zip —
+ * so only one block is ever in memory. {@link ZipOutputStream} writes UTF-8 names and switches to ZIP64 on its own past 4GB or
  * 65,535 entries. The layout is re-resolved here rather than trusted from prepare, so access
  * revoked in between still counts. */
 @UseCase
@@ -41,7 +41,23 @@ class OpenArchiveService implements OpenArchiveUseCase {
         ArchiveRequest request = archiveTokenPort.redeem(token)
                 .orElseThrow(() -> new BusinessException(StorageExceptionCase.ARCHIVE_TOKEN_INVALID));
         List<ArchiveEntry> entries = getArchiveEntriesPort.getArchiveEntries(request);
-        return new Archive(zipName(entries), out -> write(request, entries, out));
+        // A picked folder always lays out its own entry, so one plain entry means one picked file.
+        if (entries.size() == 1 && !entries.getFirst().isDirectory()) {
+            ArchiveEntry file = entries.getFirst();
+            // 0 is "file-service didn't say" — no length beats a wrong one.
+            Long length = file.fileSize() > 0 ? file.fileSize() : null;
+            return new Archive(file.path(), "application/octet-stream", length, out -> writeFile(request, file, out));
+        }
+        return new Archive(zipName(entries), "application/zip", null, out -> write(request, entries, out));
+    }
+
+    private void writeFile(ArchiveRequest request, ArchiveEntry file, OutputStream out) {
+        CountingOutputStream counting = new CountingOutputStream(out);
+        try {
+            retrieveBlocksPort.streamBlocks(file.blockKeys(), counting);
+        } finally {
+            downloadQuotaPort.recordUsage(request.quotaScope(file.fileId()), file.versionKey(), counting.count());
+        }
     }
 
     private void write(ArchiveRequest request, List<ArchiveEntry> entries, OutputStream out) throws IOException {

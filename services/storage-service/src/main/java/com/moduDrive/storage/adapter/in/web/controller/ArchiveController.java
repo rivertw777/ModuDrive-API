@@ -26,7 +26,7 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
-/** Zip download of several files and/or folders, in two steps: prepare (checked, answers JSON),
+/** Download of one file, or a zip of several files and/or folders, in two steps: prepare (checked, answers JSON),
  * then a plain link to the returned token, so the browser downloads natively with progress and
  * without buffering the whole zip in a Blob. */
 @WebAdapter
@@ -61,11 +61,16 @@ class ArchiveController {
     public ResponseEntity<StreamingResponseBody> downloadArchive(@PathVariable String token) {
         Archive archive = openArchiveUseCase.open(token);
         StreamingResponseBody body = archive.writer()::writeTo;
-        return ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType("application/zip"))
+        ResponseEntity.BodyBuilder response = ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(archive.contentType()))
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         ContentDisposition.attachment().filename(archive.fileName(), StandardCharsets.UTF_8).build().toString())
-                .header(HttpHeaders.CACHE_CONTROL, "private, no-store")
-                .body(body);
+                .header(HttpHeaders.CACHE_CONTROL, "private, no-store");
+        // Lets the browser show time left, and mark a download cut short mid-stream as failed
+        // instead of saving the truncated bytes as the file.
+        if (archive.contentLength() != null) {
+            response.contentLength(archive.contentLength());
+        }
+        return response.body(body);
     }
 }
