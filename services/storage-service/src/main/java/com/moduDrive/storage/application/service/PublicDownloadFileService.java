@@ -35,9 +35,7 @@ class PublicDownloadFileService implements PublicDownloadFileUseCase {
     @Override
     public byte[] downloadPublic(PublicDownloadFileCommand command) {
         GetFileVersionPort.VersionLocation version = locate(command);
-        if (command.isInlinePreview()) {
-            BlockAssembler.requireWithinInlinePreviewLimit(version.blockKeys().size(), blockSize);
-        }
+        BlockAssembler.requireWithinInlinePreviewLimit(version.blockKeys().size(), blockSize);
         String scope = quotaScope(command);
         downloadQuotaPort.checkWithinQuota(scope, version.versionKey());
         List<byte[]> blocks = retrieveBlocksPort.retrieveBlocks(version.blockKeys());

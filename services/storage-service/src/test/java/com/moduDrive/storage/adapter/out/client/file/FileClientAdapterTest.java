@@ -40,12 +40,12 @@ class FileClientAdapterTest {
     class WhenResolvingLatestVersion {
 
         @Test
-        void mapsTheLatestVersionAndForwardsMarkAccessed() {
+        void mapsTheLatestVersionAndMarksItAccessed() {
             given(fileClient.getFileRevisions(anyString(), anyString(), anyInt(), anyBoolean()))
                     .willReturn(ApiResponse.success(List.of(
                             new FileVersionDto(VERSION_ID, 10L, OWNER_ID, List.of("h1", "h2", "h1")))));
 
-            VersionLocation result = adapter.getLatestVersion(fileId, userId, true);
+            VersionLocation result = adapter.getLatestVersion(fileId, userId);
 
             assertThat(result).isEqualTo(new VersionLocation(VERSION_ID.toString(), List.of(
                     "blocks/" + OWNER_ID + "/h1", "blocks/" + OWNER_ID + "/h2", "blocks/" + OWNER_ID + "/h1"), 10L));
@@ -62,7 +62,7 @@ class FileClientAdapterTest {
             given(fileClient.getFileRevisions(anyString(), anyString(), anyInt(), anyBoolean()))
                     .willReturn(ApiResponse.success(List.of()));
 
-            Throwable thrown = catchThrowable(() -> adapter.getLatestVersion(fileId, userId, false));
+            Throwable thrown = catchThrowable(() -> adapter.getLatestVersion(fileId, userId));
 
             assertThat(thrown).isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())

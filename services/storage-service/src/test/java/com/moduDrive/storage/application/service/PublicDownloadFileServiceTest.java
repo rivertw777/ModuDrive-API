@@ -48,10 +48,6 @@ class PublicDownloadFileServiceTest {
         return new PublicDownloadFileCommand(fileId, key);
     }
 
-    private PublicDownloadFileCommand previewCommand() {
-        return new PublicDownloadFileCommand(fileId, key, true);
-    }
-
     /** What an anonymous visitor of a link-shared file sends: no key. */
     private PublicDownloadFileCommand keylessCommand() {
         return new PublicDownloadFileCommand(fileId, null);
@@ -103,7 +99,7 @@ class PublicDownloadFileServiceTest {
                     .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", keys(1), 0));
             given(retrieveBlocksPort.retrieveBlocks(anyList())).willReturn(List.of("data".getBytes()));
 
-            publicDownloadFileService.downloadPublic(previewCommand());
+            publicDownloadFileService.downloadPublic(command());
 
             then(downloadQuotaPort).should().checkWithinQuota("public:" + fileId, "files/abc/xyz");
             then(downloadQuotaPort).should().recordUsage("public:" + fileId, "files/abc/xyz", 4L);
@@ -116,7 +112,7 @@ class PublicDownloadFileServiceTest {
                     .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", keys(1), 0));
             given(retrieveBlocksPort.retrieveBlocks(anyList())).willReturn(List.of("data".getBytes()));
 
-            publicDownloadFileService.downloadPublic(new PublicDownloadFileCommand(fileId, null, true));
+            publicDownloadFileService.downloadPublic(new PublicDownloadFileCommand(fileId, null));
 
             then(downloadQuotaPort).should().checkWithinQuota("public:" + fileId, "files/abc/xyz");
             then(downloadQuotaPort).should().recordUsage("public:" + fileId, "files/abc/xyz", 4L);
@@ -205,7 +201,7 @@ class PublicDownloadFileServiceTest {
                     .willReturn(new GetFileVersionPort.VersionLocation("files/abc/xyz", keys(30), 0));
 
             Throwable thrown = catchThrowable(() ->
-                    publicDownloadFileService.downloadPublic(previewCommand()));
+                    publicDownloadFileService.downloadPublic(command()));
 
             assertThat(thrown).isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
