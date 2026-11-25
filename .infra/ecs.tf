@@ -232,6 +232,14 @@ resource "aws_ecs_service" "service" {
           port     = each.value
         }
 
+        # Envoy cuts a request at 15s by default — a download streams for as long as it takes.
+        dynamic "timeout" {
+          for_each = each.key == "storage" ? [1] : []
+          content {
+            per_request_timeout_seconds = 0
+          }
+        }
+
         dynamic "tls" {
           for_each = var.hardened ? [1] : []
           content {
