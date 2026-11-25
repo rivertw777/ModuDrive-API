@@ -27,6 +27,7 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.util.DisconnectedClientHelper;
 
 import java.util.Map;
 import java.util.Set;
@@ -150,6 +151,11 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Object>> handleGlobalException(Exception e) {
+        // The client hung up (a cancelled download, a closed tab): nothing went wrong here, and there's no one
+        // left to answer — writing a 500 to the dead connection would only fail again.
+        if (DisconnectedClientHelper.isClientDisconnectedException(e)) {
+            return null;
+        }
         // Spring's own 4xx (no such path, unsupported media type ...) carry their status. Answering them 500
         // would let any scanner probing random paths trip the gateway's error-rate alert.
         if (e instanceof ErrorResponse errorResponse && errorResponse.getStatusCode().is4xxClientError()) {
