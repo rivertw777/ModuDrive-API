@@ -24,7 +24,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
@@ -52,7 +51,7 @@ class DownloadFileServiceTest {
 
         @Test
         void returnsAssembledBytes() {
-            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(2), 0));
+            given(getFileVersionPort.getLatestVersion(any(), any())).willReturn(new VersionLocation("files/abc/xyz", keys(2), 0));
             given(retrieveBlocksPort.retrieveBlocks(anyList()))
                     .willReturn(List.of("hello ".getBytes(), "world".getBytes()));
 
@@ -63,7 +62,7 @@ class DownloadFileServiceTest {
 
         @Test
         void assembleSingleBlockCorrectly() {
-            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(1), 0));
+            given(getFileVersionPort.getLatestVersion(any(), any())).willReturn(new VersionLocation("files/abc/xyz", keys(1), 0));
             given(retrieveBlocksPort.retrieveBlocks(anyList()))
                     .willReturn(List.of("data".getBytes()));
 
@@ -79,10 +78,10 @@ class DownloadFileServiceTest {
 
         @Test
         void alsoMetersTheQuotaByRealSizeSoItCannotBeUsedToBypassTheLimit() {
-            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(1), 0));
+            given(getFileVersionPort.getLatestVersion(any(), any())).willReturn(new VersionLocation("files/abc/xyz", keys(1), 0));
             given(retrieveBlocksPort.retrieveBlocks(anyList())).willReturn(List.of("data".getBytes()));
 
-            downloadFileService.download(new DownloadFileCommand(fileId, userId, true));
+            downloadFileService.download(new DownloadFileCommand(fileId, userId));
 
             then(downloadQuotaPort).should().checkWithinQuota(userId.toString(), "files/abc/xyz");
             then(downloadQuotaPort).should().recordUsage(userId.toString(), "files/abc/xyz", 4L);
@@ -90,22 +89,22 @@ class DownloadFileServiceTest {
 
         @Test
         void marksTheFileAsRecentlyAccessed() {
-            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(1), 0));
+            given(getFileVersionPort.getLatestVersion(any(), any())).willReturn(new VersionLocation("files/abc/xyz", keys(1), 0));
             given(retrieveBlocksPort.retrieveBlocks(anyList())).willReturn(List.of("data".getBytes()));
 
-            downloadFileService.download(new DownloadFileCommand(fileId, userId, true));
+            downloadFileService.download(new DownloadFileCommand(fileId, userId));
 
-            then(getFileVersionPort).should().getLatestVersion(UUID.fromString(fileId), userId, true);
+            then(getFileVersionPort).should().getLatestVersion(UUID.fromString(fileId), userId);
         }
 
         @Test
         void rejectsWithoutFetchingBlocksWhenOverQuota() {
-            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(1), 0));
+            given(getFileVersionPort.getLatestVersion(any(), any())).willReturn(new VersionLocation("files/abc/xyz", keys(1), 0));
             willThrow(new BusinessException(StorageExceptionCase.DOWNLOAD_QUOTA_EXCEEDED))
                     .given(downloadQuotaPort).checkWithinQuota(anyString(), anyString());
 
             Throwable thrown = catchThrowable(() ->
-                    downloadFileService.download(new DownloadFileCommand(fileId, userId, true)));
+                    downloadFileService.download(new DownloadFileCommand(fileId, userId)));
 
             assertThat(thrown).isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
@@ -120,10 +119,10 @@ class DownloadFileServiceTest {
 
         @Test
         void rejectsBeforeFetchingAnyBlocks() {
-            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(new VersionLocation("files/abc/xyz", keys(30), 0));
+            given(getFileVersionPort.getLatestVersion(any(), any())).willReturn(new VersionLocation("files/abc/xyz", keys(30), 0));
 
             Throwable thrown = catchThrowable(() ->
-                    downloadFileService.download(new DownloadFileCommand(fileId, userId, true)));
+                    downloadFileService.download(new DownloadFileCommand(fileId, userId)));
 
             assertThat(thrown).isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getExceptionCase())
@@ -142,14 +141,14 @@ class DownloadFileServiceTest {
         @BeforeEach
         void setUp() {
             service = new DownloadFileService(getFileVersionPort, retrieveBlocksPort, downloadQuotaPort, 4);
-            given(getFileVersionPort.getLatestVersion(any(), any(), anyBoolean())).willReturn(version);
+            given(getFileVersionPort.getLatestVersion(any(), any())).willReturn(version);
         }
 
         @Test
         void readsOnlyTheBlockCoveringTheRange() {
             given(retrieveBlocksPort.retrieveBlocks(List.of("blocks/owner/h1"))).willReturn(List.of("4567".getBytes()));
 
-            RangeContent result = service.viewRange(new DownloadFileCommand(fileId, userId, true), 5, 6L);
+            RangeContent result = service.viewRange(new DownloadFileCommand(fileId, userId), 5, 6L);
 
             assertThat(new String(result.data())).isEqualTo("56");
             assertThat(result.start()).isEqualTo(5);
@@ -162,7 +161,7 @@ class DownloadFileServiceTest {
             given(retrieveBlocksPort.retrieveBlocks(List.of("blocks/owner/h0", "blocks/owner/h1")))
                     .willReturn(List.of("0123".getBytes(), "4567".getBytes()));
 
-            RangeContent result = service.viewRange(new DownloadFileCommand(fileId, userId, true), 2, null);
+            RangeContent result = service.viewRange(new DownloadFileCommand(fileId, userId), 2, null);
 
             assertThat(new String(result.data())).isEqualTo("2345");
             assertThat(result.start()).isEqualTo(2);
@@ -172,7 +171,7 @@ class DownloadFileServiceTest {
         void clampsTheEndToTheLastByteOfTheFile() {
             given(retrieveBlocksPort.retrieveBlocks(List.of("blocks/owner/h2"))).willReturn(List.of("89".getBytes()));
 
-            RangeContent result = service.viewRange(new DownloadFileCommand(fileId, userId, true), 8, 100L);
+            RangeContent result = service.viewRange(new DownloadFileCommand(fileId, userId), 8, 100L);
 
             assertThat(new String(result.data())).isEqualTo("89");
         }
@@ -182,7 +181,7 @@ class DownloadFileServiceTest {
             given(retrieveBlocksPort.retrieveBlocks(keys(3)))
                     .willReturn(List.of("0123".getBytes(), "4567".getBytes(), "89".getBytes()));
 
-            RangeContent result = service.viewRange(new DownloadFileCommand(fileId, userId, true), 10, null);
+            RangeContent result = service.viewRange(new DownloadFileCommand(fileId, userId), 10, null);
 
             assertThat(new String(result.data())).isEqualTo("0123456789");
             assertThat(result.start()).isZero();
@@ -194,7 +193,7 @@ class DownloadFileServiceTest {
                     .given(downloadQuotaPort).checkWithinQuota(anyString(), anyString());
 
             Throwable thrown = catchThrowable(() ->
-                    service.viewRange(new DownloadFileCommand(fileId, userId, true), 0, null));
+                    service.viewRange(new DownloadFileCommand(fileId, userId), 0, null));
 
             assertThat(thrown).isInstanceOf(BusinessException.class);
             then(retrieveBlocksPort).shouldHaveNoInteractions();

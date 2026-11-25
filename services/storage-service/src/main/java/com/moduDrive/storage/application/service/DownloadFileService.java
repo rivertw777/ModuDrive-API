@@ -32,24 +32,19 @@ class DownloadFileService implements DownloadFileUseCase {
     @Override
     public byte[] download(DownloadFileCommand command) {
         String scope = command.getUserId().toString();
-        // Only an inline preview counts as "opening" the file for the recent list (Drive-style).
-        var version = getFileVersionPort.getLatestVersion(
-                command.getFileId(), command.getUserId(), command.isInlinePreview());
-        if (command.isInlinePreview()) {
-            BlockAssembler.requireWithinInlinePreviewLimit(version.blockKeys().size(), blockSize);
-        }
+        var version = getFileVersionPort.getLatestVersion(command.getFileId(), command.getUserId());
+        BlockAssembler.requireWithinInlinePreviewLimit(version.blockKeys().size(), blockSize);
         downloadQuotaPort.checkWithinQuota(scope, version.versionKey());
         List<byte[]> blocks = retrieveBlocksPort.retrieveBlocks(version.blockKeys());
         byte[] assembled = BlockAssembler.assemble(blocks);
-        // Inline preview counts too — same bytes leave the building either way.
+        // A preview counts too — same bytes leave the building as a download.
         downloadQuotaPort.recordUsage(scope, version.versionKey(), assembled.length);
         return assembled;
     }
 
     @Override
     public RangeContent viewRange(DownloadFileCommand command, long start, Long end) {
-        var version = getFileVersionPort.getLatestVersion(
-                command.getFileId(), command.getUserId(), command.isInlinePreview());
+        var version = getFileVersionPort.getLatestVersion(command.getFileId(), command.getUserId());
         return BlockAssembler.readRange(retrieveBlocksPort, downloadQuotaPort,
                 command.getUserId().toString(), version, blockSize, start, end);
     }
