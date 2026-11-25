@@ -16,6 +16,8 @@ import org.springframework.dao.QueryTimeoutException;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -26,6 +28,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.timeout;
 
 @ExtendWith(MockitoExtension.class)
 class RedisDownloadQuotaStoreTest {
@@ -111,8 +114,26 @@ class RedisDownloadQuotaStoreTest {
 
             store.recordUsage("user-1", "files/abc/xyz", 4_194_304L);
 
-            then(redisRepository).should().executeScript(
+            then(redisRepository).should(timeout(1000)).executeScript(
                     any(), eq(List.of(KEY)), eq("4194304"), eq("86400"));
+        }
+
+        @Test
+        void recordsEvenWhenTheStreamingThreadWasInterruptedByAHangUp() throws Exception {
+            // Lettuce gives up on a command awaited from an interrupted thread.
+            CompletableFuture<Boolean> sentFromAnInterruptedThread = new CompletableFuture<>();
+            given(redisRepository.<Long>executeScript(any(), any(), any(), any())).willAnswer(invocation -> {
+                sentFromAnInterruptedThread.complete(Thread.currentThread().isInterrupted());
+                return 1L;
+            });
+            Thread.currentThread().interrupt();
+            try {
+                store.recordUsage("user-1", "files/abc/xyz", 4_194_304L);
+            } finally {
+                Thread.interrupted();
+            }
+
+            assertThat(sentFromAnInterruptedThread.get(1, TimeUnit.SECONDS)).isFalse();
         }
 
         @Test
@@ -138,6 +159,7 @@ class RedisDownloadQuotaStoreTest {
 
             assertThatCode(() -> store.recordUsage("user-1", "files/abc/xyz", 1L))
                     .doesNotThrowAnyException();
+            then(redisRepository).should(timeout(1000)).executeScript(any(), any(), any(), any());
         }
     }
 }
