@@ -178,15 +178,16 @@ variable "redis_clusters" {
   }
 }
 
-# Every service's task size, autoscaling bounds and CPU architecture (Graviton ARM64 is ~20% cheaper).
-# The deploy builds each image for its task definition's architecture (.github/workflows/deploy.yml).
+# Every service's task size, autoscaling bounds and CPU architecture: Graviton ARM64 (~20% cheaper, same
+# or better per vCPU) unless a service needs X86_64. The deploy builds each image for its task definition's
+# architecture (.github/workflows/deploy.yml).
 variable "services" {
   type = map(object({
     cpu    = number
     memory = number
     min    = number
     max    = number
-    arch   = optional(string, "X86_64")
+    arch   = optional(string, "ARM64")
   }))
   validation {
     condition     = alltrue([for s in var.services : contains(["X86_64", "ARM64"], s.arch)])

@@ -716,6 +716,12 @@ resource "aws_ecs_task_definition" "otel_collector" {
   execution_role_arn       = aws_iam_role.execution.arn
   task_role_arn            = aws_iam_role.otel_collector.arn
 
+  # Graviton, like the services: both collector images are published for arm64.
+  runtime_platform {
+    operating_system_family = "LINUX"
+    cpu_architecture        = "ARM64"
+  }
+
   # Where ecs_observer writes its target list (otel-collector.yaml).
   volume {
     name = "tmp"
