@@ -19,7 +19,9 @@ WORKDIR /app
 # young pauses ~2ms → 6–37ms with no full GC to avoid. Compact object headers (8 bytes instead of 12)
 # shrink the heap. The training run reads the same file: a cache recorded with other header settings is
 # refused at startup (a different GC is fine — the runner records with G1, demo runs Serial).
-RUN echo "-XX:+UseCompactObjectHeaders" > jvm.args && [ "$AOT" != true ] || { \
+# Every service runs on Korean time: LocalDateTime.now() and the `timestamp` columns hold KST wall time, and
+# pgjdbc opens each DB session in this zone too. timestamptz/Instant values are absolute either way.
+RUN printf -- "-XX:+UseCompactObjectHeaders\n-Duser.timezone=Asia/Seoul\n" > jvm.args && [ "$AOT" != true ] || { \
     CLIENT_URL=http://localhost MAIL_FROM=training@localhost MODUDRIVE_FILE_DEFAULT_QUOTA_BYTES=1 \
     REDIS_HOST=localhost REDIS_PORT=6379 REDIS_PASSWORD=training \
     STORAGE_BLOCK_SIZE=4194304 STORAGE_S3_BUCKET=training STORAGE_S3_REGION=ap-northeast-2 AWS_REGION=ap-northeast-2 \

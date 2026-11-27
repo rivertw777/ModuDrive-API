@@ -128,7 +128,8 @@ resource "terraform_data" "grafana_cloud_dashboards" {
       for hit in call("GET", "/api/search?type=dash-db&folderUIDs=modudrive"):
           if hit["uid"] not in uids:
               call("DELETE", "/api/dashboards/uid/" + hit["uid"])
-      call("PUT", "/api/org/preferences", {"homeDashboardUID": "modudrive-overview"})
+      # PUT replaces every preference: home dashboard and the time zone Explore and traces show in go together.
+      call("PUT", "/api/org/preferences", {"homeDashboardUID": "modudrive-overview", "timezone": "Asia/Seoul"})
     EOT
     environment = merge(
       {
