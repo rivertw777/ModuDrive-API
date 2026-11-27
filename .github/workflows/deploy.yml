@@ -113,7 +113,8 @@ jobs:
     needs: terraform
     # Runs after a successful (or skipped: not demo) terraform job, never after a failed one.
     if: ${{ !failure() && !cancelled() }}
-    runs-on: ubuntu-latest
+    # ARM, like the tasks (.infra variable services.arch): images build natively, AOT training run included.
+    runs-on: ubuntu-24.04-arm
     environment: ${{ inputs.environment || (github.ref_name == 'prod' && 'prod' || 'demo') }}
     timeout-minutes: 60
     steps:
@@ -230,12 +231,11 @@ jobs:
         env:
           LOCALSTACK_AUTH_TOKEN: ${{ secrets.LOCALSTACK_AUTH_TOKEN }}
 
-      # ARM64 images are built here on x86 under QEMU, AOT training run included — slower, but only for the
-      # services moved to ARM. ponytail: once most services are ARM, run this job on ubuntu-24.04-arm instead.
+      # Only a service kept on X86_64 needs it: its image builds here under QEMU, slower.
       - uses: docker/setup-qemu-action@v3
         if: steps.ready.outputs.ok == 'true' && steps.build.outputs.services != ''
         with:
-          platforms: arm64
+          platforms: amd64
 
       # Repositories are immutable: a SHA already pushed (a re-run) is skipped, not overwritten.
       # Each image is built for its task definition's CPU architecture.
