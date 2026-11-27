@@ -14,7 +14,9 @@ class TrashRetentionScheduler {
 
     private final PurgeExpiredTrashUseCase purgeExpiredTrashUseCase;
 
-    @Scheduled(cron = "0 0 3 * * *") // daily at 3am
+    // Noon KST, the same moment as the 3am UTC it ran at before the services moved to Korean time — and
+    // not 3am KST, when demo is stopped for the night (.infra/night_stop.tf).
+    @Scheduled(cron = "0 0 12 * * *")
     @SchedulerLock(name = "purgeExpiredTrash", lockAtMostFor = "PT30M", lockAtLeastFor = "PT1M")
     public void purgeExpiredTrash() {
         purgeExpiredTrashUseCase.purgeExpiredTrash();

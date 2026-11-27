@@ -75,6 +75,12 @@ resource "aws_db_parameter_group" "postgres" {
     name  = "log_lock_waits"
     value = "1"
   }
+  # Sessions that don't set their own zone (psql, consoles) show times in KST, as the services do —
+  # pgjdbc already opens app sessions in the JVM's Asia/Seoul.
+  parameter {
+    name  = "timezone"
+    value = "Asia/Seoul"
+  }
 }
 
 # As for Aurora below: declared so the CMK covers it and it doesn't keep forever.
@@ -180,6 +186,12 @@ resource "aws_rds_cluster_parameter_group" "aurora" {
   parameter {
     name  = "log_lock_waits"
     value = "1"
+  }
+  # Sessions that don't set their own zone (psql, consoles) show times in KST, as the services do —
+  # pgjdbc already opens app sessions in the JVM's Asia/Seoul.
+  parameter {
+    name  = "timezone"
+    value = "Asia/Seoul"
   }
 }
 
