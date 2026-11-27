@@ -122,6 +122,15 @@ resource "aws_ecs_task_definition" "service" {
   execution_role_arn       = aws_iam_role.execution.arn
   task_role_arn            = aws_iam_role.task[each.key].arn
 
+  # Left out for X86_64 (Fargate's default), so moving one service to ARM doesn't re-register the others.
+  dynamic "runtime_platform" {
+    for_each = var.services[each.key].arch == "ARM64" ? [1] : []
+    content {
+      operating_system_family = "LINUX"
+      cpu_architecture        = "ARM64"
+    }
+  }
+
   # Scratch space on the task's ephemeral storage — Fargate has no tmpfs.
   volume {
     name = "tmp"

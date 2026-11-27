@@ -178,14 +178,20 @@ variable "redis_clusters" {
   }
 }
 
-# Every service's task size and autoscaling bounds.
+# Every service's task size, autoscaling bounds and CPU architecture (Graviton ARM64 is ~20% cheaper).
+# The deploy builds each image for its task definition's architecture (.github/workflows/deploy.yml).
 variable "services" {
   type = map(object({
     cpu    = number
     memory = number
     min    = number
     max    = number
+    arch   = optional(string, "X86_64")
   }))
+  validation {
+    condition     = alltrue([for s in var.services : contains(["X86_64", "ARM64"], s.arch)])
+    error_message = "arch is X86_64 or ARM64."
+  }
 }
 
 # The security extras that cost money (prod): a customer-managed KMS key for data at rest, S3

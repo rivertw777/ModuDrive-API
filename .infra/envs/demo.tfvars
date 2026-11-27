@@ -42,7 +42,7 @@ redis_clusters = {
 # uploads with other drives (.docs/perf-test/001-upload.md 4); back to 512/1024 once it's measured.
 services = {
   gateway      = { cpu = 1024, memory = 2048, min = 1, max = 2 }
-  member       = { cpu = 512, memory = 1024, min = 1, max = 2 }
+  member       = { cpu = 512, memory = 1024, min = 1, max = 2, arch = "ARM64" }
   auth         = { cpu = 1024, memory = 2048, min = 1, max = 2 }
   file         = { cpu = 1024, memory = 2048, min = 1, max = 2 }
   storage      = { cpu = 1024, memory = 2048, min = 1, max = 2 }
