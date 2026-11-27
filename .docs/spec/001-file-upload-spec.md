@@ -625,5 +625,5 @@ commit 안 된 블록은 DB에 기록이 없다. 서버가 아는 것은 **언�
 | 재시도 | 1·2·4초 3번 → 30초마다, 최대 10분 | WEB `upload-file.ts` |
 | 블록 PUT 유휴 제한 | 30초 | WEB `PUT_IDLE_TIMEOUT_MS` |
 | 버전 보존 | 30일, 최신 5개 | `PruneFileVersionsService.RETENTION`, `KEEP` |
-| 휴지통 보관 | 30일 (매일 03시에 지난 항목 영구 삭제) | `PurgeExpiredTrashService.TRASH_RETENTION_DAYS`, `TrashRetentionScheduler` |
+| 휴지통 보관 | 30일 (매일 12시(한국 시간)에 지난 항목 영구 삭제) | `PurgeExpiredTrashService.TRASH_RETENTION_DAYS`, `TrashRetentionScheduler` |
 | 참조 없는 블록 유예 | 24시간 | `PurgeUnreferencedBlocksService.GRACE` |

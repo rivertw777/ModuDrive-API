@@ -17,6 +17,7 @@ services:
       -c auto_explain.log_min_duration=500
       -c auto_explain.log_parameter_max_length=0
       -c log_lock_waits=on
+      -c timezone=Asia/Seoul
     networks:
       - modudrive_network
     ports:
