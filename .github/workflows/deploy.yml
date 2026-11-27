@@ -173,30 +173,6 @@ jobs:
                 else f"Changed services: {' '.join(build) or 'none'}; common modules: {' '.join(modules) or 'none'}")
           EOF
 
-      - uses: actions/setup-java@v4
-        if: steps.ready.outputs.ok == 'true' && steps.changes.outputs.build != ''
-        with:
-          distribution: temurin
-          java-version: 25
-
-      - uses: gradle/actions/setup-gradle@v4
-        if: steps.ready.outputs.ok == 'true' && steps.changes.outputs.build != ''
-
-      # Persistence tests run on Testcontainers Postgres (Docker is on the runner); the SQS queue
-      # test needs a LocalStack token — a repository secret, the same for every environment.
-      - name: Test and build
-        if: steps.ready.outputs.ok == 'true' && steps.changes.outputs.build != ''
-        run: |
-          if [ "${{ steps.changes.outputs.all }}" = true ]; then
-            ./gradlew build
-          else
-            modules="${{ steps.changes.outputs.modules }}"
-            ./gradlew $(printf ':services:%s-service:build ' ${{ steps.changes.outputs.build }}) \
-              ${modules:+$(printf '%s:build ' $modules)}
-          fi
-        env:
-          LOCALSTACK_AUTH_TOKEN: ${{ secrets.LOCALSTACK_AUTH_TOKEN }}
-
       - uses: aws-actions/configure-aws-credentials@v4
         if: steps.ready.outputs.ok == 'true'
         with:
@@ -207,14 +183,69 @@ jobs:
         if: steps.ready.outputs.ok == 'true'
         uses: aws-actions/amazon-ecr-login@v2
 
+      # A service whose task definition moved to another CPU architecture (.infra variable services.arch)
+      # can't keep its running image, so it's rebuilt even if its code didn't change.
+      - id: build
+        if: steps.ready.outputs.ok == 'true'
+        env:
+          CHANGED: ${{ steps.changes.outputs.build }}
+        run: |
+          build=" $CHANGED "
+          for svc in $SERVICES; do
+            [[ "$build" == *" $svc "* ]] && continue
+            want=$(aws ecs describe-task-definition --task-definition "$PROJECT-$svc" \
+              --query taskDefinition.runtimePlatform.cpuArchitecture --output text)
+            running=$(aws ecs describe-services --cluster "$PROJECT" --services "$svc-service" \
+              --query 'services[0].taskDefinition' --output text)
+            have=$(aws ecs describe-task-definition --task-definition "$running" \
+              --query taskDefinition.runtimePlatform.cpuArchitecture --output text)
+            if [ "${want/None/X86_64}" != "${have/None/X86_64}" ]; then
+              echo "$svc-service moves to ${want/None/X86_64}: rebuilding"
+              build+="$svc "
+            fi
+          done
+          echo "services=$(xargs <<< "$build")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v4
+        if: steps.ready.outputs.ok == 'true' && steps.build.outputs.services != ''
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - uses: gradle/actions/setup-gradle@v4
+        if: steps.ready.outputs.ok == 'true' && steps.build.outputs.services != ''
+
+      # Persistence tests run on Testcontainers Postgres (Docker is on the runner); the SQS queue
+      # test needs a LocalStack token — a repository secret, the same for every environment.
+      - name: Test and build
+        if: steps.ready.outputs.ok == 'true' && steps.build.outputs.services != ''
+        run: |
+          if [ "${{ steps.changes.outputs.all }}" = true ]; then
+            ./gradlew build
+          else
+            modules="${{ steps.changes.outputs.modules }}"
+            ./gradlew $(printf ':services:%s-service:build ' ${{ steps.build.outputs.services }}) \
+              ${modules:+$(printf '%s:build ' $modules)}
+          fi
+        env:
+          LOCALSTACK_AUTH_TOKEN: ${{ secrets.LOCALSTACK_AUTH_TOKEN }}
+
+      # ARM64 images are built here on x86 under QEMU, AOT training run included — slower, but only for the
+      # services moved to ARM. ponytail: once most services are ARM, run this job on ubuntu-24.04-arm instead.
+      - uses: docker/setup-qemu-action@v3
+        if: steps.ready.outputs.ok == 'true' && steps.build.outputs.services != ''
+        with:
+          platforms: arm64
+
       # Repositories are immutable: a SHA already pushed (a re-run) is skipped, not overwritten.
+      # Each image is built for its task definition's CPU architecture.
       - name: Push images
-        if: steps.ready.outputs.ok == 'true' && steps.changes.outputs.build != ''
+        if: steps.ready.outputs.ok == 'true' && steps.build.outputs.services != ''
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
           todo=()
-          for svc in ${{ steps.changes.outputs.build }}; do
+          for svc in ${{ steps.build.outputs.services }}; do
             if aws ecr describe-images --repository-name "$PROJECT/$svc-service" --image-ids imageTag="$TAG" >/dev/null 2>&1; then
               echo "$PROJECT/$svc-service:$TAG already pushed"
             else
@@ -231,7 +262,10 @@ jobs:
               set -e
               image="$REGISTRY/$PROJECT/$svc-service:$TAG"
               dir="services/$svc-service/build/docker"
-              docker build --build-arg JAR_FILE="$(basename "$(ls "$dir"/*.jar)")" --build-arg AOT=true -t "$image" "$dir"
+              arch=$(aws ecs describe-task-definition --task-definition "$PROJECT-$svc" \
+                --query taskDefinition.runtimePlatform.cpuArchitecture --output text)
+              platform=$([ "$arch" = ARM64 ] && echo linux/arm64 || echo linux/amd64)
+              docker build --platform "$platform" --build-arg JAR_FILE="$(basename "$(ls "$dir"/*.jar)")" --build-arg AOT=true -t "$image" "$dir"
               docker push "$image"
             ) > "push-$svc.log" 2>&1 &
             pids+=($!)
@@ -253,7 +287,7 @@ jobs:
         if: steps.ready.outputs.ok == 'true'
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
-          BUILD: ${{ steps.changes.outputs.build }}
+          BUILD: ${{ steps.build.outputs.services }}
         run: |
           declare -A revision
           rolled=()
